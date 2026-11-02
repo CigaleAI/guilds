@@ -1,5 +1,5 @@
 // Collections and their records as the Tables page and the settings surfaces show them.
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { isJsonValue, type JsonValue } from "../lib/json.js";
 import { ArtifactError } from "./errors.js";
 import type { ArtifactActor } from "./types.js";

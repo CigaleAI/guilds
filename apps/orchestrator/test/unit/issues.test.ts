@@ -168,7 +168,7 @@ test("report_issue_rejects_unknown_kind", async () => {
       },
     },
   );
-  assert.match(String(metadata.error), /kind must be/);
+  assert.match(String(metadata.error), /^\/kind: must be equal to one of the allowed values$/);
 });
 
 test("open issue cap is enforced", async () => {

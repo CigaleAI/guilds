@@ -1,5 +1,5 @@
-import { Type, type TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type TSchema } from "typebox";
+import { Value } from "typebox/value";
 import type { ConnectionSettings, SettingsSchema, SettingsTypeName } from "../db/schema/index.js";
 import { isJsonObject, isObjectNode, JsonObjectSchema, JsonValueSchema, type JsonObject, type JsonValue } from "../lib/json.js";
 

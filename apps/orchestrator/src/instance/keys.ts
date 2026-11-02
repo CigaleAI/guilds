@@ -1,5 +1,5 @@
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import type { InferSelectModel } from "drizzle-orm";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { writeLog } from "../observability/log.js";

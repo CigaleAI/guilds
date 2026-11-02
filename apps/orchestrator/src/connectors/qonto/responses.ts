@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 import { JsonValueSchema } from "../../lib/json.js";
 
 // The Qonto responses the tools read, each field as Qonto sends it: a field with no value may

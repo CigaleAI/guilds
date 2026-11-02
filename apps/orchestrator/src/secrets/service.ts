@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { requireVisibleAgent } from "../agents/access.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import {
@@ -61,10 +61,12 @@ export type SecretServices = {
 };
 
 /** A new secret as it is asked for, before validation: the name, description and value, and who gets it. */
-export const SecretDraftSchema = Type.Composite([
-  Type.Object({ name: Type.String(), description: Type.String(), value: Type.String() }),
-  SecretAccessSchema,
-]);
+export const SecretDraftSchema = Type.Evaluate(
+  Type.Intersect([
+    Type.Object({ name: Type.String(), description: Type.String(), value: Type.String() }),
+    SecretAccessSchema,
+  ]),
+);
 
 export type SecretDraft = Static<typeof SecretDraftSchema>;
 

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { ArtifactError } from "../artifacts/errors.js";
 import { FILE_MAX_BYTES, isArtifactLevel, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
 import { ArtifactFiles, mimeForName } from "../artifacts/files.js";

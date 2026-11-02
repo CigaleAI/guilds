@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import { isJsonObject } from "../lib/json.js";
 import { ToolInputSchema, type SecretRef } from "../db/schema/index.js";
 

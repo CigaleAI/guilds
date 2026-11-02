@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { BrowseOutputSchema, BrowseRequest } from "../browse/runner.js";
 import { BROWSE_TOOL } from "./browser.js";
 import { ToolArgumentError, ToolUnavailableError } from "./errors.js";

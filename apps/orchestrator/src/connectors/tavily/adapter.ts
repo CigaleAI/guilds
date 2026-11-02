@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { search, TavilyError } from "./client.js";
 import { adapterTool, toolsAdapter } from "../tools.js";
 import { requiredCredential, translated } from "../types.js";

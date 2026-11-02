@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { FastifyRequest } from "fastify";
 import { requireVisibleAgent } from "../agents/access.js";
 import { AccessListSchema } from "../artifacts/access.js";

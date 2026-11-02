@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { ArtifactError } from "../artifacts/errors.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { isJsonObject, type JsonObject, type JsonValue } from "../lib/json.js";

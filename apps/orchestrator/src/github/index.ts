@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import {
   GITHUB_APP,
   integrationValues,

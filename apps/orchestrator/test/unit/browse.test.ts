@@ -420,6 +420,6 @@ test("browse refuses bad arguments before it wakes the browser", async () => {
     type: "function",
     function: { name: "browse", arguments: JSON.stringify({ task: "t", max_steps: 500 }) },
   });
-  assert.equal(message.content, "ERROR: /max_steps: Expected integer to be less or equal to 100");
+  assert.equal(message.content, "ERROR: /max_steps: must be <= 100");
   assert.equal(woke, false);
 });

@@ -3,13 +3,13 @@
 
 import {
   Type,
-  type ObjectOptions,
   type Static,
-  type StringOptions,
   type TObject,
+  type TObjectOptions,
   type TSchema,
+  type TStringOptions,
   type TUnsafe,
-} from "@sinclair/typebox";
+} from "typebox";
 import { keepMatching } from "../lib/decode.js";
 import type { JsonObject } from "../lib/json.js";
 import { ToolArgumentError } from "../toolbox/errors.js";
@@ -49,7 +49,7 @@ function escapePattern(text: string): string {
  */
 export function studioChoice<const T extends readonly string[]>(
   values: T,
-  options: StringOptions = {},
+  options: TStringOptions = {},
 ): TUnsafe<T[number]> {
   const pattern = `^(?:${values.map(escapePattern).join("|")})$`;
   return Type.Unsafe<T[number]>(Type.String({ ...options, enum: [...values], pattern }));
@@ -58,7 +58,7 @@ export function studioChoice<const T extends readonly string[]>(
 /** An object argument from any name to a `value`, such as a tool name to its setting. */
 export function studioMap<T extends TSchema>(
   value: T,
-  options: ObjectOptions = {},
+  options: TObjectOptions = {},
 ): TUnsafe<Record<string, Static<T>>> {
   return Type.Unsafe<Record<string, Static<T>>>(Type.Object({}, { ...options, additionalProperties: value }));
 }

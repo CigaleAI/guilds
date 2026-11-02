@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { JsonObject } from "../../src/lib/json.js";
 import { toolFunctionSchema } from "../../src/toolbox/schema.js";
 import { decodeStudioArguments, studioChoice, studioMap } from "../../src/studio/arguments.js";
@@ -31,7 +31,7 @@ test("decode_refuses_a_null_required_argument", () => {
   const Required = Type.Object({ run_id: Type.String() });
   assert.throws(
     () => decodeStudioArguments(Required, { run_id: null }),
-    /\/run_id: Expected string/,
+    /\/run_id: must be string/,
   );
 });
 
@@ -62,7 +62,7 @@ test("decode_names_the_first_mismatch_in_a_studio_unprocessable_error", () => {
   );
   assert.throws(
     () => decodeStudioArguments(Parameters, { agent_id: "a_1", limit: "5" }),
-    /\/limit: Expected integer/,
+    /\/limit: must be integer/,
   );
 });
 
@@ -85,50 +85,50 @@ test("choice_offers_an_enum_and_refuses_any_other_string", () => {
   assert.deepEqual(offered.function.parameters.properties.mode.enum, ["on", "off"]);
   assert.equal(offered.function.parameters.properties.mode.description, "Mode.");
   assert.deepEqual(decodeStudioArguments(Choice, { mode: "off" }), { mode: "off" });
-  assert.throws(() => decodeStudioArguments(Choice, { mode: "maybe" }), /\/mode: Expected string to match/);
-  assert.throws(() => decodeStudioArguments(Choice, { mode: "on " }), /\/mode: Expected string to match/);
+  assert.throws(() => decodeStudioArguments(Choice, { mode: "maybe" }), /\/mode: must match pattern/);
+  assert.throws(() => decodeStudioArguments(Choice, { mode: "on " }), /\/mode: must match pattern/);
 });
 
 test("map_takes_any_name_and_refuses_a_value_that_does_not_match", () => {
   const Settings = Type.Object({ tools: studioMap(studioChoice(["on", "off"])) });
   assert.deepEqual(decodeStudioArguments(Settings, { tools: { a: "on", b: "off" } }), { tools: { a: "on", b: "off" } });
-  assert.throws(() => decodeStudioArguments(Settings, { tools: { a: true } }), /\/tools\/a: Expected string/);
-  assert.throws(() => decodeStudioArguments(Settings, { tools: ["on"] }), /\/tools: Expected object/);
+  assert.throws(() => decodeStudioArguments(Settings, { tools: { a: true } }), /\/tools\/a: must be string/);
+  assert.throws(() => decodeStudioArguments(Settings, { tools: ["on"] }), /\/tools: must be object/);
 });
 
 // One malformed call per tool that takes arguments, and the first mismatch it is refused with. The
 // tool gets no services: a call that reached its work would fail on them instead.
 const MALFORMED: Record<string, [JsonObject, RegExp]> = {
-  studio_get_agent_context: [{ agent_id: "a_1", sections: ["prompt"] }, /^\/sections\/0: Expected string to match/],
-  studio_list_routines: [{ paused: "yes" }, /^\/paused: Expected boolean$/],
-  studio_list_runs: [{ error_only: "true" }, /^\/error_only: Expected boolean$/],
+  studio_get_agent_context: [{ agent_id: "a_1", sections: ["prompt"] }, /^\/sections\/0: must match pattern/],
+  studio_list_routines: [{ paused: "yes" }, /^\/paused: must be boolean$/],
+  studio_list_runs: [{ error_only: "true" }, /^\/error_only: must be boolean$/],
   studio_get_run: [{ seq_start: 0 }, /^run_id is required$/],
-  studio_list_group_messages: [{ limit: 1.5 }, /^\/limit: Expected integer$/],
-  studio_list_task_revisions: [{ agent_id: "a_1", cursor: 2 }, /^\/cursor: Expected string$/],
-  studio_list_memory_revisions: [{ agent_id: "a_1", limit: "5" }, /^\/limit: Expected integer$/],
-  studio_get_memory_version: [{ agent_id: "a_1", revision_id: 3 }, /^\/revision_id: Expected string$/],
-  studio_find_artifacts: [{ level: "team" }, /^\/level: Expected string to match/],
-  studio_get_artifact: [{ display_path: ["notes/a.md"] }, /^\/display_path: Expected string$/],
+  studio_list_group_messages: [{ limit: 1.5 }, /^\/limit: must be integer$/],
+  studio_list_task_revisions: [{ agent_id: "a_1", cursor: 2 }, /^\/cursor: must be string$/],
+  studio_list_memory_revisions: [{ agent_id: "a_1", limit: "5" }, /^\/limit: must be integer$/],
+  studio_get_memory_version: [{ agent_id: "a_1", revision_id: 3 }, /^\/revision_id: must be string$/],
+  studio_find_artifacts: [{ level: "team" }, /^\/level: must match pattern/],
+  studio_get_artifact: [{ display_path: ["notes/a.md"] }, /^\/display_path: must be string$/],
   studio_list_file_changes: [{ limit: 5 }, /^display_path is required$/],
   studio_get_script: [{ agent_id: "a_1" }, /^name is required$/],
   studio_get_agent_access: [{ cursor: "0" }, /^agent_id is required$/],
   studio_request_connection_access: [{ connection_id: "c_1" }, /^reason is required$/],
   studio_call_connection_tool: [{ connection_id: "c_1" }, /^tool is required$/],
   studio_create_task_draft: [{ agent_id: "a_1", proposed_content: "x" }, /^rationale is required$/],
-  studio_list_guilds: [{ limit: "2" }, /^\/limit: Expected integer$/],
+  studio_list_guilds: [{ limit: "2" }, /^\/limit: must be integer$/],
   studio_get_collection: [{}, /^collection is required$/],
   studio_edit_memory: [{ agent_id: "a_1", content: "x", reason: "r" }, /^base_version is required$/],
-  studio_edit_note: [{ action: "create", level: "team", reason: "r" }, /^\/level: Expected string to match/],
-  studio_edit_guild: [{ about: 1, reason: "r" }, /^\/about: Expected string$/],
+  studio_edit_note: [{ action: "create", level: "team", reason: "r" }, /^\/level: must match pattern/],
+  studio_edit_guild: [{ about: 1, reason: "r" }, /^\/about: must be string$/],
   studio_edit_access: [
     { agent_id: "a_1", connections: { c_1: "yes" }, reason: "r" },
-    /^\/connections\/c_1: Expected string to match/,
+    /^\/connections\/c_1: must match pattern/,
   ],
   studio_edit_collection: [
     { action: "create", columns: [{ name: "a", type: "json", description: "d" }], reason: "r" },
-    /^\/columns\/0\/type: Expected string to match/,
+    /^\/columns\/0\/type: must match pattern/,
   ],
-  studio_edit_routine: [{ action: "rename", reason: "r" }, /^\/action: Expected string to match/],
+  studio_edit_routine: [{ action: "rename", reason: "r" }, /^\/action: must match pattern/],
 };
 
 test("every_tool_refuses_a_malformed_call_before_any_work", async () => {

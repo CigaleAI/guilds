@@ -1,4 +1,4 @@
-import { Type, type Static, type TObject } from "@sinclair/typebox";
+import { Type, type Static, type TObject } from "typebox";
 import type { ConversationTool } from "../conversation/runner.js";
 import type { RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";

@@ -1,6 +1,6 @@
 // The tools a connector's code runs: each one's parameters declared once as a TypeBox schema, and
 // every call's arguments decoded against it before the tool's work, as a native tool's are.
-import { Type, type Static, type TObject } from "@sinclair/typebox";
+import { Type, type Static, type TObject } from "typebox";
 import { decodeArguments } from "../lib/tool-schema.js";
 import { LIST_CAP, LIST_DEFAULT } from "./format.js";
 import { ConnectorError, type Adapter, type AdapterTool, type ConnectorContext, type Credentials } from "./types.js";

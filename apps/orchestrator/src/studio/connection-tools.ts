@@ -1,8 +1,9 @@
 // The Studio tools for reading through an MCP connection: asking the operator for read access and
 // calling a read-only tool on a granted connection.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { getStudioSession } from "../db/studio.js";
+import { JsonObjectSchema } from "../lib/json.js";
 import { studioTool } from "./arguments.js";
 import {
   STUDIO_CONNECTION_ACCESS_WIDGET,
@@ -64,7 +65,7 @@ export const studioRequestConnectionAccess: StudioTool = studioTool({
 const CallConnectionToolArguments = Type.Object({
   connection_id: Type.String({ description: "Granted connection id. Required." }),
   tool: Type.String({ description: "Namespaced tool name from studio_readable_tools, or the remote name. Required." }),
-  arguments: Type.Optional(Type.Object({}, { description: "Tool arguments. Defaults to {}." })),
+  arguments: Type.Optional(Type.With(JsonObjectSchema, { description: "Tool arguments. Defaults to {}." })),
 });
 type CallConnectionToolArguments = Static<typeof CallConnectionToolArguments>;
 

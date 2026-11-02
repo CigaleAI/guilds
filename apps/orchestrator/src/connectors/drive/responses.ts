@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 // The Drive API responses the connector reads, and the parts of a remote Drive tool result it
 // filters. Each object keeps the fields Drive sends beyond the ones named; Drive leaves out a

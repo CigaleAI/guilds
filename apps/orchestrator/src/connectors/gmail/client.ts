@@ -1,4 +1,4 @@
-import type { Static, TSchema } from "@sinclair/typebox";
+import type { Static, TSchema } from "typebox";
 import { AgentFileError, agentDisplayPath, writeAgentFile } from "../../lib/agent-file.js";
 import type { JsonObject } from "../../lib/json.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";

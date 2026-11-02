@@ -14,7 +14,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { Type, type Static, type TObject } from "@sinclair/typebox";
+import { Type, type Static, type TObject } from "typebox";
 import type { FunctionTool } from "../../lib/tool-schema.js";
 import { agents } from "./agents.js";
 import { artifacts } from "./artifacts.js";

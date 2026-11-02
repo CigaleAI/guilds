@@ -1,5 +1,5 @@
-import type { Static, TObject, TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import type { Static, TObject, TSchema } from "typebox";
+import { Value } from "typebox/value";
 import type { JsonObject } from "./json.js";
 
 /**
@@ -14,8 +14,8 @@ export function assertMatches<T extends TSchema>(
   if (Value.Check(schema, payload)) {
     return;
   }
-  const first = Value.Errors(schema, payload).First();
-  throw fail(first ? `${first.path || "/"}: ${first.message}` : "does not match");
+  const [first] = Value.Errors(schema, payload);
+  throw fail(first ? `${first.instancePath || "/"}: ${first.message}` : "does not match");
 }
 
 /**

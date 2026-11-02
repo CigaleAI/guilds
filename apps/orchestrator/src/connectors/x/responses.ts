@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 
 // The X API v2 responses the tools read. Each object keeps the fields X sends beyond the ones named.
 

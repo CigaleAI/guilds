@@ -1,6 +1,6 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Static, TSchema } from "@sinclair/typebox";
+import type { Static, TSchema } from "typebox";
 import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { clipRows, fmtNum, joinParts } from "../format.js";

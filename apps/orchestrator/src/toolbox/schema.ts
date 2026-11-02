@@ -1,6 +1,7 @@
 // What a tool offers the model: its function schema, built from the TypeBox schema of its
 // parameters, and the argument kinds a tool reads beside TypeBox's own.
-import { Kind, Type, type TObject, type TUnsafe } from "@sinclair/typebox";
+import type { TObject } from "typebox";
+import { Value } from "typebox/value";
 import { JsonValueSchema, type JsonValue } from "../lib/json.js";
 import {
   llmToolParameters,
@@ -38,10 +39,11 @@ export function toolFunctionSchema(name: string, description: string, parameters
 
 /**
  * An argument the tool takes as whatever JSON the model sends: it reads the value leniently, or
- * hands it on to the domain that parses it. The model is offered `offered`.
+ * hands it on to the domain that parses it. The decode checks only that the value is JSON; the
+ * schema serialises as `offered`, which is what the model is offered.
  */
-export function jsonArgument(offered: ToolSchema): TUnsafe<JsonValue> {
-  return Type.Unsafe<JsonValue>({ ...offered, [Kind]: JsonValueSchema[Kind] });
+export function jsonArgument(offered: ToolSchema): typeof JsonValueSchema {
+  return Object.defineProperty(Value.Clone(JsonValueSchema), "toJSON", { value: () => offered });
 }
 
 /** Whether a JSON value is a number. */

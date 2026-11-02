@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import Fastify from "fastify";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import fastifyWebsocket from "@fastify/websocket";
 import { artifactStore } from "./artifacts/store.js";

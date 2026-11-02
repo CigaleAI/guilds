@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { IssueError } from "../issues/index.js";
 import { nativeTool } from "./types.js";
 import { ToolUnavailableError } from "./errors.js";

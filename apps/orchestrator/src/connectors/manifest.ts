@@ -1,4 +1,4 @@
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import {
   ManifestSchema,
   SLUG_PATTERN,
@@ -231,8 +231,8 @@ function loadedManifest(source: ManifestSource, code: readonly AdapterTool[]): M
  */
 export function loadManifest(raw: JsonValue, folder?: string, code: readonly AdapterTool[] = []): Manifest {
   if (!Value.Check(ManifestSchema, raw)) {
-    const first = Value.Errors(ManifestSchema, raw).First();
-    const where = first ? `${first.path || "/"}: ${first.message}` : "invalid";
+    const [first] = Value.Errors(ManifestSchema, raw);
+    const where = first ? `${first.instancePath || "/"}: ${first.message}` : "invalid";
     throw new ManifestError(`connector manifest ${folder ?? ""} ${where}`.replace(/\s+/g, " ").trim());
   }
   if (folder !== undefined && raw.slug !== folder) {

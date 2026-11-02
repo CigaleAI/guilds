@@ -1,7 +1,7 @@
 // What a connector's client makes of its API's responses: the body of a success decoded once
 // with the schema of what the client reads, and the message of a failure.
-import type { Static, TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import type { Static, TSchema } from "typebox";
+import { Value } from "typebox/value";
 import { assertMatches } from "../lib/decode.js";
 
 /**

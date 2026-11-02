@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { SecretGrantRow, SecretRow } from "../db/secrets.js";
 import { iso } from "../db/views.js";
 
@@ -20,10 +20,12 @@ export const SecretAccessSchema = Type.Object({
 export type SecretAccessRequest = Static<typeof SecretAccessSchema>;
 
 /** A change to who gets a secret, which names `org_wide`. */
-export const SecretAccessChangeSchema = Type.Composite([
-  Type.Omit(SecretAccessSchema, ["org_wide"]),
-  Type.Object({ org_wide: Type.Union([Type.Boolean(), Type.Null()]) }),
-]);
+export const SecretAccessChangeSchema = Type.Evaluate(
+  Type.Intersect([
+    Type.Omit(SecretAccessSchema, ["org_wide"]),
+    Type.Object({ org_wide: Type.Union([Type.Boolean(), Type.Null()]) }),
+  ]),
+);
 
 /**
  * One guild or agent a secret is granted to, as a viewer sees it. A grant in a guild the viewer

@@ -1,7 +1,7 @@
 // The Studio tools for what a source-guild agent is offered: its native tools, scripts, secrets, and
 // connections, one script's source, and a proposed change to its access.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { AgentScript } from "../scripts/catalog.js";
 import { ScriptError } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../seed/catalog.js";

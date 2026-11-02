@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 import { JsonValueSchema } from "../../lib/json.js";
 
 // The Alchemy responses the tools read: the NFT API's, and the Solana DAS JSON-RPC's. Each object

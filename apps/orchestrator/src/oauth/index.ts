@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { Type, type Static, type TObject } from "@sinclair/typebox";
+import { Type, type Static, type TObject } from "typebox";
 import { keepMatching } from "../lib/decode.js";
 import { isObjectNode, type JsonValue } from "../lib/json.js";
 import { hereDir } from "../lib/paths.js";

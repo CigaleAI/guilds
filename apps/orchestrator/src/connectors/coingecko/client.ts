@@ -1,5 +1,5 @@
-import { Value } from "@sinclair/typebox/value";
-import type { Static, TSchema } from "@sinclair/typebox";
+import { Value } from "typebox/value";
+import type { Static, TSchema } from "typebox";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_CAP, LIST_DEFAULT, clipRows, downsample, fmtNum, joinParts, tsSec } from "../format.js";
 import { decodeResponse, type ConnectorApi } from "../response.js";

@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { ping, post, posts, search, user, XError, type ListPage } from "./client.js";
 import { listRows } from "../format.js";
 import { adapterTool, Paged, toolsAdapter, type PagedArguments } from "../tools.js";

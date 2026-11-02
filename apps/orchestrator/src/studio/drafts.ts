@@ -35,7 +35,7 @@ import {
   type EvidenceWarning,
 } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { keepMatching } from "../lib/decode.js";
 import { isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
 

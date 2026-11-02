@@ -1,7 +1,7 @@
 // The Studio tools for a source-guild agent's Memory: its versions, one version with its diff, and a
 // proposed replacement.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { operatorActor } from "../artifacts/actors.js";
 import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import type { AgentRow } from "../db/agents.js";

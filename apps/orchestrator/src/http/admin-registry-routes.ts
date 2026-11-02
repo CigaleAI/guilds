@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { catalogServerItem } from "../mcp/catalog.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import {

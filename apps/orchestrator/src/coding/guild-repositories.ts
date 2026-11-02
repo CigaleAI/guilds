@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { getMcpServer } from "../connectors/servers.js";
 import type { GuildRow } from "../db/guilds.js";
 import {

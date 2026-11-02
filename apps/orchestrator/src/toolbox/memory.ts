@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { ArtifactError } from "../artifacts/errors.js";
 import { validateMemory } from "../memory/index.js";
 import type { ToolServices } from "./services.js";

@@ -203,7 +203,7 @@ test("note, table, and routine tools each take a create, edit, or delete action"
     assert.deepEqual(schema.function?.parameters?.required, ["action", "reason"], name);
     await assert.rejects(
       studioToolMap().get(name)!.handler({} as never, {} as never, { action: "rename", reason: "r" }),
-      /^StudioUnprocessableError: \/action: Expected string to match/,
+      /^StudioUnprocessableError: \/action: must match pattern/,
       name,
     );
   }

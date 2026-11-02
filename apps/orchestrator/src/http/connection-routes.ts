@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import {
   callConnectionTool,
   deleteConnection,
@@ -12,6 +12,7 @@ import {
   viewConnection,
   type ConnectionServices,
 } from "../mcp/connections.js";
+import { JsonObjectSchema } from "../lib/json.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentOrg, currentUser } from "./identity.js";
 
@@ -49,7 +50,7 @@ const CredentialsLookupSchema = Type.Object({
 const LoginLookupQuery = Type.Object(LookupFields);
 
 /** A login's settings document, which the connector's settings schema checks. */
-const ConnectionSettingsSchema = Type.Object({ settings: Type.Optional(Type.Unknown()) });
+const ConnectionSettingsSchema = Type.Object({ settings: JsonObjectSchema });
 
 /** The connectors an organisation sees, and its members' logins to them: read, used, set up, and removed. */
 export async function registerConnectionRoutes(app: RouteApp, deps: AppDeps): Promise<void> {

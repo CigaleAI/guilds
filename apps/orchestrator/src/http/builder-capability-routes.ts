@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { CapabilityService } from "../capabilities/index.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { HttpError } from "./errors.js";

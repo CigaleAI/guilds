@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 // The Tavily responses the search tool reads. Each object keeps the fields Tavily sends beyond the
 // ones named.

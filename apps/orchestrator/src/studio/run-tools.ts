@@ -1,6 +1,6 @@
 // The Studio tools that read a source-guild agent's runs: run headers and one run's messages.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { getAgent } from "../db/agents.js";
 import { getRun, listMessages, listRunHeaders, type MessageRow, type RunHeaderRow } from "../db/runs.js";
 import { iso } from "../db/views.js";

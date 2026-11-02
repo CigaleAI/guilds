@@ -1,4 +1,4 @@
-import { Kind, Type, TypeRegistry } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 /** A value JSON carries: a string, number, boolean or null, or an array or object of them. */
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
@@ -29,15 +29,18 @@ export function isJsonObject(value: unknown): value is JsonObject {
   return Object.values(value).every((field) => field === undefined || isJsonValue(field));
 }
 
-// The kinds run isJsonValue and isJsonObject, so Value.Check agrees with the type at every depth.
-TypeRegistry.Set("JsonValue", (_schema, value) => isJsonValue(value));
-TypeRegistry.Set("JsonObject", (_schema, value) => isJsonObject(value));
+// Each schema refines a JSON Schema whose Static is the lib's type with the lib's predicate, so
+// Value.Check agrees with the type at every depth.
 
 /** The TypeBox schema of a JSON value, checked at every depth. */
-export const JsonValueSchema = Type.Unsafe<JsonValue>({ [Kind]: "JsonValue" });
+export const JsonValueSchema = Type.Refine(Type.Unsafe<JsonValue>({}), isJsonValue, () => "must be a JSON value");
 
 /** The TypeBox schema of a JSON object, checked at every depth. */
-export const JsonObjectSchema = Type.Unsafe<JsonObject>({ [Kind]: "JsonObject", type: "object" });
+export const JsonObjectSchema = Type.Refine(
+  Type.Unsafe<JsonObject>({ type: "object" }),
+  isJsonObject,
+  () => "must be a JSON object",
+);
 
 /** Whether a JSON value is an object, and not an array or a scalar. */
 export function isObjectNode(value: JsonValue): value is JsonObject {

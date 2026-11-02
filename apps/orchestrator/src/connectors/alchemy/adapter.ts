@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { AlchemyError, CHAIN_DEFAULT, ChainName, collection, holdings, nft, ping, type ToolOptions } from "./client.js";
 import { given, listRows } from "../format.js";
 import { adapterTool, Paged, toolsAdapter } from "../tools.js";

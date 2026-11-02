@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
 import { isJsonObject, isObjectNode, type JsonObject } from "../lib/json.js";

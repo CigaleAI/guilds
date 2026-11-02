@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { githubInstallationPickerHtml, oauthCallbackHtml } from "../oauth/html.js";
 import { oauthCallbackUrl } from "../oauth/index.js";

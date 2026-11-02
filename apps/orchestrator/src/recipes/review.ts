@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { RecipeError } from "./errors.js";
 import { roleBrowses } from "./prepare.js";
 import type { FieldAuthor, RecipeConnection, RecipeDocument, RecipeRole, RecipeSchedule } from "../db/schema/index.js";

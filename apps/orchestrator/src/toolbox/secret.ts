@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { CredentialError, SECRET_DESCRIPTION_MAX, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
 import { nativeTool } from "./types.js";
 import { ToolArgumentError, ToolUnavailableError } from "./errors.js";

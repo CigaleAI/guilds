@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 
 // The DexPaprika responses the tools read. Each object keeps the fields DexPaprika sends beyond
 // the ones named.

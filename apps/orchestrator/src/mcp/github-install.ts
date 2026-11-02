@@ -1,6 +1,6 @@
 // A GitHub App sign-in's installation: traded from the user's code, picked when the user
 // reaches several, or installed when they reach none.
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { getMcpServer } from "../connectors/servers.js";
 import {
   getMcpConnectionByOauthState,

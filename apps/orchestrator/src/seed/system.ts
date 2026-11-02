@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type pg from "pg";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";

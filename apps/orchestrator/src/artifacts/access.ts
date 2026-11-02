@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { ArtifactError } from "./errors.js";
 import {
   isAccessMode,

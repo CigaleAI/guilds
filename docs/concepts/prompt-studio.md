@@ -600,8 +600,8 @@ every native tool's arguments go through
   name, such as `run_id is required`.
 - A call whose arguments do not match is refused with the first
   mismatch, named by its JSON pointer, such as
-  `/limit: Expected integer` or
-  `/action: Expected string to match '^(?:create|edit|delete)$'`.
+  `/limit: must be integer` or
+  `/action: must match pattern "^(?:create|edit|delete)$"`.
 
 The edit tools' parameters live in
 `apps/orchestrator/src/studio/edit-arguments.ts`. When the operator

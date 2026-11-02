@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { ScheduleRow } from "../db/schedules.js";
 import { iso } from "../db/views.js";
 import { rowDescription } from "../schedules/item.js";

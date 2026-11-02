@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 // The System One replies the client reads. An object may carry fields beyond the ones named, which
 // the client does not read; an optional field that does not have its shape is read as absent.

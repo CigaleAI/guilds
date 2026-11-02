@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { decryptPayload } from "../credentials/crypto.js";
 import type { OrgModelProviderRow } from "../db/orgs.js";
 import { keepMatching } from "../lib/decode.js";

@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 // The arguments of the Drive tools the connector runs itself. Drive's listing offers
 // `create_file` and `download_file_content` with the parameters declared here. It offers the

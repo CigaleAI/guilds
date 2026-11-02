@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { harnessLaunch } from "../coding/harness-models.js";
 import type { Harness } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
