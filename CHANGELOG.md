@@ -27,8 +27,9 @@ and files uploaded to `POST /api/org/files` with optional
 `X-Expected-Version`, `X-Access-Type`, `X-Access-Id`, and
 `X-Access-Mode`; an expected version of `0` is 409 `artifact already
 exists` on a live item and any other is 409 `version conflict` unless
-it is the live version, and the app's New note and upload dialogs
-send `0`; the note routes under
+it is the live version; the app's New note dialog sends `0`, and its
+upload dialog the version of the file of that name in the page's
+list, or `0` when the list holds none; the note routes under
 `/api/guilds/:id/notes/*` and `/api/agents/:id/notes/*` (but `task.md`
 and `memory.md`) and the upload routes `POST /api/guilds/:id/files` and
 `POST /api/agents/:id/files` are gone. A guild's page lists the notes

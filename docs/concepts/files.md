@@ -111,9 +111,17 @@ In both:
   The row starts as the browsed scope at `write`: the agent on
   **Agent**, the guild on **Guild**, the organisation on **Org**. Any
   subject and mode can be picked instead. It refuses an empty file, a
-  file over 10 MiB, or no description before it sends anything. It
-  creates a new file only: a file of the same name in the organisation
-  is refused, and the refusal shows. The media type is the one the
+  file over 10 MiB, or no description before it sends anything. The
+  dialog reads: "A file of the same name in this list is replaced and
+  keeps its access list; a name another file of the organisation holds
+  is refused." It sends the version of the file of that name in the
+  page's list, so it replaces that version, or `0` when the list holds
+  no file of that name. A name another file of the organisation holds
+  is then refused with "A file with this name already exists in the
+  organisation, outside this list.", and a file replaced since the
+  list loaded with "The file was replaced since this list loaded.
+  Upload again to replace the new version." Every files list refreshes
+  after an upload, refused or not. The media type is the one the
   browser gives.
 
 A download is always a saved file, never a page the browser renders,
@@ -200,7 +208,8 @@ means the file must not exist yet, and a live file of that name is
 file's version, else 409 `version conflict`; left out, the upload
 replaces a file of that name unchecked. Another value is 422
 `X-Expected-Version must be a whole number`. The upload dialog sends
-`0`. A new file starts
+the version of the file of that name in the page's list, or `0` when
+the list holds none. A new file starts
 with the row the three `X-Access-*` headers name, a subject type
 (`org`, `guild`, or `agent`), its id, and a mode; without them the
 organisation writes it. Some of the three without the others is 422

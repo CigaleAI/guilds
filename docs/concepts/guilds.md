@@ -215,9 +215,15 @@ A bar at the bottom shows **Unsaved changes**, with **Discard** and
 **Save**. **Save** writes the name, purpose, limits, routines,
 visibility, and commit author email together.
 
-**Delete guild** explains that the guild's group chat and its agents,
-with their sessions, notes, and homes, are removed, and that their
-machines stay. The confirm asks for the guild's name to be typed. The
+**Delete guild** explains: "Deleting the guild removes its group
+chat, and its agents with their sessions, Memory and homes. Their
+machines stay. Notes and files only the guild or its agents reached
+are deleted too; the others stay, without the access rows that named
+them." The confirm reads: "Its group chat, agents, their Memory and
+agent homes are removed, with the access rows naming the guild or its
+agents and the notes and files only they reached. Other notes and
+files stay. This can't be undone." It asks for the guild's name to be
+typed. The
 app then returns to `/`.
 
 ## Rules and limits
