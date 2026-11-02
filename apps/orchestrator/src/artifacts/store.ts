@@ -4,7 +4,7 @@ import type { AgentViewerMode, GuildViewerMode, PageArtifactRow, SectionedArtifa
 import { countLiveNotesAndFiles, type ArtifactRow } from "../db/artifacts.js";
 import { formatOperationalTimestamp } from "../db/codecs.js";
 import type { RecordRow } from "../db/collections.js";
-import type { GuildRow } from "../db/guilds.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
 import type { ArtifactContent, CollectionColumn, RecordBody, RecordValue, AccessMode } from "../db/schema/index.js";
 import type { Queryable } from "../db/pg.js";
 import { reachedMode } from "./access.js";
@@ -160,6 +160,16 @@ export function reachesAgent(actor: ArtifactActor, agentId: string): boolean {
     return !actor.hidden.agentIds.includes(agentId);
   }
   return agentId === actor.agentId;
+}
+
+/** The guild of the organisation `guildId` names, refused when it is unknown or hidden from the actor. */
+export async function requireGuild(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<string> {
+  const id = String(guildId ?? "").trim();
+  const guild = await getGuild(store.db, id);
+  if (!guild || guild.org_id !== actor.orgId || actor.hidden.guildIds.includes(id)) {
+    throw new ArtifactError("unknown guild", 404);
+  }
+  return id;
 }
 
 /**

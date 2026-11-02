@@ -24,7 +24,6 @@ import {
   type CollectionQueryRow,
 } from "../db/collections.js";
 import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
-import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
 import type { JsonValue } from "../lib/json.js";
@@ -48,7 +47,7 @@ import {
 import { ArtifactError } from "./errors.js";
 import { collectionAccessItem, setAccessRow, writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
-import type { ArtifactStore, CollectionDescription, CollectionView } from "./store.js";
+import { requireGuild, type ArtifactStore, type CollectionDescription, type CollectionView } from "./store.js";
 import {
   COLLECTION_NAME_RE,
   LIVE_COLLECTIONS_MAX,
@@ -152,16 +151,6 @@ export function collectionView(row: CollectionQueryRow, access: AccessMode, coun
     updated_at: formatOperationalTimestamp(row.updated_at),
     ...(count !== undefined ? { count } : {}),
   };
-}
-
-/** The guild of the organisation `guildId` names, refused when it is unknown or hidden from the actor. */
-async function requireGuild(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<string> {
-  const id = String(guildId ?? "").trim();
-  const guild = await getGuild(store.db, id);
-  if (!guild || guild.org_id !== actor.orgId || actor.hidden.guildIds.includes(id)) {
-    throw new ArtifactError("unknown guild", 404);
-  }
-  return id;
 }
 
 /** The actor's mode on a collection from its access list. The operator writes everything. */
