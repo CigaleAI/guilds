@@ -554,8 +554,33 @@ test("the list-only migration rewrites each moved path once and only where it is
       `INSERT INTO public.recipes (id, org_id, name, body, source_kind, created_at, updated_at) VALUES ('rcp_1', 'org_1', 'desk', $1, 'file', $2, $2)`,
       [JSON.stringify(recipe), at(0)],
     );
+    const colliding = {
+      notes: [
+        { id: "s", level: "agent", role: "scout", key: "log.md", body: "Scout.", kind: "seed", writers: [] },
+        { id: "w", level: "agent", role: "writer", key: "log.md", body: "Writer.", kind: "seed", writers: [] },
+        { id: "g", level: "guild", key: "log.md", body: "Guild.", kind: "seed", writers: [] },
+        { id: "o", level: "org", key: "log.md", body: "Org.", kind: "seed", writers: [] },
+      ],
+      roles: [{ role: "writer", task: { body: "![[agent/writer/log.md]] ![[agent/scout/log.md]] guild/log.md org/log.md", embeds: ["agent/writer/log.md"] } }],
+    };
+    await pool.query(
+      `INSERT INTO public.recipes (id, org_id, name, body, source_kind, created_at, updated_at) VALUES ('rcp_2', 'org_1', 'logs', $1, 'file', $2, $2)`,
+      [JSON.stringify(colliding), at(0)],
+    );
 
     await applyMigrations(pool);
+
+    const logs = (await pool.query<{ body: { notes: Array<{ id: string; key: string }>; roles: Array<{ task: { body: string; embeds: string[] } }> } }>(
+      "SELECT body FROM public.recipes WHERE id = 'rcp_2'",
+    )).rows[0]?.body;
+    assert.deepEqual(logs?.notes.map((note) => [note.id, note.key]), [
+      ["s", "log.md"],
+      ["w", "writer-log.md"],
+      ["g", "guild-log.md"],
+      ["o", "org-log.md"],
+    ]);
+    assert.equal(logs?.roles[0]?.task.body, "![[org/writer-log.md]] ![[org/log.md]] org/guild-log.md org/org-log.md");
+    assert.deepEqual(logs?.roles[0]?.task.embeds, ["org/writer-log.md"]);
 
     const keys = await pool.query<{ id: string; key: string }>("SELECT id, key FROM public.artifacts WHERE id IN ('art_agent_plan', 'art_org_plan')");
     assert.deepEqual(Object.fromEntries(keys.rows.map((row) => [row.id, row.key])), { art_agent_plan: "plan.md", art_org_plan: "org-plan.md" });

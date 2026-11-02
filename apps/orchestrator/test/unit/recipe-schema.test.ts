@@ -164,6 +164,15 @@ test("a note's guild mode is read or write and its writers a list", () => {
   assert.throws(() => parseRecipe(withNote({ writers: "reader" })), /notes\[0\]\.writers must be an array/);
 });
 
+test("a recipe names each note key once", () => {
+  const recipe = fixtureDeskRecipe() as unknown as Record<string, unknown>;
+  recipe.notes = [
+    { id: "a", key: "log.md", body: "A.", kind: "seed" },
+    { id: "b", key: "log.md", body: "B.", kind: "seed" },
+  ];
+  assert.throws(() => parseRecipe(recipe), /duplicate note key log\.md/);
+});
+
 test("a note has no level or role", () => {
   assert.throws(() => parseRecipe(withNote({ level: "guild" })), /unknown key notes\[0\]\.level; a note has no level or role/);
   assert.throws(() => parseRecipe(withNote({ role: "reader" })), /unknown key notes\[0\]\.role; a note has no level or role/);

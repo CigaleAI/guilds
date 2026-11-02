@@ -295,6 +295,54 @@ ALTER TABLE public.artifacts ADD CONSTRAINT artifacts_kind_text CHECK (
 	    AND title IS NOT NULL AND search_text IS NOT NULL AND mime IS NOT NULL AND bytes IS NOT NULL AND bytes > 0)
 );
 --> statement-breakpoint
+-- A recipe's notes become one per key: the first note of a key keeps it, each later one takes its
+-- role's name (`agent` without one, `guild`, or `org`) as a prefix, numbered when that is taken too,
+-- and every path the recipe names it by follows it.
+DO $$
+DECLARE
+  recipe record;
+  note record;
+  originals text[];
+  assigned text[];
+  prefix text;
+  candidate text;
+  n integer;
+  notes jsonb;
+BEGIN
+  FOR recipe IN SELECT id, body FROM public.recipes WHERE jsonb_typeof(body->'notes') = 'array' LOOP
+    originals := ARRAY(SELECT e->>'key' FROM jsonb_array_elements(recipe.body->'notes') AS t(e));
+    assigned := ARRAY[]::text[];
+    notes := '[]'::jsonb;
+    FOR note IN SELECT e AS n, ord FROM jsonb_array_elements(recipe.body->'notes') WITH ORDINALITY AS t(e, ord) ORDER BY ord LOOP
+      candidate := note.n->>'key';
+      IF candidate = ANY (assigned) THEN
+        prefix := CASE note.n->>'level'
+          WHEN 'agent' THEN COALESCE(NULLIF(note.n->>'role', ''), 'agent')
+          WHEN 'guild' THEN 'guild'
+          ELSE 'org'
+        END;
+        candidate := prefix || '-' || (note.n->>'key');
+        n := 1;
+        WHILE candidate = ANY (assigned) OR candidate = ANY (originals) LOOP
+          n := n + 1;
+          candidate := prefix || '-' || n || '-' || (note.n->>'key');
+        END LOOP;
+      END IF;
+      assigned := assigned || candidate;
+      INSERT INTO path_moves (scope, token, old_path, new_path)
+      SELECT 'recipe:' || recipe.id, chr(1) || 'note' || note.ord || chr(2), old_path, 'org/' || candidate
+        FROM (SELECT CASE note.n->>'level'
+                       WHEN 'agent' THEN 'agent/' || COALESCE(NULLIF(note.n->>'role', ''), '_') || '/' || (note.n->>'key')
+                       WHEN 'guild' THEN 'guild/' || (note.n->>'key')
+                       ELSE 'org/' || (note.n->>'key')
+                     END AS old_path) p
+       WHERE old_path <> 'org/' || candidate;
+      notes := notes || jsonb_build_array(jsonb_set(note.n, '{key}', to_jsonb(candidate)));
+    END LOOP;
+    UPDATE public.recipes SET body = jsonb_set(body, '{notes}', notes) WHERE id = recipe.id;
+  END LOOP;
+END $$;
+--> statement-breakpoint
 -- A recipe note has no level: an agent note's role writes it, a guild note's guild writes it, and an
 -- organisation note keeps the guild's read it had by default.
 UPDATE public.recipes r
@@ -316,11 +364,12 @@ UPDATE public.recipes r
        FROM jsonb_array_elements(r.body->'notes') WITH ORDINALITY AS e(n, ord)))
  WHERE jsonb_typeof(r.body->'notes') = 'array';
 --> statement-breakpoint
--- A recipe names a note as `org/<key>`: the `agent/<role>/` and `guild/` paths go, in every
--- string of the recipe as it reads decoded.
-UPDATE public.recipes
-   SET body = pg_temp.rewrite_json(body, 'recipe:' || id, true)
- WHERE body::text ~ '(agent/[a-z][a-z0-9-]{0,62}|guild)/';
+-- A recipe names a note as `org/<key>`: each renamed note's paths follow it, then the remaining
+-- `agent/<role>/` and `guild/` paths go, in every string of the recipe as it reads decoded.
+UPDATE public.recipes r
+   SET body = pg_temp.rewrite_json(r.body, 'recipe:' || r.id, true)
+ WHERE r.body::text ~ '(agent/[a-z][a-z0-9-]{0,62}|guild)/'
+    OR EXISTS (SELECT 1 FROM path_moves m WHERE m.scope = 'recipe:' || r.id);
 --> statement-breakpoint
 -- A pending apply's preview lists its notes without a level or a role.
 UPDATE public.recipe_applies a

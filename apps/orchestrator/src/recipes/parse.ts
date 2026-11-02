@@ -18,6 +18,7 @@ import {
   RecipeSchema,
   type RecipeCollection,
   type RecipeDocument,
+  type RecipeNote,
   type RecipeRole,
 } from "../db/schema/index.js";
 import { RECIPE_BODY_MAX_BYTES, RECIPE_LIST_MAX, RECIPE_NOTES_MAX, RECIPE_ROLES_MAX, RECIPE_VERSION } from "./schema.js";
@@ -97,6 +98,19 @@ function parseCollections(items: unknown[]): RecipeCollection[] {
   return collections;
 }
 
+/** The notes, each key once: a key is one note of the organisation the recipe is applied in. */
+function parseNotes(items: unknown[]): RecipeNote[] {
+  const notes = items.map((item, index) => parseNote(item, index));
+  const keys = new Set<string>();
+  for (const note of notes) {
+    if (keys.has(note.key)) {
+      throw new RecipeError(`duplicate note key ${note.key}`);
+    }
+    keys.add(note.key);
+  }
+  return notes;
+}
+
 /** Refuses more collections, connections, secrets, external cards or notes than a recipe may hold. */
 function assertListCaps(document: ReturnType<typeof checkedDocument>): void {
   const capped = [document.collections, document.connections, document.secrets, document.external];
@@ -119,7 +133,7 @@ export function parseRecipe(input: unknown): RecipeDocument {
     guild: document.guild,
     roles,
     collections: parseCollections(document.collections),
-    notes: document.notes.map(parseNote),
+    notes: parseNotes(document.notes),
     connections: document.connections.map(parseConnection),
     secrets: document.secrets.map(parseSecret),
     external: document.external.map(parseExternal),
