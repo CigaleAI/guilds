@@ -302,8 +302,9 @@ function deepen(
 export type ReferenceDeps = { db: Queryable; artifacts: ArtifactStore };
 
 /**
- * What every Task and file in a guild's state embeds or names, read as `actor`: the guild's
- * agents' notes, the guild's and organisation's notes and tables, and what their embeds reach.
+ * What every Task and file in a guild's state embeds or names, read as `actor`: the notes whose
+ * access list names the guild, one of its agents, or the organisation, the guild's and the
+ * organisation's tables, and what their embeds reach.
  * Each Task's run is walked as its agent, so an embed the agent cannot read shows as broken.
  */
 export async function loadGuildReferences(
