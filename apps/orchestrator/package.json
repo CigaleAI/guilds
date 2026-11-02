@@ -119,7 +119,6 @@
     "@sentry/node": "^10.75.0",
     "@sentry/node-native": "^10.75.0",
     "@sentry/profiling-node": "^10.75.0",
-    "@sinclair/typebox": "^0.34.52",
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2",
     "fastbrowse": "^0.9.0",
@@ -127,6 +126,7 @@
     "js-tiktoken": "^1.0.21",
     "openai": "^7.15.0",
     "pg": "^8.23.0",
+    "typebox": "^1.3.31",
     "undici": "^8.10.2",
     "ws": "^8.18.3"
   },

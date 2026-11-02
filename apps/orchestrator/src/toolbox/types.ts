@@ -1,4 +1,4 @@
-import type { Static, TObject } from "@sinclair/typebox";
+import type { Static, TObject } from "typebox";
 import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
@@ -229,7 +229,7 @@ export type NativeTool<P extends TObject> = {
   /** What the function schema says the tool does; `description` when it is the same. */
   summary?: string;
   parameters: P;
-  handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation<Static<P>>) => Promise<string>;
+  handler: (services: ToolServices, run: ToolRun, hooks: ToolHooks, call: ToolInvocation<JsonObject & Static<P>>) => Promise<string>;
 };
 
 /**
@@ -245,7 +245,7 @@ export function decodeToolArguments<P extends TObject>(parameters: P, args: Json
 function assertDecoded<P extends TObject>(
   parameters: P,
   call: ToolInvocation,
-): asserts call is ToolInvocation & ToolInvocation<Static<P>> {
+): asserts call is ToolInvocation & ToolInvocation<JsonObject & Static<P>> {
   call.arguments = decodeToolArguments(parameters, call.arguments);
 }
 

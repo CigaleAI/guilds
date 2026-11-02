@@ -1,6 +1,6 @@
 // The Studio tools for a source-guild agent's standing task: its prior versions and a task draft.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { hashArtifactContent } from "../artifacts/store.js";
 import { listAgentTaskRevisions } from "../db/agents.js";
 import { capBytes } from "../lib/bytes.js";

@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { Paged } from "../tools.js";
 
 // The parameters of the Gmail tools: each one's single declaration, which the loaded manifest

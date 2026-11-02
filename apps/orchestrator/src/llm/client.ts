@@ -1,5 +1,5 @@
-import { Type, type Static, type TObject } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static, type TObject } from "typebox";
+import { Value } from "typebox/value";
 import OpenAI from "openai";
 import type { Stream } from "openai/streaming";
 import { ReasoningDetailFields, type ReasoningDetail } from "../db/schema/index.js";

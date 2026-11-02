@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { FastifyRequest } from "fastify";
 import { requireVisibleAgent } from "../agents/access.js";
 import { loadOperatorActor } from "../artifacts/actors.js";

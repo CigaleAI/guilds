@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import type { OwnerScope } from "../credentials/validate.js";
 import type {

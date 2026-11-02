@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { NAME_RE } from "../lib/names.js";
 import { numberOrNull } from "../lib/numbers.js";
 import { isHarness } from "../coding/harnesses.js";

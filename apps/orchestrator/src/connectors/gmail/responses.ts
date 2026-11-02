@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 // The Gmail responses the tools read, each field as Gmail sends it. Gmail leaves out a field it
 // has no value for rather than send null; each object keeps the fields Gmail sends beyond the
@@ -13,15 +13,18 @@ export type Header = Static<typeof Header>;
 const PartBody = Type.Object({ data: Text, size: Type.Optional(Type.Number()), attachmentId: Text });
 
 /** A message part: text, an attachment, or a container of parts. */
-export const MessagePart = Type.Recursive((Part) =>
-  Type.Object({
-    partId: Text,
-    mimeType: Text,
-    filename: Text,
-    headers: Type.Optional(Type.Array(Header)),
-    body: Type.Optional(PartBody),
-    parts: Type.Optional(Type.Array(Part)),
-  }),
+export const MessagePart = Type.Cyclic(
+  {
+    MessagePart: Type.Object({
+      partId: Text,
+      mimeType: Text,
+      filename: Text,
+      headers: Type.Optional(Type.Array(Header)),
+      body: Type.Optional(PartBody),
+      parts: Type.Optional(Type.Array(Type.Ref("MessagePart"))),
+    }),
+  },
+  "MessagePart",
 );
 export type MessagePart = Static<typeof MessagePart>;
 

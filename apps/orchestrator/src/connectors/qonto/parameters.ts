@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 // The parameters of the Qonto tools: each one's single declaration, which the loaded manifest
 // offers as the tool's input_schema.

@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 import { type ChangeActor, runActor } from "../lib/change-actor.js";
 import { assertMatches } from "../lib/decode.js";
 import { ScheduleError } from "../schedules/cron.js";

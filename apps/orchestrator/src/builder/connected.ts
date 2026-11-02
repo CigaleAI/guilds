@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
 import { getMcpServer, getMcpServerBySlug, listServers, type LoadedConnector } from "../connectors/servers.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";

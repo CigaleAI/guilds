@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { FastifyRequest } from "fastify";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import type { ArtifactActor } from "../artifacts/types.js";

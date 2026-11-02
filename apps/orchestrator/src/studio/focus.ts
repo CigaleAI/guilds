@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { ArtifactError } from "../artifacts/errors.js";
 import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { artifactAt, parseActorPath } from "../artifacts/notes.js";

@@ -1,5 +1,5 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static, type TSchema } from "typebox";
+import { Value } from "typebox/value";
 import { assertMatches } from "../../lib/decode.js";
 import type { JsonObject } from "../../lib/json.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
@@ -35,10 +35,10 @@ const CHAIN_NAMES = [
   Type.Literal("ink"),
   Type.Literal("robinhood"),
   Type.Literal("solana"),
-];
+] as const;
 
 /** A chain the tools take, by the name a call gives it; a call that names none is on ethereum. */
-export const ChainName = Type.Union(CHAIN_NAMES, {
+export const ChainName = Type.Union([...CHAIN_NAMES], {
   description: `${CHAIN_NAMES.map((name) => name.const).join(", ")}. Default ethereum.`,
 });
 

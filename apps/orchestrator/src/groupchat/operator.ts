@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
 import type { GroupMessageView } from "../db/views.js";

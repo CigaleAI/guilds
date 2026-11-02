@@ -27,7 +27,7 @@ import { CORE_STATE_KEYS } from "../../src/state/index.js";
 import { ConnectorError, type ConnectorContext, type ConnectorTool, type RemoteSession } from "../../src/connectors/types.js";
 import { adapterTool, toolsAdapter } from "../../src/connectors/tools.js";
 import { offeredParameters } from "../../src/lib/tool-schema.js";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import drive from "../../src/connectors/drive/adapter.js";
 import opensea from "../../src/connectors/opensea/adapter.js";
 import { McpError } from "../../src/mcp/errors.js";

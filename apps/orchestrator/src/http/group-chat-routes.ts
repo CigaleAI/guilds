@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { requireAdministeredGuild, requireVisibleGuild } from "../guilds/access.js";
 import {
   groupChatOf,

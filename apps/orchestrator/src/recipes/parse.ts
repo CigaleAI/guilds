@@ -1,4 +1,4 @@
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import { RecipeError } from "./errors.js";
 import { asBool, asString, assertKeys, assertObject } from "./parse-fields.js";
 import type { AccessEdit } from "./access-edits.js";
@@ -48,8 +48,8 @@ function checkedDocument(input: unknown) {
   }
   assertKeys(assertObject(input, "$"), RECIPE_TOP_KEYS, "$");
   if (!Value.Check(RecipeSchema, input)) {
-    const first = Value.Errors(RecipeSchema, input).First();
-    throw new RecipeError(first ? `${first.path || "$"} ${first.message}` : "recipe is invalid");
+    const [first] = Value.Errors(RecipeSchema, input);
+    throw new RecipeError(first ? `${first.instancePath || "$"} ${first.message}` : "recipe is invalid");
   }
   if (input.version !== RECIPE_VERSION) {
     throw new RecipeError(

@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 
 // The TwitterAPI.io responses the tools read. Each object keeps the fields TwitterAPI.io sends
 // beyond the ones named. A user comes in two shapes: the camelCase user info of a profile, a

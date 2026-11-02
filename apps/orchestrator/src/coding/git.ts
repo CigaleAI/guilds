@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { GithubInstallationGoneError, parseGithubUrl, type TokenPermissions } from "../github/index.js";
 import {
   loginAccount,

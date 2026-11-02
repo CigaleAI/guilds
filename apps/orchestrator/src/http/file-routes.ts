@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { ArtifactFiles, type FileView } from "../artifacts/files.js";
 import {

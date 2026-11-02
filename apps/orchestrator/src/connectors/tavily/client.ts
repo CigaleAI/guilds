@@ -1,4 +1,4 @@
-import { Value } from "@sinclair/typebox/value";
+import { Value } from "typebox/value";
 import type { FetchFn } from "../../net/http.js";
 import { decodeResponse, type ConnectorApi } from "../response.js";
 import { ErrorBody, ErrorDetail, SearchResponse } from "./responses.js";

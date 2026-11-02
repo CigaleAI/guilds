@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { commandOutput, executeCommand } from "./shell.js";
 import { nativeTool, type ToolHooks, type ToolInvocation, type ToolRun } from "./types.js";
 

@@ -15,7 +15,7 @@ import {
   text,
   unique,
 } from "drizzle-orm/pg-core";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { sql } from "drizzle-orm";
 import type { FunctionTool } from "../../lib/tool-schema.js";
 import { timestamptz } from "./columns.js";

@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { isSystemOfRecord, storageHint } from "../connectors/builder.js";
 import { connectorFacts, type ConnectorFacts, type LoadedConnector } from "../connectors/servers.js";
 import { oauthSetupState } from "../oauth/index.js";

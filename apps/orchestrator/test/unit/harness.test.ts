@@ -900,7 +900,7 @@ describe("code_task arguments", () => {
     assert.throws(() => decoded("a.md"), (error) => error instanceof ToolArgumentError && error.message.startsWith("/notes:"));
     assert.throws(() => decoded(["a.md", 1]), (error) => error instanceof ToolArgumentError && error.message.startsWith("/notes/1:"));
     const { ctx } = context(new HostCodeSandbox());
-    assert.match((await codeTask(ctx, { brief: "x", notes: [1] })).text, /^ERROR: \/notes\/0: Expected string/);
+    assert.match((await codeTask(ctx, { brief: "x", notes: [1] })).text, /^ERROR: \/notes\/0: must be string/);
   });
 
   test("timeout_minutes defaults to 30 and is kept between 1 and 60 whole minutes", () => {

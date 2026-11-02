@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { guildIssues } from "../issues/index.js";
 import { changeIssueStatus, resolveGuildIssues, type IssueWriteDeps } from "../issues/operator.js";

@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { isJsonObject, type JsonObject, type JsonValue } from "../lib/json.js";
 import { ScriptError, validateScriptParameters } from "../scripts/validation.js";
 import type { AgentScript } from "../scripts/catalog.js";

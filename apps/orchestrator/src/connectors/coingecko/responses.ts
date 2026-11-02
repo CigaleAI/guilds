@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 
 // The CoinGecko responses the tools read. Each object keeps the fields CoinGecko sends beyond the
 // ones named.

@@ -1,5 +1,5 @@
 /** The message a run or a coach conversation keeps, and the metadata stored beside it. */
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { JsonObject } from "../../lib/json.js";
 import type { Harness, RunTaskSource } from "./agents.js";
 

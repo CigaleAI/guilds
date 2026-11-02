@@ -114,9 +114,9 @@ offered and the decode its arguments pass before the handler runs:
 
 - An optional argument sent as `null` is left out.
 - A required argument left out is refused as `<name> is required`.
-- An argument of another type, or outside the range its schema states,
-  is refused naming it by its JSON pointer, such as
-  `/max_steps: Expected integer to be less or equal to 100`.
+- An argument of another type, outside the range its schema states,
+  or not one of the values its schema lists, is refused naming it by
+  its JSON pointer, such as `/max_steps: must be <= 100`.
 
 A refused call does nothing. An argument the tool hands on to the part
 of the orchestrator that reads it, such as a record's `where`, `id`

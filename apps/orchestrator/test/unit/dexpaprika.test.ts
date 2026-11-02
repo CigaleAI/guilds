@@ -226,7 +226,7 @@ test("search refuses a body that is not JSON or does not match its schema", asyn
   );
   await assert.rejects(
     () => callDexPaprika("search", { query: "sol" }, answering({ json: { tokens: [{ id: "sol", price_usd: { usd: 1 } }] } })),
-    refused(null, /^DexPaprika returned an unexpected response at \/tokens: /),
+    refused(null, /^DexPaprika returned an unexpected response at \/tokens\/0\/price_usd: /),
   );
   await assert.rejects(
     () => callDexPaprika("search", { query: "sol" }, answering({ text: "not json" })),

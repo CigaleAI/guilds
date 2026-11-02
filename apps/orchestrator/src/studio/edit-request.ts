@@ -2,8 +2,8 @@
 // its line counts, and the widget the turn pauses on until the operator applies or declines it.
 
 import { createHash } from "node:crypto";
-import { Type, type Static } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import type { JsonValue } from "../lib/json.js";
 import { CATALOG_KINDS } from "../access/index.js";

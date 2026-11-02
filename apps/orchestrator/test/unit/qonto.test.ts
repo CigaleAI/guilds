@@ -203,7 +203,7 @@ test("list_missing_invoices refuses a transaction that does not match its schema
       ),
     (error: unknown) =>
       error instanceof QontoError &&
-      /^Qonto returned an unexpected response at \/transactions: /.test(error.message),
+      /^Qonto returned an unexpected response at \/transactions\/0\/amount: must be number$/.test(error.message),
   );
 });
 

@@ -1,7 +1,7 @@
 // The Studio tools for guilds: the source guild's public history, about, and description, the
 // organisation's other guilds, and a proposed change to the source guild's text.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";

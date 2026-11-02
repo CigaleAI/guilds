@@ -1,4 +1,4 @@
-import type { Static, TObject } from "@sinclair/typebox";
+import type { Static, TObject } from "typebox";
 import {
   listBankAccounts,
   listMissingInvoices,

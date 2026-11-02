@@ -1,6 +1,6 @@
 import { SLUG_PATTERN } from "../db/schema/index.js";
 import { createPrivateKey, createPublicKey, sign, verify, type KeyObject } from "node:crypto";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { assertMatches } from "../lib/decode.js";
 import { dumpsCompact } from "../lib/json.js";
 

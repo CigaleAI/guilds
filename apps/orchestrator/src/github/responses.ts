@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 
 // The GitHub replies this module reads. Each object keeps the fields GitHub sends beyond the ones
 // named.

@@ -621,7 +621,7 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.equal(calls.length, 0);
     await assert.rejects(
       studioCallConnectionTool.handler(toolDeps, await toolContext(), { connection_id: String(connection.id), tool: "notion-search", arguments: ["roadmap"] }),
-      /\/arguments: Expected object/,
+      /\/arguments: must be object/,
     );
     await assert.rejects(
       studioRequestConnectionAccess.handler(toolDeps, await toolContext(), { connection_id: String(connection.id) }),
@@ -1150,8 +1150,8 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.deepEqual((window.messages as Array<{ seq: number }>).map((row) => row.seq), [0, 1]);
     const paused = await studioListRoutines.handler(toolDeps, toolCtx(), { paused: true });
     assert.deepEqual(paused.routines, []);
-    await assert.rejects(studioGetRun.handler(toolDeps, toolCtx(), { run_id: 5 }), /^StudioUnprocessableError: \/run_id: Expected string$/);
-    await assert.rejects(studioListRoutines.handler(toolDeps, toolCtx(), { limit: "5" }), /\/limit: Expected integer/);
+    await assert.rejects(studioGetRun.handler(toolDeps, toolCtx(), { run_id: 5 }), /^StudioUnprocessableError: \/run_id: must be string$/);
+    await assert.rejects(studioListRoutines.handler(toolDeps, toolCtx(), { limit: "5" }), /\/limit: must be integer/);
     await assert.rejects(studioGetAgentContext.handler(toolDeps, toolCtx(), { sections: ["task"] }), /agent_id is required/);
     await postUserGroupMessage(
       db,
@@ -1169,24 +1169,24 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     const firstPage = await studioListMemoryRevisions.handler(toolDeps, toolCtx(), { agent_id: "curator", limit: 1 });
     assert.equal((firstPage.versions as unknown[]).length, 1);
     assert.equal(firstPage.next_cursor, "1");
-    await assert.rejects(studioGetMemoryVersion.handler(toolDeps, toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: Expected integer/);
-    await assert.rejects(studioListGroupMessages.handler(toolDeps, toolCtx(), { author_type: 3 }), /\/author_type: Expected string/);
+    await assert.rejects(studioGetMemoryVersion.handler(toolDeps, toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: must be integer/);
+    await assert.rejects(studioListGroupMessages.handler(toolDeps, toolCtx(), { author_type: 3 }), /\/author_type: must be string/);
     const found = await studioFindArtifacts.handler(toolDeps, toolCtx(), { query: "cite", level: "guild", limit: 5 });
     assert.deepEqual((found.artifacts as Array<{ display_path: string }>).map((item) => item.display_path), [sharedPath]);
     const houseRules = await studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: sharedPath, cursor: "0" });
     assert.match(String(houseRules.content), /Always cite the source/);
     const firstChange = await studioListFileChanges.handler(toolDeps, toolCtx(), { display_path: memoryPath, limit: 1 });
     assert.equal((firstChange.changes as unknown[]).length, 1);
-    await assert.rejects(studioFindArtifacts.handler(toolDeps, toolCtx(), { query: ["cite"] }), /\/query: Expected string/);
+    await assert.rejects(studioFindArtifacts.handler(toolDeps, toolCtx(), { query: ["cite"] }), /\/query: must be string/);
     await assert.rejects(studioGetArtifact.handler(toolDeps, toolCtx(), {}), /display_path is required/);
     const guidelines = await studioGetGuidelines.handler(toolDeps, toolCtx(), {});
     assert.equal(guidelines.editable, false);
     assert.match(String(guidelines.content), /source="guidelines"/);
     await assert.rejects(
       studioCreateTaskDraft.handler(toolDeps, toolCtx(), { agent_id: "curator", proposed_content: "Curate.\n", rationale: "r", risks: "none" }),
-      /\/risks: Expected array/,
+      /\/risks: must be array/,
     );
-    await assert.rejects(studioListGuilds.handler(toolDeps, toolCtx(), { cursor: 0 }), /\/cursor: Expected string/);
+    await assert.rejects(studioListGuilds.handler(toolDeps, toolCtx(), { cursor: 0 }), /\/cursor: must be string/);
   } finally {
     await app.close();
     await database.close();
@@ -1342,7 +1342,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     );
     await assert.rejects(
       studioEditMemory.handler(toolDeps, await ctx(), { agent_id: "curator", content: "x", base_version: String(memory?.version), reason: "r" }),
-      /\/base_version: Expected integer/,
+      /\/base_version: must be integer/,
     );
     await assert.rejects(studioEditGuild.handler(toolDeps, await ctx(), { about: "New about" }), /reason is required/);
     const memoryArgs = {
@@ -1588,10 +1588,10 @@ test("studio proposes tables to create, change, and delete that the operator app
       [["shared", "add_columns_and_access"]],
     );
     await assert.rejects(studioGetCollection.handler(toolDeps, await ctx(), { collection: "their-queue" }), /unknown table/);
-    await assert.rejects(studioGetCollection.handler(toolDeps, await ctx(), { collection: 7 }), /\/collection: Expected string/);
+    await assert.rejects(studioGetCollection.handler(toolDeps, await ctx(), { collection: 7 }), /\/collection: must be string/);
     await assert.rejects(
       studioEditCollection.handler(toolDeps, await ctx(), { action: "create", name: "leads", purpose: "p", columns: "email", reason: "r" }),
-      /\/columns: Expected array/,
+      /\/columns: must be array/,
     );
     await assert.rejects(
       studioEditCollection.handler(toolDeps, await ctx(), {
@@ -1628,7 +1628,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         name: "Bad Name",
         scope: "everyone",
       }),
-      /\/scope: Expected string to match/,
+      /\/scope: must match pattern/,
     );
     await assert.rejects(
       studioEditCollection.handler(toolDeps, await ctx(), {
@@ -1636,7 +1636,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         name: "Bad Name",
         access: "everyone",
       }),
-      /\/access: Expected object/,
+      /\/access: must be object/,
     );
     const createWidget = (await studioEditCollection.handler(toolDeps, await ctx(), createArgs)) as Widget;
     assert.equal(createWidget.widget, "studio_edit_request");
@@ -1701,7 +1701,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         access: { guild: "admin" },
         reason: "r",
       }),
-      /\/access\/guild: Expected string to match/,
+      /\/access\/guild: must match pattern/,
     );
     await assert.rejects(
       studioEditCollection.handler(toolDeps, await ctx(), { action: "edit", collection: "leads", base_updated_at: read.updated_at, reason: "r" }),
@@ -2000,7 +2000,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     );
     await assert.rejects(
       studioEditAccess.handler(toolDeps, await ctx(), { agent_id: "archivist", native_tools: { note_get: false }, reason: "r" }),
-      /\/native_tools\/note_get: Expected string/,
+      /\/native_tools\/note_get: must be string/,
     );
     await assert.rejects(
       studioEditAccess.handler(toolDeps, await ctx(), { agent_id: "archivist", connection_tools: { "other_tool": "off" }, reason: "r" }),
@@ -2209,7 +2209,7 @@ test("studio proposes routines to create, change, and delete that the operator a
         instruction: "i",
         reason: "r",
       }),
-      /\/window\/max_wakes: Expected required property/,
+      /\/window: must have required properties max_wakes/,
     );
     await assert.rejects(
       studioEditRoutine.handler(toolDeps, await ctx(), { action: "create", agent_id: "watcher", description: "d", instruction: "i", reason: "r" }),

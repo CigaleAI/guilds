@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { FastifyRequest } from "fastify";
 import { ConnectorDraftSchema, ConnectorPatchSchema } from "../mcp/catalog.js";
 import { serverItem } from "../mcp/view.js";

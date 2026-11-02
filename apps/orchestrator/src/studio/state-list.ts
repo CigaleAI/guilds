@@ -1,5 +1,5 @@
 import { COLLECTIONS_SEGMENT } from "../artifacts/paths.js";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { ConfigChangeEventRow, FileChangeEventRow, ReadCallRow, WindowRunRow } from "../db/state.js";
 import { iso } from "../db/views.js";
 import { keepMatching } from "../lib/decode.js";

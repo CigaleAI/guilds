@@ -1,7 +1,7 @@
 // How a Studio tool pages and caps what it returns: limits, cursors, byte slices, and the arguments
 // of a tool that pages one agent's history.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { JsonObject } from "../lib/json.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES, STUDIO_TOTAL_RETURNED_BYTES } from "./constants.js";
 

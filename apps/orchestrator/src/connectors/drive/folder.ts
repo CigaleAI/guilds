@@ -1,5 +1,5 @@
-import type { Static, TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import type { Static, TSchema } from "typebox";
+import { Value } from "typebox/value";
 import { isJsonValue, isObjectNode, type JsonObject, type JsonValue } from "../../lib/json.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { given } from "../format.js";

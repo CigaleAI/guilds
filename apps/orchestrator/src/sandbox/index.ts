@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { Type } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { HARNESS_LIST, isHarness } from "../coding/harnesses.js";
 import type { Harness } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";

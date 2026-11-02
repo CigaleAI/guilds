@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { agentTask } from "../artifacts/task.js";
 import { getAgent, type AgentRow } from "../db/agents.js";

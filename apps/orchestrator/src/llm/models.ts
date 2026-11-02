@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
 import { PolicyError } from "../policy/index.js";

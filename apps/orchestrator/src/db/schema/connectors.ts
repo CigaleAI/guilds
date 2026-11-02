@@ -13,7 +13,7 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { Kind, Type, TypeRegistry, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { sql } from "drizzle-orm";
 import { agents } from "./agents.js";
 import { bytea, timestamptz } from "./columns.js";
@@ -24,11 +24,15 @@ import { isToolSchema, type ToolSchema } from "../../lib/tool-schema.js";
 /** A connector slug: also the folder name, the server id after `mcp_`, and a folder connector's tool prefix. */
 export const SLUG_PATTERN = "^[a-z][a-z0-9_]{0,62}$";
 
-// The kind runs isToolSchema, so the check covers every depth and Value.Check agrees with the type.
-TypeRegistry.Set("ToolSchema", (_schema, value) => isToolSchema(value));
-
-/** A tool's input as a JSON Schema object, every keyword tool calling reads checked at every depth. */
-export const ToolInputSchema = Type.Unsafe<ToolSchema>({ [Kind]: "ToolSchema", type: "object" });
+/**
+ * A tool's input as a JSON Schema object, every keyword tool calling reads checked at every depth:
+ * the refinement runs isToolSchema, so Value.Check agrees with the type.
+ */
+export const ToolInputSchema = Type.Refine(
+  Type.Unsafe<ToolSchema>({ type: "object" }),
+  isToolSchema,
+  () => "must be a JSON Schema object",
+);
 
 export type ToolInputSchema = ToolSchema;
 
@@ -72,16 +76,16 @@ const Count = Type.Optional(Type.Integer({ minimum: 0 }));
  * `x-lookup` marks a property the adapter's `lookup` fills. Another keyword is kept and checks
  * nothing.
  */
-export const SettingsSchema = Type.Recursive(
-  (Node) =>
-    Type.Object({
+export const SettingsSchema = Type.Cyclic(
+  {
+    SettingsSchema: Type.Object({
       type: Type.Optional(SettingsTypeName),
       title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
-      properties: Type.Optional(Type.Record(Type.String(), Node)),
+      properties: Type.Optional(Type.Record(Type.String(), Type.Ref("SettingsSchema"))),
       required: Type.Optional(Type.Array(Type.String())),
       additionalProperties: Type.Optional(Type.Boolean()),
-      items: Type.Optional(Node),
+      items: Type.Optional(Type.Ref("SettingsSchema")),
       minItems: Count,
       maxItems: Count,
       minLength: Count,
@@ -90,7 +94,8 @@ export const SettingsSchema = Type.Recursive(
       enum: Type.Optional(Type.Array(JsonValueSchema)),
       "x-lookup": Type.Optional(Type.Boolean()),
     }),
-  { $id: "SettingsSchema" },
+  },
+  "SettingsSchema",
 );
 
 export type SettingsSchema = Static<typeof SettingsSchema>;

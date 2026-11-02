@@ -1,5 +1,5 @@
 // Shapes a JSON Schema for a model's tool call, and the arguments a model sends against it.
-import type { Static, TObject } from "@sinclair/typebox";
+import type { Static, TObject } from "typebox";
 import { assertMatches } from "./decode.js";
 import { isJsonObject, isObjectNode, type JsonObject, type JsonValue } from "./json.js";
 

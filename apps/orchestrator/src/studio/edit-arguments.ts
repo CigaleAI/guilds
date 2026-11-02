@@ -1,7 +1,7 @@
 // The arguments of the Studio edit tools: what the model is offered and sends, decoded when the
 // tool runs and again from the recorded call when the operator reviews or applies the proposal.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { AGENT_ROW_MODES, GUILD_ROW_MODES } from "../artifacts/access-lists.js";
 import { ARTIFACT_LEVELS } from "../artifacts/types.js";
 import { EDIT_ACTIONS } from "./actions.js";

@@ -1,4 +1,4 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 import type { CollectionColumn } from "./artifacts.js";
 import type { AccessMode } from "./artifacts.js";
 import type { WakeWindow } from "./agents.js";

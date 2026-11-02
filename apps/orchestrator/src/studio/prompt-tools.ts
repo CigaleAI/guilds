@@ -1,7 +1,7 @@
 // The Studio tools that read the prompt a source-guild agent runs with: the shared Guidelines and the
 // agent's task, memory, state, config, and effective prompt.
 
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { AgentConfig } from "../db/schema/index.js";
 import type { JsonObject } from "../lib/json.js";
 import { agentTask } from "../artifacts/task.js";

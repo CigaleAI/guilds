@@ -1,4 +1,4 @@
-import type { TObject, TSchema } from "@sinclair/typebox";
+import type { TObject, TSchema } from "typebox";
 import type { ConnectionSettings, ToolInputSchema } from "../db/schema/index.js";
 import type { JsonObject } from "../lib/json.js";
 import type { FetchFn } from "../net/http.js";

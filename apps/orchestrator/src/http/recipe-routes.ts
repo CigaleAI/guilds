@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { parseAccessEdits, parseRecipe } from "../recipes/parse.js";
 import {
   captureRecipe,

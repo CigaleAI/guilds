@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { RemoteInfo } from "../connectors/types.js";
 import { ToolInputSchema } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";

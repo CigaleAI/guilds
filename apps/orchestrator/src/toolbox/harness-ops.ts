@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { Effort, Harness } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
 import { isObjectNode } from "../lib/json.js";

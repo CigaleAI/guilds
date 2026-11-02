@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { BuilderService } from "../builder/index.js";
 import type { AppDeps, RouteApp } from "./deps.js";

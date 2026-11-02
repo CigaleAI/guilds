@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { type Static, Type } from "@sinclair/typebox";
+import { type Static, Type } from "typebox";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type pg from "pg";
 import { assertMatches } from "../lib/decode.js";

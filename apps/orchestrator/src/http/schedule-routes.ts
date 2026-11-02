@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { requireVisibleAgent } from "../agents/access.js";
 import { userActor } from "../lib/change-actor.js";
 import { requireVisibleGuild } from "../guilds/access.js";

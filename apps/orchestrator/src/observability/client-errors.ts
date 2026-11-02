@@ -1,5 +1,5 @@
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { writeLog } from "./log.js";
 
