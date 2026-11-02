@@ -518,8 +518,8 @@ function DangerZone({ guild }: DangerZoneProps) {
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-t-plum p-4">
         <p className="min-w-60 flex-1 text-sm text-plum-t">
           Deleting the guild removes its group chat, and its agents with their sessions, Memory and
-          homes. Their machines stay. Notes and files stay in the organisation, without the access
-          rows that named the guild or its agents.
+          homes. Their machines stay. Notes and files only the guild or its agents reached are
+          deleted too; the others stay, without the access rows that named them.
         </p>
         <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
           <Icon icon={Trash2} size={14} />
@@ -531,7 +531,7 @@ function DangerZone({ guild }: DangerZoneProps) {
         open={confirming}
         onOpenChange={setConfirming}
         title={`Delete ${guild.name}?`}
-        description="Its group chat, agents, their Memory and agent homes are removed, and so are the access rows naming the guild or its agents. Notes and files stay. This can't be undone."
+        description="Its group chat, agents, their Memory and agent homes are removed, with the access rows naming the guild or its agents and the notes and files only they reached. Other notes and files stay. This can't be undone."
         confirmLabel="Delete guild"
         confirmText={guild.name}
         onConfirm={() =>

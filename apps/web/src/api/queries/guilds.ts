@@ -119,7 +119,10 @@ export function useRemoveOperator(guildId: string) {
   });
 }
 
-/** Deletes the guild with its chat, agents and agent homes, and the access rows naming it or its agents. Admins only. */
+/**
+ * Deletes the guild with its chat, agents and agent homes, the access rows naming it or its agents,
+ * and the notes and files only they reached. Admins only.
+ */
 export function useDeleteGuild() {
   const client = useQueryClient();
   return useMutation({
