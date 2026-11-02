@@ -340,8 +340,7 @@ is read only. Its **Tables** and **Notes** sections always show, with
 Each item opens where its access is changed:
 
 - a table opens its **Access** tab on the **Tables** page
-- a note opens in the **State › Notes** of the guild or the agent
-  whose reach is shown
+- a note opens in the **Org** list of the guild's **State › Notes**
 
 ## Rules and limits
 

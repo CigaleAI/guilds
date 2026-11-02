@@ -176,7 +176,8 @@ rows.
 | Agent's files | `/guilds/<guild_id>/agents/<agent_id>/state/files?path=<display path>` |
 | Guild's files | `/guilds/<guild_id>/state/files?path=<display path>` |
 
-`?path=` is optional. It opens that file and its scope first.
+`?path=` is optional. It opens that file first, in the **Org** list,
+which holds every file.
 
 ### HTTP
 

@@ -270,7 +270,8 @@ Code: `apps/orchestrator/src/artifacts/access-lists.ts`,
 | Guild's notes | `/guilds/<guild_id>/state/notes?path=<display path>` |
 | Open step | the agent's Chat tab with `?run=<run_id>&call=<tool_call_id>` |
 
-`?path=` is optional. It opens that note and its scope first.
+`?path=` is optional. It opens that note first, in the **Org** list,
+which holds every note.
 
 ### HTTP
 
