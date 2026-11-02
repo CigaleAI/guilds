@@ -1,13 +1,17 @@
 import { ApiError } from "../../api/client";
 import { FILE_MAX_BYTES } from "../../api/files";
 import { formatSize } from "../../app/format";
+import type { ItemSections } from "../../api/types/access";
 import type { FileItem } from "../../api/types/files";
+import { filterSections } from "../access/listedItems";
 
-/** The files whose name or description holds the search, in the server's order. */
-export function filterFiles(items: readonly FileItem[], query: string): FileItem[] {
+/** A page's files whose name or description holds the search, in each section; all of them without one. */
+export function searchFiles(sections: ItemSections<FileItem>, query: string): ItemSections<FileItem> {
   const needle = query.trim().toLowerCase();
-  if (!needle) return [...items];
-  return items.filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(needle));
+  if (!needle) return sections;
+  return filterSections(sections, (item) =>
+    `${item.name} ${item.description}`.toLowerCase().includes(needle),
+  );
 }
 
 /** Why an upload cannot be sent, or null when it can: a file is chosen, fits, and is described. */

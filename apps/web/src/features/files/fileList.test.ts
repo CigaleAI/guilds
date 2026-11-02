@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { ItemSections } from "../../api/types/access";
 import type { FileItem } from "../../api/types/files";
 import { ApiError } from "../../api/client";
-import { fileMeta, filterFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
+import { fileMeta, searchFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
 
 const item = (name: string, description: string): FileItem => ({
   id: `f_${name}`,
@@ -14,14 +15,24 @@ const item = (name: string, description: string): FileItem => ({
   version: 1,
   author: "operator",
   updated_at: "2026-10-26T09:00:00Z",
+  home: null,
+  viewer_mode: "all_read",
 });
 
-test("files match the search by name or description, and all show without one", () => {
-  const items = [item("report.pdf", "Quarterly figures"), item("logo.png", "The brand mark")];
-  assert.deepEqual(filterFiles(items, "").map((file) => file.name), ["report.pdf", "logo.png"]);
-  assert.deepEqual(filterFiles(items, "FIGURES").map((file) => file.name), ["report.pdf"]);
-  assert.deepEqual(filterFiles(items, "logo").map((file) => file.name), ["logo.png"]);
-  assert.deepEqual(filterFiles(items, "nothing"), []);
+const names = (sections: ItemSections<FileItem>) => ({
+  own: sections.own.map((file) => file.name),
+  shared: sections.shared.map((file) => file.name),
+});
+
+test("files match the search by name or description in each section, and all show without one", () => {
+  const files = {
+    own: [item("report.pdf", "Quarterly figures")],
+    shared: [item("logo.png", "The brand mark"), item("figures.csv", "Raw data")],
+  };
+  assert.deepEqual(searchFiles(files, ""), files);
+  assert.deepEqual(names(searchFiles(files, "FIGURES")), { own: ["report.pdf"], shared: ["figures.csv"] });
+  assert.deepEqual(names(searchFiles(files, "logo")), { own: [], shared: ["logo.png"] });
+  assert.deepEqual(names(searchFiles(files, "nothing")), { own: [], shared: [] });
 });
 
 test("an upload needs a non-empty file under the cap and a description", () => {
