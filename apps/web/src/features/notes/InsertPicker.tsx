@@ -1,6 +1,6 @@
 import { Columns3, FileText, Info, Table2, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { EmbeddableNote } from "../../api/types/notes";
+import type { EmbeddableNotes } from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import {
   Button,
@@ -17,33 +17,37 @@ import {
   DialogFooter,
   DialogHeader,
   Icon,
+  ModeTag,
   Row,
+  SectionList,
   Tooltip,
   cn,
 } from "@guildsrun/ui";
 import type { EmbedMode, InsertKind } from "@guildsrun/ui";
-import { collectionDisplayPath, insertMarkup } from "./embeds";
+import { insertMarkup } from "./embeds";
+import {
+  choiceGroups,
+  holdsNoChoice,
+  isInsertable,
+  selectedChoice,
+  unreachedChoiceReason,
+  type Choice,
+  type ChoiceGroups,
+} from "./insertChoices";
 
 type InsertPickerProps = {
   /** What to pick; null keeps the dialog closed. */
   kind: InsertKind | null;
-  /** The notes the operator can embed; undefined while they load. */
-  notes: readonly EmbeddableNote[] | undefined;
+  /**
+   * The notes to offer: the operator's list, or the Task's agent's sections, where a note the
+   * agent does not reach is greyed and cannot be inserted; undefined while they load.
+   */
+  notes: EmbeddableNotes | undefined;
   collections: readonly Collection[] | undefined;
   orgId: string;
   /** The text to insert, or null when the operator cancels. */
   onPick: (markup: string | null) => void;
 };
-
-type Choice = {
-  path: string;
-  title: string;
-  meta: string;
-  note?: EmbeddableNote;
-  collection?: Collection;
-};
-
-type ChoiceGroup = { label: string; choices: Choice[] };
 
 type PickerCopy = {
   title: string;
@@ -91,54 +95,6 @@ const modeDescription: Record<EmbedMode, string> = {
   embed: "The note's text is added to the prompt when a run starts.",
   reference: "Only a link to the note is added; the agent reads the note when it needs it.",
 };
-
-function matches(choice: Choice, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  return !needle || `${choice.title} ${choice.meta}`.toLowerCase().includes(needle);
-}
-
-function tableGroups(collections: readonly Collection[], orgId: string): ChoiceGroup[] {
-  const choices = collections.map((collection) => ({
-    path: collectionDisplayPath(orgId, collection),
-    title: collection.name,
-    meta: collection.purpose,
-    collection,
-  }));
-  return [{ label: "Tables", choices }];
-}
-
-function noteGroups(notes: readonly EmbeddableNote[]): ChoiceGroup[] {
-  const choices = notes.map((note) => ({
-    path: note.display_path,
-    title: note.key,
-    meta: note.title ?? "",
-    note,
-  }));
-  return [{ label: "Notes", choices }];
-}
-
-/** The choices for a kind that match the query; undefined while they load. */
-function choiceGroups(
-  kind: InsertKind | null,
-  sources: Pick<InsertPickerProps, "notes" | "collections" | "orgId">,
-  query: string,
-): ChoiceGroup[] | undefined {
-  const listed =
-    kind === "note"
-      ? sources.notes && noteGroups(sources.notes)
-      : sources.collections && tableGroups(sources.collections, sources.orgId);
-  return listed
-    ?.map((group) => ({ ...group, choices: group.choices.filter((item) => matches(item, query)) }))
-    .filter((group) => group.choices.length > 0);
-}
-
-/** The choice at the selected path among the groups shown; undefined when none is selected or shown. */
-function selectedChoice(
-  groups: readonly ChoiceGroup[] | undefined,
-  selected: string | null,
-): Choice | undefined {
-  return groups?.flatMap((group) => group.choices).find((choice) => choice.path === selected);
-}
 
 /**
  * Picks what to insert in a Task or note: a note, embedded as `![[path]]` or referenced as
@@ -297,7 +253,7 @@ function ModeSwitch({ mode, onModeChange }: ModeSwitchProps) {
 }
 
 type ChoiceListProps = {
-  groups: ChoiceGroup[] | undefined;
+  groups: ChoiceGroups | undefined;
   copy: PickerCopy;
   query: string;
   showLabels: boolean;
@@ -306,17 +262,31 @@ type ChoiceListProps = {
   onPick: (choice: Choice) => void;
 };
 
-function ChoiceList({
-  groups,
-  copy,
-  query,
-  showLabels,
-  selected,
-  onSelect,
-  onPick,
-}: ChoiceListProps) {
+/**
+ * The choices as they load: one list under its groups' labels, or the agent's two sections, each
+ * folding closed under its label with its count.
+ */
+function ChoiceList({ groups, copy, query, showLabels, ...rowProps }: ChoiceListProps) {
   if (!groups) return <SkeletonRows rows={4} label="Loading" />;
-  if (groups.length === 0) {
+  if (groups.layout === "sections") {
+    return (
+      <div className="flex flex-col gap-3">
+        {groups.groups.map((group) => (
+          <SectionList
+            key={group.label}
+            label={group.label}
+            count={group.choices.length}
+            empty={query ? "No notes match." : group.empty}
+          >
+            {group.choices.map((choice) => (
+              <ChoiceRow key={choice.path} choice={choice} copy={copy} {...rowProps} />
+            ))}
+          </SectionList>
+        ))}
+      </div>
+    );
+  }
+  if (holdsNoChoice(groups)) {
     return (
       <EmptyState
         icon={copy.icon}
@@ -327,34 +297,59 @@ function ChoiceList({
   }
   return (
     <>
-      {groups.map((group) => (
+      {groups.groups.map((group) => (
         <div key={group.label} className="flex flex-col gap-0.5">
           {showLabels ? (
             <ListGroupLabel className="px-2.5 pt-2">{group.label}</ListGroupLabel>
           ) : null}
           {group.choices.map((choice) => (
-            <Row
-              key={choice.path}
-              asChild
-              density="compact"
-              interactive
-              mono
-              selected={choice.path === selected}
-              lead={<Icon icon={copy.icon} size={14} />}
-              title={choice.title}
-              {...(choice.meta ? { meta: choice.meta } : {})}
-            >
-              <button
-                type="button"
-                aria-pressed={choice.path === selected}
-                onClick={() => onSelect(choice.path)}
-                onDoubleClick={() => onPick(choice)}
-              />
-            </Row>
+            <ChoiceRow key={choice.path} choice={choice} copy={copy} {...rowProps} />
           ))}
         </div>
       ))}
     </>
+  );
+}
+
+type ChoiceRowProps = {
+  choice: Choice;
+  copy: PickerCopy;
+  selected: string | null;
+  onSelect: (path: string) => void;
+  onPick: (choice: Choice) => void;
+};
+
+/**
+ * One choice: selected on a click, inserted on a double click, with the agent's mode when the
+ * picker lists its sections. A note the agent does not reach is greyed, says why, and does neither.
+ */
+function ChoiceRow({ choice, copy, selected, onSelect, onPick }: ChoiceRowProps) {
+  const insertable = isInsertable(choice);
+  const isSelected = insertable && choice.path === selected;
+  return (
+    <Row
+      asChild
+      density="compact"
+      interactive={insertable}
+      muted={!insertable}
+      mono
+      selected={isSelected}
+      lead={<Icon icon={copy.icon} size={14} />}
+      title={choice.title}
+      {...(choice.meta ? { meta: choice.meta } : {})}
+      {...(choice.mode ? { trail: <ModeTag mode={choice.mode} /> } : {})}
+    >
+      {insertable ? (
+        <button
+          type="button"
+          aria-pressed={isSelected}
+          onClick={() => onSelect(choice.path)}
+          onDoubleClick={() => onPick(choice)}
+        />
+      ) : (
+        <button type="button" aria-disabled="true" title={unreachedChoiceReason} />
+      )}
+    </Row>
   );
 }
 
