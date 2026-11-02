@@ -34,6 +34,7 @@ const UploadHeadersSchema = Type.Object({
   "x-access-type": Type.Optional(Type.String()),
   "x-access-id": Type.Optional(Type.String()),
   "x-access-mode": Type.Optional(Type.String()),
+  "x-expected-version": Type.Optional(Type.String()),
 });
 
 type UploadHeaders = Static<typeof UploadHeadersSchema>;
@@ -69,7 +70,19 @@ function uploadAccess(headers: UploadHeaders): SubjectEntry | undefined {
   return { type, id, mode };
 }
 
-/** The uploaded file: its name, description, media type, and starting row from the headers, its bytes the body. */
+/** The version an upload replaces, from its header; none when it names none, a 422 when it is not an integer. */
+function uploadExpectedVersion(headers: UploadHeaders): number | undefined {
+  const raw = (headers["x-expected-version"] ?? "").trim();
+  if (!raw) {
+    return undefined;
+  }
+  if (!/^\d+$/.test(raw)) {
+    throw new HttpError(422, "X-Expected-Version must be a whole number");
+  }
+  return Number(raw);
+}
+
+/** The uploaded file: its name, description, media type, expected version, and starting row from the headers, its bytes the body. */
 function fileUpload(request: UploadRequest): SharedFileUpload {
   const { headers, body } = request;
   if (!Buffer.isBuffer(body)) {
@@ -85,6 +98,7 @@ function fileUpload(request: UploadRequest): SharedFileUpload {
     description: decodeURIComponent(description),
     mime: (headers["x-mime"] ?? "").trim(),
     bytes: body,
+    expectedVersion: uploadExpectedVersion(headers),
     access: uploadAccess(headers),
   };
 }

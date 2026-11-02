@@ -158,7 +158,8 @@ export class ArtifactFiles {
   /**
    * Stores the organisation's file of the upload's name. A live file of that name is replaced with
    * write access to it, and is otherwise refused as not writable; a missing one is created with the
-   * upload's starting access list.
+   * upload's starting access list. An expected version of 0 asks for a new file, a 409 when one is
+   * live; any other expected version must be the live file's, a 409 otherwise.
    */
   async putFile(
     actor: ArtifactActor,
@@ -180,6 +181,9 @@ export class ArtifactFiles {
     });
     if (live) {
       return this.replaceFile(actor, live, content, args.expectedVersion);
+    }
+    if (args.expectedVersion !== undefined && args.expectedVersion !== 0) {
+      throw new ArtifactError("version conflict", 409);
     }
     return this.createFile(actor, name, content, args.startingAccess ?? [creatorGrant(actor)]);
   }
@@ -343,6 +347,9 @@ export class ArtifactFiles {
   ): Promise<ArtifactRow> {
     if ((await artifactMode(this.store, actor, live)) !== "write") {
       throw new ArtifactError("write not allowed", 422);
+    }
+    if (expectedVersion === 0) {
+      throw new ArtifactError("artifact already exists", 409);
     }
     if (expectedVersion !== undefined && live.version !== expectedVersion) {
       throw new ArtifactError("version conflict", 409);

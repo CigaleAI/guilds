@@ -34,15 +34,16 @@ export type SharedFileWriteDeps = {
 };
 
 /**
- * A file as an operator uploads it: its name, description, media type, and bytes, and the subject
- * and mode of the row its access list starts with when the upload creates it; without one, the
- * organisation writes it.
+ * A file as an operator uploads it: its name, description, media type, and bytes, the version they
+ * replace when they say (0 for a file that must not exist yet), and the subject and mode of the row
+ * its access list starts with when the upload creates it; without one, the organisation writes it.
  */
 export type SharedFileUpload = {
   name: string;
   description: string;
   mime: string;
   bytes: Buffer;
+  expectedVersion: number | undefined;
   access: SubjectEntry | undefined;
 };
 
@@ -99,9 +100,13 @@ export async function uploadSharedFile(
   actor: ArtifactActor,
   upload: SharedFileUpload,
 ): Promise<FileView> {
-  const { access, ...file } = upload;
+  const { access, expectedVersion, ...file } = upload;
   const startingAccess = [access ? parseGrant(access, "access: ") : creatorGrant(actor)];
-  const row = await deps.files.putFile(actor, { ...file, startingAccess });
+  const row = await deps.files.putFile(actor, {
+    ...file,
+    startingAccess,
+    ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+  });
   const view = deps.files.view(row);
   await announceFile(deps, await guildsOnList(deps.artifacts, actor, { kind: "file", id: row.id }), view.display_path);
   return view;

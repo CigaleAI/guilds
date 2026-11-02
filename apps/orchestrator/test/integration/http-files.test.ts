@@ -217,11 +217,38 @@ test("operators upload with a starting row, list per page, download, share, and 
     assert.equal((replacedFile.json() as { id: string; version: number }).id, file.id);
     assert.equal((replacedFile.json() as { version: number }).version, 2);
 
+    // X-Expected-Version: 0 asks for a new file, any other value for the live version, none for no check.
+    const replace = (headers: Record<string, string>, name = "Q3 report.pdf") =>
+      app.inject({
+        method: "POST",
+        url: "/api/org/files",
+        headers: { ...OWNER, ...BYTES, "x-filename": encodeURIComponent(name), "x-description": "The quarterly report", ...headers },
+        payload: Buffer.from("%PDF-1.4 again"),
+      });
+    const exists = await replace({ "x-expected-version": "0" });
+    assert.equal(exists.statusCode, 409, exists.body);
+    assert.deepEqual(exists.json(), { detail: "artifact already exists" });
+    const behind = await replace({ "x-expected-version": "1" });
+    assert.equal(behind.statusCode, 409, behind.body);
+    assert.deepEqual(behind.json(), { detail: "version conflict" });
+    const current = await replace({ "x-expected-version": "2" });
+    assert.equal(current.statusCode, 201, current.body);
+    assert.equal((current.json() as { version: number }).version, 3);
+    const notThere = await replace({ "x-expected-version": "4" }, "absent.pdf");
+    assert.equal(notThere.statusCode, 409, notThere.body);
+    assert.deepEqual(notThere.json(), { detail: "version conflict" });
+    const fresh = await replace({ "x-expected-version": "0" }, "fresh.pdf");
+    assert.equal(fresh.statusCode, 201, fresh.body);
+    assert.equal((fresh.json() as { version: number }).version, 1);
+    const malformed = await replace({ "x-expected-version": "two" });
+    assert.equal(malformed.statusCode, 422, malformed.body);
+    assert.match(malformed.body, /X-Expected-Version must be a whole number/);
+
     const removed = await app.inject({ method: "DELETE", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(removed.statusCode, 204);
     const gone = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(gone.statusCode, 404);
-    assert.equal(blobs.objects.size, 1, "only the organisation file's bytes remain");
+    assert.equal(blobs.objects.size, 2, "only the organisation files' bytes remain");
 
     const guildPath = file.display_path;
     assert.deepEqual(
@@ -230,6 +257,8 @@ test("operators upload with a starting row, list per page, download, share, and 
         [guildId, { displayPath: guildPath }],
         [guildId, { displayPath: "org/org_home/files/page.html" }],
         [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: "org/org_home/files/fresh.pdf" }],
         [guildId, { displayPath: guildPath }],
       ],
       "an upload, a replacement and a deletion are each announced to every guild whose scope the file is in",
