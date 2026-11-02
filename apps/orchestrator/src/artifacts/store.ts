@@ -100,6 +100,8 @@ export type StateArtifact = {
   created_at: string;
   /** A note's id; null for Memory and scripts. */
   note_id: string | null;
+  /** Its artifact's id. */
+  artifact_id: string;
 };
 
 /** A note a guild or an agent reaches, with the mode it ends up with. */

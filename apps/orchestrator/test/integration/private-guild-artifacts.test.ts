@@ -176,6 +176,47 @@ test("organisation-wide note, table, and change routes keep a private guild to i
     assert.equal(unlisted.statusCode, 422);
     assert.deepEqual(unlisted.json().detail[0].loc, ["body", "display_paths"]);
 
+    // A name the vault's deleted note held, taken again by a note the member reads, does not open the vault note's history.
+    const reused = "/api/org/notes/vault-history.md";
+    const vaultNote = await app.inject({
+      method: "PUT",
+      url: reused,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: "kept in the vault", access: { type: "guild", id: guildId, mode: "write" } },
+    });
+    assert.equal(vaultNote.statusCode, 200, vaultNote.body);
+    assert.equal((await app.inject({ method: "DELETE", url: reused, headers: OWNER })).statusCode, 204);
+    const memberNoteAgain = await app.inject({
+      method: "PUT",
+      url: reused,
+      headers: { ...TEAMMATE, ...JSON_BODY },
+      payload: { content: "the member's own" },
+    });
+    assert.equal(memberNoteAgain.statusCode, 200, memberNoteAgain.body);
+    const reusedPath = String(memberNoteAgain.json().display_path);
+    const history = async (headers: Record<string, string>) =>
+      (await app.inject({ method: "GET", url: `/api/file-changes?display_path=${encodeURIComponent(reusedPath)}`, headers })).json() as Array<{
+        operation: string;
+        actor: { id: string };
+      }>;
+    assert.deepEqual(
+      (await history(TEAMMATE)).map((change) => [change.operation, change.actor.id]),
+      [["create", String(teammate.id)]],
+      "the member reads its own note's history alone",
+    );
+    assert.deepEqual(
+      (await history(OWNER)).map((change) => change.operation),
+      ["create", "delete", "create"],
+      "the vault's operator reads both notes' history",
+    );
+    const memberLatestAgain = await app.inject({
+      method: "POST",
+      url: "/api/file-changes/latest",
+      headers: { ...TEAMMATE, ...JSON_BODY },
+      payload: { display_paths: [reusedPath] },
+    });
+    assert.equal((memberLatestAgain.json() as Record<string, { actor: { id: string } }>)[reusedPath]?.actor.id, String(teammate.id));
+
     const ownerTable = await app.inject({ method: "GET", url: `/api/collections/${tableId}`, headers: OWNER });
     assert.equal(ownerTable.statusCode, 200);
   } finally {

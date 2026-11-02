@@ -29,6 +29,8 @@ export type StateItem = {
   collection_id: string | null;
   /** A note's id; null for the others. */
   note_id: string | null;
+  /** The note's, file's, Memory's, or script's artifact, whose changes are its own; null for a table. */
+  artifact_id: string | null;
 };
 
 /**
@@ -153,16 +155,19 @@ export function changeEvents(
   context: StateContext,
 ): StateEvent[] {
   const paths = new Set(context.items.map((item) => item.display_path));
+  const byArtifact = new Map(context.items.flatMap((item) => (item.artifact_id ? [[item.artifact_id, item.display_path] as const] : [])));
   const configured = new Map(
     context.items.flatMap((item) => {
       const key = itemConfigKey(item);
       return key ? [[key, item.display_path] as const] : [];
     }),
   );
+  // A change is an item's own by its artifact, never by a display path another item held before.
   const files = fileChanges.flatMap((row) => {
-    const own = row.display_path;
-    const path = paths.has(own) ? own : tablePathOf(own);
-    return path && paths.has(path) ? [changeEvent(row, path, own === path ? null : own, context.agents)] : [];
+    const own = row.artifact_id ? byArtifact.get(row.artifact_id) : undefined;
+    if (own) return [changeEvent(row, own, null, context.agents)];
+    const table = tablePathOf(row.display_path);
+    return table && paths.has(table) ? [changeEvent(row, table, row.display_path, context.agents)] : [];
   });
   const shapes = configChanges.flatMap((row) => {
     const path = configured.get(configKey(row.target_kind, row.target_id));

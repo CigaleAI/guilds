@@ -17,7 +17,7 @@ import { editRequest } from "./edits.js";
 import { loadNoteBase, noteCreateRequest, noteDeleteRequest } from "./note-edits.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { clampLimit, cursorOffset } from "./paging.js";
-import { studioReachesParsed, studioReachesPath } from "./reach.js";
+import { studioChangeTarget, studioReachesParsed, studioReachesPath } from "./reach.js";
 import { editScope, resolveHandle } from "./source-guild.js";
 import { wrapEvidence } from "./system.js";
 import type { StudioTool, StudioToolCall, StudioToolDeps } from "./tools.js";
@@ -131,12 +131,13 @@ export const studioListFileChanges: StudioTool = studioTool({
       actorName: call.user.name ?? "operator",
       guildId: call.sourceGuildId,
     });
-    if (!(await studioReachesParsed(deps, call, parseActorPath(actor, displayPath)))) {
+    const parsed = parseActorPath(actor, displayPath);
+    if (!(await studioReachesParsed(deps, call, parsed))) {
       throw new StudioUnprocessableError("path is not in the source guild's reach");
     }
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(input.cursor);
-    const rows = await listFileChanges(deps.db, call.orgId, displayPath);
+    const rows = await listFileChanges(deps.db, call.orgId, await studioChangeTarget(deps, call, parsed));
     const slice = rows.slice(offset, offset + limit);
     return {
       display_path: displayPath,

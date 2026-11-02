@@ -5,6 +5,7 @@ import {
   getMemoryRevisionText,
   insertNote,
   listAgentsEmbedding,
+  listArtifactsEverAt,
   listArtifactsByKind,
   listGuildArtifacts,
   listGuildStateArtifacts,
@@ -19,7 +20,7 @@ import {
   type ArtifactRow,
 } from "../db/artifacts.js";
 import { getRecordOrTombstone } from "../db/collections.js";
-import { recordFileChange } from "../db/file-changes.js";
+import { recordFileChange, type ChangeTarget } from "../db/file-changes.js";
 import { isUniqueViolation, withTransaction } from "../db/pg.js";
 import { creatorGrant } from "./access.js";
 import { deleteCollection, describeCollection, loadCollectionByName, requireReadable } from "./collections.js";
@@ -319,6 +320,31 @@ export async function canReadDisplayPath(store: ArtifactStore, actor: ArtifactAc
   return (await artifactMode(store, actor, row)) !== null;
 }
 
+/**
+ * Whose changes a display path's history shows the actor: every note, file, Memory, or script
+ * that sat at the path, live or deleted, that the actor reads; the record it names in a
+ * collection the actor reads; the agent's Task when it names one the actor reaches. Nothing for a
+ * path the actor reads nothing at.
+ */
+export async function readableChangeTarget(store: ArtifactStore, actor: ArtifactActor, displayPath: string): Promise<ChangeTarget> {
+  const none: ChangeTarget = { artifactIds: [], taskAgentId: null };
+  const parsed = isDisplayPath(displayPath) ? parseDisplayPath(displayPath) : null;
+  if (parsed?.orgId !== actor.orgId || parsed.kind === "revision" || parsed.kind === "collection") {
+    return none;
+  }
+  if (parsed.kind === "record") {
+    const collection = await describeCollection(store, actor, parsed.collectionName);
+    const record = collection ? await getRecordOrTombstone(store.db, collection.id, parseRecordId(parsed.recordId)) : null;
+    return record ? { artifactIds: [record.id], taskAgentId: null } : none;
+  }
+  if (parsed.agentId !== null && parsed.path === "" && parsed.key === TASK_KEY) {
+    return reachesAgent(actor, parsed.agentId) ? { artifactIds: [], taskAgentId: parsed.agentId } : none;
+  }
+  const rows = await listArtifactsEverAt(store.db, addressOf(parsed));
+  const readable = await Promise.all(rows.map(async (row) => ((await artifactMode(store, actor, row)) === null ? [] : [row.id])));
+  return { artifactIds: readable.flat(), taskAgentId: null };
+}
+
 /** A search of the notes an actor reads: the words to match, and how many to return. */
 export type NoteSearch = { query?: string; limit?: number };
 
@@ -379,6 +405,7 @@ export async function listStateArtifacts(
     created_by: row.created_by_name,
     created_at: row.created_at,
     note_id: row.kind === "note" ? row.id : null,
+    artifact_id: row.id,
   }));
 }
 

@@ -85,6 +85,7 @@ async function stateTables(deps: StateDeps, actor: ArtifactActor, guildId: strin
       created_at: table.created_at,
       collection_id: table.id,
       note_id: null,
+      artifact_id: null,
     }));
 }
 
@@ -183,6 +184,7 @@ export async function loadStateHistory(
   if (!item) throw new StudioNotFoundError("item not found");
   const rows = await listItemChanges(deps.db, scope.actor.orgId, {
     displayPath: item.display_path,
+    artifactId: item.artifact_id,
     collectionId: item.collection_id,
     noteId: item.note_id,
     op: request.op,

@@ -1,13 +1,20 @@
 // The notes an operator's pages read and write by key, an agent's Task and Memory, and their provenance.
 import { ArtifactError } from "./errors.js";
 import { MEMORY_KEY, memoryDisplayPath, normalizeNoteKey, noteDisplayPath, parseDisplayPath, TASK_KEY } from "./paths.js";
-import { listFileChanges, listLatestFileChanges, type FileChangeView } from "../db/file-changes.js";
+import { listFileChanges, listLatestFileChanges, type ChangeTarget, type FileChangeView } from "../db/file-changes.js";
 import type { AccessGrant, ArtifactActor } from "./types.js";
 import { taskDisplayPath, writeAgentTask } from "./task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { canReadDisplayPath, deleteByDisplayPath, getByDisplayPath, listEmbeddableNotes, writeNote } from "./notes.js";
+import {
+  canReadDisplayPath,
+  deleteByDisplayPath,
+  getByDisplayPath,
+  listEmbeddableNotes,
+  readableChangeTarget,
+  writeNote,
+} from "./notes.js";
 import { artifactTextView, type ArtifactStore, type ArtifactTextView } from "./store.js";
 import { ensureAgentRows, writeMemory } from "./memory.js";
 
@@ -176,11 +183,11 @@ export async function latestFileChanges(
   const paths = await readablePaths(services.store, actor, [
     ...new Set(displayPaths.filter((path) => path)),
   ]);
-  const latest: Record<string, LatestFileChange> = await listLatestFileChanges(
-    services.db,
-    actor.orgId,
-    paths,
-  );
+  const targets = new Map<string, ChangeTarget>();
+  for (const path of paths) {
+    targets.set(path, await readableChangeTarget(services.store, actor, path));
+  }
+  const latest: Record<string, LatestFileChange> = await listLatestFileChanges(services.db, actor.orgId, targets);
   for (const path of paths) {
     const fallback = latest[path] ? null : await unrecordedChange(services, actor, path);
     if (fallback) {
@@ -307,10 +314,7 @@ export async function listPathChanges(
   if (!displayPath) {
     throw new ArtifactError("display_path is required", 422);
   }
-  if (!(await canReadDisplayPath(services.store, actor, displayPath))) {
-    return [];
-  }
-  return listFileChanges(services.db, actor.orgId, displayPath);
+  return listFileChanges(services.db, actor.orgId, await readableChangeTarget(services.store, actor, displayPath));
 }
 
 /** A note as an embed reads it: where it sits, its title, and its text. */

@@ -32,6 +32,7 @@ const item = (path: string, overrides: Partial<StateItem> = {}): StateItem => ({
   created_at: "2026-10-19T10:00:00.000Z",
   collection_id: null,
   note_id: null,
+  artifact_id: `art:${path}`,
   ...overrides,
 });
 
@@ -48,8 +49,9 @@ const event = (overrides: Partial<StateEvent>): StateEvent => ({
   ...overrides,
 });
 
-/** A file change a person made, as the window query returns it, with `overrides`. */
+/** A file change a person made, as the window query returns it, with `overrides`; its artifact is the one its path names by default. */
 const fileChange = (overrides: Partial<FileChangeEventRow>): FileChangeEventRow => ({
+  artifact_id: `art:${overrides.display_path ?? "p"}`,
   display_path: "p",
   operation: "update",
   actor_type: "user",
@@ -135,7 +137,7 @@ test("a record's path names its table", () => {
   assert.equal(tablePathOf("org/o/rules.md"), null);
 });
 
-test("changes land on their item, records on their table, and config changes on the table or note by id", () => {
+test("changes land on their item by its artifact, records on their table, and config changes on the table or note by id", () => {
   const items = [
     item("org/o/rules.md", { note_id: "art_1" }),
     item("org/o/collections/leads", { kind: "table", collection_id: "col_1" }),
@@ -145,6 +147,8 @@ test("changes land on their item, records on their table, and config changes on 
       fileChange({ display_path: "org/o/rules.md" }),
       fileChange({ display_path: "org/o/collections/leads/3", operation: "delete", actor_type: "run", run_agent_id: "a_2" }),
       fileChange({ display_path: "org/o/other.md" }),
+      // a change of another item that held the same path before this one is not this item's
+      fileChange({ display_path: "org/o/rules.md", artifact_id: "art_old" }),
     ],
     [
       configChange({ target_kind: "collection", target_id: "col_1" }),

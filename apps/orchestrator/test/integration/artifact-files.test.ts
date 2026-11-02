@@ -13,7 +13,7 @@ import {
   type SharedFileChange,
   type SharedFileWriteDeps,
 } from "../../src/artifacts/operator-files.js";
-import { listFileChanges } from "../../src/db/file-changes.js";
+import { changesAt } from "../helpers/artifacts.js";
 import { artifactStore, type ArtifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
@@ -133,7 +133,7 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.deepEqual(listed.map((item) => item.name), ["figures.csv"]);
     assert.deepEqual((await files.findFiles(beta, { limit: 20 })).length, 0);
 
-    const changes = await listFileChanges(database.pool, "org_home", view.display_path);
+    const changes = await changesAt(database.pool, "org_home", view.display_path);
     assert.deepEqual(changes.map((change) => [change.operation, change.version]), [["update", 2], ["create", 1]]);
   });
 
@@ -250,7 +250,7 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal(blobs.objects.has(fileBlobKey("org_home", row.id, row.version)), false);
     await assert.rejects(() => files.loadFile(alpha, put), /artifact not found/);
     assert.equal((await accessList(store, operator, { kind: "file", id: row.id }).catch((error: Error) => error.message)), "file not found");
-    const changes = await listFileChanges(database.pool, "org_home", put);
+    const changes = await changesAt(database.pool, "org_home", put);
     assert.deepEqual(changes.map((change) => change.operation), ["delete", "create"]);
   });
 

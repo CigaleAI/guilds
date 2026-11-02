@@ -18,6 +18,7 @@ export type ToolCallWindow = { window: StateWindow; tools: string[] };
 /** A file change with the agent of the run that made it, when a run did. */
 export type FileChangeEventRow = Pick<
   FileChange,
+  | "artifact_id"
   | "display_path"
   | "operation"
   | "actor_type"
@@ -68,7 +69,7 @@ export type ItemChangeRow = FileChangeEventRow & { summary: string | null };
 
 const CHANGE_COLUMNS = `fc.display_path, fc.operation, fc.actor_type, fc.actor_id, fc.actor_name,
        fc.run_id, fc.tool_call_id, fc.studio_session_id, fc.studio_seq, fc.created_at, fc.id,
-       r.agent_id AS run_agent_id`;
+       r.agent_id AS run_agent_id, fc.artifact_id`;
 
 const CONFIG_COLUMNS = `cc.target_kind, cc.target_id, cc.operation, cc.actor_type, cc.actor_id, cc.actor_name,
        cc.run_id, cc.tool_call_id, cc.studio_session_id, cc.studio_seq, cc.created_at, cc.id, cc.summary,
@@ -142,9 +143,13 @@ export async function listWindowReadCalls(
   return result.rows;
 }
 
-/** One page of an item's history: the item at its display path, a table's collection, a note's id. */
+/**
+ * One page of an item's history: the item's display path, its artifact (a note's, a file's, a
+ * Memory's, or a script's), a table's collection, a note's id.
+ */
 export type ItemHistoryPage = {
   displayPath: string;
+  artifactId: string | null;
   collectionId: string | null;
   noteId: string | null;
   op: string | null;
@@ -161,11 +166,12 @@ export async function listItemChanges(db: Queryable, orgId: string, page: ItemHi
     `SELECT * FROM (
        SELECT ${CHANGE_COLUMNS}, NULL::text AS summary
          FROM file_changes fc LEFT JOIN runs r ON r.id = fc.run_id
-        WHERE fc.org_id = $1 AND (fc.display_path = $2 OR ($3::text IS NOT NULL AND fc.display_path LIKE $2 || '/%'))
+        WHERE fc.org_id = $1
+          AND (fc.artifact_id = $9 OR fc.artifact_id IN (SELECT a.id FROM artifacts a WHERE a.collection_id = $3))
        UNION ALL
        SELECT $2::text, cc.operation, cc.actor_type, cc.actor_id, cc.actor_name,
               cc.run_id, cc.tool_call_id, cc.studio_session_id, cc.studio_seq, cc.created_at, cc.id,
-              r.agent_id, cc.summary
+              r.agent_id, NULL::text, cc.summary
          FROM config_changes cc LEFT JOIN runs r ON r.id = cc.run_id
         WHERE cc.org_id = $1
           AND ((cc.target_kind = 'collection' AND cc.target_id = $3) OR (cc.target_kind = 'note' AND cc.target_id = $8))
@@ -183,6 +189,7 @@ export async function listItemChanges(db: Queryable, orgId: string, page: ItemHi
       page.before?.id ?? null,
       page.limit,
       page.noteId,
+      page.artifactId,
     ],
   );
   return result.rows;

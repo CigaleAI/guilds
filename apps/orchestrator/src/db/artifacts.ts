@@ -456,6 +456,19 @@ export async function getArtifactOrTombstoneAt(
   return result.rows[0] ?? null;
 }
 
+/** Every note, file, Memory, or script that ever sat at an address, live or deleted. */
+export async function listArtifactsEverAt(db: Queryable, at: ArtifactAddress): Promise<ArtifactOrTombstoneRow[]> {
+  const result = await db.query<ArtifactOrTombstoneRow>(
+    `SELECT ${ARTIFACT_SELECT}, a.deleted_at
+       FROM artifacts a
+       LEFT JOIN artifact_collections c ON c.id = a.collection_id
+      WHERE a.org_id = $1 AND a.agent_id IS NOT DISTINCT FROM $2
+        AND a.path = $3 AND a.key = $4 AND a.collection_id IS NULL`,
+    [at.org_id, at.agent_id, at.path, at.key],
+  );
+  return result.rows;
+}
+
 /** One live artifact of the organisation by id and kind; null when there is none. */
 export async function getLiveArtifact(
   db: Queryable,

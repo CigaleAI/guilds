@@ -4,7 +4,7 @@ import { after, before, describe, test } from "node:test";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { artifactStore, type ArtifactStore, artifactView, rowDisplayPath } from "../../src/artifacts/store.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
-import { listFileChanges } from "../../src/db/file-changes.js";
+import { changesAt } from "../helpers/artifacts.js";
 import { unreachableMarker, embedSource, inlineTaskEmbeds, inspectTaskEmbeds } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { addAgent } from "../../src/agents/service.js";
@@ -565,7 +565,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(next.record.id, 4);
     const tombstone = await getByDisplayPath(store, operator, "org/org_home/collections/packets/3");
     assert.equal(tombstone.tombstone, true);
-    const changes = await listFileChanges(database.pool, "org_home", "org/org_home/collections/packets/3");
+    const changes = await changesAt(database.pool, "org_home", "org/org_home/collections/packets/3");
     assert.deepEqual(changes.map((change) => change.operation), ["delete", "update", "create"]);
     const exported = await exportRecords(store, operator, packets.id);
     assert.deepEqual(exported.records.map((row) => row.id), [1, 2, 4]);
@@ -1043,7 +1043,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await seedAgent("a_provenance", "guild_provenance", "provenance-agent", "provenance");
     assert.equal(
       (
-        await listFileChanges(
+        await changesAt(
           database.pool,
           "org_home",
           "org/org_home/agents/a_provenance/task.md",
@@ -1053,7 +1053,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
     assert.equal(
       (
-        await listFileChanges(
+        await changesAt(
           database.pool,
           "org_home",
           "org/org_home/agents/a_provenance/memory.md",
@@ -1106,7 +1106,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await call("call_delete", "note_delete", { path: displayPath });
 
     assert.equal(createdMetadata.tool_call_id, "call_create");
-    const changes = await listFileChanges(database.pool, "org_home", displayPath);
+    const changes = await changesAt(database.pool, "org_home", displayPath);
     assert.deepEqual(
       changes.map((change) => change.operation),
       ["delete", "update", "create"],
@@ -1140,7 +1140,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await call("call_patch", "record_update", { collection: "queue", id: 1, body: { item: "second" } });
     const [removed] = await call("call_remove", "record_remove", { collection: "queue", id: 1 });
     assert.match(String(removed.content), /"removed":1/);
-    const recordChanges = await listFileChanges(database.pool, "org_home", "org/org_home/collections/queue/1");
+    const recordChanges = await changesAt(database.pool, "org_home", "org/org_home/collections/queue/1");
     assert.deepEqual(
       recordChanges.map((change) => [change.operation, (change.tool as Record<string, unknown>).call_id]),
       [

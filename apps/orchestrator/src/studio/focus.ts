@@ -2,6 +2,7 @@ import { Type, type Static } from "typebox";
 import { ArtifactError } from "../artifacts/errors.js";
 import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import { artifactAt, parseActorPath } from "../artifacts/notes.js";
+import { parseDisplayPath } from "../artifacts/paths.js";
 import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
 import { wrapEvidence, type EvidenceAttributes } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
@@ -11,7 +12,7 @@ import { capBytes } from "../lib/bytes.js";
 import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
 import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
-import { studioReachesParsed } from "./reach.js";
+import { studioChangeTarget, studioReachesParsed } from "./reach.js";
 import { getAgent, getAgentTask, type AgentRow } from "../db/agents.js";
 import { getRun, listMessages, type MessageRow } from "../db/runs.js";
 import { getSchedule } from "../db/schedules.js";
@@ -458,7 +459,7 @@ async function resolveFile(
   const file = await loadFileForFocus(deps, displayPath);
   const agent =
     file.agent ?? (await guildAgent(deps, trimmedText(input.agent_id)).catch(() => null));
-  const changes = await listFileChanges(deps.db, deps.orgId, displayPath);
+  const changes = await listFileChanges(deps.db, deps.orgId, await studioChangeTarget(deps, deps, parseDisplayPath(displayPath)));
   const changeId = trimmedText(input.change_id);
   const change = changeId ? changes.find((row) => row.id === changeId) : changes[0];
   if (changeId && !change) {

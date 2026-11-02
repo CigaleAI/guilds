@@ -1,5 +1,10 @@
 import type { ArtifactRow } from "../../src/db/artifacts.js";
 import { parseDisplayPath } from "../../src/artifacts/paths.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
+import { listPathChanges } from "../../src/artifacts/host-files.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import type { FileChangeView } from "../../src/db/file-changes.js";
+import type { Queryable } from "../../src/db/pg.js";
 
 const STAMP = "2026-09-22T05:42:10.000Z";
 
@@ -44,4 +49,10 @@ export function noteRowAt(displayPath: string, content: string, overrides: Parti
     content_text: content,
     ...overrides,
   });
+}
+
+/** The changes an operator of the organisation reads at a display path, newest first. */
+export async function changesAt(db: Queryable, orgId: string, displayPath: string): Promise<FileChangeView[]> {
+  const operator = operatorActor({ orgId, actorId: "user_operator", actorName: "operator" });
+  return listPathChanges({ store: artifactStore(db), db }, operator, displayPath);
 }

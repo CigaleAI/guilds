@@ -5,7 +5,7 @@ import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
-import { listFileChanges } from "../../src/db/file-changes.js";
+import { changesAt } from "../helpers/artifacts.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
@@ -95,7 +95,7 @@ describe("repositories", { concurrency: 1 }, () => {
     const row = await scripts.get("a_scripts", "send_usdc");
     assert.equal(row.source, "print('ok')\n");
     assert.equal((await scripts.listForAgent("a_scripts")).length, 1);
-    const scriptChanges = await listFileChanges(
+    const scriptChanges = await changesAt(
       database.pool,
       "org_home",
       "org/org_home/agents/a_scripts/scripts/send_usdc",
@@ -108,7 +108,7 @@ describe("repositories", { concurrency: 1 }, () => {
     });
 
     await writeAgentTask(db, actor, "a_scripts", { content: "Updated task" });
-    const taskChanges = await listFileChanges(
+    const taskChanges = await changesAt(
       database.pool,
       "org_home",
       "org/org_home/agents/a_scripts/task.md",
