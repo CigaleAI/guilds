@@ -5,9 +5,10 @@ a report, a dataset, an image, an archive. It is what an agent shares
 when the thing it made is not Markdown. Agents share files with tools,
 and operators upload and download them in the app.
 
-A file has an [access list](access.md#access-lists-for-notes-collections-and-files)
-and nothing else, as a [note](notes.md) does. The list decides who
-reads and writes it. A file's name is unique in its organisation: one
+A file has an [access list](access.md#access-lists-for-notes-collections-and-files),
+which decides who reads and writes it, and a home guild, which groups
+it in the app's lists, as a [note](notes.md) does. A file's name is
+unique in its organisation: one
 name is one file. Text that agents and operators read and edit
 belongs in a note instead, and structured rows in a
 [collection](collections.md).
@@ -43,6 +44,19 @@ with the one row the upload names, the organisation at `write` when
 it names none. An operator reads and writes every file that is not
 hidden from them
 ([Access](access.md#access-lists-for-notes-collections-and-files)).
+
+### Home guild
+
+Every file has a home guild, as a note has
+([Notes](notes.md#home-guild)): the guild it was made in, or none
+when it is the organisation's. A file an agent shares is homed in the
+agent's guild. A file an operator uploads in the app is homed in the
+guild of the page it is uploaded on; over HTTP, in the guild
+`X-Home-Guild` names, or in none. Replacing a file keeps its home,
+and no write changes it. The home groups the lists in the app and
+hides the file from every operator who cannot see that guild,
+whatever its rows say. It decides nothing about which agent reaches
+the file.
 
 ### Between the home and the store
 
@@ -83,42 +97,52 @@ does not show it: files have their own view.
 
 The agent's **State** tab and the guild's **State** tab each have a
 **Files** view beside **Notes**, over the organisation's one set of
-files.
+files. It lists them in the two sections the notes browser has
+([Notes](notes.md#in-the-app)):
 
-- The agent's **State › Files** shows three scopes: **Agent**, the
-  files that agent reads; **Guild**, the files whose access list has a
-  row for the guild, one of its agents, or the organisation; and
-  **Org**, every file of the organisation.
-- The guild's **State › Files** shows **Guild** and **Org**.
+- **Guild files**: the files homed in the page's guild, whatever their
+  rows. On an agent's page, the page's guild is the agent's.
+- **Shared with this guild**: the files homed in another guild or in
+  the organisation whose access list has a row for the guild, one of
+  its agents, or the organisation. Each one names its home before its
+  facts: the guild's name, or **Organisation**.
 
-In both:
+A file is in one section at most, and a file hidden from the operator
+is in neither. Each section has a label with its count, folds open
+and closed, and says what it holds when it holds nothing.
 
-- A switch above the list picks the scope, with each scope's count.
-  One file shows in every scope that lists it.
-- Each scope lists its files with name, description, size, media
-  type, who changed it last, and when. The search box filters them by
-  name and description.
+- Each section lists its files by name, with description, size, media
+  type, who changed it last, and when. The search box filters both
+  sections by name and description.
+- Each file carries the tag a note carries: on a guild's page **All
+  agents · read & write**, **All agents · read**, **Some agents**, or
+  **No access**; on an agent's page **Read & write**, **Read**, or
+  **No access**.
+- A file tagged **No access** is greyed. Clicking it opens its access
+  dialog instead of the file. The browser never opens a greyed file by
+  itself.
 - An open file shows its provenance strip
   ([Artifact store](artifacts.md#in-the-app)), then its description,
   type, size, version, and display path. Its history holds the changes
   of the files that held this name and that the operator reads
   ([Artifact store](artifacts.md#file-provenance)).
 - Its header offers **Access**, **Download**, and a delete button.
-  The **Access** dialog is the one notes use
-  ([Access](access.md#the-access-panel)).
+  The **Access** dialog is the one notes use, and a greyed file opens
+  it too ([Access](access.md#the-access-panel)). A change to the list
+  refreshes both sections at once.
 - Deleting asks first. Agents that fetched the file keep their
   copies.
 - **Upload a file** takes a file, a description of at most 400
   characters, and the file's first access row: a subject and a mode.
-  The row starts as the browsed scope at `write`: the agent on
-  **Agent**, the guild on **Guild**, the organisation on **Org**. Any
-  subject and mode can be picked instead. It refuses an empty file, a
-  file over 10 MiB, or no description before it sends anything. The
-  dialog reads: "A file of the same name in this list is replaced and
-  keeps its access list; a name another file of the organisation holds
-  is refused." It sends the version of the file of that name in the
-  page's list, so it replaces that version, or `0` when the list holds
-  no file of that name. A name another file of the organisation holds
+  The row starts as the page's guild or agent at `write`; any subject
+  and mode can be picked instead. The dialog shows the file's
+  **Home**, the page's guild, read only, beside the row. It refuses an
+  empty file, a file over 10 MiB, or no description before it sends
+  anything. The dialog reads: "A file of the same name in this list is
+  replaced and keeps its access list and home; a name another file of
+  the organisation holds is refused." It sends the version of the file
+  of that name in the page's sections, so it replaces that version, or
+  `0` when neither section holds a file of that name. A name another file of the organisation holds
   is then refused with "A file with this name already exists in the
   organisation, outside this list.", and a file replaced since the
   list loaded with "The file was replaced since this list loaded.
@@ -140,6 +164,7 @@ whatever the file's media type.
 | Description | required, at most 400 characters |
 | Media type | from the uploader, else from the name's extension, else `application/octet-stream` |
 | Starting access | one row: the sharing agent at `write`, or the subject the upload names (the organisation at `write` by default) |
+| Home guild | the guild the file is made in, or none; set once; groups the lists and hides the file from operators who cannot see that guild; never decides an agent's reach |
 | Download | `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store` |
 
 ## Reference
@@ -187,8 +212,9 @@ rows.
 | Agent's files | `/guilds/<guild_id>/agents/<agent_id>/state/files?path=<display path>` |
 | Guild's files | `/guilds/<guild_id>/state/files?path=<display path>` |
 
-`?path=` is optional. It opens that file first, in the **Org** list,
-which holds every file.
+`?path=` is optional. It opens that file first, in whichever section
+lists it, greyed or not. A path neither section lists opens the first
+file the page reaches.
 
 ### HTTP
 
@@ -202,13 +228,16 @@ DELETE /api/files/:file_id           204
 ```
 
 An upload answers the file in the shape `file_find` gives. A listing
-answers each file in the operator's list shape, which is that shape
-without `access`, with `home` and `viewer_mode`, as notes have them:
-the guild and agent pages list `own` and `shared` sections, and
-`viewer_mode` is the page viewer's
-([Notes](notes.md#http)). `file_find` keeps its own shape. An upload is
+gives each file `{ id, display_path, name, description, mime, bytes,
+version, author, updated_at, home, viewer_mode }`: the `file_find`
+shape without `access`, with `home`, `{ id, name }` of its home guild
+or null for the organisation's, and the page viewer's `viewer_mode`,
+as notes have them ([Notes](notes.md#http)). The guild and agent
+routes answer the page's `own` and `shared` sections, which hold the
+files the notes routes' sections hold for notes. `file_find` keeps
+its own shape. An upload is
 201. A file of the same name in the organisation is replaced, and
-keeps its access list. `X-Expected-Version` is a whole number: `0`
+keeps its access list and its home. `X-Expected-Version` is a whole number: `0`
 means the file must not exist yet, and a live file of that name is
 409 `artifact already exists`; any other value must be the live
 file's version, else 409 `version conflict`; left out, the upload
@@ -222,16 +251,20 @@ organisation writes it. Some of the three without the others is 422
 `X-Access-Type, X-Access-Id, and X-Access-Mode go together`, and a bad
 row is 422 with the message the access routes give, prefixed
 `access: `. A new file is homed in the guild `X-Home-Guild` names;
-without it the file is the organisation's. A replaced file keeps its
-home. An `X-Home-Guild` naming a guild that does not exist, is outside
+without it the file is the organisation's. The upload dialog sends
+the page's guild. A replaced file keeps its home, whatever
+`X-Home-Guild` names. An `X-Home-Guild` naming a guild that does not exist, is outside
 the organisation, or is a private guild the caller does not operate is
 404 `unknown guild`. An upload without `X-Filename` or `X-Description` is 422
 `X-Filename and X-Description are required`. An upload over 10 MiB is
 422 `file exceeds 10 MiB`, and an empty one 422 `file is empty`. The
 guild and agent routes need a guild the caller can see; the
 organisation routes need organisation membership. A file hidden from
-the caller is left out of every listing and is 404 by every route
-([SEC-55](../architecture/security-register.md#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list)).
+the caller, by its rows
+([SEC-55](../architecture/security-register.md#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list))
+or by its home
+([SEC-57](../architecture/security-register.md#sec-57--an-operator-could-see-a-private-guilds-notes-and-files-through-an-organisation-row)),
+is left out of every listing and is 404 by every route.
 
 An upload or a delete publishes the file's change to each guild whose
 page lists the file: its home guild, and each guild in its scope,
@@ -248,10 +281,13 @@ A file's display path is `org/<org_id>/files/<name>`.
 A file is an `artifacts` row with `kind` `file`, no `agent_id`, `path`
 `files`, a `key` that is its name, a `title` that is its description,
 `mime`, `bytes`, and a `content_hash` that is the sha256 of its bytes.
+Its `origin_guild_id` is its home guild, null for the organisation's.
 The name is unique among the organisation's live files. Its search
 document is the name and description. Deletion sets `deleted_at` and
-removes the bytes; the tombstone keeps its access rows, so a file
-hidden from an operator stays hidden once deleted. Deleting a guild
+removes the bytes; the tombstone keeps its access rows and its home,
+so a file hidden from an operator stays hidden once deleted. A file
+homed in a deleted guild that stays is the organisation's from then
+on. Deleting a guild
 or an agent removes every file, live or deleted, whose only rows
 named it or its agents, with its change history
 ([Access](access.md#access-lists)); a live file removed that way
@@ -266,6 +302,7 @@ after the row is marked deleted.
 
 Code: `apps/orchestrator/src/artifacts/files.ts`,
 `apps/orchestrator/src/artifacts/operator-files.ts`,
+`apps/orchestrator/src/db/artifact-lists.ts`,
 `apps/orchestrator/src/toolbox/file.ts`,
 `apps/orchestrator/src/http/file-routes.ts`,
 `apps/orchestrator/src/lib/blob-store.ts`.

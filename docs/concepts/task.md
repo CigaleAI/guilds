@@ -130,10 +130,14 @@ The agent's **Prompt** tab edits the Task.
 - The editor has **Edit** and **Preview** modes. The tab opens in
   Preview; double-clicking the text switches to Edit. Save, or
   Cmd/Ctrl+S, writes the Task. **Discard** drops the edits.
-- **Insert › Note** opens a picker of notes. **Embed** or
-  **Reference** above the list chooses how the note is inserted at
-  the cursor: `![[display-path]]` or `[[display-path]]`. The info
-  button next to it explains the difference.
+- **Insert › Note** opens a picker of the notes on the agent's page,
+  in its two sections, **Guild notes** and **Shared with this guild**,
+  each note with the tag the agent's **State › Notes** gives it
+  ([Notes](notes.md#in-the-app)). A note the agent cannot reach is
+  greyed and cannot be inserted. **Embed** or **Reference** above the
+  list chooses how the note is inserted at the cursor:
+  `![[display-path]]` or `[[display-path]]`. The info button next to
+  it explains the difference.
 - **Insert › Table** inserts the chosen collection as
   `![[display-path]]`. The preview lists its columns.
 - **Insert › Column** lists the tables, then the chosen table's
@@ -142,7 +146,8 @@ The agent's **Prompt** tab edits the Task.
 - In Preview an embed shows as a filled chip and a reference as an
   outlined chip with a link icon. A collection chip shows the
   collection's name. Clicking a chip opens a preview of the file.
-- An embed the agent cannot reach is marked. A banner, **The Task
+- An embed the agent cannot reach is marked, including one it
+  reached when it was inserted and lost since. A banner, **The Task
   embeds files this agent can't reach**, names each one.
 - The **Version** picker lists the live version and every earlier one,
   with when it was replaced and by whom. An earlier version shows as
@@ -259,8 +264,12 @@ holds a `recipe:` link or a missing file shows as not reachable.
 GET  /api/agents/:agent_id/notes/task.md      { path, display_path, content, version, revisions }
 PUT  /api/agents/:agent_id/notes/task.md      { content, expected_version? }
 GET  /api/guilds/:guild_id/embed-status       { agents: [{ id, broken_embeds }] }
-GET  /api/org/embeddable-notes                the notes the Insert picker offers
+GET  /api/org/embeddable-notes?agent_id=…     { own, shared }: the notes the Insert picker offers, with the agent's mode
 ```
+
+- The Insert picker reads the agent's page sections, each note with
+  its text, its `home`, and the agent's `viewer_mode`
+  ([Notes](notes.md#http)).
 
 - `revisions` lists the earlier versions newest first:
   `{ version, content, replaced_at, replaced_by_name }`.
