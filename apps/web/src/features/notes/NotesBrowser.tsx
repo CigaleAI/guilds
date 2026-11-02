@@ -44,7 +44,7 @@ import { StartingAccessField } from "../access/StartingAccessField";
 import { EmbedPreview } from "./EmbedPreview";
 import { embedIsBroken } from "./embeds";
 import { InsertPicker } from "./InsertPicker";
-import { buildTree, newNotePath } from "./noteTree";
+import { buildTree, newNotePath } from "./noteList";
 import { LatestChange, type OpenChangeStep } from "./LatestChange";
 
 /**
