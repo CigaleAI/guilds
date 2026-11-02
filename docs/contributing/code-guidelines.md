@@ -18,8 +18,8 @@ refuses it.
 Oxlint and the import-cycle check
 ([Lint](development.md#lint-and-format)) enforce these rules:
 
-- cyclomatic complexity, nesting depth, parameter count, and file
-  length;
+- nesting depth and file length, and a warning on cyclomatic
+  complexity and parameter count;
 - type assertions;
 - a `catch`, or a promise's `.catch()`, that neither throws nor
   returns a value;
@@ -54,7 +54,7 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **4 parameters**. Lint fails at 5.
+- A function has at most **4 parameters**. Lint warns at 5.
 - An object parameter is one of two kinds, and its type is always
   a named type:
   - A **record** names a thing that exists in the application
@@ -91,8 +91,7 @@ two functions.
   is a parameter of its own, never a field of a record or a
   dependencies object.
 - A function has a **cyclomatic complexity of 11 or less**, as
-  Oxlint counts it. The limit keeps one function from holding
-  several contracts.
+  Oxlint counts it. Lint warns past 11.
 - Nesting goes at most **3 levels** deep. A `try` block counts as
   a level, and Oxlint counts it with the others. Use early returns
   to stay flat. Nesting is what makes a body hard to read, so this
@@ -111,6 +110,14 @@ two functions.
 (`??=`, `||=`, `&&=`). An `if` that returns early counts like any
 other `if`. A JSX conditional (`cond && <X />`) counts like any
 other `&&`.
+
+The parameter and complexity limits are evidence, not the rule. A
+function past one of them is read for its contracts: one that holds
+two is split along them; one that holds one keeps its body, and the
+pull request names it with the contract it holds
+([Pull requests](pull-requests.md#content)). A split made to pass
+the number, or a record made to bring a function under the
+parameter limit, is refused.
 
 A function has no line limit. A long body with one contract is
 better than a short body that calls six helpers a reader has to
@@ -166,6 +173,14 @@ wrong name.
 Code lives next to the code that uses it. A reader understands one
 behaviour from one file, and pays a jump to another file only to
 reach a contract worth knowing by name.
+
+The test of a shape is the work it asks of a reader. A reader new to
+the code answers two questions about any value without a chase:
+where it comes from, and what can change it. A layer (a wrapper, an
+adapter, a helper) or a piece of state (a field, a module variable)
+is added only when it removes at least as much of that work
+elsewhere. Lines, complexity and the number of layers are evidence
+for this test, not the test.
 
 Two pieces of code are the same function only when they have the
 **same contract**: same inputs, same output, same promise. Then
@@ -383,9 +398,13 @@ discussion. How a page is written is
 Before you submit a change, check:
 
 - [ ] Each function's name and signature say everything it does.
-      No flag parameters, complexity of 11 or less, nesting of 3 or
-      less, 4 parameters or fewer, object parameters only for
-      records and dependencies objects.
+      No flag parameters, nesting of 3 or less, object parameters
+      only for records and dependencies objects. A function past the
+      complexity or parameter limit holds one contract, named in the
+      pull request.
+- [ ] A reader new to the code can say where each value comes from
+      and what changes it without a chase; no layer or state was
+      added that does not remove more elsewhere.
 - [ ] A dependencies object holds services and at most the
       connection pool; a transaction client and every per-call value
       are parameters of their own.

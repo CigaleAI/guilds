@@ -7,9 +7,6 @@
   "src/app.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
-    },
-    "complexity": {
-      "count": 1
     }
   },
   "src/attachments/hydrate.ts": {
@@ -22,11 +19,6 @@
       "count": 1
     }
   },
-  "src/attachments/sniff.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/attachments/store.ts": {
     "limits/inline-parameter-type": {
       "count": 2
@@ -34,11 +26,6 @@
   },
   "src/avatars/index.ts": {
     "boundary/no-reexport-modules": {
-      "count": 1
-    }
-  },
-  "src/avatars/looks.ts": {
-    "complexity": {
       "count": 1
     }
   },
@@ -60,9 +47,6 @@
     }
   },
   "src/cli/connector.ts": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     },
@@ -77,11 +61,6 @@
   },
   "src/coding/harness-models.ts": {
     "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
-  "src/coding/repositories.ts": {
-    "complexity": {
       "count": 1
     }
   },
@@ -107,9 +86,6 @@
   },
   "src/directories/index.ts": {
     "limits/inline-parameter-type": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
@@ -157,9 +133,6 @@
     }
   },
   "src/groupchat/index.ts": {
-    "complexity": {
-      "count": 1
-    },
     "limits/bare-error": {
       "count": 5
     },
@@ -168,9 +141,6 @@
     },
     "limits/silent-catch": {
       "count": 3
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/groupchat/wake.ts": {
@@ -201,9 +171,6 @@
   "src/http/sandbox-proxy.ts": {
     "limits/silent-catch": {
       "count": 1
-    },
-    "max-params": {
-      "count": 2
     }
   },
   "src/instrument.ts": {
@@ -293,9 +260,6 @@
     }
   },
   "src/net/endpoints.ts": {
-    "complexity": {
-      "count": 2
-    },
     "limits/silent-catch": {
       "count": 1
     }
@@ -311,17 +275,11 @@
     }
   },
   "src/notes/store.ts": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 3
     },
     "max-depth": {
       "count": 2
-    },
-    "max-params": {
-      "count": 4
     },
     "typescript/consistent-type-assertions": {
       "count": 1
@@ -338,9 +296,6 @@
     }
   },
   "src/observability/log.ts": {
-    "complexity": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 3
     },
@@ -367,13 +322,7 @@
     }
   },
   "src/prompts/index.ts": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
-      "count": 2
-    },
-    "max-params": {
       "count": 2
     }
   },
@@ -446,27 +395,13 @@
       "count": 1
     }
   },
-  "src/schedules/describe.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/scripts/catalog.ts": {
     "limits/inline-parameter-type": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
   "src/scripts/materialise.ts": {
-    "complexity": {
-      "count": 1
-    },
     "limits/silent-catch": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
@@ -485,43 +420,14 @@
       "count": 1
     }
   },
-  "src/state/index.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/studio/access.ts": {
-    "complexity": {
-      "count": 1
-    },
     "typescript/consistent-type-assertions": {
       "count": 1
     }
   },
-  "src/studio/activity.ts": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/studio/connections.ts": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
-    }
-  },
-  "src/studio/drafts.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
-  "src/studio/edits.ts": {
-    "complexity": {
-      "count": 3
     }
   },
   "src/studio/errors.ts": {
@@ -530,38 +436,12 @@
     }
   },
   "src/studio/focus.ts": {
-    "complexity": {
-      "count": 4
-    },
     "limits/silent-catch": {
       "count": 2
     }
   },
-  "src/studio/index.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/studio/inspector.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/studio/note-edits.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/studio/preview.ts": {
     "typescript/explicit-module-boundary-types": {
-      "count": 1
-    }
-  },
-  "src/studio/prompt-tools.ts": {
-    "complexity": {
       "count": 1
     }
   },
@@ -577,14 +457,6 @@
   },
   "src/studio/system.ts": {
     "boundary/no-reexport-modules": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/studio/tool-usage.ts": {
-    "complexity": {
       "count": 1
     }
   },

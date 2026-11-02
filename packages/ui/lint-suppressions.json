@@ -5,9 +5,6 @@
     }
   },
   "src/components/content/DiffView.tsx": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 4
     }
@@ -30,21 +27,6 @@
       "count": 1
     }
   },
-  "src/components/content/TaskEditor.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/content/diff.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/content/highlight.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/components/content/mentions.ts": {
     "limits/inline-parameter-type": {
       "count": 1
@@ -55,15 +37,7 @@
       "count": 1
     }
   },
-  "src/components/controls/Composer.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/components/controls/FormField.tsx": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
@@ -78,53 +52,8 @@
       "count": 1
     }
   },
-  "src/components/controls/Slider.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/controls/TextAreaField.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/controls/TextField.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/components/controls/ToneSwatches.tsx": {
     "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/components/conversation/AgentMessage.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/conversation/OperatorMessage.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/data/FileTree.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
-  "src/components/data/IntegrationCard.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/data/IssueCard.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/identity/AvatarStack.tsx": {
-    "complexity": {
       "count": 1
     }
   },
@@ -133,25 +62,7 @@
       "count": 1
     }
   },
-  "src/components/navigation/GuildHeader.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/navigation/GuildRow.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/navigation/UtilityLink.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/components/overlays/ConfirmDialog.tsx": {
-    "complexity": {
-      "count": 1
-    },
     "limits/silent-catch": {
       "count": 1
     }
@@ -162,23 +73,12 @@
     }
   },
   "src/components/runs/FlowTimeline.tsx": {
-    "complexity": {
-      "count": 1
-    },
     "typescript/consistent-type-assertions": {
       "count": 2
     }
   },
   "src/components/runs/GenerationHeader.tsx": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
-  "src/components/runs/GenerationHero.tsx": {
-    "complexity": {
       "count": 1
     }
   },
@@ -188,9 +88,6 @@
     }
   },
   "src/components/runs/ToolCall.tsx": {
-    "complexity": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 3
     },
@@ -217,9 +114,6 @@
     }
   },
   "src/writeDesignSystemDoc.ts": {
-    "complexity": {
-      "count": 3
-    },
     "limits/inline-parameter-type": {
       "count": 1
     },
