@@ -1,38 +1,7 @@
-import type { EmbeddableNote, NoteLevel } from "../../api/types/notes";
+import type { EmbeddableNote } from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import { embedKind, embedMarkup, linkMarkup } from "@guildsrun/ui";
 import type { EmbedMode, InsertKind } from "@guildsrun/ui";
-
-export type NoteGroup = { level: NoteLevel; label: string; notes: EmbeddableNote[] };
-
-const levelLabel: Record<NoteLevel, string> = {
-  agent: "This agent",
-  guild: "Guild",
-  org: "Organisation",
-};
-
-/** Where an agent sits: its organisation, its guild, and its own id. */
-export type AgentLocation = { orgId: string; guildId: string; agentId: string };
-
-/** The notes a Task can embed: the agent's own, its guild's and the organisation's. */
-export function pickableNotes(notes: readonly EmbeddableNote[], scope: AgentLocation): NoteGroup[] {
-  const prefix: Record<NoteLevel, string> = {
-    agent: `org/${scope.orgId}/agents/${scope.agentId}/`,
-    guild: `org/${scope.orgId}/guilds/${scope.guildId}/`,
-    org: `org/${scope.orgId}/`,
-  };
-  const groups: NoteGroup[] = (["agent", "guild", "org"] as const).map((level) => ({
-    level,
-    label: levelLabel[level],
-    notes: [],
-  }));
-  for (const note of notes) {
-    if (!note.display_path.startsWith(prefix[note.level])) continue;
-    if (!note.key.endsWith(".md")) continue;
-    groups.find((group) => group.level === note.level)?.notes.push(note);
-  }
-  return groups.filter((group) => group.notes.length > 0);
-}
 
 export function collectionDisplayPath(orgId: string, collection: Pick<Collection, "name">): string {
   return `org/${orgId}/collections/${collection.name}`;

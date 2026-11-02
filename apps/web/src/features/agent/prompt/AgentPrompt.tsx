@@ -29,7 +29,7 @@ import {
 } from "@guildsrun/ui";
 import type { InsertKind } from "@guildsrun/ui";
 import { EmbedPreview } from "../../notes/EmbedPreview";
-import { embedIsBroken, pickableNotes } from "../../notes/embeds";
+import { embedIsBroken } from "../../notes/embeds";
 import { InsertPicker } from "../../notes/InsertPicker";
 import { taskEdit, type TaskDraft } from "./taskContext";
 import { LatestChange } from "../../notes/LatestChange";
@@ -313,10 +313,6 @@ export function AgentPrompt() {
       collections: collections.data,
       orgId: org.id,
     });
-  const noteGroups = useMemo(
-    () => (notes.data ? pickableNotes(notes.data, { orgId: org.id, guildId, agentId }) : undefined),
-    [notes.data, org.id, guildId, agentId],
-  );
 
   const pickInsert = (kind: InsertKind) =>
     new Promise<string | null>((resolve) => {
@@ -473,7 +469,7 @@ export function AgentPrompt() {
 
       <InsertPicker
         kind={picking}
-        noteGroups={noteGroups}
+        notes={notes.data}
         collections={collections.data}
         orgId={org.id}
         onPick={(markup) => {

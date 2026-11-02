@@ -9,11 +9,10 @@ import {
   useNote,
   useNoteList,
   useSaveNote,
-  type NotesPrefix,
 } from "../../api/queries/notes";
+import type { AccessRow, AccessSubject } from "../../api/types/access";
 import type { FileContent, NoteItem } from "../../api/types/notes";
 import { copyText } from "../../app/clipboard";
-import { openingScope } from "../../app/displayPath";
 import { useIdentity } from "../../app/identity";
 import { useMediaQuery, visiblePanes, wideScreen } from "../../app/media";
 import {
@@ -40,23 +39,27 @@ import {
 } from "@guildsrun/ui";
 import type { FileTreeNode, InsertKind } from "@guildsrun/ui";
 import { AccessListPanel } from "../access/AccessListPanel";
+import { StartingAccessField } from "../access/StartingAccessField";
 import { EmbedPreview } from "./EmbedPreview";
-import { embedIsBroken, pickableNotes } from "./embeds";
+import { embedIsBroken } from "./embeds";
 import { InsertPicker } from "./InsertPicker";
 import { buildTree, newNotePath } from "./noteTree";
 import { LatestChange, type OpenChangeStep } from "./LatestChange";
 
-export type NoteScope = { id: "agent" | "guild" | "org"; title: string; prefix: NotesPrefix };
+/**
+ * A page whose notes the browser lists: an agent's lists the notes it reads, a guild's the notes
+ * whose access list names the guild, one of its agents or the organisation, the organisation's
+ * every note. A note created from it starts with a row for the page's subject.
+ */
+export type NoteScope = { title: string; page: AccessSubject };
 
 type NotesBrowserProps = {
-  /** The scopes to browse, the first open at start: an agent's, its guild's, the organisation's. */
+  /** The pages to browse, the first open at start; the organisation's is the last. */
   scopes: NoteScope[];
   guildId: string;
-  /** The agent whose notes these are, when browsing from its inspector. */
-  agentId?: string;
   /** Opens the run step that changed a file; by default the run opens in its agent's chat. */
   onOpenStep?: OpenChangeStep;
-  /** A file to open first, by display path; its scope opens with it. */
+  /** A note to open first, by display path; the organisation's list, which holds every note, opens with it. */
   initialPath?: string | undefined;
   /** Pins the open file to a question for Studio's coach. */
   onAsk?: ((item: NoteItem) => void) | undefined;
@@ -64,28 +67,28 @@ type NotesBrowserProps = {
 
 const noNotes: NoteItem[] = [];
 
+/** What each page's list holds, as its empty state says. */
+const emptyNotes: Record<AccessSubject["type"], string> = {
+  agent: "Notes this agent reads appear here.",
+  guild: "Notes open to this guild or its agents appear here.",
+  org: "Every note of the organisation appears here.",
+};
+
 /**
- * Notes by scope: each scope's notes side by side, and the open note in an editor. Notes are
- * last-writer-wins; embeds work as in the Task.
+ * Notes by page: each page's list, and the open note in an editor. Notes are last-writer-wins;
+ * embeds work as in the Task.
  */
-export function NotesBrowser({
-  scopes,
-  guildId,
-  agentId,
-  onOpenStep,
-  initialPath,
-  onAsk,
-}: NotesBrowserProps) {
-  const initialScope = openingScope(scopes, initialPath)?.id;
-  const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.id ?? "guild");
-  const scope = scopes.find((item) => item.id === scopeId) ?? scopes[0];
-  const prefixOf = (id: NoteScope["id"]) => scopes.find((item) => item.id === id)?.prefix ?? null;
+export function NotesBrowser({ scopes, guildId, onOpenStep, initialPath, onAsk }: NotesBrowserProps) {
+  const initialScope = initialPath ? scopes.find((item) => item.page.type === "org")?.page.type : undefined;
+  const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.page.type ?? "guild");
+  const scope = scopes.find((item) => item.page.type === scopeId) ?? scopes[0];
+  const pageOf = (type: AccessSubject["type"]) => scopes.find((item) => item.page.type === type)?.page ?? null;
   const lists = {
-    agent: useNoteList(prefixOf("agent")),
-    guild: useNoteList(prefixOf("guild")),
-    org: useNoteList(prefixOf("org")),
+    agent: useNoteList(pageOf("agent")),
+    guild: useNoteList(pageOf("guild")),
+    org: useNoteList(pageOf("org")),
   };
-  const [selected, setSelected] = useState<Partial<Record<NoteScope["id"], string>>>(() =>
+  const [selected, setSelected] = useState<Partial<Record<AccessSubject["type"], string>>>(() =>
     initialScope && initialPath ? { [initialScope]: initialPath } : {},
   );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -103,28 +106,27 @@ export function NotesBrowser({
     <>
       <ScopeNotes
         scope={scope}
-        list={lists[scope.id]}
+        list={lists[scope.page.type]}
         tabs={
           scopes.length > 1 ? (
             <Segmented
               size="sm"
-              label="Notes scope"
-              value={scope.id}
+              label="Notes list"
+              value={scope.page.type}
               onValueChange={setScopeId}
               options={scopes.map((item) => ({
-                value: item.id,
+                value: item.page.type,
                 label: item.title,
-                count: lists[item.id].data?.length ?? 0,
+                count: lists[item.page.type].data?.length ?? 0,
               }))}
             />
           ) : null
         }
         guildId={guildId}
-        agentId={agentId}
         onOpenStep={onOpenStep}
         onAsk={onAsk}
-        chosenPath={selected[scope.id]}
-        onChoose={(path) => setSelected({ ...selected, [scope.id]: path })}
+        chosenPath={selected[scope.page.type]}
+        onChoose={(path) => setSelected({ ...selected, [scope.page.type]: path })}
         drafts={drafts}
         onDraft={(path, text) =>
           setDrafts((current) => {
@@ -153,13 +155,12 @@ export function NotesBrowser({
 type ScopeNotesProps = {
   scope: NoteScope;
   list: UseQueryResult<NoteItem[]>;
-  /** The scope picker above the list; null when there is one scope. */
+  /** The list picker above the list; null when there is one list. */
   tabs: ReactNode;
   guildId: string;
-  agentId: string | undefined;
   onOpenStep: OpenChangeStep | undefined;
   onAsk: ((item: NoteItem) => void) | undefined;
-  /** The note chosen in this scope, by display path; without one the first note opens. */
+  /** The note chosen in this list, by display path; without one the first note opens. */
   chosenPath: string | undefined;
   onChoose: (path: string | undefined) => void;
   /** The unsaved text of every note edited in the browser, by display path. */
@@ -170,13 +171,12 @@ type ScopeNotesProps = {
   startsOnNote: boolean;
 };
 
-/** One scope's notes: the searchable tree beside the open note, one at a time on a phone, and a new note. */
+/** One page's notes: the searchable tree beside the open note, one at a time on a phone, and a new note. */
 function ScopeNotes({
   scope,
   list,
   tabs,
   guildId,
-  agentId,
   onOpenStep,
   onAsk,
   chosenPath,
@@ -201,7 +201,7 @@ function ScopeNotes({
     <EmptyState
       icon={FileText}
       title="No notes yet"
-      description={`Notes in ${scope.title.toLowerCase()} scope appear here. Agents write them with their note tools.`}
+      description={`${emptyNotes[scope.page.type]} Agents write notes with their note tools.`}
       action={
         <Button size="sm" onClick={() => setCreating(true)}>
           New note
@@ -250,11 +250,9 @@ function ScopeNotes({
       <section className={cn("min-h-0 min-w-0 flex-1 flex-col", panes.item ? "flex" : "hidden")}>
         {open ? (
           <NoteView
-            key={`${scope.id}:${open.display_path}`}
-            scope={scope}
+            key={`${scope.page.type}:${open.display_path}`}
             item={open}
             guildId={guildId}
-            agentId={agentId}
             onOpenStep={onOpenStep}
             onAsk={onAsk}
             onBack={wide ? undefined : () => setListOpen(true)}
@@ -271,10 +269,10 @@ function ScopeNotes({
       </section>
 
       <NewNoteDialog
+        key={scope.page.type}
         open={creating}
         onOpenChange={setCreating}
         scope={scope}
-        existing={items}
         onCreated={(file) => pickFile(file.display_path)}
       />
     </div>
@@ -284,15 +282,15 @@ function ScopeNotes({
 type NoteListContentProps = {
   scope: NoteScope;
   list: UseQueryResult<NoteItem[]>;
-  /** The scope's notes that match the search, as a tree of folders. */
+  /** The list's notes that match the search. */
   tree: FileTreeNode[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
-  /** What a scope without notes shows in the list; null where the note pane shows it instead. */
+  /** What a list without notes shows; null where the note pane shows it instead. */
   empty: ReactNode;
 };
 
-/** The tree of one scope's notes as it loads: the tree, a failure, no match for the search, or none yet. */
+/** One page's list of notes as it loads: the tree, a failure, no match for the search, or none yet. */
 function NoteListContent({
   scope,
   list,
@@ -308,7 +306,7 @@ function NoteListContent({
   if (tree.length) {
     return (
       <FileTree
-        key={scope.id}
+        key={scope.page.type}
         label={`${scope.title} notes`}
         nodes={tree}
         selectedId={selectedPath}
@@ -321,10 +319,8 @@ function NoteListContent({
 }
 
 type NoteViewProps = {
-  scope: NoteScope;
   item: NoteItem;
   guildId: string;
-  agentId?: string | undefined;
   onOpenStep?: OpenChangeStep | undefined;
   onAsk?: ((item: NoteItem) => void) | undefined;
   onBack?: (() => void) | undefined;
@@ -335,10 +331,8 @@ type NoteViewProps = {
 
 /** One note: its path and provenance, and its text to edit. */
 function NoteView({
-  scope,
   item,
   guildId,
-  agentId,
   onOpenStep,
   onAsk,
   onBack,
@@ -347,9 +341,9 @@ function NoteView({
   onDeleted,
 }: NoteViewProps) {
   const { org } = useIdentity();
-  const file = useNote(scope.prefix, item.path);
-  const save = useSaveNote(scope.prefix);
-  const remove = useDeleteNote(scope.prefix);
+  const file = useNote(item.path);
+  const save = useSaveNote();
+  const remove = useDeleteNote();
   const notes = useEmbeddableNotes();
   const collections = useCollections();
   const [picking, setPicking] = useState<InsertKind | null>(null);
@@ -358,15 +352,9 @@ function NoteView({
   const [deleting, setDeleting] = useState(false);
   const [sharing, setSharing] = useState(false);
 
-  const noteGroups = useMemo(
-    () =>
-      notes.data
-        ? pickableNotes(
-            notes.data.filter((note) => note.display_path !== item.display_path),
-            { orgId: org.id, guildId, agentId: agentId ?? "" },
-          )
-        : undefined,
-    [notes.data, item.display_path, org.id, guildId, agentId],
+  const otherNotes = useMemo(
+    () => notes.data?.filter((note) => note.display_path !== item.display_path),
+    [notes.data, item.display_path],
   );
   const isBroken = (path: string) =>
     embedIsBroken(path, {
@@ -397,10 +385,7 @@ function NoteView({
             onClick={onBack}
           />
         ) : null}
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">
-          <span className="text-muted">~/{scope.id}/</span>
-          {item.path}
-        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-sm">{item.path}</span>
         {onAsk ? (
           <Button variant="outline" size="xs" onClick={() => onAsk(item)}>
             <Icon icon={Pin} size={14} />
@@ -476,7 +461,7 @@ function NoteView({
 
       <InsertPicker
         kind={picking}
-        noteGroups={noteGroups}
+        notes={otherNotes}
         collections={collections.data}
         orgId={org.id}
         onPick={(markup) => {
@@ -541,7 +526,7 @@ function NoteAccessDialog({ item, open, onOpenChange }: NoteAccessDialogProps) {
         <DialogBody>
           <AccessListPanel
             target={{ kind: "note", id: item.id }}
-            intro="Who reads and writes this note. Where it is placed only files it; this list decides who reaches it. An agent always reaches its own notes."
+            intro="Who reads and writes this note."
           />
         </DialogBody>
         <DialogFooter>
@@ -558,18 +543,24 @@ type NewNoteDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: NoteScope;
-  existing: readonly NoteItem[];
   onCreated: (file: FileContent) => void;
 };
 
-function NewNoteDialog({ open, onOpenChange, scope, existing, onCreated }: NewNoteDialogProps) {
-  const save = useSaveNote(scope.prefix);
+/**
+ * Names a new note of the organisation and who reaches it first, the page's subject at write
+ * unless the operator picks another; a refusal from the server shows in the dialog.
+ */
+function NewNoteDialog({ open, onOpenChange, scope, onCreated }: NewNoteDialogProps) {
+  const save = useSaveNote();
+  const pageAccess: AccessRow = { ...scope.page, mode: "write" };
   const [name, setName] = useState("untitled");
+  const [access, setAccess] = useState<AccessRow>(pageAccess);
   const [touched, setTouched] = useState(false);
-  const result = newNotePath(name, existing);
+  const result = newNotePath(name);
 
   const close = () => {
     setName("untitled");
+    setAccess(pageAccess);
     setTouched(false);
     save.reset();
     onOpenChange(false);
@@ -580,7 +571,7 @@ function NewNoteDialog({ open, onOpenChange, scope, existing, onCreated }: NewNo
     setTouched(true);
     if ("error" in result) return;
     save.mutate(
-      { path: result.path, content: "" },
+      { path: result.path, content: "", access },
       {
         onSuccess: (file) => {
           onCreated(file);
@@ -594,7 +585,7 @@ function NewNoteDialog({ open, onOpenChange, scope, existing, onCreated }: NewNo
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       <DialogContent size="sm">
         <form onSubmit={submit} className="flex min-h-0 flex-col">
-          <DialogHeader title="New note" description={`In ${scope.title.toLowerCase()} scope.`} />
+          <DialogHeader title="New note" description="A note's name is unique in the organisation." />
           <DialogBody>
             <TextField
               tone="surface"
@@ -607,6 +598,7 @@ function NewNoteDialog({ open, onOpenChange, scope, existing, onCreated }: NewNo
               hint={"path" in result ? `Saved as ${result.path}` : undefined}
               {...(touched && "error" in result ? { error: result.error } : {})}
             />
+            <StartingAccessField value={access} onChange={setAccess} disabled={save.isPending} />
             {save.isError ? (
               <Banner tone="error" title="Couldn't create the note">
                 {save.error.message}

@@ -202,13 +202,10 @@ type ItemEditorProps = { row: StateItemRow };
 
 /** Today's notes browser or records panel, opened on the item, so editing stays in State. */
 function ItemEditor({ row }: ItemEditorProps) {
-  const { agents } = useStudio();
   if (row.kind === "table" && row.collection_id) {
     return <TableRecords collectionId={row.collection_id} />;
   }
-  const agent =
-    row.level === "agent" ? (agents.find((item) => item.id === row.owner_id) ?? null) : null;
-  return <NoteEditor agent={agent} path={row.display_path} />;
+  return <NoteEditor path={row.display_path} />;
 }
 
 type TallySectionProps = {

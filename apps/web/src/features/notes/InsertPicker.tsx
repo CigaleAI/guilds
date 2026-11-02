@@ -22,12 +22,13 @@ import {
   cn,
 } from "@guildsrun/ui";
 import type { EmbedMode, InsertKind } from "@guildsrun/ui";
-import { collectionDisplayPath, insertMarkup, type NoteGroup } from "./embeds";
+import { collectionDisplayPath, insertMarkup } from "./embeds";
 
 type InsertPickerProps = {
   /** What to pick; null keeps the dialog closed. */
   kind: InsertKind | null;
-  noteGroups: NoteGroup[] | undefined;
+  /** The notes the operator can embed; undefined while they load. */
+  notes: readonly EmbeddableNote[] | undefined;
   collections: readonly Collection[] | undefined;
   orgId: string;
   /** The text to insert, or null when the operator cancels. */
@@ -68,7 +69,7 @@ const copyByKind: Record<InsertKind, PickerCopy> = {
     search: "Search notes",
     icon: FileText,
     emptyTitle: "No notes to insert",
-    emptyDescription: "Notes of this agent, its guild and the organisation appear here.",
+    emptyDescription: "The organisation's notes appear here.",
     prompt: "Select a note to preview it.",
   },
   table: {
@@ -106,27 +107,25 @@ function tableGroups(collections: readonly Collection[], orgId: string): ChoiceG
   return [{ label: "Tables", choices }];
 }
 
-function noteChoiceGroups(noteGroups: readonly NoteGroup[]): ChoiceGroup[] {
-  return noteGroups.map((group) => ({
-    label: group.label,
-    choices: group.notes.map((note) => ({
-      path: note.display_path,
-      title: note.key,
-      meta: note.title ?? "",
-      note,
-    })),
+function noteGroups(notes: readonly EmbeddableNote[]): ChoiceGroup[] {
+  const choices = notes.map((note) => ({
+    path: note.display_path,
+    title: note.key,
+    meta: note.title ?? "",
+    note,
   }));
+  return [{ label: "Notes", choices }];
 }
 
 /** The choices for a kind that match the query; undefined while they load. */
 function choiceGroups(
   kind: InsertKind | null,
-  sources: Pick<InsertPickerProps, "noteGroups" | "collections" | "orgId">,
+  sources: Pick<InsertPickerProps, "notes" | "collections" | "orgId">,
   query: string,
 ): ChoiceGroup[] | undefined {
   const listed =
     kind === "note"
-      ? sources.noteGroups && noteChoiceGroups(sources.noteGroups)
+      ? sources.notes && noteGroups(sources.notes)
       : sources.collections && tableGroups(sources.collections, sources.orgId);
   return listed
     ?.map((group) => ({ ...group, choices: group.choices.filter((item) => matches(item, query)) }))
@@ -145,15 +144,15 @@ function selectedChoice(
  * Picks what to insert in a Task or note: a note, embedded as `![[path]]` or referenced as
  * `[[path]]`; a table, embedded; or one of a table's columns, named as `table.column`.
  */
-export function InsertPicker({ kind, noteGroups, collections, orgId, onPick }: InsertPickerProps) {
+export function InsertPicker({ kind, notes, collections, orgId, onPick }: InsertPickerProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [column, setColumn] = useState<string | null>(null);
   const [mode, setMode] = useState<EmbedMode>("embed");
 
   const groups = useMemo(
-    () => choiceGroups(kind, { noteGroups, collections, orgId }, query),
-    [kind, noteGroups, collections, orgId, query],
+    () => choiceGroups(kind, { notes, collections, orgId }, query),
+    [kind, notes, collections, orgId, query],
   );
   const chosen = selectedChoice(groups, selected);
   const copy = copyByKind[kind ?? "note"];
