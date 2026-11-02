@@ -351,34 +351,34 @@ type ChoiceRowProps = {
 
 /**
  * One choice: selected on a click, inserted on a double click, with the agent's mode when the
- * picker lists its sections. A note the agent does not reach is greyed, says why, and does neither.
+ * picker lists its sections. A note the agent does not reach is a disabled row, out of the tab
+ * order, that says why on hover and does neither.
  */
 function ChoiceRow({ choice, copy, selected, onSelect, onPick }: ChoiceRowProps) {
-  const insertable = isInsertable(choice);
-  const isSelected = insertable && choice.path === selected;
+  const isSelected = choice.path === selected;
+  const rowContent = {
+    lead: <Icon icon={copy.icon} size={14} />,
+    title: choice.title,
+    ...(choice.meta ? { meta: choice.meta } : {}),
+    ...(choice.mode ? { trail: <ModeTag mode={choice.mode} /> } : {}),
+  };
+  if (!isInsertable(choice)) {
+    return (
+      <div title={unreachedChoiceReason}>
+        <Row asChild density="compact" disabled mono {...rowContent}>
+          <button type="button" tabIndex={-1} title={unreachedChoiceReason} />
+        </Row>
+      </div>
+    );
+  }
   return (
-    <Row
-      asChild
-      density="compact"
-      interactive={insertable}
-      muted={!insertable}
-      mono
-      selected={isSelected}
-      lead={<Icon icon={copy.icon} size={14} />}
-      title={choice.title}
-      {...(choice.meta ? { meta: choice.meta } : {})}
-      {...(choice.mode ? { trail: <ModeTag mode={choice.mode} /> } : {})}
-    >
-      {insertable ? (
-        <button
-          type="button"
-          aria-pressed={isSelected}
-          onClick={() => onSelect(choice.path)}
-          onDoubleClick={() => onPick(choice)}
-        />
-      ) : (
-        <button type="button" aria-disabled="true" title={unreachedChoiceReason} />
-      )}
+    <Row asChild density="compact" interactive mono selected={isSelected} {...rowContent}>
+      <button
+        type="button"
+        aria-pressed={isSelected}
+        onClick={() => onSelect(choice.path)}
+        onDoubleClick={() => onPick(choice)}
+      />
     </Row>
   );
 }
