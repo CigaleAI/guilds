@@ -10,16 +10,31 @@ commands for each effect are in
 
 **Breaking.** A note or a file has an access list and nothing else:
 no level and no owner. A name is one note or one file across the
-organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`. An
-agent creates a note or a file written by itself alone, and reaches
-any other through its rows; an operator creates one with the row it
-names, the organisation at write by default. `note_write` takes a
-`key` or a `path`, `file_put` no `level`, and `note_find` and
-`file_find` no `level`. The organisation's notes and files are listed
-and written under `/api/org/notes` and `/api/org/files`; a guild's and
-an agent's pages list what names them or what they read. Updating
-gives each agent note and file a row for its agent, renames a name
-several owners held, and rewrites every link to a moved item.
+organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`; Memory,
+Tasks, and scripts stay at `org/<org>/agents/<agent>/…`. An agent
+creates a note or a file written by itself alone, and reaches any other
+through its rows; an operator creates one with the row it names, the
+organisation at write by default, and writes every note and file but
+those whose rows all name private guilds it does not operate or their
+agents. `note_write` takes a `key` or a `path`, `file_put` no `level`,
+`note_find` and `file_find` no `level`, and Studio's `studio_edit_note`
+no `level`; results carry no `level` or `owner_id`. Notes are written
+under `PUT /api/org/notes/*` with `{ content, access? }` and files
+uploaded to `POST /api/org/files` with optional `X-Access-Type`,
+`X-Access-Id`, and `X-Access-Mode`; the note routes under
+`/api/guilds/:id/notes/*` and `/api/agents/:id/notes/*` (but `task.md`
+and `memory.md`) and the upload routes `POST /api/guilds/:id/files` and
+`POST /api/agents/:id/files` are gone. A guild's page lists the notes
+and files whose rows name the guild, one of its agents, or the
+organisation, and an agent's page what the agent reads. The access
+routes answer `{ subjects }` without `owner_agent_id`, and the reach
+routes list notes as `{ id, display_path, title, mode }`. A recipe's
+notes have no `level` or `role`, and its Tasks name them as
+`org/<key>`. The 10 000 live notes and files are counted per
+organisation. Updating gives each agent note and file a row for its
+agent, renames a name several owners held to `<owner>-<name>` and
+records it in `artifact_renames`, and rewrites every embed and mention
+of a moved item.
 
 The inbox stream's notice of a new group message names the message's
 guild. A message posted in the chat an operator is watching no
