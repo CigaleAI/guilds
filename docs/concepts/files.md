@@ -5,23 +5,24 @@ a report, a dataset, an image, an archive. It is what an agent shares
 when the thing it made is not Markdown. Agents share files with tools,
 and operators upload and download them in the app.
 
-A file sits at one of three levels: one agent, one guild, or the whole
-organisation. The level is where the file lives. Its
-[access list](access.md#access-lists-for-notes-collections-and-files)
-decides who reads and writes it, with the same starting rows as a
-[note](notes.md). Text that agents and operators read and edit belongs
-in a note instead, and structured rows in a
+A file has an [access list](access.md#access-lists-for-notes-collections-and-files)
+and nothing else, as a [note](notes.md) does. The list decides who
+reads and writes it. A file's name is unique in its organisation: one
+name is one file. Text that agents and operators read and edit
+belongs in a note instead, and structured rows in a
 [collection](collections.md).
 
 ## When you use it
 
 - An agent produces a PDF, a spreadsheet, or an image another agent or
-  an operator needs: it shares the file at guild level.
-- An operator gives a team a reference file every member may use: a
-  guild-level file.
-- Several guilds use one file: an organisation-level file, uploaded by
-  an operator.
-- An agent keeps a file its own later runs need: an agent-level file.
+  an operator needs: it shares the file, and an operator gives its
+  guild or the operator a row on it.
+- An operator gives a team a reference file every member may use: an
+  upload whose row is the guild.
+- Several guilds use one file: an upload whose row is the
+  organisation, or one row per guild.
+- An agent keeps a file its own later runs need: a file it shares,
+  which only it writes until an operator shares it.
 
 ## How it works
 
@@ -34,12 +35,14 @@ file's description is required: it is what other agents search for.
 
 ### How far an agent reaches
 
-An agent always reads and writes its own agent-level files. Every other
-file is reached through its access list, exactly as for a note: the
-agent's own row when it has one, otherwise the better of its guild's
-row and the organisation's row. A new guild-level file starts written
-by that guild's agents. A new organisation-level file starts read by
-every agent.
+An agent reaches a file through its access list alone, exactly as
+for a note: the agent's own row when it has one, otherwise the better
+of its guild's row and the organisation's row. A file an agent shares
+starts with that agent at `write`. A file an operator uploads starts
+with the one row the upload names, the organisation at `write` when
+it names none. An operator reads and writes every file that is not
+hidden from them
+([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 ### Between the home and the store
 
@@ -55,10 +58,11 @@ flowchart LR
   S -- download --> O
 ```
 
-- `file_put` copies a file from the home into the store at a level,
-  under a name, with a description. A new file is created at the
-  `agent` or `guild` level only. A file of the same name at that level
-  is replaced when the agent writes it, and its version grows by one.
+- `file_put` copies a file from the home into the store under a
+  name, with a description. A file of the same name in the
+  organisation is replaced when the agent writes it, and its version
+  grows by one; the agent is refused when it does not. A missing one
+  is created with the agent at `write`.
 - `file_fetch` copies a file the agent reads into its home, at
   `shared/<name>` unless the agent names another place. The result is
   that path and the file's description, type, and size, never the
@@ -78,15 +82,19 @@ does not show it: files have their own view.
 ## In the app
 
 The agent's **State** tab and the guild's **State** tab each have a
-**Files** view beside **Notes**.
+**Files** view beside **Notes**, over the organisation's one set of
+files.
 
-- The agent's **State › Files** shows three scopes: **Agent**,
-  **Guild**, and **Org**.
+- The agent's **State › Files** shows three scopes: **Agent**, the
+  files that agent reads; **Guild**, the files whose access list has a
+  row for the guild, one of its agents, or the organisation; and
+  **Org**, every file of the organisation.
 - The guild's **State › Files** shows **Guild** and **Org**.
 
 In both:
 
 - A switch above the list picks the scope, with each scope's count.
+  One file shows in every scope that lists it.
 - Each scope lists its files with name, description, size, media
   type, who changed it last, and when. The search box filters them by
   name and description.
@@ -98,10 +106,14 @@ In both:
   ([Access](access.md#the-access-panel)).
 - Deleting asks first. Agents that fetched the file keep their
   copies.
-- **Upload a file** takes a file and a description of at most 400
-  characters. It refuses an empty file, a file over 10 MiB, or no
-  description before it sends anything. A file of the same name in
-  the scope is replaced. The media type is the one the browser gives.
+- **Upload a file** takes a file, a description of at most 400
+  characters, and the file's first access row: a subject and a mode.
+  The row starts as the browsed scope at `write`: the agent on
+  **Agent**, the guild on **Guild**, the organisation on **Org**. Any
+  subject and mode can be picked instead. It refuses an empty file, a
+  file over 10 MiB, or no description before it sends anything. A
+  file of the same name in the organisation is replaced, and keeps its
+  access list. The media type is the one the browser gives.
 
 A download is always a saved file, never a page the browser renders,
 whatever the file's media type.
@@ -112,11 +124,11 @@ whatever the file's media type.
 |---|---|
 | Size of one file | 10 MiB |
 | Live files of an organisation together | 1 GiB |
-| Live notes, Memory, scripts, and files per owner | 10 000 |
-| Name | one file name, no `/` or `\`, not `.` or `..`, no control character, at most 255 characters |
+| Live notes and files per organisation | 10 000 together |
+| Name | one file name, no `/` or `\`, not `.` or `..`, no control character, at most 255 characters; unique in the organisation |
 | Description | required, at most 400 characters |
 | Media type | from the uploader, else from the name's extension, else `application/octet-stream` |
-| Creating at `org` level | operators only |
+| Starting access | one row: the sharing agent at `write`, or the subject the upload names (the organisation at `write` by default) |
 | Download | `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store` |
 
 ## Reference
@@ -125,9 +137,9 @@ whatever the file's media type.
 
 | Tool | Parameters | Does |
 |---|---|---|
-| `file_find` | `query`, `level`, `limit` (default 20, at most 100) | Searches the files the agent may read by name and description; an empty `query` lists them. Returns `{ files }`, each `{ id, display_path, name, description, mime, bytes, level, owner_id, version, author, updated_at, access }` |
+| `file_find` | `query`, `limit` (default 20, at most 100) | Searches the files the agent may read by name and description; an empty `query` lists them by name. Returns `{ files }`, each `{ id, display_path, name, description, mime, bytes, version, author, updated_at, access }` |
 | `file_fetch` | `path` (required), `home_path` | Copies the file into the home at `home_path`, default `shared/<name>`. Returns `{ home_path, ...file }` |
-| `file_put` | `home_path`, `level`, `description` (required), `name`, `mime` | Copies the file at `home_path` into the store at `level` under `name` (default its own name). Returns the display path |
+| `file_put` | `home_path`, `description` (required), `name`, `mime` | Copies the file at `home_path` into the store under `name` (default its own name): replaces the organisation's file of that name with `write` on it, else creates it with the agent at `write`. Returns the display path |
 | `file_delete` | `path` (required) | Deletes the file. Needs `write` |
 
 Errors:
@@ -135,14 +147,12 @@ Errors:
 | Case | Status |
 |---|---|
 | fetching or deleting a file the agent does not reach | 404 `artifact not found` |
-| replacing or deleting a file the agent only reads | 422 `write not allowed` |
-| creating a file at `org` level | 422 `write not allowed` |
+| replacing a file the agent does not write, or deleting one it only reads | 422 `write not allowed` |
 | `home_path` outside the home, a link out of it, a folder, or missing | 422 with the reason |
 | `file_put` of a file over 10 MiB | 422 `file_path is larger than 10485760 bytes` |
 | an empty file | 422 `file is empty` |
 | the organisation's files would exceed 1 GiB | 422 `file storage limit reached` |
-| the owner already holds 10 000 live notes, Memory, scripts, and files | 422 `artifact limit reached` |
-| `level` missing or not `agent`, `guild`, or `org` | 422 `level must be agent, guild, or org` |
+| the organisation already holds 10 000 live notes and files | 422 `artifact limit reached` |
 
 Crossing tool families fails with a 422 that names the right tool:
 `note_get` on a file is `use file_fetch for files`, and `note_delete`
@@ -171,43 +181,45 @@ rows.
 ### HTTP
 
 ```text
-GET    /api/agents/:agent_id/files   the agent's files the caller may read
-POST   /api/agents/:agent_id/files   the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, and an optional X-Mime
-GET    /api/guilds/:guild_id/files
-POST   /api/guilds/:guild_id/files
-GET    /api/org/files
-POST   /api/org/files
+GET    /api/org/files                every file of the organisation the caller may read, by name
+POST   /api/org/files                the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, an optional X-Mime, and optional X-Access-Type, X-Access-Id, and X-Access-Mode
+GET    /api/guilds/:guild_id/files   the files whose access list has a row for the guild, one of its agents, or the organisation
+GET    /api/agents/:agent_id/files   the files the agent reads
 GET    /api/files/:file_id           the bytes, as a download
 DELETE /api/files/:file_id           204
 ```
 
-A listing or an upload answers the file as `file_find` does. An upload
-is 201. A file of the same name at the same level is replaced. An
-upload without `X-Filename` or `X-Description` is 422
+A listing or an upload answers each file in the shape `file_find`
+gives; on the agent route, `access` is the agent's mode. An upload is
+201. A file of the same name in the
+organisation is replaced, and keeps its access list. A new file starts
+with the row the three `X-Access-*` headers name, a subject type
+(`org`, `guild`, or `agent`), its id, and a mode; without them the
+organisation writes it. Some of the three without the others is 422
+`X-Access-Type, X-Access-Id, and X-Access-Mode go together`, and a bad
+row is 422 with the message the access routes give, prefixed
+`access: `. An upload without `X-Filename` or `X-Description` is 422
 `X-Filename and X-Description are required`. An upload over 10 MiB is
 422 `file exceeds 10 MiB`, and an empty one 422 `file is empty`. The
-agent and guild routes need a guild the caller can see; the
-organisation routes need organisation membership. A file of a private
-guild the caller does not operate is 404 by every route
-([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).
+guild and agent routes need a guild the caller can see; the
+organisation routes need organisation membership. A file hidden from
+the caller is left out of every listing and is 404 by every route
+([SEC-55](../architecture/security-register.md#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list)).
 
-Agent and guild uploads and deletes publish `guild.artifacts.changed`.
+An upload or a delete publishes the file's change to each guild its
+access list names, through a row for the guild or for one of its
+agents.
 
 ### Storage
 
-Display paths:
+A file's display path is `org/<org_id>/files/<name>`.
 
-```text
-org/<org_id>/agents/<agent_id>/files/<name>
-org/<org_id>/guilds/<guild_id>/files/<name>
-org/<org_id>/files/<name>
-```
-
-A file is an `artifacts` row with `kind` `file`, `path` `files`, a
-`key` that is its name, a `title` that is its description, `mime`,
-`bytes`, and a `content_hash` that is the sha256 of its bytes. Its
-search document is the name and description. Deletion sets
-`deleted_at` and removes the bytes.
+A file is an `artifacts` row with `kind` `file`, no `agent_id`, `path`
+`files`, a `key` that is its name, a `title` that is its description,
+`mime`, `bytes`, and a `content_hash` that is the sha256 of its bytes.
+The name is unique among the organisation's live files. Its search
+document is the name and description. Deletion sets `deleted_at` and
+removes the bytes.
 
 The bytes sit in the blob store under
 `<org_id>/files/<artifact id>/v<version>`. A replace writes the new

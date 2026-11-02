@@ -5,60 +5,53 @@ holds long-form knowledge: a finding, a procedure, a glossary, a
 decision. Agents write notes with tools, and operators read and edit
 them in the app.
 
-A note sits at one of three levels: one agent, one guild, or the
-whole organisation. The level is where the note lives. Its
-[access list](access.md#access-lists-for-notes-collections-and-files)
-decides who reads and writes it. A new guild-level note starts
-written by that guild's agents, and a new organisation-level note
-starts read by every agent. Structured rows belong in a
-[collection](collections.md) instead, bytes that are not Markdown in a
-[file](files.md), and what an agent wants its next runs to remember
-in its [Memory](memory.md).
+A note has an [access list](access.md#access-lists-for-notes-collections-and-files)
+and nothing else. The list decides who reads and writes it. A note's
+name is unique in its organisation: one name is one note. Structured
+rows belong in a [collection](collections.md) instead, bytes that are
+not Markdown in a [file](files.md), and what an agent wants its next
+runs to remember in its [Memory](memory.md).
 
 ## When you use it
 
-- An agent keeps long-form knowledge for its own work: an agent-level
-  note.
-- A team shares knowledge every member needs: a guild-level note.
-- Several guilds share knowledge: an organisation-level note.
-- Two guilds share one note: a guild-level note whose access list
-  adds the second guild.
+- An agent keeps long-form knowledge for its own work: a note it
+  creates, which only it writes until an operator shares it.
+- A team shares knowledge every member needs: a note with a row for
+  the guild.
+- Several guilds share knowledge: a note with a row for each guild,
+  or for the organisation.
 - An operator wants a rule in every run of an agent: a note embedded
   in the agent's [Task](task.md).
 
 ## How it works
 
-### Three levels, flat files
+### One set of notes, flat files
 
-```mermaid
-flowchart TD
-  O["Organisation notes<br/>start read by every agent"]
-  G["Guild notes<br/>start written by one guild's agents"]
-  A["Agent notes<br/>one agent's own"]
-  O --- G --- A
-```
-
-Each level holds its notes side by side. There are no folders. A
-note's name is one `.md` file name, its key.
+The organisation holds its notes side by side. There are no folders,
+and no note belongs to an agent or a guild. A note's name is one
+`.md` file name, its key, and its display path is
+`org/<org_id>/<key>`.
 
 ### How far an agent reaches
 
-An agent always reads and writes its own agent-level notes. Every
-other note is reached through its access list: the agent's own row
-when it has one, otherwise the better of its guild's row and the
-organisation's row. No row is no access
+An agent reaches a note through its access list alone: the agent's
+own row when it has one, otherwise the better of its guild's row and
+the organisation's row. No row is no access
 ([Access](access.md#access-lists-for-notes-collections-and-files)).
+The agent that created a note reaches it through the row its creation
+wrote, like any other.
 
-A note starts with these rows:
+A new note starts with one row:
 
-| Level | Starting rows | Who reaches it then |
-|---|---|---|
-| agent | none | that agent only |
-| guild | the guild at `write` | that guild's agents read and write it |
-| org | the organisation at `read` | every agent reads it, none writes it |
+| Created by | Starting row |
+|---|---|
+| an agent, with `note_write` | that agent at `write` |
+| an operator, in the app | the subject and mode the **New note** dialog names, the browsed scope at `write` by default |
+| an operator, over HTTP | the `access` row the write names, the organisation at `write` when it names none |
+| a recipe | the rows the recipe states, the new guild at `write` when it states none ([Recipe format](recipe-format.md#notes)) |
 
-An operator changes the rows of one note. Opening a guild note to a
-second guild, letting one agent write an organisation note, or
+An operator changes the rows of one note. Opening a note to a second
+guild, letting one agent write a note its guild only reads, or
 keeping one agent out of a note is a row on that note.
 
 There is one kind of agent. A curator that maintains shared
@@ -68,17 +61,17 @@ knowledge is an ordinary agent with `write` on the notes it keeps.
 
 An agent writes a note in one of two ways:
 
-- **By level and key.** The agent names the level (`agent`, `guild`,
-  or `org`) and the key. The level decides the owner: the agent
-  itself, its own guild, or the organisation. A new note is created
-  only at the `agent` or `guild` level, and it starts writable by the
-  writer. At the `org` level the agent only updates a note that exists
-  and that it may write.
-- **By display path.** The agent rewrites any existing note whose
-  access is `write`, whatever its level and owner.
+- **By key.** The agent names the key. When a live note of that key
+  exists, the agent updates it if its access is `write`, and is
+  refused otherwise. When none exists, the note is created with the
+  agent at `write`.
+- **By display path.** The agent rewrites the existing note that
+  display path names, when its access is `write`.
 
-The agent never names an organisation, guild, or agent id. "Guild"
-always means the agent's own guild.
+The agent never names an organisation, guild, or agent id.
+
+An operator writes every note that is not hidden from them
+([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 ### Finding and linking
 
@@ -119,24 +112,29 @@ cannot reach it ([Prompt Studio](prompt-studio.md#state)).
 ## In the app
 
 The agent's **State › Notes** and the guild's **State › Notes** are
-one notes browser.
+one notes browser over the organisation's one set of notes.
 
-- The agent's view shows three scopes: **Agent**, **Guild**, and
-  **Org**.
+- The agent's view shows three scopes: **Agent**, the notes that
+  agent reads; **Guild**, the notes whose access list has a row for
+  the guild, one of its agents, or the organisation; and **Org**,
+  every note of the organisation.
 - The guild's view shows **Guild** and **Org**.
 
 In both:
 
 - A switch above the list picks the scope, with each scope's count.
+  One note shows in every scope that lists it.
 - Each scope lists its notes side by side, with no folders. The
   search box filters them by name and title.
-- **New note** takes a name, `untitled` at first. The name cannot
-  hold a `/`, and it gets `.md` added. It cannot be `task.md`,
-  `memory.md`, or the name of a note the scope holds.
+- **New note** takes a name, `untitled` at first, and the note's
+  first access row: a subject and a mode. The row starts as the
+  browsed scope at `write`: the agent on **Agent**, the guild on
+  **Guild**, the organisation on **Org**. Any subject and mode can be
+  picked instead. The name cannot hold a `/`, and it gets `.md` added.
+  It cannot be the name of a note the organisation already holds.
 - A note opens in the same Markdown editor as the Task, in preview
-  first. Its header shows `~/<scope>/<name>`, with **Access**, a copy
-  button, and a delete button. In Studio it also has **Ask the
-  coach**.
+  first. Its header shows its name, with **Access**, a copy button,
+  and a delete button. In Studio it also has **Ask the coach**.
 - - **Insert** adds a note, a table, or a column. A note goes in as
   **Embed** (`![[…]]`) or **Reference** (`[[…]]`). A table goes in as
   an embed, and a column as `` `table.column` `` ([Task](task.md)).
@@ -180,14 +178,12 @@ or a note's deletion. The operator applies or declines each one
 
 | Rule | Value or behaviour |
 |---|---|
-| Note name | one `.md` file name, no `/`, no folders |
-| Reserved at the agent level | `task.md`, `memory.md` |
+| Note name | one `.md` file name, no `/`, no folders; unique in the organisation |
 | Size of one write | 256 KB |
-| Live notes per owner | 10 000, counted with Memory, scripts, and files |
+| Live notes and files per organisation | 10 000 together |
 | `note_find` results | 20 by default, 100 at most |
-| Who reaches a note | its owner agent for an agent-level note, and the subjects on its access list |
-| Starting access | agent level: no row; guild level: the guild at `write`; org level: the organisation at `read` |
-| A new note written by an agent | `agent` or `guild` level only |
+| Who reaches a note | the subjects on its access list, and every operator it is not hidden from |
+| Starting access | one row: the creating agent at `write`, or the subject the operator names (the organisation at `write` by default) |
 | Changing a note's access list | operators only |
 | Deleting a note a live Task embeds | refused (409) |
 | Embed depth | two levels from the Task |
@@ -198,35 +194,31 @@ or a note's deletion. The operator applies or declines each one
 ### Note tools
 
 ```text
-note_find    { query?, level?, limit? }   results { notes }
-note_get     { path }                     path is a display path
-note_write   { level, key, content }      returns the display path
-note_write   { path, content }            returns the display path
-note_delete  { path }                     returns the display path
+note_find    { query?, limit? }      results { notes }
+note_get     { path }                path is a display path
+note_write   { key, content }        returns the display path
+note_write   { path, content }       returns the display path
+note_delete  { path }                returns the display path
 ```
 
-- `note_find` searches the notes the agent may read: its own
-  agent-level notes and every note whose access list gives it `read`
-  or `write`. With a `query` it matches whole words of the content
-  (PostgreSQL `simple` text search, `websearch_to_tsquery` grammar) or
-  a substring of the title and key, ranked by text rank then
-  `updated_at`. An empty `query` lists notes by level and key.
-  `level` limits it to one level. `limit` defaults to 20 and is capped
-  at 100. Each note is `{ display_path, kind, level, key, title,
-  author, version, updated_at, access, content }`, with `access`
-  `read` or `write`.
+- `note_find` searches the notes the agent may read: every note whose
+  access list gives it `read` or `write`. With a `query` it matches
+  whole words of the content (PostgreSQL `simple` text search,
+  `websearch_to_tsquery` grammar) or a substring of the title and key,
+  ranked by text rank then `updated_at`. An empty `query` lists notes
+  by key. `limit` defaults to 20 and is capped at 100. Each note is
+  `{ display_path, kind, key, title, author, version, updated_at,
+  access, content }`, with `access` `read` or `write`.
 - `note_get` returns the display path and the note's text, for a note
   the agent may read. A soft-deleted note returns a tombstone.
-- `note_write` with `level` (`agent`, `guild`, or `org`) and `key`,
-  the `.md` file name, writes the note at that level of the agent. An
-  existing note needs `write`. A new note is created at `agent` or
-  `guild` level only, with the starting rows of its level. A key with
-  a `/` or without `.md` is 422 `note key must be a .md file name;
-  notes have no folders`. `task.md` and `memory.md` at the agent
-  level are 422 `<key> is reserved`.
+- `note_write` with `key`, the `.md` file name, writes the
+  organisation's note of that key. An existing note needs `write`. A
+  missing one is created with the agent at `write`. A key with a `/`
+  or without `.md` is 422 `note key must be a .md file name; notes
+  have no folders`.
 - `note_write` with `path` rewrites the live note that display path
-  names, with `write` on it. The note keeps its owner, key, and
-  title. `level` and `key` are then ignored.
+  names, with `write` on it. The note keeps its key and title. `key`
+  is then ignored.
 - `note_delete` soft-deletes the note. It needs `write`. `task.md` and
   `memory.md` cannot be deleted.
 - A successful write or delete publishes `guild.artifacts.changed`.
@@ -252,12 +244,11 @@ Other errors:
 | Case | Status |
 |---|---|
 | reading or deleting a note the agent does not reach, or writing one by `path` | 404 `artifact not found` |
-| writing or deleting a note the agent only reads, or writing by `level` and `key` a note it cannot write | 422 `write not allowed` |
-| creating a note at `org` level | 422 `write not allowed` |
-| `note_write` with neither `path` nor a valid `level` | 422 `level must be agent, guild, or org` |
+| writing or deleting a note the agent only reads, or writing by `key` a note it cannot write | 422 `write not allowed` |
+| `note_write` with neither `path` nor `key` | 422 `key or path is required` |
 | `note_write` with a `path` that names no live note | 404 `artifact not found` |
 | more than 256 KB | 422 `write exceeds 256 KB` |
-| the owner already holds 10 000 live notes, Memory, scripts, and files | 422 `artifact limit reached` |
+| the organisation already holds 10 000 live notes and files | 422 `artifact limit reached` |
 | deleting a note embedded in a live Task | 409 `note is embedded in task (<agent ids>)` |
 
 ### Access list
@@ -287,30 +278,39 @@ The notes browser reads and writes notes over these routes, acting as
 the operator:
 
 ```text
-GET    /api/agents/:agent_id/notes        the agent's notes, by key: id, path, display_path, kind, title, version
-GET    /api/agents/:agent_id/notes/*      one note, or task.md or memory.md
-PUT    /api/agents/:agent_id/notes/*      { content, expected_version? }
-DELETE /api/agents/:agent_id/notes/*      204
-GET    /api/guilds/:guild_id/notes        the guild's notes
-GET    /api/guilds/:guild_id/notes/*
-PUT    /api/guilds/:guild_id/notes/*      { content }
-DELETE /api/guilds/:guild_id/notes/*      204
-GET    /api/org/notes                     the organisation's notes
-GET    /api/org/notes/*
-PUT    /api/org/notes/*                   { content }
+GET    /api/org/notes                     every note of the organisation, by key: id, path, display_path, kind, title, version
+GET    /api/guilds/:guild_id/notes        the notes whose access list has a row for the guild, one of its agents, or the organisation
+GET    /api/agents/:agent_id/notes        the notes the agent reads
+GET    /api/org/notes/*                   one note, by key
+PUT    /api/org/notes/*                   { content, access? }
 DELETE /api/org/notes/*                   204
-GET    /api/org/embeddable-notes          every live note of the organisation, by level and key (500 at most)
-GET    /api/org/embeddable-notes?display_path=…   one note: display_path, title, level, content; 404 if missing
+GET    /api/agents/:agent_id/notes/task.md, …/memory.md
+PUT    /api/agents/:agent_id/notes/task.md, …/memory.md    { content, expected_version? }
+GET    /api/org/embeddable-notes          every live note the caller may read, by key (500 at most)
+GET    /api/org/embeddable-notes?display_path=…   one note: display_path, title, content; 404 if missing
 ```
 
-A listing gives each note its `id`, which names it to the access
-routes. A read or a write answers
-`{ id, path, display_path, content, version }`; `task.md` and
-`memory.md` carry no `id`. A deleted or missing note is
-404. The agent route also serves `task.md` and
-`memory.md` ([Task](task.md), [Memory](memory.md)); only `task.md`
-checks `expected_version`. Agent and guild writes and deletes
-publish `guild.artifacts.changed`.
+Every listing leaves out the notes hidden from the caller. A listing
+gives each note its `id`, which names it to the access routes. A
+read or a write answers `{ id, path, display_path, content, version }`;
+`task.md` and `memory.md` carry no `id`. A deleted or missing note is
+404. The agent routes serve `task.md` and `memory.md` alone
+([Task](task.md), [Memory](memory.md)); only `task.md` checks
+`expected_version`.
+
+`PUT /api/org/notes/*` updates the live note of that key, or creates
+it. `access`, `{ type, id, mode }`, is the row a created note starts
+with; without it the organisation writes the note. An update ignores
+it. An `access` with a bad type, id, or mode is 422 with the message
+the access routes give, prefixed `access: `; a subject that does not
+exist or is hidden from the caller is 422 `unknown org`,
+`unknown guild`, or `unknown agent`. A note that exists and is hidden
+from the caller is 422 `write not allowed`.
+
+A note write or delete publishes `guild.artifacts.changed` on the
+stream of each guild its access list names, through a row for the
+guild or for one of its agents. A Task or Memory write publishes it
+on the agent's guild.
 
 A write's `content` is a string, empty when left out, and its
 `expected_version` a number or null. A body that is not a JSON object,
@@ -320,26 +320,20 @@ a field of another type, and a `display_path` given more than once are
 The routes go through `apps/orchestrator/src/notes/operator.ts` and
 `apps/orchestrator/src/artifacts/host-files.ts`. The guild and agent
 routes need a guild the caller can see. The `/api/org/…` routes need
-only organisation membership.
-`/api/org/embeddable-notes` lists and returns notes of every guild
-and agent, except those of private guilds the caller does not operate
-([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).
+only organisation membership, and leave out or refuse every note
+hidden from the caller
+([SEC-55](../architecture/security-register.md#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list)).
 
 ### Storage
 
-Display paths ([Artifact store](artifacts.md#display-paths)):
+A note's display path is `org/<org_id>/<key>`
+([Artifact store](artifacts.md#display-paths)).
 
-```text
-org/<org_id>/agents/<agent_id>/<note>.md
-org/<org_id>/guilds/<guild_id>/<note>.md
-org/<org_id>/<note>.md
-```
-
-A note is an `artifacts` row with `kind` `note`, a `level`, an
-`owner_id` (the agent, guild, or organisation id), a `key` ending in
-`.md` with no `/` or `\`, a `title`, and `content_text`. Its search
-document is the content; its search text is the title and key.
-Deletion sets `deleted_at`.
+A note is an `artifacts` row with `kind` `note`, no `agent_id`, a
+`key` ending in `.md` with no `/` or `\`, a `title`, and
+`content_text`. The key is unique among the organisation's live
+notes. Its search document is the content; its search text is the
+title and key. Deletion sets `deleted_at`.
 
 Code: `apps/orchestrator/src/artifacts/notes.ts`,
 `apps/orchestrator/src/artifacts/memory.ts`,
