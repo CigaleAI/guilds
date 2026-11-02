@@ -319,8 +319,10 @@ exist or is hidden from the caller is 422 `unknown org`,
 from the caller is 422 `write not allowed`.
 
 A note write or delete publishes `guild.artifacts.changed` on the
-stream of each guild its access list names, through a row for the
-guild or for one of its agents. A Task or Memory write publishes it
+stream of each guild in the note's scope: every guild of the
+organisation when its access list has an organisation row, otherwise
+each guild a row names, through a row for the guild or for one of its
+agents. A Task or Memory write publishes it
 on the agent's guild.
 
 A write's `content` is a string, empty when left out. Its
@@ -345,7 +347,11 @@ A note is an `artifacts` row with `kind` `note`, no `agent_id`, a
 `key` ending in `.md` with no `/` or `\`, a `title`, and
 `content_text`. The key is unique among the organisation's live
 notes. Its search document is the content; its search text is the
-title and key. Deletion sets `deleted_at`.
+title and key. Deletion sets `deleted_at`; the tombstone keeps its
+access rows, so a note hidden from an operator stays hidden once
+deleted. Deleting a guild or an agent deletes every live note whose
+only rows named it or its agents
+([Access](access.md#access-lists)).
 
 Code: `apps/orchestrator/src/artifacts/notes.ts`,
 `apps/orchestrator/src/artifacts/memory.ts`,

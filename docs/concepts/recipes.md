@@ -253,9 +253,10 @@ What capture writes:
   display path or by key. Memory (`memory.md`) is never captured.
   Other notes, Memory bodies, and collection records stay out unless
   the operator includes them.
-- Each captured note carries its access the way a collection does.
-  `guild` is the better of the organisation's row and the guild's
-  row, left out when neither reaches the note. `writers` lists the
+- Each captured note carries its access. `org` is the
+  organisation's row, left out when the note has none. `guild` is the
+  better of the organisation's row and the guild's row, left out when
+  neither reaches the note. `writers` lists the
   roles whose agents end up with `write` when `guild` is not `write`.
   An agent row of `read` or `none` is not carried. Rows that name
   other guilds or their agents are not carried.

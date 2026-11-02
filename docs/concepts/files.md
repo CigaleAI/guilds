@@ -111,9 +111,10 @@ In both:
   The row starts as the browsed scope at `write`: the agent on
   **Agent**, the guild on **Guild**, the organisation on **Org**. Any
   subject and mode can be picked instead. It refuses an empty file, a
-  file over 10 MiB, or no description before it sends anything. A
-  file of the same name in the organisation is replaced, and keeps its
-  access list. The media type is the one the browser gives.
+  file over 10 MiB, or no description before it sends anything. It
+  creates a new file only: a file of the same name in the organisation
+  is refused, and the refusal shows. The media type is the one the
+  browser gives.
 
 A download is always a saved file, never a page the browser renders,
 whatever the file's media type.
@@ -183,7 +184,7 @@ which holds every file.
 
 ```text
 GET    /api/org/files                every file of the organisation the caller may read, by name
-POST   /api/org/files                the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, an optional X-Mime, and optional X-Access-Type, X-Access-Id, and X-Access-Mode
+POST   /api/org/files                the bytes as an application/octet-stream body; X-Filename and X-Description headers, URI-encoded, an optional X-Mime, an optional X-Expected-Version, and optional X-Access-Type, X-Access-Id, and X-Access-Mode
 GET    /api/guilds/:guild_id/files   the files whose access list has a row for the guild, one of its agents, or the organisation
 GET    /api/agents/:agent_id/files   the files the agent reads
 GET    /api/files/:file_id           the bytes, as a download
@@ -192,8 +193,14 @@ DELETE /api/files/:file_id           204
 
 A listing or an upload answers each file in the shape `file_find`
 gives; on the agent route, `access` is the agent's mode. An upload is
-201. A file of the same name in the
-organisation is replaced, and keeps its access list. A new file starts
+201. A file of the same name in the organisation is replaced, and
+keeps its access list. `X-Expected-Version` is a whole number: `0`
+means the file must not exist yet, and a live file of that name is
+409 `artifact already exists`; any other value must be the live
+file's version, else 409 `version conflict`; left out, the upload
+replaces a file of that name unchecked. Another value is 422
+`X-Expected-Version must be a whole number`. The upload dialog sends
+`0`. A new file starts
 with the row the three `X-Access-*` headers name, a subject type
 (`org`, `guild`, or `agent`), its id, and a mode; without them the
 organisation writes it. Some of the three without the others is 422
@@ -207,9 +214,10 @@ organisation routes need organisation membership. A file hidden from
 the caller is left out of every listing and is 404 by every route
 ([SEC-55](../architecture/security-register.md#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list)).
 
-An upload or a delete publishes the file's change to each guild its
-access list names, through a row for the guild or for one of its
-agents.
+An upload or a delete publishes the file's change to each guild in
+the file's scope: every guild of the organisation when its access
+list has an organisation row, otherwise each guild a row names,
+through a row for the guild or for one of its agents.
 
 ### Storage
 
@@ -220,7 +228,12 @@ A file is an `artifacts` row with `kind` `file`, no `agent_id`, `path`
 `mime`, `bytes`, and a `content_hash` that is the sha256 of its bytes.
 The name is unique among the organisation's live files. Its search
 document is the name and description. Deletion sets `deleted_at` and
-removes the bytes.
+removes the bytes; the tombstone keeps its access rows, so a file
+hidden from an operator stays hidden once deleted. Deleting a guild
+or an agent deletes every live file whose only rows named it or its
+agents ([Access](access.md#access-lists)); a file deleted that way
+keeps its bytes in the blob store
+([SEC-46](../architecture/security-register.md#sec-46--deleting-an-agent-a-guild-or-an-organisation-leaves-its-files-bytes-in-the-blob-store)).
 
 The bytes sit in the blob store under
 `<org_id>/files/<artifact id>/v<version>`. A replace writes the new

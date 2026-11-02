@@ -143,7 +143,7 @@ The document is stored in PostgreSQL and downloads as JSON.
     browser: { required, instructions, author }
   }],
   collections: [{ name, purpose, columns, scope?: "guild" | "org", guild?: "read" | "write", writers?: [role] }],
-  notes: [{ id, key, body, kind: "seed", author, guild?: "read" | "write", writers?: [role] }],
+  notes: [{ id, key, body, kind: "seed", author, org?: "read" | "write", guild?: "read" | "write", writers?: [role] }],
   connections: [{
     server, auth, recommended_scope, recommended_role?, hint,
     setup, resources?, manifest?, author,
@@ -274,24 +274,26 @@ collection whose columns accept the recipe's; see
 ### notes
 
 - `notes[].key` is a `.md` file name with no `/`. Notes are flat, and
-  a key names one note across the organisation. A note carrying
-  `path` is refused on import and on write.
-- A note carrying `level` or `role` is refused with a hint naming
-  `guild` and `writers`.
+  a key names one note across the organisation, so a recipe whose
+  notes use one key twice is refused (`duplicate note key <key>`). A
+  note carrying `path` is refused on import and on write.
+- A note carrying `level` or `role` is refused on import and on
+  write, with a hint naming `org`, `guild`, and `writers`.
 - `id` defaults to `note-<n>`. `body` is at most 256 KiB. `kind` is
   always `seed`.
-- `guild` and `writers` are the note's whole access list, shaped like
-  a collection's. `guild` (`read` or `write`) is the new guild's row.
-  `writers` lists the roles whose agents get their own `write` row; a
-  writer the guild's row already lets write gets none. A writer that
-  is not a role is the `note.writer` error.
-- A note that states neither `guild` nor `writers` starts with the new
-  guild at `write`. A note that states only one writer, and no
-  `guild`, is reached by that role's agent alone.
+- `org`, `guild`, and `writers` are the note's whole access list.
+  `org` (`read` or `write`) is the organisation's row, the mode every
+  agent of the organisation gets. `guild` (`read` or `write`) is the
+  new guild's row. `writers` lists the roles whose agents get their
+  own `write` row. A row the others already give is left out. A
+  writer that is not a role is the `note.writer` error.
+- A note that states none of `org`, `guild`, and `writers` starts with
+  the new guild at `write`. A note that states only one writer, and
+  neither `org` nor `guild`, is reached by that role's agent alone.
 - As for collections, a recipe carries no rows for other guilds or
   their agents, and no agent row of `read` or `none`.
 - Apply creates each note under its key. When the organisation
-  already holds a live note of that key, the note is created as
+  already holds a live note of that key, apply writes the note as
   `<guild name>-<key>` instead, and every link to it points there.
 
 ### Embeds and tags
@@ -470,7 +472,7 @@ findings `collection.conflict` and `machine.*`
 | `design.unused_access` | warning | A connection no role enables |
 | `design.cadence_collision` | warning | A hand-off consumer shares its producer's cadence |
 | `design.orphan_collection` | warning | A collection no hand-off or dedupe routine uses |
-| `design.shared_note_roles` | warning | In a Builder recipe with two or more roles, a note that more than one role reaches (the guild has a row on it, or it has other than one writer), and that a role embeds or names, mentions two or more role handles |
+| `design.shared_note_roles` | warning | In a Builder recipe with two or more roles, a note that more than one role reaches (the organisation or the guild has a row on it, or it has other than one writer), and that a role embeds or names, mentions two or more role handles |
 | `design.untyped_collection` | error | A collection declares no columns |
 | `design.handoff_state` | error | A hand-off collection has no required text column with `values` |
 | `design.collection_access` | error | A hand-off producer or consumer, or the role of a dedupe routine, cannot write the collection: `guild` is not `write` and the role is not in `writers` |

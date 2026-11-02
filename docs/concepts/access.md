@@ -562,14 +562,19 @@ Changing a collection's owner leaves its rows as they are.
 
 Rows go away:
 
-- with their note, file, or collection, when it is deleted
+- with their collection, when it is deleted
 - with a guild: the rows naming the guild or one of its agents, and
   the rows on its own collections
 - with an agent: the rows naming it
 
-Notes and files outlive the guilds and agents their rows named. One
-whose rows are all gone has an empty list: no agent reaches it, and
-every operator does.
+A deleted note or file keeps its rows on its tombstone, so the hiding
+rule still covers it and its change history. Deleting a guild or an agent removes the rows naming it, and with them
+every live note and file those rows alone reached: an item whose list
+that leaves empty is deleted too, as the operator who deleted the
+guild or the agent, and its deletion is recorded in its history. Its
+tombstone has no row left, so its history shows to every operator. A
+note or a file that another row still reaches stays, without the
+removed rows.
 
 ```text
 GET  /api/notes/:note_id/access                { subjects }

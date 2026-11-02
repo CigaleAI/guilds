@@ -369,7 +369,8 @@ access list.
 ### Access
 
 Apply gives the new guild and its agents what the recipe says on each
-collection and seed note, and only raises. The new guild is brought up
+collection and seed note, and only raises. A seed note also gets the
+organisation's row at the recipe's `org` mode, when it states one. The new guild is brought up
 to the recipe's `guild` mode, and each `writers` role's agent up to
 `write`. A subject that already holds as much gets no row: the guild
 counts the organisation's row and its own, and an agent counts its own
@@ -394,10 +395,9 @@ broken:
 3. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
 4. create the seed notes, each with the access list the recipe's
-   `guild` and `writers` give it, the new guild at `write` when they
-   give none (see [Access](#access)). A key the organisation already
-   holds takes the new guild's name as a prefix,
-   `<guild name>-<key>`
+   `org`, `guild`, and `writers` give it, the new guild at `write` when
+   they give none (see [Access](#access)). A key the organisation
+   already holds is written as `<guild name>-<key>`
 5. for each role in turn:
    - rewrite the Task's note links
      ([embeds and note paths](recipe-format.md#embeds-and-tags)) to

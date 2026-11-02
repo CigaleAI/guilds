@@ -103,7 +103,8 @@ the guild is generating or while the group chat is delivering. The
 guild takes with it its agents and everything they own, its group
 chat, operators, issues, own collections, repositories, the
 access-list rows that name it or its agents, and the secrets that
-only it or its agents held. Notes and files stay, without those rows.
+only it or its agents held. A note or a file that only those rows
+reached is deleted with it; any other stays, without those rows.
 Organisation collections and secrets granted elsewhere stay, and so
 do the machines
 ([Delete](#delete) has the full list).
@@ -334,7 +335,9 @@ It holds every agent of the guild while it runs. It then:
 - deletes the guild's and its agents' usage counters
 - soft-deletes the guild's own collections with their records
 - deletes the access-list rows that name the guild or its agents,
-  and the rows on its own collections; notes and files stay
+  and the rows on its own collections, and soft-deletes, as the
+  deleting operator, every live note and file those rows alone
+  reached
 - deletes every secret, not organisation-wide, whose grants all name
   the guild or its agents
 - deletes the guild row

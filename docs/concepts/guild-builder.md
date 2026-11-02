@@ -283,7 +283,8 @@ and write it. `scope: "org"` is for a collection other guilds can
 share: the whole organisation reads it, and `guild` and `writers` say
 what the new guild and its roles get on its access list (see
 [Recipe format](recipe-format.md#collections)). A seed note takes the
-same `guild` and `writers` (see [Recipe format](recipe-format.md#notes)).
+same `guild` and `writers`, and `org` for the mode every agent of the
+organisation gets on it (see [Recipe format](recipe-format.md#notes)).
 
 ### Writes
 
