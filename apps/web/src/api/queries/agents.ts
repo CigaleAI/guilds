@@ -132,7 +132,7 @@ export function useSaveAgentSettings(agentId: string, guildId: string) {
   });
 }
 
-/** Deletes the agent with its runs, routines, notes, home and usage row. */
+/** Deletes the agent with its runs, routines, Memory, home, usage row and the access rows naming it. */
 export function useDeleteAgent(guildId: string) {
   const client = useQueryClient();
   return useMutation({

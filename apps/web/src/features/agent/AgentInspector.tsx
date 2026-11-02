@@ -168,7 +168,7 @@ function DeleteAgentDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={`Delete ${name ?? "this agent"}?`}
-      description="Its sessions, routines, notes, home and usage row are removed; its posts stay in the group chat. This can't be undone."
+      description="Its sessions, routines, Memory, home, usage row and the access rows naming it are removed; notes and files stay, and its posts stay in the group chat. This can't be undone."
       confirmLabel="Delete agent"
       {...(name ? { confirmText: name } : {})}
       onConfirm={() =>
