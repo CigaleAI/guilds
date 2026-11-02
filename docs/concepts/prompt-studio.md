@@ -832,12 +832,13 @@ not resolve or a run that expands its holder's embeds cannot read it,
 and `unreached` when no Task reaches the holder; a name's is `named`.
 
 The route reads the files with the viewing operator's own permissions:
-the guild's agents' notes, the guild's and organisation's notes, the
-organisation's tables and the guild's own, and the notes and tables
-their embeds reach, followed as far as a run could inline them. The
-notes and tables of a private guild the operator does not operate
-are never listed ([Guilds](guilds.md)); an embed of one is a link that
-does not resolve. Each Task's walk, `hops`, `inlined_bytes`, and
+the notes whose access list has a row for the guild, one of its
+agents, or the organisation, the organisation's tables and the guild's
+own, and the notes and tables their embeds reach, followed as far as a
+run could inline them. The notes hidden from the operator, and the
+tables of a private guild they do not operate, are never listed
+([Access](access.md#access-lists-for-notes-collections-and-files)); an
+embed of one is a link that does not resolve. Each Task's walk, `hops`, `inlined_bytes`, and
 `unreachable_for` are read as that Task's agent, the way its run
 inlines ([Task](task.md#embed-expansion)).
 
