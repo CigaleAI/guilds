@@ -28,7 +28,10 @@ function toolCall(name: string, args = "{}"): ToolCall {
   return { id: "call-1", type: "function", function: { name, arguments: args } };
 }
 
-function tool(handler: ConversationTool["handler"]): ConversationTool {
+/** The context a probe tool is called in: the seq its result takes. */
+type ProbeContext = { upcoming: number };
+
+function tool(handler: ConversationTool<ProbeContext>["handler"]): ConversationTool<ProbeContext> {
   return {
     name: "probe",
     schema: { type: "function", function: { name: "probe", description: "", parameters: { type: "object" } } },
@@ -36,7 +39,9 @@ function tool(handler: ConversationTool["handler"]): ConversationTool {
   };
 }
 
-function generation(tools: Map<string, ConversationTool> = new Map()): ConversationGeneration {
+function generation(
+  tools: Map<string, ConversationTool<ProbeContext>> = new Map(),
+): ConversationGeneration<ProbeContext> {
   return {
     session: {
       id: "session-1",
@@ -47,7 +52,7 @@ function generation(tools: Map<string, ConversationTool> = new Map()): Conversat
     generation: 1,
     generationContext: "context",
     tools,
-    toolContext: { bound: false },
+    toolContext: (upcoming) => ({ upcoming }),
     maxTokens: 100,
     maxSteps: 3,
     maxToolCalls: 3,
@@ -69,7 +74,7 @@ function emptyDatabase(): { db: Queryable; queries: Array<{ text: string; params
 
 async function publishedEvents(
   runner: ConversationRunner,
-  turn: ConversationGeneration,
+  turn: ConversationGeneration<ProbeContext>,
 ): Promise<Array<[string, Record<string, unknown>]>> {
   const queue = runner.subscribe(turn.session.id);
   runner.start(turn);
@@ -108,15 +113,12 @@ test("a tool that throws something other than an Error ends the call with a gene
 });
 
 test("a tool call is answered with the handler's result in the bound tool context", async () => {
-  let context: unknown = null;
+  let context: ProbeContext | null = null;
   const echoing = tool(async (bound, args) => {
     context = bound;
     return { args };
   });
-  const turn = {
-    ...generation(new Map([["probe", echoing]])),
-    bindToolContext: (upcoming: number) => ({ upcoming }),
-  };
+  const turn = generation(new Map([["probe", echoing]]));
   const result = await callConversationTool(turn, toolCall("probe", '{"a":1}'), 4, "tool_calls");
   assert.deepEqual(result, { args: { a: 1 } });
   assert.deepEqual(context, { upcoming: 4 });

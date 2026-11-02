@@ -636,15 +636,15 @@ export const BUILDER_SESSION_TOOLS = [
   builderValidateRecipe,
 ];
 
-/** The session tools as the conversation runner calls them, each bound to the session's `context`. */
-export function builderConversationTools(context: BuilderToolContext): Map<string, ConversationTool> {
+/** The session tools as the conversation runner calls them, in the session's tool context. */
+export function builderConversationTools(): Map<string, ConversationTool<BuilderToolContext>> {
   return new Map(
     BUILDER_SESSION_TOOLS.map((tool) => [
       tool.name,
       {
         name: tool.name,
         schema: tool.schema,
-        handler: (_runnerContext, args) => tool.handler(context, args),
+        handler: (ctx, args) => tool.handler(ctx, args),
       },
     ]),
   );

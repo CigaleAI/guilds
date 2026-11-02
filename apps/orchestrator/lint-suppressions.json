@@ -301,11 +301,6 @@
       "count": 6
     }
   },
-  "src/conversation/runner.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/credentials/visibility.ts": {
     "limits/inline-parameter-type": {
       "count": 1
@@ -783,9 +778,6 @@
   },
   "src/studio/runner.ts": {
     "boundary/no-reexport-modules": {
-      "count": 1
-    },
-    "typescript/consistent-type-assertions": {
       "count": 1
     }
   },

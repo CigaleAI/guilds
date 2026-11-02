@@ -42,14 +42,14 @@ export type StudioRunnerDeps = {
 function conversationTools(
   tools: Map<string, StudioTool>,
   deps: StudioToolDeps,
-): Map<string, ConversationTool> {
+): Map<string, ConversationTool<StudioToolCall>> {
   return new Map(
     [...tools.entries()].map(([name, tool]) => [
       name,
       {
         name: tool.name,
         schema: tool.schema,
-        handler: (call, args) => tool.handler(deps, call as StudioToolCall, args),
+        handler: (call, args) => tool.handler(deps, call, args),
       },
     ]),
   );
@@ -102,8 +102,7 @@ export class StudioRunner {
       generationContext: started.generationContext,
       ...(started.systemContent ? { systemContent: started.systemContent } : {}),
       tools: conversationTools(studioToolMap(), toolDeps),
-      toolContext: toolCall,
-      bindToolContext: (upcoming): StudioToolCall => ({
+      toolContext: (upcoming): StudioToolCall => ({
         ...toolCall,
         generation: started.generation,
         nextMessageSeq: upcoming,
