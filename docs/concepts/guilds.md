@@ -2,9 +2,10 @@
 
 A guild is a standing team of [agents](agents.md) inside an
 [organisation](organisations.md). It has one [group chat](group-chat.md)
-where its agents and its [operators](operators.md) talk, shared
-[notes](notes.md) and [collections](collections.md) its agents write
-together, and a short statement of what it is for. The operator can
+where its agents and its [operators](operators.md) talk, its own
+[collections](collections.md), the organisation's [notes](notes.md)
+and [files](files.md) opened to it, and a short statement of what it
+is for. The operator can
 create an empty guild and add agents later.
 
 Each agent belongs to one guild. The guild sets the agents' common
@@ -26,28 +27,28 @@ flowchart TD
   guild[Guild] --> agents[Agents, up to max_agents]
   guild --> chat[One group chat]
   guild --> ops[Operators]
-  guild --> notes[Guild-level notes and files]
   guild --> tables[The guild's own collections]
   guild --> repos[Repositories]
 ```
 
 - **Agents.** Zero or more, up to the guild's agent limit. Each one
-  also owns its own Task, Memory, scripts, and agent-level notes.
+  also owns its own Task, Memory, and scripts.
 - **One group chat.** Its public history is shared by every member
   ([Group chat](group-chat.md)).
 - **Operators.** The people the guild works for
   ([Operators](operators.md)).
-- **Guild-level notes and files.** Each starts read and written by
-  its agents ([Notes](notes.md), [Files](files.md)).
 - **Its own collections.** A collection that belongs to the guild
   starts read and written by its agents
   ([Collections](collections.md)).
 - **Repositories** its coding agents work in
   ([Repositories](coding/repositories.md)).
 
-Which notes, files, and collections an agent reaches is set on each
-item, in its access list. A row for the guild covers every agent of
-the guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
+Notes and files belong to the organisation, not to a guild. Which
+notes, files, and collections an agent reaches is set on each item,
+in its access list. A row for the guild covers every agent of the
+guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
+A note or a file whose rows all name a private guild, or agents of
+it, is hidden from the operators who do not operate that guild.
 
 ### Purpose: short description and description
 
@@ -92,17 +93,19 @@ visibility.
 A new name follows the same rules as at create and stays unique in
 the organisation. A guild cannot be renamed while it is being
 deleted, or while one of its agents is generating. Its host notes
-folder moves with the name. Artifact paths use the guild's id, so
-they do not change.
+folder moves with the name. No artifact path names a guild, so none
+changes.
 
 ### Deleting
 
 Deleting a guild is an admin action. It is refused while an agent of
 the guild is generating or while the group chat is delivering. The
 guild takes with it its agents and everything they own, its group
-chat, operators, issues, notes, own collections, repositories, and
-the secrets that only it or its agents held. Organisation collections
-and secrets granted elsewhere stay, and so do the machines
+chat, operators, issues, own collections, repositories, the
+access-list rows that name it or its agents, and the secrets that
+only it or its agents held. Notes and files stay, without those rows.
+Organisation collections and secrets granted elsewhere stay, and so
+do the machines
 ([Delete](#delete) has the full list).
 
 ## In the app
@@ -331,8 +334,7 @@ It holds every agent of the guild while it runs. It then:
 - deletes the guild's and its agents' usage counters
 - soft-deletes the guild's own collections with their records
 - deletes the access-list rows that name the guild or its agents,
-  and the rows on its own collections and on its and its agents'
-  notes
+  and the rows on its own collections; notes and files stay
 - deletes every secret, not organisation-wide, whose grants all name
   the guild or its agents
 - deletes the guild row
@@ -347,7 +349,7 @@ PostgreSQL cascades:
 - connections
 - scoped bindings
 - guild issues
-- guild-level artifacts
+- the agents' Memory and scripts
 - guild repositories
 
 Studio sessions, Studio drafts, recipes, and recipe applies that name

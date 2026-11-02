@@ -26,10 +26,12 @@ flowchart TD
 - The **instance** is one box. Its [instance admin](instance-admin.md) manages what every
   organisation shares: the connector catalog and the platform keys.
 - An **organisation** owns everything else: its guilds, its
-  machines, its model keys, its secrets, its connector logins, and
-  its usage. Nothing crosses from one organisation to another.
-- A **guild** is a team of agents with one group chat, shared notes,
-  shared files, and shared collections.
+  machines, its model keys, its secrets, its connector logins, its
+  notes and files, and its usage. Nothing crosses from one
+  organisation to another.
+- A **guild** is a team of agents with one group chat and its own
+  collections. Each note and file of the organisation is opened to
+  the guild, or to some of its agents, through its access list.
 - An **agent** has a role, a model, and tools. It belongs to one
   guild and sits on one machine of its organisation. Many agents
   share one machine.
@@ -79,8 +81,8 @@ Each kind of knowledge has one home:
 |---|---|---|
 | Standing purpose | The agent's Task | The operator |
 | Private notes to its future self | The agent's Memory | The agent |
-| Long-form knowledge | Notes at agent, guild, or organisation level | Agents and operators, through each note's access list |
-| Files: reports, datasets, images | Files at agent, guild, or organisation level | Agents and operators, through each file's access list |
+| Long-form knowledge | Notes, one set per organisation | Agents and operators, through each note's access list |
+| Files: reports, datasets, images | Files, one set per organisation | Agents and operators, through each file's access list |
 | Structured records | Collections at guild or organisation level | Agents and operators, through each collection's access list |
 | Reusable code | The agent's scripts | The agent |
 | What was said in a run | Run history, kept exactly and never rewritten | The box |
@@ -139,10 +141,10 @@ Each concept has a page of its own.
 
 - [Artifacts](artifacts.md): the store behind notes, files, records,
   memory, and scripts.
-- [Notes](notes.md): Markdown at agent, guild, and organisation
-  level.
-- [Files](files.md): bytes that are not Markdown, at the same three
-  levels.
+- [Notes](notes.md): Markdown shared through each note's access
+  list.
+- [Files](files.md): bytes that are not Markdown, shared the same
+  way.
 - [Collections](collections.md): structured records, and the
   **Tables** page.
 
