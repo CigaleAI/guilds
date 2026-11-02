@@ -1,9 +1,10 @@
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import type { JsonObject } from "../../lib/json.js";
+import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { assertMatches } from "../../lib/decode.js";
+import type { JsonObject } from "../../lib/json.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
-import { LIST_DEFAULT, argStr, clipRows, fmtNum, joinParts, rowLimit } from "../format.js";
+import { LIST_DEFAULT, clipRows, fmtNum, joinParts } from "../format.js";
+import { decodeResponse, type ConnectorApi } from "../response.js";
 import type { ApiGet } from "../types.js";
 import {
   ContractResponse,
@@ -13,15 +14,19 @@ import {
   ErrorDetail,
   HoldingsResponse,
   NftResponse,
+  PingResponse,
   RpcEnvelope,
   RpcError,
+  type DasGroup,
 } from "./responses.js";
 
 export const NFT_HOST = "https://{network}.g.alchemy.com/nft/v3";
 export const SOLANA_RPC = "https://solana-mainnet.g.alchemy.com/v2";
 export const CHAIN_DEFAULT = "ethereum";
 export const PING_OWNER = "0x0000000000000000000000000000000000000000";
-export const CHAINS: Record<string, string> = {
+
+/** The Alchemy network of each chain the tools take. */
+export const CHAINS = {
   ethereum: "eth-mainnet",
   polygon: "polygon-mainnet",
   base: "base-mainnet",
@@ -31,8 +36,13 @@ export const CHAINS: Record<string, string> = {
   ink: "ink-mainnet",
   robinhood: "robinhood-mainnet",
   solana: "solana-mainnet",
-};
-export const CHAIN_LIST = Object.keys(CHAINS).join(", ");
+} satisfies Record<string, string>;
+
+/** A chain the tools take. */
+export type Chain = keyof typeof CHAINS;
+
+export const CHAIN_NAMES = Object.keys(CHAINS);
+export const CHAIN_LIST = CHAIN_NAMES.join(", ");
 
 export class AlchemyError extends Error {
   status: number | null;
@@ -44,22 +54,31 @@ export class AlchemyError extends Error {
   }
 }
 
-export function resolveChain(arguments_: JsonObject): [string, string] {
-  const chain = (argStr(arguments_, "chain", CHAIN_DEFAULT).toLowerCase() || CHAIN_DEFAULT);
-  const network = CHAINS[chain];
-  if (!network) {
-    throw new AlchemyError(`chain must be ${CHAIN_LIST}`);
-  }
-  return [chain, network];
+/** Whether `name` is a chain the tools take. */
+function isChain(name: string): name is Chain {
+  return Object.hasOwn(CHAINS, name);
 }
 
-/** `value` trimmed, when it is non-empty text. */
-function nonEmpty(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+/** The chain a call names, in any case; the default when it names none. Throws on a chain the tools do not take. */
+export function resolveChain(name: string | undefined): Chain {
+  const chain = name?.trim().toLowerCase() || CHAIN_DEFAULT;
+  if (!isChain(chain)) {
+    throw new AlchemyError(`chain must be ${CHAIN_LIST}`);
+  }
+  return chain;
+}
+
+/** One page of the NFTs an owner holds on a chain, within one collection when `contract` is set; `pageKey` empty for the first. */
+export type HoldingsRequest = { owner: string; chain: Chain; contract: string; pageKey: string; limit: number };
+
+/** Text, trimmed; null when it is blank or absent. */
+function text(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function collectionName(item: Pick<ContractResponse, "collection">): string {
-  return nonEmpty(item.collection?.name) ?? "";
+  return text(item.collection?.name) ?? "";
 }
 
 function isSpam(item: Pick<ContractResponse, "isSpam">): boolean {
@@ -82,18 +101,19 @@ function floorPrice(sources: Floored[]): string {
   return "";
 }
 
-function tokenLabel(tokenId: unknown, address: unknown): string {
-  if (tokenId === null || tokenId === undefined || tokenId === "") {
+/** An NFT's token id as a row shows it: `#n` when numeric, nothing when it is the contract's own address. */
+function tokenLabel(tokenId: string | null | undefined, address: string | null | undefined): string {
+  const label = tokenId?.trim();
+  if (!label) {
     return "";
   }
-  const text = String(tokenId).trim();
-  if (/^\d+$/.test(text)) {
-    return `#${text}`;
+  if (/^\d+$/.test(label)) {
+    return `#${label}`;
   }
-  if (text.toLowerCase() === String(address ?? "").trim().toLowerCase()) {
+  if (label.toLowerCase() === (address ?? "").trim().toLowerCase()) {
     return "";
   }
-  return text;
+  return label;
 }
 
 /** The token type, a balance other than one, and the spam mark of an NFT. */
@@ -101,7 +121,7 @@ function nftExtras(item: NftResponse, contract: ContractResponse): string[] {
   const extra: string[] = [];
   const tokenType = item.tokenType ?? contract.tokenType;
   if (tokenType) {
-    extra.push(String(tokenType).trim());
+    extra.push(tokenType.trim());
   }
   const balance = item.balance;
   if (balance !== null && balance !== undefined && balance !== "" && balance !== "1" && balance !== 1) {
@@ -117,8 +137,8 @@ function nftRow(item: NftResponse): string {
   const contract = item.contract ?? {};
   const address = contract.address ?? item.contractAddress;
   const token = tokenLabel(item.tokenId, address);
-  const collection = (typeof contract.name === "string" ? contract.name : "") || collectionName(item);
-  const sameAsCollection = item.name && collection && String(item.name).trim() === collection.trim();
+  const collection = contract.name || collectionName(item);
+  const sameAsCollection = item.name && collection && item.name.trim() === collection.trim();
   const display = sameAsCollection ? "" : item.name;
   return joinParts(address, contract.symbol, collection, token, display, ...nftExtras(item, contract));
 }
@@ -126,7 +146,7 @@ function nftRow(item: NftResponse): string {
 function contractRow(item: ContractResponse): string {
   const extra: string[] = [];
   if (item.tokenType) {
-    extra.push(String(item.tokenType).trim());
+    extra.push(item.tokenType.trim());
   }
   if (item.totalSupply !== null && item.totalSupply !== undefined && item.totalSupply !== "") {
     extra.push(`supply=${fmtNum(item.totalSupply)}`);
@@ -139,14 +159,13 @@ function contractRow(item: ContractResponse): string {
 
 export function formatHoldings(payload: HoldingsResponse, owner: string, chain: string, limit = LIST_DEFAULT): string {
   const owned = payload.ownedNfts ?? [];
-  const total = payload.totalCount;
-  const head = joinParts(owner, chain, `total=${fmtNum(total !== null && total !== undefined ? total : owned.length)}`);
+  const head = joinParts(owner, chain, `total=${fmtNum(payload.totalCount ?? owned.length)}`);
   const body = clipRows(owned.map((item) => nftRow(item)).filter(Boolean), limit);
   const parts = [head];
   if (body !== "no results") {
     parts.push(body);
   }
-  const pageKey = nonEmpty(payload.pageKey);
+  const pageKey = text(payload.pageKey);
   if (pageKey) {
     parts.push(`page=${pageKey}`);
   }
@@ -169,24 +188,28 @@ export function formatCollection(payload: ContractResponse): string {
   return parts.length ? parts.join("\n") : "no results";
 }
 
-/** The id and name of the collection a DAS asset's `collection` grouping names. */
-function dasCollection(item: DasAsset): { id: string; title: string } {
-  const group = (item.grouping ?? []).find((row) => row.group_key === "collection");
-  if (!group) {
-    return { id: "", title: "" };
-  }
-  return { id: String(group.group_value ?? "").trim(), title: nonEmpty(group.collection_metadata?.name) ?? "" };
+/** The grouping that names a DAS asset's collection; undefined when it has none. */
+function dasCollection(item: DasAsset): DasGroup | undefined {
+  return (item.grouping ?? []).find((row) => row.group_key === "collection");
+}
+
+/** The address of a DAS asset's contract: its collection's mint, or its own when it has no collection. */
+function dasAddress(item: DasAsset): string | null {
+  return text(dasCollection(item)?.group_value) ?? item.id ?? null;
+}
+
+/** The name of a DAS asset's contract: its collection's, or its own when the collection has none. */
+function dasName(item: DasAsset): string | null {
+  return text(dasCollection(item)?.collection_metadata?.name) ?? item.content?.metadata?.name ?? null;
 }
 
 /** A DAS asset's contract: its collection, or the mint itself when it has none. */
 function dasContract(item: DasAsset): ContractResponse {
-  const metadata = item.content?.metadata ?? {};
-  const collection = dasCollection(item);
   return {
-    address: collection.id || item.id,
-    name: collection.title || metadata.name,
-    symbol: metadata.symbol,
-    tokenType: item.interface,
+    address: dasAddress(item),
+    name: dasName(item),
+    symbol: item.content?.metadata?.symbol ?? null,
+    tokenType: item.interface ?? null,
   };
 }
 
@@ -194,78 +217,47 @@ function dasContract(item: DasAsset): ContractResponse {
 function fromDas(item: DasAsset): NftResponse {
   return {
     contract: dasContract(item),
-    tokenId: item.id,
-    name: item.content?.metadata?.name,
-    tokenType: item.interface,
+    tokenId: item.id ?? null,
+    name: item.content?.metadata?.name ?? null,
+    tokenType: item.interface ?? null,
   };
 }
 
 /** A DAS page as the NFT API's holdings: a next page when this one is full. */
 function dasHoldings(payload: DasPage, limit: number): HoldingsResponse {
   const owned = (payload.items ?? []).map((item) => fromDas(item));
-  const total = payload.total;
-  const page = payload.page;
-  const parsed = page !== null && page !== undefined && page !== "" ? Number.parseInt(String(page), 10) : 1;
-  const pageN = Number.isFinite(parsed) ? parsed : 1;
+  const page = payload.page ?? 1;
   return {
     ownedNfts: owned,
-    totalCount: total !== null && total !== undefined ? total : owned.length,
-    pageKey: owned.length >= limit ? String(pageN + 1) : "",
+    totalCount: payload.total ?? owned.length,
+    pageKey: owned.length >= limit ? String(page + 1) : "",
   };
 }
 
 /** The message of an error body, as text or one object deeper. */
-function errorMessage(payload: unknown): string | null {
-  if (!Value.Check(ErrorBody, payload)) {
-    return null;
-  }
-  const detail = payload.error ?? payload.message;
-  const text = nonEmpty(detail);
-  if (text) {
-    return text;
-  }
-  return Value.Check(ErrorDetail, detail) ? nonEmpty(detail.message ?? detail.error) : null;
+function errorMessage(body: ErrorBody): string | null {
+  const detail = body.error ?? body.message;
+  return Value.Check(ErrorDetail, detail) ? text(detail.message ?? detail.error) : text(detail);
 }
 
-async function errorDetail(response: Response): Promise<string> {
-  const text = await response.text();
-  let payload: unknown;
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    const stripped = text.trim();
-    return stripped || `Alchemy HTTP ${response.status}`;
-  }
-  return errorMessage(payload) ?? `Alchemy HTTP ${response.status}`;
-}
+/** Alchemy's APIs as the client reads their responses. */
+const ALCHEMY: ConnectorApi<typeof ErrorBody> = {
+  name: "Alchemy",
+  error: (message, status) => new AlchemyError(message, status),
+  errorBody: ErrorBody,
+  errorMessage,
+};
 
 type AlchemyOptions = { client?: FetchFn; proxyUrl?: string };
 
-type ToolOptions = AlchemyOptions & { apiKey: string };
-
-function unexpected(problem: string): AlchemyError {
-  return new AlchemyError(`Alchemy returned an unexpected response at ${problem}`);
-}
-
-async function parsedBody(response: Response): Promise<unknown> {
-  if (response.status >= 400) {
-    throw new AlchemyError(await errorDetail(response), response.status);
-  }
-  try {
-    return JSON.parse(await response.text());
-  } catch {
-    throw new AlchemyError("Alchemy returned a non-JSON body");
-  }
-}
+/** The options of a call with a login's key. */
+export type ToolOptions = AlchemyOptions & { apiKey: string };
 
 /** One NFT API GET: the request on the host of `network`. */
 type NftGet<T extends TSchema> = ApiGet<T> & { network: string };
 
 /** One DAS call on the Solana RPC: `method` with its `params`, the result decoded with `schema`. */
-type DasCall<T extends TSchema> = { method: string; params: Record<string, unknown>; schema: T };
-
-/** One page of the NFTs an owner holds, within one collection when `contract` is set; `pageKey` empty for the first. */
-type HoldingsPage = { owner: string; contract: string; pageKey: string; limit: number };
+type DasCall<T extends TSchema> = { method: string; params: JsonObject; schema: T };
 
 /** The NFT API's response at `path` on `network`, as `schema` describes it. */
 async function getJson<T extends TSchema>(
@@ -280,9 +272,7 @@ async function getJson<T extends TSchema>(
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
   const url = withQuery(`${NFT_HOST.replace("{network}", request.network)}/${key}${request.path}`, request.params);
   const response = await fetchFn(url, { method: "GET", headers: { Accept: "application/json" } });
-  const body = await parsedBody(response);
-  assertMatches(request.schema, body, unexpected);
-  return body;
+  return decodeResponse(ALCHEMY, response, request.schema);
 }
 
 /** The result of the DAS `method` called with `params`, as `schema` describes it. */
@@ -301,88 +291,66 @@ async function das<T extends TSchema>(
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: request.method, params: request.params }),
   });
-  const payload = await parsedBody(response);
-  assertMatches(RpcEnvelope, payload, unexpected);
-  const error = payload.error;
+  const { result, error } = await decodeResponse(ALCHEMY, response, RpcEnvelope);
   if (error) {
-    const message = Value.Check(RpcError, error) ? error.message || "Alchemy RPC error" : error;
-    throw new AlchemyError(String(message));
+    throw new AlchemyError(Value.Check(RpcError, error) ? (text(error.message) ?? "Alchemy RPC error") : error);
   }
-  const { result } = payload;
-  assertMatches(request.schema, result, unexpected);
+  assertMatches(request.schema, result, (problem) => new AlchemyError(`Alchemy returned an unexpected result at ${problem}`));
   return result;
 }
 
-/** The DAS params of a holdings page: by owner, or within one collection. */
-function dasHoldingsParams(request: HoldingsPage): Record<string, unknown> {
-  const params: Record<string, unknown> = {
-    ownerAddress: request.owner,
-    limit: request.limit,
+/** The DAS params of a holdings page: by owner, or within one collection; a numeric page key as the page, another as the cursor. */
+function dasHoldingsParams(request: HoldingsRequest): JsonObject {
+  const { owner, contract, pageKey, limit } = request;
+  const page = Number.parseInt(pageKey, 10);
+  return {
+    ownerAddress: owner,
+    limit,
     options: { showFungible: false, showCollectionMetadata: true },
+    ...(contract ? { grouping: ["collection", contract] } : {}),
+    ...(!pageKey ? { page: 1 } : Number.isFinite(page) ? { page: Math.max(1, page) } : { after: pageKey }),
   };
-  if (request.contract) {
-    params.grouping = ["collection", request.contract];
-  }
-  const page = Number.parseInt(request.pageKey, 10);
-  if (!request.pageKey) {
-    params.page = 1;
-  } else if (Number.isFinite(page)) {
-    params.page = Math.max(1, page);
-  } else {
-    params.after = request.pageKey;
-  }
-  return params;
 }
 
-async function solanaHoldings(request: HoldingsPage, options: ToolOptions): Promise<HoldingsResponse> {
+async function solanaHoldings(request: HoldingsRequest, options: ToolOptions): Promise<HoldingsResponse> {
   const method = request.contract ? "searchAssets" : "getAssetsByOwner";
   const payload = await das({ method, params: dasHoldingsParams(request), schema: DasPage }, options.apiKey, options);
   return dasHoldings(payload, request.limit);
 }
 
-const PING = Type.Unknown();
-
 export async function ping(apiKey: string, options: AlchemyOptions = {}): Promise<void> {
   const params = { owner: PING_OWNER, pageSize: "1", withMetadata: "false" };
-  await getJson({ network: "eth-mainnet", path: "/getNFTsForOwner", params, schema: PING }, apiKey, options);
+  await getJson({ network: CHAINS.ethereum, path: "/getNFTsForOwner", params, schema: PingResponse }, apiKey, options);
 }
 
-export async function holdingsTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const owner = argStr(arguments_, "owner");
+/** The page of an owner's NFTs `request` asks for: DAS on Solana, the NFT API elsewhere. */
+export async function holdings(request: HoldingsRequest, options: ToolOptions): Promise<string> {
+  const { chain, contract, pageKey, limit } = request;
+  const owner = request.owner.trim();
   if (!owner) {
     throw new AlchemyError("owner is required");
   }
-  const [chain, network] = resolveChain(arguments_);
-  const limit = rowLimit(arguments_);
-  const contract = argStr(arguments_, "contract");
-  const pageKey = argStr(arguments_, "page_key");
   if (chain === "solana") {
-    const payload = await solanaHoldings({ owner, contract, pageKey, limit }, options);
+    const payload = await solanaHoldings({ ...request, owner }, options);
     return formatHoldings(payload, owner, chain, limit);
   }
-  const params: Record<string, string> = {
+  const params = {
     owner,
     withMetadata: "true",
     pageSize: String(limit),
+    ...(contract ? { "contractAddresses[]": contract } : {}),
+    ...(pageKey ? { pageKey } : {}),
   };
-  if (contract) {
-    params["contractAddresses[]"] = contract;
-  }
-  if (pageKey) {
-    params.pageKey = pageKey;
-  }
   const payload = await getJson(
-    { network, path: "/getNFTsForOwner", params, schema: HoldingsResponse },
+    { network: CHAINS[chain], path: "/getNFTsForOwner", params, schema: HoldingsResponse },
     options.apiKey,
     options,
   );
   return formatHoldings(payload, owner, chain, limit);
 }
 
-export async function nftTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const contract = argStr(arguments_, "contract");
-  const tokenId = argStr(arguments_, "token_id");
-  const [chain, network] = resolveChain(arguments_);
+/** One NFT on `chain`: by contract and token id, or on Solana by its mint. */
+export async function nft(contract: string, tokenId: string, chain: Chain, options: ToolOptions): Promise<string> {
   if (chain === "solana") {
     const mint = contract || tokenId;
     if (!mint) {
@@ -398,45 +366,26 @@ export async function nftTool(arguments_: JsonObject, options: ToolOptions): Pro
     throw new AlchemyError("token_id is required");
   }
   const payload = await getJson(
-    { network, path: "/getNFTMetadata", params: { contractAddress: contract, tokenId }, schema: NftResponse },
+    { network: CHAINS[chain], path: "/getNFTMetadata", params: { contractAddress: contract, tokenId }, schema: NftResponse },
     options.apiKey,
     options,
   );
   return formatNft(payload);
 }
 
-export async function collectionTool(arguments_: JsonObject, options: ToolOptions): Promise<string> {
-  const contract = argStr(arguments_, "contract");
+/** A collection on `chain`, by its contract, or on Solana by its collection mint. */
+export async function collection(contract: string, chain: Chain, options: ToolOptions): Promise<string> {
   if (!contract) {
     throw new AlchemyError("contract is required");
   }
-  const [chain, network] = resolveChain(arguments_);
   if (chain === "solana") {
     const payload = await das({ method: "getAsset", params: { id: contract }, schema: DasAsset }, options.apiKey, options);
     return formatCollection(dasContract(payload));
   }
   const payload = await getJson(
-    { network, path: "/getContractMetadata", params: { contractAddress: contract }, schema: ContractResponse },
+    { network: CHAINS[chain], path: "/getContractMetadata", params: { contractAddress: contract }, schema: ContractResponse },
     options.apiKey,
     options,
   );
   return formatCollection(payload);
-}
-
-const HANDLERS: Record<string, (arguments_: JsonObject, options: ToolOptions) => Promise<string>> = {
-  holdings: holdingsTool,
-  nft: nftTool,
-  collection: collectionTool,
-};
-
-export async function callTool(
-  name: string,
-  arguments_: JsonObject,
-  options: ToolOptions,
-): Promise<string> {
-  const handler = HANDLERS[name];
-  if (!handler) {
-    throw new AlchemyError(`unknown Alchemy tool ${name}`);
-  }
-  return handler(arguments_, options);
 }

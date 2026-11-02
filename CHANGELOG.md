@@ -22,12 +22,14 @@ and a records query's `where` a `RecordWhere` (`api/types/tables`). `api`
 sends a `JsonValue` body. `api/wire` drops `isRecord`: `isJsonObject`
 narrows a JSON object, and `isJsonSchema` a JSON Schema object.
 
-The Gmail and Qonto tools check a call's arguments against the
-parameters their manifests list: an argument of another type, such as
-a `limit` or a `min_amount` sent as text, is refused with the
-argument it names instead of read as a number. A Gmail or Qonto
-response whose fields are not of the type the API documents fails the
-call with the field at fault.
+A coded connector's tools (Alchemy, CoinGecko, DexPaprika, Drive,
+Gmail, Qonto, Tavily, TwitterAPI.io, X) refuse a call whose arguments
+do not match the parameters their manifests list, naming the first
+mismatch: a `limit` or a `fileId` sent as another type is refused
+rather than read as one, on a tool the endpoint runs too, and only the
+spellings a tool's listing offers are read. A provider response field
+of another type than the one the provider documents fails the call as
+an unexpected response at that field rather than printing as it came.
 
 **Breaking for extensions.** A connector's code declares each tool it
 runs once with `adapterTool` (`connectors/tools.js`): its name, the
@@ -42,12 +44,6 @@ takes the manifest's `SettingsSchema` and asserts the document is
 `ConnectionSettings` instead of returning it. `argStr`, `argInt` and
 `rowLimit` (`connectors/format.js`) take the arguments as a
 `JsonObject`.
-
-Drive's tools decode each call's arguments before any work: an
-argument of the wrong type, such as a `fileId` that is not text, is
-refused as a 422 naming it, on a tool the endpoint runs too.
-`create_file` and `download_file_content` read the arguments their
-listing offers and no other spelling of them.
 
 **Breaking for extensions.** The packages lint with Oxlint instead
 of ESLint. An extending repository loads the boundary rule from
