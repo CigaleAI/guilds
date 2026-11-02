@@ -48,7 +48,7 @@ import {
   summarizeCalls,
   toolOutcome,
 } from "../runs/toolFormat";
-import { TOOL_KINDS, isMutation, isScriptRun, levelFromDisplayPath } from "../runs/toolKinds";
+import { TOOL_KINDS, isMutation, isScriptRun } from "../runs/toolKinds";
 import type { ToolProgress } from "../../../api/toolProgress";
 import type { Harness } from "../../../api/types/agents";
 import type { CodeTaskArguments, StepMetadata } from "../../../api/types/runs";
@@ -197,8 +197,17 @@ function stopTag(reason: StepMetadata["finish_reason"]): string | undefined {
 /** The agent inspector that links to what a call touched open in. */
 export type Inspector = { guildId: string; agentId: string };
 
+/** A note's display path, `org/<org>/<key>`, as `note_write` answers it. */
+const NOTE_PATH_RE = /^org\/[^/]+\/[^/]+$/;
+
 function firstLine(text: string): string {
   return text.split("\n")[0]?.trim() ?? "";
+}
+
+/** The note a `note_write` call wrote, by the display path its result's first line names; null when it names none. */
+export function writtenNotePath(call: FlowCall): string | null {
+  const path = firstLine(call.result?.payload.content ?? "");
+  return NOTE_PATH_RE.test(path) ? path : null;
 }
 
 /** A chip leading to the note, memory or script a mutation wrote; null when the app has nowhere to show what it touched. */
@@ -220,8 +229,8 @@ function callLink(call: FlowCall, inspector: Inspector): ReactNode {
       ) : null;
     }
     case "note_write": {
-      const path = firstLine(call.result?.payload.content ?? "");
-      if (!levelFromDisplayPath(path)) return null;
+      const path = writtenNotePath(call);
+      if (!path) return null;
       return (
         <CallLink
           to="/guilds/$guildId/agents/$agentId/state/notes"

@@ -16,7 +16,6 @@ import {
   isString,
   isStringList,
   isStringOrNull,
-  isToolLevelArguments,
   parseJson,
   parseStudioConnection,
   parseStudioEdit,
@@ -154,9 +153,6 @@ test("a tool call's arguments pass their tool's check when each parameter has it
   assert.equal(isRecordToolArguments({ collection: "deals", id: "42" }), false);
   assert.equal(isStudioToolArguments({ action: "create", agent_id: "scout" }), true);
   assert.equal(isStudioToolArguments({ agent_id: 7 }), false);
-  assert.equal(isToolLevelArguments({ level: "guild", path: "org/o1/plan.md" }), true);
-  assert.equal(isToolLevelArguments({ path: 7 }), false);
-  assert.equal(isToolLevelArguments("plan.md"), false);
 });
 
 test("a connection with every method the clipboard bridge calls is noVNC's RFB", () => {

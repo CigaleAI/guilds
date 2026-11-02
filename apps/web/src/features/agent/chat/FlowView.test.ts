@@ -10,18 +10,19 @@ import {
   taskPrompt,
   taskRepository,
   taskStatus,
+  writtenNotePath,
 } from "./FlowView";
 
 function codeTaskCall(args: string): ToolCall {
   return { id: "c1", type: "function", function: { name: "code_task", arguments: args } };
 }
 
-/** A recorded message at a sequence, with the metadata it carries. */
-function message(seq: number, metadata: MessageMetadata = {}): RunMessage {
+/** A recorded message at a sequence, with the metadata it carries and its text. */
+function message(seq: number, metadata: MessageMetadata = {}, content = ""): RunMessage {
   return {
     id: seq,
     seq,
-    payload: { role: "assistant", content: "" },
+    payload: { role: "assistant", content },
     metadata,
     created_at: "2026-09-21T08:00:00Z",
     cost_usd: null,
@@ -116,4 +117,12 @@ test("a code task's block reads a finished call as done", () => {
   assert.equal(taskStatus("ok"), "done");
   assert.equal(taskStatus("failed"), "failed");
   assert.equal(taskStatus("running"), "running");
+});
+
+test("a note_write's chip names the note its result's first line names, and none for another path", () => {
+  const wrote = (content: string) => flowCall("c1", { result: message(4, {}, content) });
+  assert.equal(writtenNotePath(wrote("org/o1/plan.md\nwritten")), "org/o1/plan.md");
+  assert.equal(writtenNotePath(wrote("org/o1/agents/a1/memory.md")), null);
+  assert.equal(writtenNotePath(wrote("write not allowed")), null);
+  assert.equal(writtenNotePath(flowCall("c1")), null);
 });

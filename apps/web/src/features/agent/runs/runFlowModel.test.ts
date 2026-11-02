@@ -135,7 +135,7 @@ test("buildFlowSegments keeps steps and batches apart and interleaves plain rows
       item.info.level,
     ]),
     [
-      [1, "note_find", "read", "all"],
+      [1, "note_find", "read", null],
       [2, "record_add", "write", "org"],
     ],
   );

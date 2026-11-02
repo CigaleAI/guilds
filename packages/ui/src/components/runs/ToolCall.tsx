@@ -11,8 +11,8 @@ import { Tag } from "../../primitives/Tag";
 export type ToolKind =
   "memory" | "read" | "write" | "execute" | "act" | "post" | "connected" | "unknown";
 
-/** Which artifact level a call touched; `all` is a search across every level. */
-export type ToolLevel = "local" | "guild" | "org" | "all";
+/** Where what a call touches lives: the agent's own, its guild's, or the organisation's. */
+export type ToolLevel = "local" | "guild" | "org";
 
 /** Lookups read in cyan, mutations in plum, connected servers in tide. */
 export const toolKindFill = {
@@ -30,7 +30,6 @@ export const toolLevelLabel: Record<ToolLevel, string> = {
   local: "local",
   guild: "guild",
   org: "org",
-  all: "all levels",
 };
 
 export type ToolCallStatus = "ok" | "failed" | "running";
@@ -50,7 +49,7 @@ export function EffectTag({ effect, className }: { effect: ToolCallEffect; class
   );
 }
 
-/** A call's kind and the level it touched, as its open detail lists them. */
+/** A call's kind and where what it touched lives, as its open detail lists them. */
 export function ToolCallTags({ kind, level }: { kind: ToolKind; level?: ToolLevel | null }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5">
