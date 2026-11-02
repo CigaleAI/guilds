@@ -35,7 +35,7 @@ const noteListLimit = 500;
  * it is; the reader cannot read it; or the list cannot tell, being the operator's list at its cap
  * without the note, so only reading the note by its path tells.
  */
-export type NoteEmbed =
+type NoteEmbed =
   { state: "readable"; note: EmbeddableNote } | { state: "unreadable" } | { state: "unknown" };
 
 /**

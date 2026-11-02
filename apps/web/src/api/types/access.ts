@@ -95,13 +95,13 @@ export type ReachSubject = { type: "guild" | "agent"; id: string };
  * The guild a note or a file belongs to: the guild it was made in. It groups the item on that
  * guild's pages and never decides who reaches it.
  */
-export type HomeGuild = { id: string; name: string };
+type ItemHome = { id: string; name: string };
 
 /**
  * A note or a file as a guild's or an agent's page lists it: where it sits, its home guild (null
  * for the organisation), and how the page's guild or agent reaches it.
  */
-export type ListedItem = { display_path: string; home: HomeGuild | null; viewer_mode: ViewerMode };
+export type ListedItem = { display_path: string; home: ItemHome | null; viewer_mode: ViewerMode };
 
 /**
  * A guild's or an agent's list of notes or files, by home: `own` holds the items homed in the

@@ -17,7 +17,7 @@ export type Choice = {
 };
 
 /** A named group of choices; a section says `empty` when it holds none. */
-export type ChoiceGroup = { label: string; empty?: string; choices: Choice[] };
+type ChoiceGroup = { label: string; empty?: string; choices: Choice[] };
 
 /**
  * The choices the picker shows: as a list, which leaves out a group with no choice, or as an
@@ -26,7 +26,7 @@ export type ChoiceGroup = { label: string; empty?: string; choices: Choice[] };
 export type ChoiceGroups = { layout: "list" | "sections"; groups: ChoiceGroup[] };
 
 /** What the picker lists: the notes the Task or note can embed, and the organisation's tables. */
-export type ChoiceSources = {
+type ChoiceSources = {
   notes: EmbeddableNotes | undefined;
   collections: readonly Collection[] | undefined;
   orgId: string;
