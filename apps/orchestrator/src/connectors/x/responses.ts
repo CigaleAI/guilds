@@ -1,58 +1,71 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 
-// The X API responses the tools read. Each object keeps the fields X sends beyond the ones named;
-// a field the tools print as it comes is `Shown`.
+// The X API v2 responses the tools read. Each object keeps the fields X sends beyond the ones named.
 
-const Shown = Type.Optional(Type.Unknown());
+/** A field X sends as text, or leaves out. */
+const Text = Type.Optional(Type.String());
+
+/** A count X sends as a number, or leaves out. */
+const Count = Type.Optional(Type.Number());
 
 function Nullable<T extends TSchema>(schema: T) {
   return Type.Optional(Type.Union([schema, Type.Null()]));
 }
 
-/** `data` holds one item or a list of them, depending on the endpoint. */
-function DataOf<T extends TSchema>(item: T) {
-  return Type.Optional(Type.Union([Type.Array(item), item, Type.Null()]));
-}
-
+/** A user, with the `user.fields` the client asks for: X always sends its id, username and name. */
 export const XUser = Type.Object({
-  id: Shown,
-  username: Shown,
-  name: Shown,
-  created_at: Shown,
-  description: Shown,
-  verified: Shown,
-  verified_type: Shown,
-  public_metrics: Nullable(Type.Object({ followers_count: Shown, following_count: Shown, tweet_count: Shown })),
+  id: Type.String(),
+  username: Type.String(),
+  name: Type.String(),
+  created_at: Text,
+  description: Text,
+  verified: Type.Optional(Type.Boolean()),
+  verified_type: Text,
+  public_metrics: Nullable(Type.Object({ followers_count: Count, following_count: Count, tweet_count: Count })),
 });
 export type XUser = Static<typeof XUser>;
 
+/** A post, with the `tweet.fields` the client asks for: X always sends its id and text. */
 export const XPost = Type.Object({
-  id: Shown,
-  author_id: Shown,
-  created_at: Shown,
-  text: Shown,
-  conversation_id: Shown,
-  note_tweet: Nullable(Type.Object({ text: Shown })),
+  id: Type.String(),
+  text: Type.String(),
+  author_id: Text,
+  created_at: Text,
+  conversation_id: Text,
+  note_tweet: Nullable(Type.Object({ text: Text })),
   public_metrics: Nullable(
-    Type.Object({ like_count: Shown, retweet_count: Shown, reply_count: Shown, quote_count: Shown }),
+    Type.Object({ like_count: Count, retweet_count: Count, reply_count: Count, quote_count: Count }),
   ),
 });
 export type XPost = Static<typeof XPost>;
 
-export const UserResponse = Type.Object({ data: DataOf(XUser) });
+/** The users a response's posts name, expanded from their `author_id`. */
+const Includes = Nullable(Type.Object({ users: Type.Optional(Type.Array(XUser)) }));
+
+/** One user; X leaves `data` out when it finds none and says why in `errors`. */
+export const UserResponse = Type.Object({ data: Type.Optional(XUser) });
 export type UserResponse = Static<typeof UserResponse>;
 
-/** A post or a page of posts, with the users they name and the paging token. */
+/** One post, with the user it names; X leaves `data` out when it finds none. */
+export const PostResponse = Type.Object({ data: Type.Optional(XPost), includes: Includes });
+export type PostResponse = Static<typeof PostResponse>;
+
+/** A page of posts, with the users they name, the page's size and the token of the next page. */
 export const PostsResponse = Type.Object({
-  data: DataOf(XPost),
-  includes: Nullable(Type.Object({ users: Type.Optional(Type.Array(XUser)) })),
-  meta: Nullable(Type.Object({ next_token: Shown, result_count: Shown })),
+  data: Type.Optional(Type.Array(XPost)),
+  includes: Includes,
+  meta: Nullable(Type.Object({ next_token: Text, result_count: Count })),
 });
 export type PostsResponse = Static<typeof PostsResponse>;
 
+/** One of the errors an error body lists. */
+const ErrorEntry = Type.Object({ message: Text, detail: Text, title: Text });
+
 /** An error body: the first of `errors`, else `detail`, `title` or `error`. */
-export const ErrorBody = Type.Object({ errors: Shown, detail: Shown, title: Shown, error: Shown });
-
-export const ErrorList = Type.Array(Type.Unknown());
-
-export const ErrorEntry = Type.Object({ message: Shown, detail: Shown, title: Shown });
+export const ErrorBody = Type.Object({
+  errors: Type.Optional(Type.Array(ErrorEntry)),
+  detail: Text,
+  title: Text,
+  error: Text,
+});
+export type ErrorBody = Static<typeof ErrorBody>;

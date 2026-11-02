@@ -128,7 +128,12 @@ export function argInt(arguments_: JsonObject, key: string, fallback: number): n
 }
 
 export function rowLimit(arguments_: JsonObject): number {
-  return Math.max(1, Math.min(LIST_CAP, argInt(arguments_, "limit", LIST_DEFAULT)));
+  return listRows(argInt(arguments_, "limit", LIST_DEFAULT));
+}
+
+/** The rows a list shows for a call's `limit`: `LIST_DEFAULT` when it is absent, kept between 1 and `LIST_CAP`. */
+export function listRows(limit: number | undefined): number {
+  return Math.max(1, Math.min(LIST_CAP, limit ?? LIST_DEFAULT));
 }
 
 export function pythonRound(value: number): number {

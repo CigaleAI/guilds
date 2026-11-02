@@ -217,17 +217,6 @@
       "count": 5
     }
   },
-  "src/connectors/x/client.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 4
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 6
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 3
-    }
-  },
   "src/credentials/visibility.ts": {
     "limits/inline-parameter-type": {
       "count": 1
