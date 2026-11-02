@@ -47,8 +47,22 @@ Notes and files belong to the organisation, not to a guild. Which
 notes, files, and collections an agent reaches is set on each item,
 in its access list. A row for the guild covers every agent of the
 guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
-A note or a file whose rows all name a private guild, or agents of
-it, is hidden from the operators who do not operate that guild.
+
+Each note and file has a home guild: the guild it was made in, or
+none for the organisation's ([Notes](notes.md#home-guild)). The
+guild's **State › Notes** and **State › Files** list two sections:
+
+- **Guild notes** and **Guild files**: the notes and files homed in
+  the guild, whether or not a row reaches its agents;
+- **Shared with this guild**: those homed elsewhere, or in the
+  organisation, that a row for the guild, one of its agents, or the
+  organisation reaches.
+
+A private guild's notes and files, those homed in it, are hidden from
+the operators who do not operate it, even when a row opens them to
+the organisation. So is a note or a file whose rows all name a
+private guild, or agents of it. Hiding is for operators only: an agent
+of another guild that a row reaches reads the item.
 
 ### Purpose: short description and description
 
@@ -104,7 +118,10 @@ guild takes with it its agents and everything they own, its group
 chat, operators, issues, own collections, repositories, the
 access-list rows that name it or its agents, and the secrets that
 only it or its agents held. A note or a file that only those rows
-reached is deleted with it; any other stays, without those rows.
+reached is removed with it, with its change history; any other stays,
+without those rows. A note or a file homed in the guild that stays is
+the organisation's from then on, and shows to the operators its rows
+allow.
 Organisation collections and secrets granted elsewhere stay, and so
 do the machines
 ([Delete](#delete) has the full list).
@@ -360,6 +377,10 @@ PostgreSQL cascades:
 - guild issues
 - the agents' Memory and scripts
 - guild repositories
+
+The notes and files homed in the guild that stay, and every other
+item that names it as `origin_guild_id`, lose their home: PostgreSQL
+sets it to null ([Artifact store](artifacts.md#kinds)).
 
 Studio sessions, Studio drafts, recipes, and recipe applies that name
 the guild stay, with that reference cleared.

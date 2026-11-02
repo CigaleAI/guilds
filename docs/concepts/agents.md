@@ -215,6 +215,14 @@ sideways when they do not fit.
 | **Usage** | tokens, cost, calls, and disk | [Usage](usage.md) |
 | **Settings** | everything on this page | below |
 
+The agent's **State › Notes** and **State › Files** list what its
+guild's page lists, in the same two sections: the items homed in the
+agent's guild, and those shared with the guild. Each item carries the
+agent's own mode on it, **Read & write** or **Read**, and an item no
+row reaches the agent is greyed, **No access**
+([Notes](notes.md#in-the-app), [Files](files.md#in-the-app)). A note
+or a file the agent creates is homed in its guild.
+
 ### Settings tab
 
 Settings shows the create dialog's steps as sections on a stepper.
@@ -468,7 +476,9 @@ already generating`). It then:
   container stays up for the other agents on it;
 - deletes the access-list rows that name the agent
   (`artifact_access`), and removes every note and file, live or
-  deleted, those rows alone reached, with its change history;
+  deleted, those rows alone reached, with its change history; a note
+  or a file the agent created that stays keeps its home, the agent's
+  guild;
 - deletes every secret granted only to that agent;
 - deletes the agent row.
 

@@ -400,10 +400,11 @@ broken:
 2. create the guild (or attach an empty one)
 3. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
-4. create the seed notes, each with the access list the recipe's
-   `org`, `guild`, and `writers` give it, the new guild at `write` when
-   they give none (see [Access](#access)). A key the organisation
-   already holds is written as `<guild name>-<key>`
+4. create the seed notes, each homed in the guild the apply creates or
+   attaches ([Notes](notes.md#home-guild)), with the access list the
+   recipe's `org`, `guild`, and `writers` give it, the new guild at
+   `write` when they give none (see [Access](#access)). A key the
+   organisation already holds is written as `<guild name>-<key>`
 5. for each role in turn:
    - rewrite the Task's note links
      ([embeds and note paths](recipe-format.md#embeds-and-tags)) to
