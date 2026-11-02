@@ -3,7 +3,6 @@ import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
 import { RowMissing } from "./errors.js";
-import { recordFileChange } from "./file-changes.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { artifactCollections, artifacts, memoryRevisions } from "./schema/index.js";
 
@@ -763,38 +762,4 @@ export async function sumOrgFileBytes(db: Queryable, orgId: string, exceptId: st
     [orgId, exceptId],
   );
   return Number(result.rows[0]?.n ?? 0);
-}
-
-/**
- * The live notes and files in `ids` whose access list a deletion emptied, which no one else
- * reached: each is soft-deleted at `now` and its deletion recorded against `actor`.
- */
-export async function retireUnlistedArtifacts(
-  db: Queryable,
-  ids: string[],
-  actor: ChangeActor,
-  now: Date,
-): Promise<void> {
-  if (!ids.length) {
-    return;
-  }
-  const retired = await db.query<{ id: string; org_id: string; display_path: string; version: number }>(
-    `UPDATE artifacts a
-        SET deleted_at = $2, updated_by_type = $3, updated_by_id = $4, updated_by_name = $5, updated_at = $2
-      WHERE a.id = ANY($1::text[]) AND a.deleted_at IS NULL AND a.kind IN ('note', 'file')
-        AND NOT EXISTS (SELECT 1 FROM artifact_access x WHERE x.target_kind = a.kind AND x.target_id = a.id)
-      RETURNING a.id, a.org_id, a.version,
-                'org/' || a.org_id || '/' || CASE WHEN a.path = '' THEN '' ELSE a.path || '/' END || a.key AS display_path`,
-    [ids, stamp(now), actor.actorType, actor.actorId, actor.actorName],
-  );
-  for (const row of retired.rows) {
-    await recordFileChange(db, actor, {
-      orgId: row.org_id,
-      artifactId: row.id,
-      displayPath: row.display_path,
-      operation: "delete",
-      version: row.version,
-      createdAt: now,
-    });
-  }
 }

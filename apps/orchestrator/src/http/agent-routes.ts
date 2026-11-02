@@ -18,7 +18,6 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import { OPEN_POLICY } from "../policy/index.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
 import { currentUser } from "./identity.js";
-import { userActor } from "../lib/change-actor.js";
 import { AgentParams, GuildParams } from "./params.js";
 
 /** The machine an agent goes on, by id; null or left out lets the organisation's placement choose. */
@@ -110,7 +109,7 @@ export async function registerAgentRoutes(app: RouteApp, deps: RouteDeps): Promi
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
-      await deleteAgent(services, agent, userActor(user));
+      await deleteAgent(services, agent);
       return reply.code(204).send();
     },
   );

@@ -129,7 +129,7 @@ export async function addGuild(
   try {
     await notes.createGuild(draft.orgSlug, guild.name);
   } catch (error) {
-    await deleteGuildRow(db, guild.guildId, actor);
+    await deleteGuildRow(db, guild.guildId);
     throw error;
   }
   const created = await getGuild(db, guild.guildId);
@@ -320,10 +320,10 @@ export async function updateGuildSettings(
   return row;
 }
 
-/** Deletes a guild with its agents, runs and notes, as `actor`, through the generation loop that runs them. */
-export async function deleteGuild(services: GuildServices, guild: GuildRow, actor: ChangeActor): Promise<void> {
+/** Deletes a guild with its agents, runs and notes through the generation loop that runs them. */
+export async function deleteGuild(services: GuildServices, guild: GuildRow): Promise<void> {
   if (services.generation === null) {
     throw new GuildError(503, "generation is unavailable");
   }
-  await services.generation.deleteGuild(guild.id, actor);
+  await services.generation.deleteGuild(guild.id);
 }

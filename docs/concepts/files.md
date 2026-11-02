@@ -241,9 +241,9 @@ The name is unique among the organisation's live files. Its search
 document is the name and description. Deletion sets `deleted_at` and
 removes the bytes; the tombstone keeps its access rows, so a file
 hidden from an operator stays hidden once deleted. Deleting a guild
-or an agent deletes every live file whose only rows named it or its
-agents, and removes every deleted one with its change history
-([Access](access.md#access-lists)); a live file deleted that way
+or an agent removes every file, live or deleted, whose only rows
+named it or its agents, with its change history
+([Access](access.md#access-lists)); a live file removed that way
 keeps its bytes in the blob store
 ([SEC-46](../architecture/security-register.md#sec-46--deleting-an-agent-a-guild-or-an-organisation-leaves-its-files-bytes-in-the-blob-store)).
 

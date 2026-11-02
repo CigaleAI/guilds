@@ -615,9 +615,12 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/abort-glossary.md")).tombstone, undefined);
     const aborted = await app.inject({ method: "POST", url: `/api/applies/${abortApplied.id}/abort`, headers: AUTH });
     assert.equal(aborted.statusCode, 200, aborted.body);
-    for (const key of ["abort-glossary.md", "abort-rules.md"]) {
-      assert.equal((await getByDisplayPath(artifacts, noteReader, `org/org_home/${key}`)).tombstone, true, `${key} goes with the abort`);
-    }
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/abort-glossary.md")).tombstone, true, "a note the organisation reads goes with the abort");
+    await assert.rejects(
+      getByDisplayPath(artifacts, noteReader, "org/org_home/abort-rules.md"),
+      /artifact not found/,
+      "a note only the apply's guild reached goes with the guild, with its history",
+    );
     assert.deepEqual(await listAgents(db, abortApplied.guild_id), []);
 
     const abort = (applyId: string) => app.inject({ method: "POST", url: `/api/applies/${applyId}/abort`, headers: AUTH });
@@ -649,10 +652,10 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     });
     assert.equal(sharedAccess.statusCode, 200, sharedAccess.body);
     assert.equal((await abort(shareApplied.id)).statusCode, 200);
-    assert.equal(
-      (await getByDisplayPath(artifacts, noteReader, "org/org_home/share-between.md")).tombstone,
-      true,
-      "a note only the apply's agents reached goes with them",
+    await assert.rejects(
+      getByDisplayPath(artifacts, noteReader, "org/org_home/share-between.md"),
+      /artifact not found/,
+      "a note only the apply's agents reached goes with them, with its history",
     );
 
     // A deletion the store refuses is reported, and the apply is not marked aborted.

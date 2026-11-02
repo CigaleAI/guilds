@@ -8,7 +8,7 @@ import { changesAt } from "../helpers/artifacts.js";
 import { unreachableMarker, embedSource, inlineTaskEmbeds, inspectTaskEmbeds } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { addAgent } from "../../src/agents/service.js";
-import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
+import { systemActor } from "../helpers/agents.js";
 import type { Database } from "../../src/db/client.js";
 import type { JsonObject, JsonValue } from "../../src/lib/json.js";
 import { connect } from "../../src/seed/connect.js";
@@ -782,7 +782,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual((await listAccess(store, operator, target)).map((row) => [row.type, row.id, row.mode]), [["guild", "guild_own", "write"]]);
 
     // deleting a guild soft-deletes its own tables and their records, and drops their access lists
-    await deleteGuild(db, "guild_other", OPERATOR_ACTOR);
+    await deleteGuild(db, "guild_other");
     await assert.rejects(() => getCollection(store, operator, own.id), /unknown collection/);
     const records = await database.pool.query(
       `SELECT count(*)::int AS n FROM artifacts WHERE collection_id = $1 AND deleted_at IS NULL`,

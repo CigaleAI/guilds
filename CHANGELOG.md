@@ -16,10 +16,9 @@ creates a note or a file written by itself alone, and reaches any other
 through its rows; an operator creates one with the row it names, the
 organisation at write by default, and writes every note and file but
 those whose rows all name private guilds it does not operate or their
-agents. Deleting a guild or an agent also deletes the live notes and
-files only its rows reached, and removes the deleted ones only its
-rows reached with their change history; a deleted note or file keeps
-its rows, so it stays hidden where it was. A path's change history shows only the
+agents. Deleting a guild or an agent also removes the notes and files,
+live or deleted, only its rows reached, with their change history; a
+deleted note or file keeps its rows, so it stays hidden where it was. A path's change history shows only the
 changes of the items held there that the reader reads, so a name
 another item now holds does not show a hidden deleted item's history.
 A recipe apply that fails, or is aborted, deletes every agent,

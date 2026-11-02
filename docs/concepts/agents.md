@@ -467,9 +467,8 @@ already generating`). It then:
   its home and its `/run/guilds/<agent id>/` files; the machine's
   container stays up for the other agents on it;
 - deletes the access-list rows that name the agent
-  (`artifact_access`); every deleted note and file those rows alone
-  reached is removed with its change history, and every live one is
-  soft-deleted as the deleting operator;
+  (`artifact_access`), and removes every note and file, live or
+  deleted, those rows alone reached, with its change history;
 - deletes every secret granted only to that agent;
 - deletes the agent row.
 

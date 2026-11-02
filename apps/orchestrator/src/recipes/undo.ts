@@ -24,10 +24,10 @@ export async function undoApply(
   made: AppliedItems,
 ): Promise<string[]> {
   const steps: UndoStep[] = [
-    ...made.agents.map((agentId) => ({ what: `agent ${agentId}`, run: () => deleteAgent(apply.db, agentId, actor) })),
+    ...made.agents.map((agentId) => ({ what: `agent ${agentId}`, run: () => deleteAgent(apply.db, agentId) })),
     ...(made.guildId === null
       ? []
-      : [{ what: `guild ${made.guildId}`, run: () => deleteGuild(apply.db, made.guildId ?? "", actor) }]),
+      : [{ what: `guild ${made.guildId}`, run: () => deleteGuild(apply.db, made.guildId ?? "") }]),
     ...made.collections.map((collectionId) => ({
       what: `collection ${collectionId}`,
       run: () => deleteCollection(apply.artifacts, actor, collectionId).then(() => undefined),

@@ -16,7 +16,7 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 import { insertUser } from "../../src/db/users.js";
 import { insertMember, insertOrg } from "../../src/db/orgs.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
-import { addTestAgent, OPERATOR_ACTOR } from "../helpers/agents.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { deleteAgent } from "../../src/db/agents.js";
 import { getSecret, listAgentSecrets } from "../../src/db/secrets.js";
 import { agentConfig } from "../helpers/generation.js";
@@ -355,13 +355,13 @@ test("a secret goes with the guild or agent that held its last grant", async () 
   const agentAndGuild = (await create(OWNER, { name: "LEAVER_AND_SIDE", agent_ids: ["a_gone"], guild_ids: ["guild_side"] })).json().id;
   const unassigned = (await create(OWNER, { name: "NEVER_GRANTED" })).json().id;
 
-  await deleteAgent(db, "a_gone", OPERATOR_ACTOR);
+  await deleteAgent(db, "a_gone");
   assert.equal(await getSecret(db, onlyAgent), null);
   const kept = await getSecret(db, agentAndGuild);
   assert.ok(kept);
   assert.deepEqual((kept.grants as Array<{ guild_id: string }>).map((grant) => grant.guild_id), ["guild_side"]);
 
-  await deleteGuild(db, "guild_doomed", OPERATOR_ACTOR);
+  await deleteGuild(db, "guild_doomed");
   assert.equal(await getSecret(db, inGuild), null);
   const survivor = await getSecret(db, shared);
   assert.ok(survivor);

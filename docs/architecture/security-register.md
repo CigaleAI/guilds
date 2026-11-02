@@ -9,7 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
-| [SEC-56](#sec-56--deleting-a-private-guild-showed-the-history-of-the-notes-and-files-it-had-deleted-to-every-operator) | Deleting a private guild showed the history of the notes and files it had deleted to every operator | Fixed 2026-11-03 |
+| [SEC-56](#sec-56--deleting-a-private-guild-showed-the-history-of-its-notes-and-files-to-every-operator) | Deleting a private guild showed the history of its notes and files to every operator | Fixed 2026-11-03 |
 | [SEC-55](#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list) | A note's or a file's reach came from its owner as well as its access list | Fixed 2026-11-02 |
 | [SEC-54](#sec-54--while-a-browse-call-runs-any-process-on-the-orchestrators-host-can-drive-the-agents-chrome-through-its-cdp-bridge) | While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge | Open, accepted |
 | [SEC-53](#sec-53--an-agents-devtools-relay-answers-any-process-on-its-machines-container-network-without-authentication) | An agent's DevTools relay answers any process on its machine's container network without authentication | Open, accepted |
@@ -66,7 +66,7 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
 
-## SEC-56 — Deleting a private guild showed the history of the notes and files it had deleted to every operator
+## SEC-56 — Deleting a private guild showed the history of its notes and files to every operator
 
 **Status:** fixed 2026-11-03.
 
@@ -75,27 +75,27 @@ risk is kept by design), or **Fixed** with its date.
 **Where:** `deleteGuild` in `apps/orchestrator/src/db/guilds.ts` and
 `deleteAgent` in `apps/orchestrator/src/db/agents.ts`.
 
-**Exposure:** a deleted note or file keeps its access rows, so the
-hiding rule covers its tombstone and its change history. Deleting a
-guild or an agent removed the rows naming it from tombstones too. A
-tombstone whose every row named a private guild or one of its agents
-was left with no row, and an item with no row is hidden from no one,
-so every operator of the organisation read its change history: its
-display path, who wrote it and when, and the runs that did, and the
-access-list changes logged against it.
+**Exposure:** a note or a file is hidden from an operator while its
+access rows all name private guilds they do not operate or those
+guilds' agents, and a deleted one keeps its rows so the rule covers
+its tombstone and its change history. Deleting a guild or an agent
+removed the rows naming it. A live item whose every row named a
+private guild or one of its agents was soft-deleted with no row left,
+and a tombstone in the same case lost its rows. An item with no row is
+hidden from no one, so every operator of the organisation read its
+change history: its display path, who wrote it and when, the runs
+that did, and the access-list changes logged against it.
 
-**Fix:** deleting a guild or an agent removes each deleted note and
-file that only its rows reached, with its `file_changes` rows and the
-`config_changes` rows of its access list, before the guild or the
-agent row goes (`deleteUnlistedTombstones` in
-`apps/orchestrator/src/db/artifact-access.ts`). A deleted item that
-another row still reaches stays, hidden by that row.
+**Fix:** deleting a guild or an agent removes each note and file,
+live or deleted, that only its rows reached, with its `file_changes`
+rows and the `config_changes` rows of its access list, before the
+guild or the agent row goes (`purgeUnlistedNotesAndFiles` in
+`apps/orchestrator/src/db/artifact-access.ts`). An item that another
+row still reaches stays, hidden by that row.
 `test/integration/private-guild-artifacts.test.ts` pins it.
 
-**Residual risk:** a live note or file that only the deleted guild's
-rows reached is deleted with the guild, and its tombstone has no row
-left, so its change history shows to every operator of the
-organisation (SEC-55).
+**Residual risk:** a live file removed this way keeps its bytes in
+the blob store, no longer named by any row (SEC-46).
 
 ## SEC-55 — A note's or a file's reach came from its owner as well as its access list
 
@@ -145,7 +145,8 @@ guild's note on its Access panel makes it visible, and writable, to every
 operator of the organisation; creation never leaves an item without a
 row. The tombstone of a note or a file deleted with its guild or agent
 has no row left, so its change history shows to every operator of the
-organisation. A file deleted that way keeps its
+organisation; since 2026-11-03 such an item is removed with its history
+instead (SEC-56). A file deleted that way keeps its
 bytes in the blob store (SEC-46).
 
 ## SEC-54 — While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge

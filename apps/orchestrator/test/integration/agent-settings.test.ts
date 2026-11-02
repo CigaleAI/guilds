@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { OPERATOR_ACTOR } from "../helpers/agents.js";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -223,8 +222,8 @@ test(
       await moveAgentToMachine(services, other, "user_operator", secondId);
       assert.deepEqual(calls, [`move ${other.id} ${secondId}`]);
 
-      await assert.rejects(deleteAgent({ ...services, generation: null }, other, OPERATOR_ACTOR), refusedWith(503));
-      await deleteAgent(services, other, OPERATOR_ACTOR);
+      await assert.rejects(deleteAgent({ ...services, generation: null }, other), refusedWith(503));
+      await deleteAgent(services, other);
       assert.equal(calls.at(-1), `delete ${other.id}`);
     } finally {
       await app.close();

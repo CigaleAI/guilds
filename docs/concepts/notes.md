@@ -350,9 +350,9 @@ A note is an `artifacts` row with `kind` `note`, no `agent_id`, a
 notes. Its search document is the content; its search text is the
 title and key. Deletion sets `deleted_at`; the tombstone keeps its
 access rows, so a note hidden from an operator stays hidden once
-deleted. Deleting a guild or an agent deletes every live note whose
-only rows named it or its agents, and removes every deleted one with
-its change history ([Access](access.md#access-lists)).
+deleted. Deleting a guild or an agent removes every note, live or
+deleted, whose only rows named it or its agents, with its change
+history ([Access](access.md#access-lists)).
 
 Code: `apps/orchestrator/src/artifacts/notes.ts`,
 `apps/orchestrator/src/artifacts/memory.ts`,

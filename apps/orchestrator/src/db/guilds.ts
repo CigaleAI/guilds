@@ -13,9 +13,7 @@ import {
   users,
 } from "./schema/index.js";
 import { deleteGuildUsage } from "./usage.js";
-import { retireUnlistedArtifacts } from "./artifacts.js";
-import { deleteUnlistedTombstones } from "./artifact-access.js";
-import type { ChangeActor } from "../lib/change-actor.js";
+import { purgeUnlistedNotesAndFiles } from "./artifact-access.js";
 
 type Guild = InferSelectModel<typeof guilds>;
 type McpConnection = InferSelectModel<typeof mcpConnections>;
@@ -244,11 +242,10 @@ export async function insertGuild(pool: Queryable, guild: NewGuild, now: Date): 
 }
 
 /**
- * Deletes a guild with its own collections and the access rows naming it or one of its agents. A
- * live note or file only those rows reached is deleted with it, as `actor`; a deleted one only
- * those rows reached is removed with its history.
+ * Deletes a guild with its own collections and the access rows naming it or one of its agents; a
+ * note or a file, live or deleted, only those rows reached is removed with its history.
  */
-export async function deleteGuild(pool: Queryable, guildId: string, actor: ChangeActor): Promise<void> {
+export async function deleteGuild(pool: Queryable, guildId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
     await deleteGuildUsage(client, guildId);
     const now = new Date().toISOString();
@@ -271,9 +268,7 @@ export async function deleteGuild(pool: Queryable, guildId: string, actor: Chang
       [guildId],
     );
     const items = named.rows.filter((row) => row.target_kind !== "collection").map((row) => row.target_id);
-    // Tombstones go before the retirement, so the items this deletion retires keep their history.
-    await deleteUnlistedTombstones(client, items);
-    await retireUnlistedArtifacts(client, items, actor, new Date(now));
+    await purgeUnlistedNotesAndFiles(client, items);
     // A secret whose every grant goes with the guild goes with it.
     await client.query(
       `DELETE FROM secrets s

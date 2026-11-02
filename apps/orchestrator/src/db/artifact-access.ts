@@ -192,17 +192,18 @@ export async function deleteAccessList(db: Queryable, target: AccessTargetRef): 
 }
 
 /**
- * Removes each deleted note and file in `ids` whose access list is empty, with its change history
- * (its `file_changes` rows go by cascade) and its access list's entries in the configuration log.
+ * Removes each note and file in `ids`, live or deleted, whose access list is empty, with its change
+ * history (its `file_changes` rows go by cascade) and its access list's entries in the
+ * configuration log. The bytes of a live file stay in the blob store.
  */
-export async function deleteUnlistedTombstones(db: Queryable, ids: string[]): Promise<void> {
+export async function purgeUnlistedNotesAndFiles(db: Queryable, ids: string[]): Promise<void> {
   if (!ids.length) {
     return;
   }
   await db.query(
     `WITH gone AS (
        DELETE FROM artifacts a
-        WHERE a.id = ANY($1::text[]) AND a.deleted_at IS NOT NULL AND a.kind IN ('note', 'file')
+        WHERE a.id = ANY($1::text[]) AND a.kind IN ('note', 'file')
           AND NOT EXISTS (SELECT 1 FROM artifact_access x WHERE x.target_kind = a.kind AND x.target_id = a.id)
        RETURNING a.org_id, a.kind, a.id
      )

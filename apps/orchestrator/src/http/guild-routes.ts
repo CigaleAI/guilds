@@ -1,4 +1,3 @@
-import { userActor } from "../lib/change-actor.js";
 import { Type } from "typebox";
 import { requireAdministeredGuild, requireVisibleGuild } from "../guilds/access.js";
 import { removeOperator, setOperatorRole } from "../guilds/operators.js";
@@ -113,7 +112,7 @@ export async function registerGuildRoutes(app: RouteApp, deps: AppDeps): Promise
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireAdministeredGuild(db, request.params.guild_id, user.id);
-      await deleteGuild(services, guild, userActor(user));
+      await deleteGuild(services, guild);
       return reply.code(204).send();
     },
   );

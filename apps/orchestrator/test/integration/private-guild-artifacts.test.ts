@@ -10,7 +10,6 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
-import { OPERATOR_ACTOR } from "../helpers/agents.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { deleteAgent } from "../../src/db/agents.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
@@ -233,7 +232,7 @@ test("organisation-wide note, table, and change routes keep a private guild to i
   }
 });
 
-test("deleting a private guild or one of its agents removes the deleted notes only it reached, with every change to them", { timeout: 60_000 }, async () => {
+test("deleting a private guild or one of its agents removes the notes only it reached, live or deleted, with every change to them", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(deletionDbName));
   const notes = new NotesStore(tempDir("guilds-private-deletion-notes-"), templatesRoot());
@@ -290,7 +289,11 @@ test("deleting a private guild or one of its agents removes the deleted notes on
       { type: "org", id: "org_home", mode: "read" },
     ]);
     await remove("attic-shared.md");
-    const live = await write("attic-live.md", [{ type: "guild", id: guildId, mode: "write" }]);
+    const live = await write("attic-live.md", [
+      { type: "guild", id: guildId, mode: "write" },
+      { type: "agent", id: agentId, mode: "read" },
+    ]);
+    const liveAgentOnly = await write("porter-notes.md", [{ type: "agent", id: agentId, mode: "write" }]);
 
     const history = async (path: string, headers: Record<string, string>) =>
       ((await app.inject({ method: "GET", url: `/api/file-changes?display_path=${encodeURIComponent(path)}`, headers })).json() as Array<{
@@ -299,23 +302,29 @@ test("deleting a private guild or one of its agents removes the deleted notes on
     assert.deepEqual(await history(guildOnly.path, OWNER), ["delete", "create"]);
     assert.deepEqual(await history(guildOnly.path, TEAMMATE), [], "a private guild's deleted note is hidden while the guild lives");
 
-    await deleteAgent(db, agentId, OPERATOR_ACTOR);
+    await deleteAgent(db, agentId);
     assert.deepEqual(await history(agentOnly.path, OWNER), [], "a deleted note only the agent reached goes with the agent");
+    assert.deepEqual(await history(liveAgentOnly.path, OWNER), [], "a live note only the agent reached goes with the agent");
     assert.deepEqual(await history(guildOnly.path, OWNER), ["delete", "create"], "a deleted note its guild still reaches stays");
-    await deleteGuild(db, guildId, OPERATOR_ACTOR);
+    assert.deepEqual(await history(live.path, OWNER), ["create"], "a live note its guild still reaches stays");
+    await deleteGuild(db, guildId);
 
+    const gone = [guildOnly, agentOnly, live, liveAgentOnly];
     for (const headers of [OWNER, TEAMMATE]) {
-      assert.deepEqual(await history(guildOnly.path, headers), []);
+      for (const note of gone) {
+        assert.deepEqual(await history(note.path, headers), []);
+        assert.equal((await app.inject({ method: "GET", url: `/api/notes/${note.id}/access`, headers })).statusCode, 404);
+      }
       const latest = await app.inject({
         method: "POST",
         url: "/api/file-changes/latest",
         headers: { ...headers, ...JSON_BODY },
-        payload: { display_paths: [guildOnly.path, agentOnly.path] },
+        payload: { display_paths: gone.map((note) => note.path) },
       });
       assert.deepEqual(latest.json(), {});
-      assert.equal((await app.inject({ method: "GET", url: `/api/notes/${guildOnly.id}/access`, headers })).statusCode, 404);
+      assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/attic-live.md", headers })).statusCode, 404);
     }
-    const removed = [guildOnly.id, agentOnly.id];
+    const removed = gone.map((note) => note.id);
     for (const id of removed) {
       assert.deepEqual(await listFileChanges(db, "org_home", { artifactIds: [id], taskAgentId: null }), [], "no history is read by the note's id");
       assert.deepEqual(await listConfigChanges(db, "org_home", { kind: "note", id }), [], "no access change is read by the note's id");
@@ -327,7 +336,6 @@ test("deleting a private guild or one of its agents removes the deleted notes on
     assert.deepEqual(configChanges.filter((change) => removed.includes(change.target_id)), [], "no access change lists a removed note");
 
     assert.deepEqual(await history(shared.path, OWNER), ["delete", "create"], "a deleted note the organisation still reaches keeps its history");
-    assert.deepEqual(await history(live.path, OWNER), ["delete", "create"], "a live note only the guild reached is deleted with it and keeps its history");
   } finally {
     await app.close();
     await database.close();
