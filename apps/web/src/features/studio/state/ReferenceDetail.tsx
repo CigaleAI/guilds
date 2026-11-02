@@ -63,7 +63,6 @@ function DetailActions({ node }: DetailActionsProps) {
           onClick={() =>
             ask({
               kind: "file",
-              ...(node.agent_id ? { agent_id: node.agent_id } : {}),
               display_path: node.id,
               label: `${node.kind === "table" ? "Table" : "File"} · ${node.label}`,
             })

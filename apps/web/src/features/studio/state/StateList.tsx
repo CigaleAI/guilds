@@ -162,10 +162,10 @@ function StateTable({ rows, waiting, hours, onHoursChange }: StateTableProps) {
   );
 }
 
-/** Whose an item is: the agent's name for an agent's item, else its level. */
-function ownerLabel(row: StateItemRow, agents: StudioAgent[]): string {
-  if (row.level !== "agent") return row.level;
-  return agents.find((agent) => agent.id === row.owner_id)?.name ?? "agent";
+/** The agent whose Memory or script an item is, by name; null for a note, a file, and a table. */
+function agentLabel(row: StateItemRow, agents: StudioAgent[]): string | null {
+  if (row.agent_id === null) return null;
+  return agents.find((agent) => agent.id === row.agent_id)?.name ?? "agent";
 }
 
 function stateColumns(
@@ -182,7 +182,7 @@ function stateColumns(
         <span className="flex flex-col gap-1">
           <span className="font-mono text-sm font-medium">{row.title}</span>
           <span className="flex flex-wrap items-center gap-1 text-xs text-muted">
-            {row.kind} · {ownerLabel(row, agents)}
+            {[row.kind, agentLabel(row, agents)].filter(Boolean).join(" · ")}
             {stateFlagLabels(row, isAwaitingApproval(row, waiting)).map((label) => (
               <Tag key={label} tone={label === "needs approval" ? "signal" : "ochre"} font="sans">
                 {label}
@@ -192,11 +192,7 @@ function stateColumns(
         </span>
       ),
     },
-    {
-      id: "level",
-      header: "Level · size",
-      cell: (row) => `${row.level} · ${itemSize(row)}`,
-    },
+    { id: "size", header: "Size", cell: (row) => itemSize(row) },
     { id: "changes", header: "Changes", align: "end", sortable: true, cell: (row) => row.changes },
     { id: "reads", header: "Reads", align: "end", sortable: true, cell: (row) => row.reads },
     { id: "writer", header: "Most changed by", cell: (row) => actorShare(row.top_writer) },

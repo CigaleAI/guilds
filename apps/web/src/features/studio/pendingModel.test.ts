@@ -108,7 +108,7 @@ test("an edit is open until it is applied or declined, and lands where it change
         { kind: "routine", target: { agent_id: "a_1", schedule_id: "s_1" } },
         { edit_status: "declined" },
       ),
-      edit(6, { kind: "note", target: { display_path: "org/o/guilds/g/notes/a.md" } }),
+      edit(6, { kind: "note", target: { display_path: "org/o/a.md" } }),
       edit(7, { kind: "collection", target: { collection_id: "col_1", name: "leads" } }),
       edit(8, { kind: "access", target: { agent_id: "a_1" }, widens: true }),
       edit(9, { kind: "guild", fields: ["about"] }),
@@ -134,7 +134,7 @@ test("an edit is open until it is applied or declined, and lands where it change
     [
       { section: "agents", agent: "a_1", tab: "memory" },
       { section: "agents", agent: "a_1", tab: "routines", item: "s_1" },
-      { section: "state", tab: "list", kind: "note", item: "org/o/guilds/g/notes/a.md" },
+      { section: "state", tab: "list", kind: "note", item: "org/o/a.md" },
       { section: "state", tab: "list", kind: "table", item: "col_1" },
       { section: "tools" },
       { section: "guild" },

@@ -26,7 +26,6 @@ function node(id: string, fields: Partial<ReferenceNode> = {}): ReferenceNode {
     id,
     kind: "note",
     label: id,
-    level: "guild",
     agent_id: null,
     collection_id: null,
     in_state: true,
@@ -54,7 +53,7 @@ const embed = (
 /**
  * Two Tasks share `rules`, which embeds `style`, which embeds `glossary` (left as text), which
  * embeds `deep`. `b`'s Task names `aside` and embeds a link that does not resolve. `lonely` and
- * b's own `draft` are reached by no Task.
+ * `draft` are reached by no Task.
  */
 const data: StudioReferences = {
   guild_id: "g",
@@ -64,7 +63,6 @@ const data: StudioReferences = {
     node("task-a", {
       kind: "task",
       label: "Alpha",
-      level: "agent",
       agent_id: "a",
       hops: { a: 0 },
       depth: 0,
@@ -73,7 +71,6 @@ const data: StudioReferences = {
     node("task-b", {
       kind: "task",
       label: "Beta",
-      level: "agent",
       agent_id: "b",
       hops: { b: 0 },
       depth: 0,
@@ -85,7 +82,7 @@ const data: StudioReferences = {
     node("deep", { depth: 4 }),
     node("aside", {}),
     node("lonely", {}),
-    node("draft", { level: "agent", agent_id: "b" }),
+    node("draft", {}),
     node("leads", { kind: "table", collection_id: "col_1", hops: { a: 1 }, depth: 1 }),
     node("gone", {
       kind: "unresolved",
@@ -131,10 +128,10 @@ test("without an agent, each node sits at its depth, unreached ones in the band,
   assert.deepEqual(ids(view.deeper), ["deep"]);
 });
 
-test("with an agent, the map shows what its run meets and its own unreached notes", () => {
+test("with an agent, the map shows only what its run meets", () => {
   const view = referenceMapView(data, "b");
   assert.deepEqual(view.columns.map(ids), [["task-b"], ["gone", "rules"], ["style"], ["glossary"]]);
-  assert.deepEqual(ids(view.band), ["draft"]);
+  assert.deepEqual(ids(view.band), []);
   assert.deepEqual(ids(view.deeper), []);
   assert.equal(shownIds(view).has("task-a"), false);
 });
@@ -249,31 +246,22 @@ test("linkPath runs side to side toward the right, and top to bottom otherwise",
   assert.equal(linkPath(box(0, 100), box(0, 0)), "M50,100 C50,70 50,70 50,40");
 });
 
-test("referenceMeta reads a Task's budget, a file's level and size, and why a link fails", () => {
+test("referenceMeta reads a Task's budget, a note's size, a table, and why a link fails", () => {
   assert.equal(referenceMeta(data.nodes[1] as ReferenceNode, data), "120 B of 100 B inlined");
-  assert.equal(referenceMeta(node("n", { bytes: 2048 }), data), "guild · 2.0 KB");
-  assert.equal(referenceMeta(node("t", { kind: "table" }), data), "guild · table");
+  assert.equal(referenceMeta(node("n", { bytes: 2048 }), data), "2.0 KB");
+  assert.equal(referenceMeta(node("t", { kind: "table" }), data), "table");
   assert.equal(
-    referenceMeta(node("u", { kind: "unresolved", level: null, reason: "not a file path" }), data),
+    referenceMeta(node("u", { kind: "unresolved", reason: "not a file path" }), data),
     "not a file path",
   );
-  assert.equal(
-    referenceMeta(node("u", { kind: "unresolved", level: null }), data),
-    "not reachable",
-  );
+  assert.equal(referenceMeta(node("u", { kind: "unresolved" }), data), "not reachable");
 });
 
-test("stateListLocation opens a note or a table by path, under its agent, and nothing else", () => {
-  assert.deepEqual(stateListLocation(node("org/o/guilds/g/a.md")), {
+test("stateListLocation opens a note or a table by path, and nothing else", () => {
+  assert.deepEqual(stateListLocation(node("org/o/a.md")), {
     section: "state",
     tab: "list",
-    item: "org/o/guilds/g/a.md",
-  });
-  assert.deepEqual(stateListLocation(node("org/o/agents/b/a.md", { agent_id: "b" })), {
-    section: "state",
-    agent: "b",
-    tab: "list",
-    item: "org/o/agents/b/a.md",
+    item: "org/o/a.md",
   });
   assert.deepEqual(
     stateListLocation(node("org/o/collections/leads", { kind: "table", collection_id: "col_1" })),
@@ -291,7 +279,7 @@ test("standoutGroups titles each kind of standout and leaves out the empty ones"
       ["Broken embeds", ["not reachable · in Beta", "inlines 120 B, over the 100 B budget"]],
       ["Shared by several prompts", ["inlined for 2 agents", "inlined for 2 agents"]],
       ["Too deep to be inlined", ["3 hops from a Task", "4 hops from a Task"]],
-      ["Nothing points here", ["guild", "agent"]],
+      ["Nothing points here", ["10 B", "10 B"]],
     ],
   );
   assert.deepEqual(standoutGroups({ ...data, nodes: [], edges: [] }, new Set(), new Set()), []);

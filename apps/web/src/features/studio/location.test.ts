@@ -90,7 +90,7 @@ test("a file pin opens State with the file selected, and a record its table", ()
 test("a table's path is its own, and a record's names its table", () => {
   assert.equal(tablePathOf("org/o/collections/c"), "org/o/collections/c");
   assert.equal(tablePathOf("org/o/collections/c/12"), "org/o/collections/c");
-  assert.equal(tablePathOf("org/o/guilds/g/a.md"), null);
+  assert.equal(tablePathOf("org/o/a.md"), null);
 });
 
 test("a tool pin points nowhere", () => {

@@ -18,8 +18,7 @@ function row(path: string, overrides: Partial<StateItemRow> = {}): StateItemRow 
   return {
     display_path: path,
     kind: "note",
-    level: "guild",
-    owner_id: "g",
+    agent_id: null,
     title: path.split("/").pop() ?? path,
     size: 10,
     version: 1,
@@ -62,15 +61,15 @@ test("flags read as words, with needs approval first when a request waits", () =
 
 test("open requests mark notes by path and tables by id", () => {
   const waiting = itemsAwaitingApproval([
-    proposal("open", { display_path: "org/o/guilds/g/a.md" }),
+    proposal("open", { display_path: "org/o/a.md" }),
     proposal("open", { collection_id: "col_1" }),
-    proposal("decided", { display_path: "org/o/guilds/g/b.md" }),
+    proposal("decided", { display_path: "org/o/b.md" }),
     { seq: 2, state: "open", widget: { kind: "draft" } } as unknown as Proposal,
   ]);
-  assert.deepEqual([...waiting].sort(), ["col_1", "org/o/guilds/g/a.md"]);
-  assert.ok(isAwaitingApproval(row("org/o/guilds/g/a.md"), waiting));
+  assert.deepEqual([...waiting].sort(), ["col_1", "org/o/a.md"]);
+  assert.ok(isAwaitingApproval(row("org/o/a.md"), waiting));
   assert.ok(isAwaitingApproval(row("t", { kind: "table", collection_id: "col_1" }), waiting));
-  assert.equal(isAwaitingApproval(row("org/o/guilds/g/b.md"), waiting), false);
+  assert.equal(isAwaitingApproval(row("org/o/b.md"), waiting), false);
 });
 
 test("a selection names an item by path or a table by id", () => {
