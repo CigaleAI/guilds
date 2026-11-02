@@ -5,13 +5,11 @@ import { fileMeta, filterFiles, uploadProblem } from "./fileList";
 
 const item = (name: string, description: string): FileItem => ({
   id: `f_${name}`,
-  display_path: `org/o/guilds/g/files/${name}`,
+  display_path: `org/o/files/${name}`,
   name,
   description,
   mime: "application/pdf",
   bytes: 2048,
-  level: "guild",
-  owner_id: "g",
   version: 1,
   author: "operator",
   updated_at: "2026-10-26T09:00:00Z",

@@ -17,10 +17,9 @@ import {
 } from "@guildsrun/ui";
 import {
   accessCandidates,
-  accessModeLabel,
-  accessModes,
   findCandidate,
   modeForType,
+  modeOptions,
   subjectCaption,
   subjectKey,
   withMode,
@@ -33,10 +32,6 @@ const resolution =
 
 const failed = (error: Error) =>
   toast({ kind: "error", title: "Couldn't change the access", description: error.message });
-
-function modeOptions(type: AccessEntry["type"]) {
-  return accessModes[type].map((mode) => ({ value: mode, label: accessModeLabel[mode] }));
-}
 
 type AccessListPanelProps = { target: AccessTarget; intro: string };
 

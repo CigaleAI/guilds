@@ -19,6 +19,11 @@ export const accessModeLabel: Record<AccessListMode, string> = {
   write: "Read & write",
 };
 
+/** The modes a row of this subject type can take, as a picker offers them. */
+export function modeOptions(type: AccessSubjectType): { value: AccessListMode; label: string }[] {
+  return accessModes[type].map((mode) => ({ value: mode, label: accessModeLabel[mode] }));
+}
+
 /** One key per subject, as an access list holds at most one row for each. */
 export function subjectKey(subject: AccessSubject): string {
   return `${subject.type}:${subject.id}`;

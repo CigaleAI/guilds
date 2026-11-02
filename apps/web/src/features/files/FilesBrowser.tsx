@@ -1,8 +1,8 @@
 import { ArrowLeft, Download, FileUp, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { FilesPrefix } from "../../api/files";
 import { useDeleteFile, useFileList, useUploadFile } from "../../api/queries/files";
+import type { AccessRow, AccessSubject } from "../../api/types/access";
 import type { FileItem } from "../../api/types/files";
 import { formatSize, relativeTime } from "../../app/format";
 import { useMediaQuery, visiblePanes, wideScreen } from "../../app/media";
@@ -27,37 +27,49 @@ import {
   toast,
 } from "@guildsrun/ui";
 import { AccessListPanel } from "../access/AccessListPanel";
+import { StartingAccessField } from "../access/StartingAccessField";
 import { LatestChange, type OpenChangeStep } from "../notes/LatestChange";
-import { openingScope } from "../../app/displayPath";
 import { attemptFileDownload } from "./download";
 import { fileMeta, filterFiles, uploadProblem } from "./fileList";
 
-export type FileScope = { id: "agent" | "guild" | "org"; title: string; prefix: FilesPrefix };
+/**
+ * A page whose files the browser lists: an agent's lists the files it reads, a guild's the files
+ * whose access list names the guild, one of its agents or the organisation, the organisation's
+ * every file. A file uploaded from it starts with a row for the page's subject.
+ */
+export type FileScope = { title: string; page: AccessSubject };
 
 type FilesBrowserProps = {
-  /** The scopes to browse, the first open at start: an agent's, its guild's, the organisation's. */
+  /** The pages to browse, the first open at start; the organisation's is the last. */
   scopes: FileScope[];
   guildId: string;
   /** Opens the run step that changed a file; by default the run opens in its agent's chat. */
   onOpenStep?: OpenChangeStep;
-  /** A file to open first, by display path; its scope opens with it. */
+  /** A file to open first, by display path; the organisation's list, which holds every file, opens with it. */
   initialPath?: string | undefined;
 };
 
 const noFiles: FileItem[] = [];
 
-/** Shared files by scope: each scope's files side by side, and the open file with its facts and actions. */
+/** What each page's list holds, as its empty state says. */
+const emptyFiles: Record<AccessSubject["type"], string> = {
+  agent: "Files this agent reads appear here.",
+  guild: "Files open to this guild or its agents appear here.",
+  org: "Every file of the organisation appears here.",
+};
+
+/** Shared files by page: each page's list, and the open file with its facts and actions. */
 export function FilesBrowser({ scopes, guildId, onOpenStep, initialPath }: FilesBrowserProps) {
-  const initialScope = openingScope(scopes, initialPath)?.id;
-  const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.id ?? "guild");
-  const scope = scopes.find((item) => item.id === scopeId) ?? scopes[0];
-  const prefixOf = (id: FileScope["id"]) => scopes.find((item) => item.id === id)?.prefix ?? null;
+  const initialScope = initialPath ? scopes.find((item) => item.page.type === "org")?.page.type : undefined;
+  const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.page.type ?? "guild");
+  const scope = scopes.find((item) => item.page.type === scopeId) ?? scopes[0];
+  const pageOf = (type: AccessSubject["type"]) => scopes.find((item) => item.page.type === type)?.page ?? null;
   const lists = {
-    agent: useFileList(prefixOf("agent")),
-    guild: useFileList(prefixOf("guild")),
-    org: useFileList(prefixOf("org")),
+    agent: useFileList(pageOf("agent")),
+    guild: useFileList(pageOf("guild")),
+    org: useFileList(pageOf("org")),
   };
-  const [selected, setSelected] = useState<Partial<Record<FileScope["id"], string>>>(() =>
+  const [selected, setSelected] = useState<Partial<Record<AccessSubject["type"], string>>>(() =>
     initialScope && initialPath ? { [initialScope]: initialPath } : {},
   );
 
@@ -66,26 +78,26 @@ export function FilesBrowser({ scopes, guildId, onOpenStep, initialPath }: Files
   return (
     <ScopeFiles
       scope={scope}
-      list={lists[scope.id]}
+      list={lists[scope.page.type]}
       tabs={
         scopes.length > 1 ? (
           <Segmented
             size="sm"
-            label="Files scope"
-            value={scope.id}
+            label="Files list"
+            value={scope.page.type}
             onValueChange={setScopeId}
             options={scopes.map((item) => ({
-              value: item.id,
+              value: item.page.type,
               label: item.title,
-              count: lists[item.id].data?.length ?? 0,
+              count: lists[item.page.type].data?.length ?? 0,
             }))}
           />
         ) : null
       }
       guildId={guildId}
       onOpenStep={onOpenStep}
-      chosenPath={selected[scope.id]}
-      onChoose={(path) => setSelected({ ...selected, [scope.id]: path })}
+      chosenPath={selected[scope.page.type]}
+      onChoose={(path) => setSelected({ ...selected, [scope.page.type]: path })}
       startsOnFile={Boolean(initialPath)}
     />
   );
@@ -94,18 +106,18 @@ export function FilesBrowser({ scopes, guildId, onOpenStep, initialPath }: Files
 type ScopeFilesProps = {
   scope: FileScope;
   list: UseQueryResult<FileItem[]>;
-  /** The scope picker above the list; null when there is one scope. */
+  /** The list picker above the list; null when there is one list. */
   tabs: ReactNode;
   guildId: string;
   onOpenStep: OpenChangeStep | undefined;
-  /** The file chosen in this scope, by display path; without one the first file opens. */
+  /** The file chosen in this list, by display path; without one the first file opens. */
   chosenPath: string | undefined;
   onChoose: (path: string | undefined) => void;
   /** Whether a phone starts on the open file instead of the list. */
   startsOnFile: boolean;
 };
 
-/** One scope's files: the searchable list beside the open file, one at a time on a phone, and the upload. */
+/** One page's files: the searchable list beside the open file, one at a time on a phone, and the upload. */
 function ScopeFiles({
   scope,
   list,
@@ -132,7 +144,7 @@ function ScopeFiles({
     <EmptyState
       icon={Paperclip}
       title="No files yet"
-      description={`Files in ${scope.title.toLowerCase()} scope appear here. Agents share them with their file tools.`}
+      description={`${emptyFiles[scope.page.type]} Agents share files with their file tools.`}
       action={
         <Button size="sm" onClick={() => setUploading(true)}>
           Upload a file
@@ -175,8 +187,7 @@ function ScopeFiles({
       <section className={cn("min-h-0 min-w-0 flex-1 flex-col", panes.item ? "flex" : "hidden")}>
         {open ? (
           <FileView
-            key={`${scope.id}:${open.display_path}`}
-            scope={scope}
+            key={`${scope.page.type}:${open.display_path}`}
             item={open}
             guildId={guildId}
             onOpenStep={onOpenStep}
@@ -192,6 +203,7 @@ function ScopeFiles({
       </section>
 
       <UploadDialog
+        key={scope.page.type}
         open={uploading}
         onOpenChange={setUploading}
         scope={scope}
@@ -203,15 +215,15 @@ function ScopeFiles({
 
 type FileListContentProps = {
   list: UseQueryResult<FileItem[]>;
-  /** The scope's files that match the search. */
+  /** The list's files that match the search. */
   shown: readonly FileItem[];
   selectedPath: string | null;
   onSelect: (path: string) => void;
-  /** What a scope without files shows in the list; null where the file pane shows it instead. */
+  /** What a list without files shows; null where the file pane shows it instead. */
   empty: ReactNode;
 };
 
-/** The list of one scope's files as it loads: rows, a failure, no match for the search, or none yet. */
+/** One page's list of files as it loads: rows, a failure, no match for the search, or none yet. */
 function FileListContent({ list, shown, selectedPath, onSelect, empty }: FileListContentProps) {
   if (list.isPending) return <SkeletonRows rows={5} label="Loading files" />;
   if (list.isError) {
@@ -228,7 +240,7 @@ type FileRowsProps = {
   onSelect: (path: string) => void;
 };
 
-/** The files of one scope, one row each: the name, then the description and facts. */
+/** The files of one list, one row each: the name, then the description and facts. */
 function FileRows({ items, selectedPath, onSelect }: FileRowsProps) {
   return (
     <ul className="flex flex-col" aria-label="Files">
@@ -257,7 +269,6 @@ function FileRows({ items, selectedPath, onSelect }: FileRowsProps) {
 }
 
 type FileViewProps = {
-  scope: FileScope;
   item: FileItem;
   guildId: string;
   onOpenStep?: OpenChangeStep | undefined;
@@ -266,8 +277,8 @@ type FileViewProps = {
 };
 
 /** One file: its path and provenance, what it is, and the actions on it. */
-function FileView({ scope, item, guildId, onOpenStep, onBack, onDeleted }: FileViewProps) {
-  const remove = useDeleteFile(scope.prefix);
+function FileView({ item, guildId, onOpenStep, onBack, onDeleted }: FileViewProps) {
+  const remove = useDeleteFile();
   const [deleting, setDeleting] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -285,10 +296,7 @@ function FileView({ scope, item, guildId, onOpenStep, onBack, onDeleted }: FileV
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 md:p-5">
       <div className="flex flex-wrap items-center gap-2">
         {onBack ? <IconButton icon={ArrowLeft} label="Back to files" variant="ghost" size={28} onClick={onBack} /> : null}
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">
-          <span className="text-muted">~/{scope.id}/files/</span>
-          {item.name}
-        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-sm">{item.name}</span>
         <Button variant="outline" size="xs" onClick={() => setSharing(true)}>
           <Icon icon={ShieldCheck} size={14} />
           Access
@@ -324,7 +332,7 @@ function FileView({ scope, item, guildId, onOpenStep, onBack, onDeleted }: FileV
           <DialogBody>
             <AccessListPanel
               target={{ kind: "file", id: item.id }}
-              intro="Who reads and writes this file. Where it is placed only files it; this list decides who reaches it. An agent always reaches its own files."
+              intro="Who reads and writes this file."
             />
           </DialogBody>
           <DialogFooter>
@@ -365,17 +373,23 @@ type UploadDialogProps = {
   onUploaded: (file: FileItem) => void;
 };
 
-/** Picks a file and says what it is; a file of the same name in the scope is replaced. */
+/**
+ * Picks a file, says what it is, and names who reaches it first, the page's subject at write
+ * unless the operator picks another; a file of the same name in the organisation is replaced.
+ */
 function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogProps) {
-  const upload = useUploadFile(scope.prefix);
+  const upload = useUploadFile();
+  const pageAccess: AccessRow = { ...scope.page, mode: "write" };
   const [file, setFile] = useState<File | null>(null);
   const [description, setDescription] = useState("");
+  const [access, setAccess] = useState<AccessRow>(pageAccess);
   const [touched, setTouched] = useState(false);
   const problem = uploadProblem(file, description);
 
   const close = () => {
     setFile(null);
     setDescription("");
+    setAccess(pageAccess);
     setTouched(false);
     upload.reset();
     onOpenChange(false);
@@ -386,7 +400,7 @@ function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogPro
     setTouched(true);
     if (problem || !file) return;
     upload.mutate(
-      { file, description },
+      { file, description, access },
       {
         onSuccess: (item) => {
           onUploaded(item);
@@ -403,7 +417,7 @@ function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogPro
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
             title="Upload a file"
-            description={`In ${scope.title.toLowerCase()} scope. A file of the same name there is replaced.`}
+            description="A file of the same name in the organisation is replaced and keeps its access list."
           />
           <DialogBody>
             <div className="flex flex-col gap-3">
@@ -424,6 +438,7 @@ function UploadDialog({ open, onOpenChange, scope, onUploaded }: UploadDialogPro
                 onChange={(event) => setDescription(event.currentTarget.value)}
                 {...(touched && problem ? { error: problem } : {})}
               />
+              <StartingAccessField value={access} onChange={setAccess} disabled={upload.isPending} />
               {upload.isError ? (
                 <Banner tone="error" title="Couldn't upload the file">
                   {upload.error.message}

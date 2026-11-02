@@ -1,18 +1,22 @@
 import { ApiError, readApiFailure } from "./client";
 import { requestId } from "./clientLog";
 import { identityHeaders } from "./session";
-import type { FileItem } from "./types/files";
+import type { FileItem, FileUpload } from "./types/files";
 import { hasFields, isNumber, isJsonObject, isString } from "./wire";
 
-/** A files scope's API root: `/api/agents/:id/files`, `/api/guilds/:id/files` or `/api/org/files`. */
-export type FilesPrefix = string;
+/** Where every upload goes: the organisation holds every shared file. */
+const uploadPath = "/api/org/files";
 
 /** The largest file the server stores; the picker refuses a bigger one before sending it. */
 export const FILE_MAX_BYTES = 10 * 1024 * 1024;
 
-/** Stores a file's bytes under a scope with its description; a file of the same name there is replaced. */
-export async function uploadFile(prefix: FilesPrefix, file: File, description: string): Promise<FileItem> {
-  const response = await fetch(prefix, {
+/**
+ * Stores a file's bytes in the organisation with its description, its access list starting with
+ * the upload's row; a file of the same name is replaced.
+ */
+export async function uploadFile(upload: FileUpload): Promise<FileItem> {
+  const { file, description, access } = upload;
+  const response = await fetch(uploadPath, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -22,12 +26,15 @@ export async function uploadFile(prefix: FilesPrefix, file: File, description: s
       "X-Filename": encodeURIComponent(file.name),
       "X-Description": encodeURIComponent(description),
       ...(file.type ? { "X-Mime": file.type } : {}),
+      "X-Access-Type": access.type,
+      "X-Access-Id": access.id,
+      "X-Access-Mode": access.mode,
     },
     credentials: "same-origin",
     body: file,
   });
   if (!response.ok) {
-    throw await readApiFailure("POST", prefix, response);
+    throw await readApiFailure("POST", uploadPath, response);
   }
   const reply: unknown = await response.json();
   if (!isFileItem(reply)) {
@@ -36,17 +43,16 @@ export async function uploadFile(prefix: FilesPrefix, file: File, description: s
   return reply;
 }
 
-/** Whether a reply is a stored file, as a files scope lists one. */
+/** Whether a reply is a stored file, as a files list holds one. */
 export function isFileItem(value: unknown): value is FileItem {
   return (
     isJsonObject(value) &&
     hasFields(
       value,
-      ["id", "display_path", "name", "description", "mime", "owner_id", "author", "updated_at"],
+      ["id", "display_path", "name", "description", "mime", "author", "updated_at"],
       isString,
     ) &&
     hasFields(value, ["bytes", "version"], isNumber) &&
-    (value.level === "agent" || value.level === "guild" || value.level === "org") &&
     (value.access === undefined || value.access === "read" || value.access === "write")
   );
 }
