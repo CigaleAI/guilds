@@ -562,6 +562,31 @@ test(
         `/api/file-changes?display_path=${encodeURIComponent(displayPath)}`,
       );
       assert.equal(changes.json().length, 1);
+
+      // expected_version: 0 asks for a new note, any other value for the live version, none for no check.
+      const exists = await put(brief, { content: "again", expected_version: 0 });
+      assert.equal(exists.statusCode, 409, exists.body);
+      assert.deepEqual(exists.json(), { detail: "artifact already exists" });
+      const behind = await put(brief, { content: "again", expected_version: 7 });
+      assert.equal(behind.statusCode, 409, behind.body);
+      assert.deepEqual(behind.json(), { detail: "version conflict" });
+      assert.equal((await get(brief)).json().content, "# Brief\n", "a refused write leaves the note as it was");
+      const current = await put(brief, { content: "# Brief v2\n", expected_version: 1 });
+      assert.equal(current.statusCode, 200, current.body);
+      assert.equal(current.json().version, 2);
+      const unchecked = await put(brief, { content: "# Brief v3\n" });
+      assert.equal(unchecked.json().version, 3);
+      const fresh = await put("/api/org/notes/fresh.md", { content: "new\n", expected_version: 0 });
+      assert.equal(fresh.statusCode, 200, fresh.body);
+      assert.equal(fresh.json().version, 1);
+      const absent = await put("/api/org/notes/absent.md", { content: "x", expected_version: 2 });
+      assert.equal(absent.statusCode, 409, absent.body);
+      assert.deepEqual(absent.json(), { detail: "version conflict" });
+      assert.equal((await get("/api/org/notes/absent.md")).statusCode, 404, "a refused create writes nothing");
+      const textual = await put(brief, { content: "x", expected_version: "1" });
+      assert.equal(textual.statusCode, 422);
+      assert.deepEqual(textual.json().detail[0].loc, ["body", "expected_version"]);
+
       assert.equal((await remove(brief)).statusCode, 204);
       assert.equal((await get(brief)).statusCode, 404);
 

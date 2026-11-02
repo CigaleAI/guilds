@@ -93,7 +93,9 @@ export async function loadParsedOrTombstone(
 
 /**
  * Writes the organisation's note at its key: the live one with write access to it, refused as not
- * writable without it, else a new one whose access list starts with `note.startingAccess`.
+ * writable without it, else a new one whose access list starts with `note.startingAccess`. An
+ * expected version of 0 asks for a new note, a 409 when one is live; any other expected version
+ * must be the live note's, a 409 otherwise.
  */
 export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, note: NoteUpsert): Promise<ArtifactRow> {
   return withTransaction(store.db, async (client) => {
@@ -102,6 +104,9 @@ export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, not
     if (live) {
       if ((await artifactMode(store, actor, live)) !== "write") {
         throw new ArtifactError("write not allowed", 422);
+      }
+      if (note.expectedVersion === 0) {
+        throw new ArtifactError("artifact already exists", 409);
       }
       if (note.expectedVersion !== undefined && live.version !== note.expectedVersion) {
         throw new ArtifactError("version conflict", 409);
@@ -120,6 +125,9 @@ export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, not
         version: row.version,
       });
       return row;
+    }
+    if (note.expectedVersion !== undefined && note.expectedVersion !== 0) {
+      throw new ArtifactError("version conflict", 409);
     }
     await assertLiveCount(store, actor.orgId);
     for (const grant of note.startingAccess) {

@@ -27,9 +27,13 @@ import { currentOrg, currentUser } from "./identity.js";
 import { AgentParams, filePathParam, GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
 
-/** A note's content, and the subject and mode of the row its access list starts with when the write creates it. */
+/**
+ * A note's content, the version the writer edited (0 for a note that must not exist yet), and the
+ * subject and mode of the row its access list starts with when the write creates it.
+ */
 const NoteWriteSchema = Type.Object({
   content: Type.Optional(Type.String()),
+  expected_version: Type.Optional(Type.Integer()),
   access: Type.Optional(SubjectEntrySchema),
 });
 
@@ -133,7 +137,12 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
 
   app.put("/api/org/notes/*", { schema: { body: NoteWriteSchema } }, async (request) => {
     const { orgId, user } = await orgScope(request);
-    const write = { path: filePathParam(request), content: request.body.content ?? "", access: request.body.access };
+    const write = {
+      path: filePathParam(request),
+      content: request.body.content ?? "",
+      expectedVersion: request.body.expected_version,
+      access: request.body.access,
+    };
     return writeOrgNote(services, orgId, user, write);
   });
 

@@ -17,8 +17,17 @@ export type HostFileServices = { store: ArtifactStore; db: Queryable };
 /** A host file as an operator writes it: its name, its content, and the version they edited, when they say. */
 export type HostFileWrite = { path: string; content: string; expectedVersion: number | undefined };
 
-/** A note as an operator writes it by key: its name and content, and the rows its access list starts with when the write creates it. */
-export type HostNoteWrite = { path: string; content: string; startingAccess: AccessGrant[] };
+/**
+ * A note as an operator writes it by key: its name and content, the version they edited when they
+ * say (0 for a note that must not exist yet), and the rows its access list starts with when the
+ * write creates it.
+ */
+export type HostNoteWrite = {
+  path: string;
+  content: string;
+  expectedVersion: number | undefined;
+  startingAccess: AccessGrant[];
+};
 
 /** A host file as it was read or written: what the page receives, its kind, and its version. */
 type LoadedHostFile = { payload: HostFilePayload; kind: string; version: number };
@@ -227,6 +236,7 @@ export async function writeHostNote(services: HostFileServices, actor: ArtifactA
     key: name,
     content: write.content,
     startingAccess: write.startingAccess,
+    ...(write.expectedVersion !== undefined ? { expectedVersion: write.expectedVersion } : {}),
   });
   const payload = { id: row.id, path: name, content: write.content, display_path: href };
   return withFileMeta(services, actor, null, { payload, kind: row.kind, version: row.version });

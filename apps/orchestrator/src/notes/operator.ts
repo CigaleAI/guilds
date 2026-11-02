@@ -43,10 +43,16 @@ export type NotesPage =
   | { scope: "agent"; agent: AgentRow };
 
 /**
- * A note as an operator writes it by key: its key, its content, and the subject and mode of the row
- * its access list starts with when the write creates it; without one, the organisation writes it.
+ * A note as an operator writes it by key: its key, its content, the version they edited when they
+ * say (0 for a note that must not exist yet), and the subject and mode of the row its access list
+ * starts with when the write creates it; without one, the organisation writes it.
  */
-export type NoteWrite = { path: string; content: string; access: SubjectEntry | undefined };
+export type NoteWrite = {
+  path: string;
+  content: string;
+  expectedVersion: number | undefined;
+  access: SubjectEntry | undefined;
+};
 
 /** An agent's `task.md` or `memory.md` as an operator writes it: its name, its content, and the version they edited, when they say. */
 export type AgentFileWrite = {
@@ -130,7 +136,8 @@ export async function writeOrgNote(
   const actor = await loadOperatorActor(services.db, user, { orgId });
   const startingAccess = [write.access ? parseGrant(write.access, "access: ") : creatorGrant(actor)];
   const hostServices = { store: services.artifacts, db: services.db };
-  const written = await writeHostNote(hostServices, actor, { path: write.path, content: write.content, startingAccess });
+  const hostWrite = { path: write.path, content: write.content, expectedVersion: write.expectedVersion, startingAccess };
+  const written = await writeHostNote(hostServices, actor, hostWrite);
   if (written.id) {
     const guilds = await guildsOnList(services.artifacts, actor, { kind: "note", id: written.id });
     await announceNote(services, guilds, written.display_path);
