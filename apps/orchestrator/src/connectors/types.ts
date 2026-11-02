@@ -53,8 +53,8 @@ export type ConnectorContext = {
 /**
  * A tool a connector's code runs, as its adapter runs it: its name, the TypeBox schema of its
  * parameters, and the run of a call's arguments, decoded against the parameters before any work.
- * The manifest lists the parameters' JSON Schema as the tool's `input_schema`; the registry
- * refuses an entry whose manifest lists another.
+ * The parameters are the tool's one declaration: the loaded manifest's `input_schema` for the
+ * tool is their JSON Schema, and its `connector.json` lists the tool without one.
  */
 export type AdapterTool = {
   name: string;

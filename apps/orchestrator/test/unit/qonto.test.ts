@@ -223,7 +223,7 @@ test("the Qonto tools decode their arguments before they call Qonto", async () =
   await assert.rejects(adapter.call!("list_bank_accounts", { extra: 1 }, creds, ctx), refused(422, /^\/extra: /));
   await assert.rejects(adapter.call!("get_transaction", {}, creds, ctx), refused(422, /^transaction_id is required$/));
   await assert.rejects(adapter.call!("list_missing_invoices", { min_amount: "5" }, creds, ctx), refused(422, /^\/min_amount: /));
-  await assert.rejects(adapter.call!("list_missing_invoices", { side: "sideways" }, creds, ctx), refused(null, /^side must be debit, credit, or both$/));
+  await assert.rejects(adapter.call!("list_missing_invoices", { side: "sideways" }, creds, ctx), refused(422, /^\/side: /));
   await assert.rejects(adapter.call!("upload_invoice", { transaction_id: "tx-1" }, creds, ctx), refused(422, /^file_path is required$/));
   await assert.rejects(adapter.call!("nope", {}, creds, ctx), refused(404, /^unknown tool nope$/));
   assert.deepEqual(fetched, ["https://thirdparty.qonto.com/v2/organization"]);

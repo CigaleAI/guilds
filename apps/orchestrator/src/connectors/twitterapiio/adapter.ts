@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import {
   followers,
   following,
@@ -15,18 +15,9 @@ import {
   type ListPage,
 } from "./client.js";
 import { listRows } from "../format.js";
-import { adapterTool, toolsAdapter } from "../tools.js";
+import { adapterTool, Paged, toolsAdapter, type PagedArguments } from "../tools.js";
 import { requiredCredential, translated, type ConnectorContext, type Credentials } from "../types.js";
 
-const Limit = Type.Optional(Type.Integer({ description: "Rows this page. Default 15, max 30." }));
-
-/** The arguments of a tool that lists rows a page at a time. */
-const Paged = {
-  limit: Limit,
-  page_key: Type.Optional(Type.String({ description: "Continue from a previous page_key." })),
-};
-const PagedArguments = Type.Object(Paged);
-type PagedArguments = Static<typeof PagedArguments>;
 
 /** A user named by username or by id. */
 const AnyUser = Type.String({ description: "Username (@optional) or user id." });
@@ -116,7 +107,7 @@ const trendsTool = adapterTool({
   name: "trends",
   parameters: Type.Object({
     woeid: Type.Optional(Type.String({ description: "Yahoo WOEID. Default 1 (worldwide)." })),
-    limit: Limit,
+    limit: Paged.limit,
   }),
   run: (input, creds, ctx) =>
     translated(TwitterApiIoError, () => trends(input.woeid, listRows(input.limit), options(creds, ctx))),

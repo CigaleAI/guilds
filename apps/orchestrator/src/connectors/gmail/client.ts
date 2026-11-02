@@ -2,7 +2,7 @@ import type { Static, TSchema } from "@sinclair/typebox";
 import { AgentFileError, agentDisplayPath, writeAgentFile } from "../../lib/agent-file.js";
 import type { JsonObject } from "../../lib/json.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
-import { LIST_CAP, LIST_DEFAULT, clipRows, clipText, joinParts } from "../format.js";
+import { clipRows, clipText, joinParts, listRows } from "../format.js";
 import { decodeBody, failureMessage, type ConnectorApi } from "../response.js";
 import type { AttachmentDownload, DraftPage, OutgoingMessage, ThreadSearch } from "./parameters.js";
 import {
@@ -204,11 +204,6 @@ export function rfc2822Raw(fields: OutgoingMessage): string {
   return Buffer.from(lines.join("\r\n"), "utf8").toString("base64url");
 }
 
-/** The rows a listing asks for: `limit`, `LIST_DEFAULT` when absent, kept between 1 and `LIST_CAP`. */
-function pageSize(limit: number | undefined): number {
-  return Math.max(1, Math.min(LIST_CAP, limit ?? LIST_DEFAULT));
-}
-
 /** `value` trimmed; blank, it throws "<name> is required". */
 function requiredText(value: string, name: string): string {
   const trimmed = value.trim();
@@ -388,7 +383,7 @@ async function threadRow(thread: ThreadSummary, options: GmailOptions): Promise<
 /** `search_threads`: a page of the threads the query finds, a row each, and the next page's key. */
 export async function searchThreads(search: ThreadSearch, options: GmailOptions): Promise<string> {
   const query = requiredText(search.query, "query");
-  const limit = pageSize(search.limit);
+  const limit = listRows(search.limit);
   const listed = await gmailRequest(
     {
       method: "GET",
@@ -486,7 +481,7 @@ async function draftRow(draft: DraftSummary, options: GmailOptions): Promise<str
 
 /** `list_drafts`: a page of the drafts, a row each, and the next page's key. */
 export async function listDrafts(page: DraftPage, options: GmailOptions): Promise<string> {
-  const limit = pageSize(page.limit);
+  const limit = listRows(page.limit);
   const listed = await gmailRequest(
     {
       method: "GET",

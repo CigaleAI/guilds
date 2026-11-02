@@ -26,6 +26,7 @@ import { ConnectorRegistry, ConnectorRegistryError } from "../../src/connectors/
 import { CORE_STATE_KEYS } from "../../src/state/index.js";
 import { ConnectorError, type ConnectorContext, type ConnectorTool, type RemoteSession } from "../../src/connectors/types.js";
 import { adapterTool, toolsAdapter } from "../../src/connectors/tools.js";
+import { offeredParameters } from "../../src/lib/tool-schema.js";
 import { Type } from "@sinclair/typebox";
 import drive from "../../src/connectors/drive/adapter.js";
 import opensea from "../../src/connectors/opensea/adapter.js";
@@ -79,9 +80,9 @@ test("every connector folder holds a valid manifest named after it, and the core
   assert.equal(FOLDERS.length, CONNECTORS.entries().length);
   for (const folder of FOLDERS) {
     const raw: JsonValue = JSON.parse(readFileSync(path.join(CONNECTORS_DIR, folder, "connector.json"), "utf8"));
-    const manifest = loadManifest(raw, folder);
     const entry = CONNECTORS.bySlug(folder);
     assert.ok(entry, folder);
+    const manifest = loadManifest(raw, folder, entry.adapter.tools);
     assert.equal(entry.id, `mcp_${folder}`);
     assert.deepEqual(entry.manifest, manifest);
     assert.ok(manifest.endpoint || existsSync(path.join(CONNECTORS_DIR, folder, "adapter.ts")) || !manifest.tools?.length, folder);
@@ -225,15 +226,40 @@ const ECHO_SEARCH = adapterTool({
   run: async ({ query, limit }) => `${query} ${limit ?? "-"}`,
 });
 
-test("the registry refuses code whose tool parameters are not the input_schema its manifest lists", () => {
+test("a tool the code runs takes its input schema from its parameters; an endpoint tool carries its own", () => {
   const tavily = CONNECTORS.bySlug("tavily")!;
-  assert.deepEqual(tavily.adapter.tools?.map((tool) => tool.name), ["search"]);
-  assert.throws(
-    () => new ConnectorRegistry([{ ...tavily, adapter: toolsAdapter([ECHO_SEARCH]) }]),
-    /connector tavily tool search lists an input_schema that is not the parameters its code decodes/,
-  );
+  const [search] = tavily.adapter.tools ?? [];
+  assert.ok(search);
+  assert.deepEqual(tavily.manifest.tools?.find((tool) => tool.name === "search")?.input_schema, offeredParameters(search.parameters));
+  const source = (tools: JsonValue[]): JsonObject => ({ ...endpointManifest("acme"), endpoint: undefined, tools });
+  const plain = { name: "plain", description: "Plain.", input_schema: { type: "object", properties: {} } };
+  assert.deepEqual(loadManifest(source([{ name: "search", description: "Search.", mutating: false }, plain]), "acme", [ECHO_SEARCH]).tools, [
+    {
+      name: "search",
+      description: "Search.",
+      mutating: false,
+      input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] },
+    },
+    plain,
+  ]);
+  const refused = (raw: JsonObject, pattern: RegExp) =>
+    assert.throws(() => loadManifest(raw, "acme", [ECHO_SEARCH]), (error: unknown) => error instanceof ManifestError && pattern.test(error.message));
+  refused(source([{ ...plain, name: "search" }]), /^connector acme tool search lists an input_schema; its code declares its parameters$/);
+  refused(source([{ name: "plain", description: "Plain." }]), /^connector acme tool plain has no input_schema, and no code runs it$/);
+  refused(source([{ ...plain, input_schema: { type: "string" } }]), /^connector acme tool plain input schema must be an object$/);
+});
+
+test("the registry refuses code that runs a tool a connector without an endpoint does not list", () => {
+  const tavily = CONNECTORS.bySlug("tavily")!;
   const unlisted = adapterTool({ name: "other", parameters: Type.Object({}), run: async () => "" });
-  assert.doesNotThrow(() => new ConnectorRegistry([{ ...tavily, adapter: toolsAdapter([...tavily.adapter.tools!, unlisted]) }]));
+  assert.throws(
+    () => new ConnectorRegistry([{ ...tavily, adapter: toolsAdapter([...tavily.adapter.tools!, unlisted]) }]),
+    /connector tavily runs tool other, which its manifest does not list$/,
+  );
+  const drive = CONNECTORS.bySlug("drive")!;
+  assert.equal(drive.manifest.tools, undefined);
+  assert.ok(drive.adapter.tools?.length, "the endpoint lists the tools Drive's code runs");
+  assert.doesNotThrow(() => new ConnectorRegistry([drive]));
 });
 
 test("a tools adapter decodes each call against its tool's parameters and refuses another name", async () => {

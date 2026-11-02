@@ -15,7 +15,7 @@ import {
   type CoinRef,
   type ToolOptions,
 } from "./client.js";
-import { LIST_CAP, LIST_DEFAULT } from "../format.js";
+import { given, listRows } from "../format.js";
 import { adapterTool, toolsAdapter } from "../tools.js";
 import { requiredCredential, translated, type ConnectorContext, type Credentials } from "../types.js";
 
@@ -23,16 +23,6 @@ import { requiredCredential, translated, type ConnectorContext, type Credentials
 function withKey(creds: Credentials, ctx: ConnectorContext, work: (options: ToolOptions) => Promise<string>): Promise<string> {
   const apiKey = requiredCredential(creds, "token", "CoinGecko API key is missing");
   return translated(CoinGeckoError, () => work({ apiKey, client: ctx.http }));
-}
-
-/** The rows a call asks for: `limit` within 1 and the cap, the default when it names none. */
-function rowCount(limit: number | undefined): number {
-  return Math.max(1, Math.min(LIST_CAP, limit ?? LIST_DEFAULT));
-}
-
-/** Text a call sends, trimmed; `fallback` when it is blank or absent. */
-function given(value: string | undefined, fallback = ""): string {
-  return value?.trim() || fallback;
 }
 
 const CoinParameters = Type.Object({
@@ -70,7 +60,7 @@ const searchTool = adapterTool({
     query: Type.String({ description: "Name, symbol, or phrase." }),
     limit: Type.Optional(Type.Integer({ description: "Rows per section. Default 15, max 30." })),
   }),
-  run: (input, creds, ctx) => withKey(creds, ctx, (options) => search(input.query, rowCount(input.limit), options)),
+  run: (input, creds, ctx) => withKey(creds, ctx, (options) => search(input.query, listRows(input.limit), options)),
 });
 
 const coinTool = adapterTool({
@@ -92,7 +82,7 @@ const newTool = adapterTool({
   parameters: Type.Object({
     limit: Type.Optional(Type.Integer({ description: "Row cap. Default 15, max 30." })),
   }),
-  run: (input, creds, ctx) => withKey(creds, ctx, (options) => newCoins(rowCount(input.limit), options)),
+  run: (input, creds, ctx) => withKey(creds, ctx, (options) => newCoins(listRows(input.limit), options)),
 });
 
 const moversTool = adapterTool({
@@ -110,7 +100,7 @@ const moversTool = adapterTool({
           vs: given(input.vs, VS_DEFAULT),
           duration: given(input.duration),
           top: given(input.top),
-          limit: rowCount(input.limit),
+          limit: listRows(input.limit),
         },
         options,
       ),
@@ -162,7 +152,7 @@ const trendingTool = adapterTool({
   parameters: Type.Object({
     limit: Type.Optional(Type.Integer({ description: "Rows per section. Default 15, max 30." })),
   }),
-  run: (input, creds, ctx) => withKey(creds, ctx, (options) => trending(rowCount(input.limit), options)),
+  run: (input, creds, ctx) => withKey(creds, ctx, (options) => trending(listRows(input.limit), options)),
 });
 
 export default toolsAdapter(

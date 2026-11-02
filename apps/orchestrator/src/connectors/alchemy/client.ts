@@ -1,4 +1,4 @@
-import type { Static, TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { assertMatches } from "../../lib/decode.js";
 import type { JsonObject } from "../../lib/json.js";
@@ -22,8 +22,29 @@ import {
 
 export const NFT_HOST = "https://{network}.g.alchemy.com/nft/v3";
 export const SOLANA_RPC = "https://solana-mainnet.g.alchemy.com/v2";
-export const CHAIN_DEFAULT = "ethereum";
 export const PING_OWNER = "0x0000000000000000000000000000000000000000";
+
+/** A chain the tools take, by the name a call gives it; a call that names none is on ethereum. */
+export const ChainName = Type.Union(
+  [
+    Type.Literal("ethereum"),
+    Type.Literal("polygon"),
+    Type.Literal("base"),
+    Type.Literal("arbitrum"),
+    Type.Literal("bsc"),
+    Type.Literal("optimism"),
+    Type.Literal("ink"),
+    Type.Literal("robinhood"),
+    Type.Literal("solana"),
+  ],
+  { description: "Default ethereum." },
+);
+
+/** A chain the tools take. */
+export type Chain = Static<typeof ChainName>;
+
+/** The chain a call that names none is on. */
+export const CHAIN_DEFAULT: Chain = "ethereum";
 
 /** The Alchemy network of each chain the tools take. */
 export const CHAINS = {
@@ -36,13 +57,7 @@ export const CHAINS = {
   ink: "ink-mainnet",
   robinhood: "robinhood-mainnet",
   solana: "solana-mainnet",
-} satisfies Record<string, string>;
-
-/** A chain the tools take. */
-export type Chain = keyof typeof CHAINS;
-
-export const CHAIN_NAMES = Object.keys(CHAINS);
-export const CHAIN_LIST = CHAIN_NAMES.join(", ");
+} satisfies Record<Chain, string>;
 
 export class AlchemyError extends Error {
   status: number | null;
@@ -52,20 +67,6 @@ export class AlchemyError extends Error {
     this.name = "AlchemyError";
     this.status = status;
   }
-}
-
-/** Whether `name` is a chain the tools take. */
-function isChain(name: string): name is Chain {
-  return Object.hasOwn(CHAINS, name);
-}
-
-/** The chain a call names, in any case; the default when it names none. Throws on a chain the tools do not take. */
-export function resolveChain(name: string | undefined): Chain {
-  const chain = name?.trim().toLowerCase() || CHAIN_DEFAULT;
-  if (!isChain(chain)) {
-    throw new AlchemyError(`chain must be ${CHAIN_LIST}`);
-  }
-  return chain;
 }
 
 /** One page of the NFTs an owner holds on a chain, within one collection when `contract` is set; `pageKey` empty for the first. */

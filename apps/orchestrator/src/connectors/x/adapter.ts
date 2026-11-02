@@ -1,16 +1,9 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import { ping, post, posts, search, user, XError, type ListPage } from "./client.js";
 import { listRows } from "../format.js";
-import { adapterTool, toolsAdapter } from "../tools.js";
+import { adapterTool, Paged, toolsAdapter, type PagedArguments } from "../tools.js";
 import { requiredCredential, translated, type ConnectorContext, type Credentials } from "../types.js";
 
-/** The arguments of a tool that lists rows a page at a time. */
-const Paged = {
-  limit: Type.Optional(Type.Integer({ description: "Rows this page. Default 15, max 30." })),
-  page_key: Type.Optional(Type.String({ description: "Continue from a previous page_key." })),
-};
-const PagedArguments = Type.Object(Paged);
-type PagedArguments = Static<typeof PagedArguments>;
 
 const User = Type.String({ description: "Username (@optional) or user id." });
 

@@ -1,15 +1,12 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-// The parameters of the Qonto tools, as the manifest lists them for each tool's input_schema.
+// The parameters of the Qonto tools: each one's single declaration, which the loaded manifest
+// offers as the tool's input_schema.
 
-/** The sides of the transactions `list_missing_invoices` scans. */
-export const SIDES = ["debit", "credit", "both"] as const;
-export type Side = (typeof SIDES)[number];
-
-/** Whether `value` names one of the sides. */
-export function isSide(value: string): value is Side {
-  return SIDES.some((side) => side === value);
-}
+/** The side of the transactions `list_missing_invoices` scans: debits, credits, or both. */
+const Side = Type.Union([Type.Literal("debit"), Type.Literal("credit"), Type.Literal("both")], {
+  description: "Transaction side. Default debit.",
+});
 
 /** `list_bank_accounts`: no parameters. */
 export const NoParameters = Type.Object({}, { additionalProperties: false });
@@ -24,7 +21,7 @@ export const MissingInvoicesQuery = Type.Object(
       Type.String({ description: "Inclusive start date (YYYY-MM-DD). Default: 90 days ago." }),
     ),
     settled_to: Type.Optional(Type.String({ description: "Inclusive end date (YYYY-MM-DD). Default: today (UTC)." })),
-    side: Type.Optional(Type.String({ enum: [...SIDES], description: "Transaction side. Default debit." })),
+    side: Type.Optional(Side),
     min_amount: Type.Optional(Type.Number({ description: "Exclude transactions below this amount in euros." })),
     limit: Type.Optional(Type.Integer({ description: "Rows to show. Default 50, max 100." })),
   },

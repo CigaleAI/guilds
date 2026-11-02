@@ -10,12 +10,12 @@ import {
   type DriveClientOptions,
   type McpFile,
 } from "./folder.js";
-import {
-  given,
-  type CopyFileArguments,
-  type DownloadFileArguments,
-  type FileArguments,
-  type ReadFileArguments,
+import { given } from "../format.js";
+import type {
+  CopyFileArguments,
+  DownloadFileArguments,
+  FileArguments,
+  ReadFileArguments,
 } from "./parameters.js";
 import { DriveFile, PermissionList, type Permission } from "./responses.js";
 

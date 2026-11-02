@@ -170,7 +170,7 @@ test("holdings uses ink and robinhood hosts", async () => {
   });
   await callAlchemy("holdings", { owner: "0xabc", chain: "ink" }, client);
   await callAlchemy("holdings", { owner: "0xabc", chain: "robinhood" }, client);
-  await callAlchemy("holdings", { owner: "0xabc", chain: "BSC" }, client);
+  await callAlchemy("holdings", { owner: "0xabc", chain: "bsc" }, client);
   assert.ok(seen[0]?.startsWith("https://ink-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
   assert.ok(seen[1]?.startsWith("https://robinhood-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
   assert.ok(seen[2]?.startsWith("https://bnb-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
@@ -290,7 +290,8 @@ test("a tool decodes its arguments before it calls Alchemy", async () => {
   await assert.rejects(callAlchemy("holdings", { owner: "0xabc", limit: "3" }, http), refused(422, /^\/limit: /));
   await assert.rejects(callAlchemy("nft", { token_id: "1" }, http), refused(422, /^contract is required$/));
   await assert.rejects(callAlchemy("nft", { contract: "0xabc" }, http), /token_id is required/);
-  await assert.rejects(callAlchemy("collection", { contract: "0xabc", chain: "tron" }, http), /chain must be ethereum, polygon/);
+  await assert.rejects(callAlchemy("collection", { contract: "0xabc", chain: "tron" }, http), refused(422, /^\/chain: /));
+  await assert.rejects(callAlchemy("holdings", { owner: "0xabc", chain: "BSC" }, http), refused(422, /^\/chain: /));
   assert.deepEqual(fetched, [
     "https://eth-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner?owner=0xabc&withMetadata=true&pageSize=1&contractAddresses%5B%5D=0xcol&pageKey=p2",
   ]);

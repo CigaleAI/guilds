@@ -72,14 +72,3 @@ export const CreateFileParameters = Type.Object({
   ),
 });
 export type CreateFileArguments = Static<typeof CreateFileParameters>;
-
-/** The first of an argument's spellings the call gives, trimmed; empty when it gives none, or only blanks. */
-export function given(...spellings: Array<string | undefined>): string {
-  for (const spelling of spellings) {
-    const trimmed = spelling?.trim();
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-  return "";
-}

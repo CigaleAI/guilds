@@ -12,7 +12,7 @@ import {
   token,
   type ToolOptions,
 } from "./client.js";
-import { LIST_CAP, LIST_DEFAULT } from "../format.js";
+import { given, listRows } from "../format.js";
 import { adapterTool, toolsAdapter } from "../tools.js";
 import { requiredCredential, translated, type ConnectorContext, type Credentials } from "../types.js";
 
@@ -20,16 +20,6 @@ import { requiredCredential, translated, type ConnectorContext, type Credentials
 function withKey(creds: Credentials, ctx: ConnectorContext, work: (options: ToolOptions) => Promise<string>): Promise<string> {
   const apiKey = requiredCredential(creds, "token", "DexPaprika API key is missing");
   return translated(DexPaprikaError, () => work({ apiKey, client: ctx.http }));
-}
-
-/** The rows a call asks for: `limit` within 1 and the cap, the default when it names none. */
-function rowCount(limit: number | undefined): number {
-  return Math.max(1, Math.min(LIST_CAP, limit ?? LIST_DEFAULT));
-}
-
-/** Text a call sends, trimmed; `fallback` when it is blank or absent. */
-function given(value: string | undefined, fallback = ""): string {
-  return value?.trim() || fallback;
 }
 
 const network = Type.String({ description: NETWORK_HINT });
@@ -40,7 +30,7 @@ const searchTool = adapterTool({
     query: Type.String({ description: "Name, symbol, or contract address." }),
     limit: Type.Optional(Type.Integer({ description: "Rows per section. Default 15, max 30." })),
   }),
-  run: (input, creds, ctx) => withKey(creds, ctx, (options) => search(input.query, rowCount(input.limit), options)),
+  run: (input, creds, ctx) => withKey(creds, ctx, (options) => search(input.query, listRows(input.limit), options)),
 });
 
 const tokenTool = adapterTool({
@@ -94,7 +84,7 @@ const poolsTool = adapterTool({
       pools(
         {
           network: input.network,
-          limit: rowCount(input.limit),
+          limit: listRows(input.limit),
           token: given(input.token),
           dex: given(input.dex),
           createdAfter: given(input.created_after),
@@ -150,7 +140,7 @@ const swapsTool = adapterTool({
           from: given(input.from),
           to: given(input.to),
           cursor: given(input.cursor),
-          limit: rowCount(input.limit),
+          limit: listRows(input.limit),
         },
         options,
       ),

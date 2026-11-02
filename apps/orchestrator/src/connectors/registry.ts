@@ -1,6 +1,5 @@
 import type { Manifest } from "../db/schema/index.js";
-import { dumpsCompact, type JsonValue } from "../lib/json.js";
-import { offeredParameters } from "../lib/tool-schema.js";
+import type { JsonValue } from "../lib/json.js";
 import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
 import type { LoadedConnector } from "./servers.js";
@@ -31,11 +30,12 @@ export class ConnectorRegistryError extends Error {
 
 /**
  * An entry for a connector folder shipped in the image, by core or by an extension: its
- * `connector.json`, checked against the folder name, its adapter, and who publishes it.
+ * `connector.json`, checked against the folder name and given the input schemas of the tools its
+ * adapter runs, its adapter, and who publishes it.
  */
 export function folderEntry(raw: JsonValue, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
   const name = folder.replace(/\/+$/, "").split("/").pop() ?? "";
-  const manifest = loadManifest(raw, name);
+  const manifest = loadManifest(raw, name, adapter.tools);
   return {
     id: serverIdOf(manifest.slug),
     manifest,
@@ -53,23 +53,22 @@ function listsTools(entry: ConnectorEntry): boolean {
 }
 
 /**
- * Why the tools the entry's code runs disagree with its manifest, or null when they agree: each
- * one the manifest lists has the JSON Schema of the parameters the code decodes as its input_schema.
+ * Why a tool the entry's code runs is never offered, or null when each one is: a connector with
+ * no endpoint offers the tools its manifest lists, so its manifest lists every tool its code runs.
+ * An endpoint's own listing may name the tools of a connector that has one.
  */
-function toolSchemaProblem(entry: ConnectorEntry): string | null {
+function unlistedToolProblem(entry: ConnectorEntry): string | null {
   const { manifest, adapter } = entry;
-  for (const tool of adapter.tools ?? []) {
-    const listed = manifest.tools?.find((item) => item.name === tool.name);
-    if (listed && dumpsCompact(listed.input_schema) !== dumpsCompact(offeredParameters(tool.parameters))) {
-      return `connector ${manifest.slug} tool ${tool.name} lists an input_schema that is not the parameters its code decodes`;
-    }
+  if (manifest.endpoint) {
+    return null;
   }
-  return null;
+  const unlisted = adapter.tools?.find((tool) => !manifest.tools?.some((listed) => listed.name === tool.name));
+  return unlisted === undefined ? null : `connector ${manifest.slug} runs tool ${unlisted.name}, which its manifest does not list`;
 }
 
 function checkEntry(entry: ConnectorEntry): void {
   const { manifest, adapter } = entry;
-  const toolProblem = toolSchemaProblem(entry);
+  const toolProblem = unlistedToolProblem(entry);
   if (toolProblem !== null) {
     throw new ConnectorRegistryError(toolProblem);
   }

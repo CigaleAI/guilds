@@ -1,14 +1,14 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { Paged } from "../tools.js";
 
-// The parameters of the Gmail tools, as the manifest lists them for each tool's input_schema.
-
-const PageKey = Type.Optional(Type.String({ description: "Continue from a previous page_key." }));
+// The parameters of the Gmail tools: each one's single declaration, which the loaded manifest
+// offers as the tool's input_schema.
 
 /** `search_threads`: a Gmail search, one page of its threads. */
 export const ThreadSearch = Type.Object({
   query: Type.String({ description: "Gmail search query. Operators such as from:user and is:unread work." }),
   limit: Type.Optional(Type.Integer({ description: "Threads this page. Default 15, max 30." })),
-  page_key: PageKey,
+  page_key: Paged.page_key,
 });
 export type ThreadSearch = Static<typeof ThreadSearch>;
 
@@ -40,7 +40,7 @@ export const NoParameters = Type.Object({});
 /** `list_drafts`: one page of the drafts. */
 export const DraftPage = Type.Object({
   limit: Type.Optional(Type.Integer({ description: "Drafts this page. Default 15, max 30." })),
-  page_key: PageKey,
+  page_key: Paged.page_key,
 });
 export type DraftPage = Static<typeof DraftPage>;
 

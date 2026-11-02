@@ -90,7 +90,7 @@ function assertAdapterModule(module: unknown): asserts module is AdapterModule {
 }
 
 /** The adapter a bundled `adapter.js` exports by default, its hooks checked to be functions. */
-async function importAdapter(file: string, version: string): Promise<Adapter> {
+export async function importAdapter(file: string, version: string): Promise<Adapter> {
   // The version in the URL gives each version its own module; a new version never reuses an old one.
   const module: unknown = await import(`${pathToFileURL(file).href}?v=${encodeURIComponent(version)}`);
   assertAdapterModule(module);

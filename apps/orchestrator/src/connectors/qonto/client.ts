@@ -5,7 +5,7 @@ import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { clipRows, fmtNum, joinParts } from "../format.js";
 import { decodeBody, failureMessage, type ConnectorApi } from "../response.js";
-import { isSide, type InvoiceUpload, type MissingInvoicesQuery } from "./parameters.js";
+import type { InvoiceUpload, MissingInvoicesQuery } from "./parameters.js";
 import {
   ErrorBody,
   OrganizationResponse,
@@ -277,10 +277,7 @@ type MissingQuery = {
 /** The transactions query, amount floor and row limit `list_missing_invoices` is called with. */
 function missingQuery(scan: MissingInvoicesQuery, now: Date): MissingQuery {
   const range = settledRange(scan, now);
-  const side = scan.side?.trim() || "debit";
-  if (!isSide(side)) {
-    throw new QontoError("side must be debit, credit, or both");
-  }
+  const side = scan.side ?? "debit";
   return {
     query: {
       "status[]": "completed",
