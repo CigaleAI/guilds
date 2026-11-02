@@ -14,9 +14,9 @@ type UndoStep = { what: string; run: () => Promise<void> };
 
 /**
  * Deletes what an apply made, as `actor`, one deletion after another: its agents, the guild it
- * created, its collections, and its notes, whose rows may name no guild or agent it made (an
- * organisation row alone). A failed deletion does not stop the others; returns each that failed,
- * with why, none when the undo is whole.
+ * created, its collections, and its notes by id. A note the guild's deletion leaves (the guild is
+ * not private) is deleted by its own step; one it took (the guild is private) is skipped. A failed
+ * deletion does not stop the others; returns each that failed, with why, none when the undo is whole.
  */
 export async function undoApply(
   apply: Pick<RecipeApply, "db" | "artifacts">,
@@ -35,8 +35,7 @@ export async function undoApply(
     ...made.notes.map((noteId) => ({ what: `note ${noteId}`, run: () => deleteNoteById(apply.artifacts, actor, noteId) })),
   ];
   const failures: string[] = [];
-  // One at a time: a deletion reads the access rows the one before it left, so an item whose rows
-  // name only agents the apply made is deleted with the last of them.
+  // One at a time: an agent's deletion and its guild's both remove the access rows naming the agent.
   for (const step of steps) {
     const [settled] = await Promise.allSettled([step.run()]);
     if (settled?.status === "rejected") {

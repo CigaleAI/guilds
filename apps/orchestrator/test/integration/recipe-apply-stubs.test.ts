@@ -616,11 +616,9 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const aborted = await app.inject({ method: "POST", url: `/api/applies/${abortApplied.id}/abort`, headers: AUTH });
     assert.equal(aborted.statusCode, 200, aborted.body);
     assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/abort-glossary.md")).tombstone, true, "a note the organisation reads goes with the abort");
-    await assert.rejects(
-      getByDisplayPath(artifacts, noteReader, "org/org_home/abort-rules.md"),
-      /artifact not found/,
-      "a note only the apply's guild reached goes with the guild, with its history",
-    );
+    const abortRules = await getByDisplayPath(artifacts, noteReader, "org/org_home/abort-rules.md");
+    assert.equal(abortRules.tombstone, true, "a note the apply made that the deleted guild leaves goes with its own step");
+    assert.equal(abortRules.row?.origin_guild_id, null, "the deleted guild leaves it without a home");
     assert.deepEqual(await listAgents(db, abortApplied.guild_id), []);
 
     const abort = (applyId: string) => app.inject({ method: "POST", url: `/api/applies/${applyId}/abort`, headers: AUTH });
@@ -634,7 +632,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       return recipe;
     };
 
-    // An item whose rows name only two of the apply's agents goes with the second of them.
+    // An item the apply did not make stays when the agents its rows name go.
     const shareApplied = await applyRecipe(await importReady(solo("fixture-desk-share", "share", "share-rules.md")), "fixture-desk-share");
     const shareAgents = await listAgents(db, shareApplied.guild_id);
     const sharedNote = await app.inject({
@@ -652,10 +650,12 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     });
     assert.equal(sharedAccess.statusCode, 200, sharedAccess.body);
     assert.equal((await abort(shareApplied.id)).statusCode, 200);
-    await assert.rejects(
-      getByDisplayPath(artifacts, noteReader, "org/org_home/share-between.md"),
-      /artifact not found/,
-      "a note only the apply's agents reached goes with them, with its history",
+    const between = await getByDisplayPath(artifacts, noteReader, "org/org_home/share-between.md");
+    assert.equal(between.tombstone, undefined, "a note only the apply's agents reached stays when they go");
+    assert.equal(
+      (await db.query("SELECT 1 FROM artifact_access WHERE target_kind = 'note' AND target_id = $1", [between.row?.id])).rows.length,
+      0,
+      "without a row",
     );
 
     // A deletion the store refuses is reported, and the apply is not marked aborted.

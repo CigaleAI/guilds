@@ -16,8 +16,10 @@ creates a note or a file written by itself alone, and reaches any other
 through its rows; an operator creates one with the row it names, the
 organisation at write by default, and writes every note and file but
 those homed in private guilds it does not operate and those whose rows
-all name such guilds or their agents. Deleting a guild or an agent also removes the notes and files,
-live or deleted, only its rows reached, with their change history; a
+all name such guilds or their agents. Deleting an agent removes only
+the rows naming it, and every note and file stays under its home;
+deleting a private guild removes the notes and files homed in it, live
+or deleted, whatever their rows, with their change history; a
 deleted note or file keeps its rows, so it stays hidden where it was. A path's change history shows only the
 changes of the items held there that the reader reads, so a name
 another item now holds does not show a hidden deleted item's history.
@@ -82,8 +84,8 @@ guild that is unknown or hidden from the caller;
 `GET /api/org/embeddable-notes?agent_id=…` answers the agent's sections;
 replacing a note's or a file's access list announces
 `guild.artifacts.changed` to each guild that listed the item or lists
-it now. A guild's deletion leaves the items homed in it that stay
-without a home. Updating clears every home that names no guild of the
+it now. Deleting a guild that is not private leaves the items homed
+in it without a home. Updating clears every home that names no guild of the
 item's organisation, gives each note and file without one the one
 guild its access list names when the list has no organisation row,
 and drops the `artifact_renames` table.

@@ -593,14 +593,15 @@ A deleted note or file keeps its rows on its tombstone, so the hiding
 rule still covers it and its change history. History is read by item,
 so a name a hidden deleted item held does not show that item's
 changes once another item holds it
-([Artifact store](artifacts.md#file-provenance)). Deleting a guild or
-an agent removes the rows naming it, and with them every note and
-file those rows alone reached: an item, live or deleted, whose list
-that leaves empty is removed with its change history and the log of
-its access list, so no operator reads what it was. A note or a file
-that another row still reaches stays, without the removed rows. One
-homed in a deleted guild that stays loses its home and is the
-organisation's from then on, so the home rule no longer hides it.
+([Artifact store](artifacts.md#file-provenance)). Deleting an agent
+removes the rows naming it and nothing else: every note and file
+stays under its home. Deleting a guild removes the rows naming it or
+one of its agents. A private guild's notes and files, live or
+deleted, go with it, whatever their rows, with their change history
+and the log of their access lists, so no operator reads what they
+were. A guild that is not private hid none of its items by home, so
+they stay and become the organisation's. A note or a file homed
+elsewhere stays under its home, without the removed rows.
 
 ```text
 GET  /api/notes/:note_id/access                { subjects }

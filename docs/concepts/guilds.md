@@ -358,9 +358,14 @@ It holds every agent of the guild while it runs. It then:
 - deletes the guild's and its agents' usage counters
 - soft-deletes the guild's own collections with their records
 - deletes the access-list rows that name the guild or its agents,
-  and the rows on its own collections, and removes every note and
-  file, live or deleted, those rows alone reached, with its change
-  history
+  and the rows on its own collections
+- for a private guild, removes every note and file homed in it, live
+  or deleted, with its access list, its change history, and the log
+  of its access list, whatever rows it had; a guild that is not
+  private leaves its notes and files, which become the
+  organisation's
+- leaves every note and file homed elsewhere under its home, one that
+  no row reaches any more included
 - deletes every secret, not organisation-wide, whose grants all name
   the guild or its agents
 - deletes the guild row

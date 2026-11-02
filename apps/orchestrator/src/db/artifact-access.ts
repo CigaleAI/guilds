@@ -192,24 +192,26 @@ export async function deleteAccessList(db: Queryable, target: AccessTargetRef): 
 }
 
 /**
- * Removes each note and file in `ids`, live or deleted, whose access list is empty, with its change
- * history (its `file_changes` rows go by cascade) and its access list's entries in the
- * configuration log. The bytes of a live file stay in the blob store.
+ * Removes every note and file, live or deleted, homed in the guild `guildId` names when that guild
+ * is private, with its change history (its `file_changes` rows go by cascade), its access list, and
+ * its access list's entries in the configuration log. A guild that is not private loses nothing.
+ * The bytes of a live file stay in the blob store.
  */
-export async function purgeUnlistedNotesAndFiles(db: Queryable, ids: string[]): Promise<void> {
-  if (!ids.length) {
-    return;
-  }
+export async function purgePrivateGuildNotesAndFiles(db: Queryable, guildId: string): Promise<void> {
   await db.query(
     `WITH gone AS (
        DELETE FROM artifacts a
-        WHERE a.id = ANY($1::text[]) AND a.kind IN ('note', 'file')
-          AND NOT EXISTS (SELECT 1 FROM artifact_access x WHERE x.target_kind = a.kind AND x.target_id = a.id)
+        USING guilds g
+        WHERE g.id = $1 AND g.visibility = 'private'
+          AND a.origin_guild_id = g.id AND a.kind IN ('note', 'file')
        RETURNING a.org_id, a.kind, a.id
+     ), unlisted AS (
+       DELETE FROM artifact_access x USING gone
+        WHERE x.target_kind = gone.kind AND x.target_id = gone.id
      )
      DELETE FROM config_changes c USING gone
       WHERE c.org_id = gone.org_id AND c.target_kind = gone.kind AND c.target_id = gone.id`,
-    [ids],
+    [guildId],
   );
 }
 

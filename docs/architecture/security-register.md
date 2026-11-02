@@ -128,9 +128,6 @@ guild's scope, Studio's reach, or a starting row.
   more than one guild. It stays the organisation's, and an
   organisation row shows it to every operator. An agent's item keeps
   the guild recorded when it was inserted.
-- Deleting a guild sets the home of each item homed in it that stays
-  to none. A deleted private guild's note that an organisation row
-  still reaches then shows to every operator.
 
 ## SEC-56 — Deleting a private guild showed the history of its notes and files to every operator
 
@@ -152,16 +149,26 @@ hidden from no one, so every operator of the organisation read its
 change history: its display path, who wrote it and when, the runs
 that did, and the access-list changes logged against it.
 
-**Fix:** deleting a guild or an agent removes each note and file,
-live or deleted, that only its rows reached, with its `file_changes`
-rows and the `config_changes` rows of its access list, before the
-guild or the agent row goes (`purgeUnlistedNotesAndFiles` in
-`apps/orchestrator/src/db/artifact-access.ts`). An item that another
-row still reaches stays, hidden by that row.
-`test/integration/private-guild-artifacts.test.ts` pins it.
+**Fix:** deleting a private guild removes every note and file homed
+in it, live or deleted, whatever its rows, with its remaining access
+rows, its `file_changes` rows, and the `config_changes` rows of its
+access list, before the guild row goes
+(`purgePrivateGuildNotesAndFiles` in
+`apps/orchestrator/src/db/artifact-access.ts`). Deleting a guild that
+is not private, or an agent, removes only the access rows naming it:
+the guild's items hid nothing by home, and stay as the
+organisation's. `test/integration/private-guild-artifacts.test.ts`
+and `test/integration/artifact-files.test.ts` pin it.
 
-**Residual risk:** a live file removed this way keeps its bytes in
-the blob store, no longer named by any row (SEC-46).
+**Residual risk:**
+
+- A note or a file homed outside a private guild, or in none, whose
+  every row names that guild or its agents is hidden by its rows
+  alone. Deleting the guild, or the last such agent, removes those
+  rows, and the item, with its change history, then shows to every
+  operator of the organisation under its home.
+- A live file removed with its guild keeps its bytes in the blob
+  store, no longer named by any row (SEC-46).
 
 ## SEC-55 — A note's or a file's reach came from its owner as well as its access list
 
@@ -212,9 +219,9 @@ operator of the organisation; creation never leaves an item without a
 row. Since 2026-11-03 a note or a file homed in that guild stays
 hidden by its home (SEC-57). The tombstone of a note or a file deleted with its guild or agent
 has no row left, so its change history shows to every operator of the
-organisation; since 2026-11-03 such an item is removed with its history
-instead (SEC-56). A file deleted that way keeps its
-bytes in the blob store (SEC-46).
+organisation; since 2026-11-03 such an item homed in a deleted private
+guild is removed with its history instead (SEC-56). A file deleted
+that way keeps its bytes in the blob store (SEC-46).
 
 ## SEC-54 — While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge
 

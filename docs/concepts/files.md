@@ -292,13 +292,12 @@ Its `origin_guild_id` is its home guild, null for the organisation's.
 The name is unique among the organisation's live files. Its search
 document is the name and description. Deletion sets `deleted_at` and
 removes the bytes; the tombstone keeps its access rows and its home,
-so a file hidden from an operator stays hidden once deleted. A file
-homed in a deleted guild that stays is the organisation's from then
-on. Deleting a guild
-or an agent removes every file, live or deleted, whose only rows
-named it or its agents, with its change history
-([Access](access.md#access-lists)); a live file removed that way
-keeps its bytes in the blob store
+so a file hidden from an operator stays hidden once deleted.
+Deleting a private guild removes every file homed in it, live or
+deleted, with its change history; deleting another guild leaves its
+files to the organisation, and deleting an agent removes only its
+rows ([Access](access.md#access-lists)). A live file removed with its
+guild keeps its bytes in the blob store
 ([SEC-46](../architecture/security-register.md#sec-46--deleting-an-agent-a-guild-or-an-organisation-leaves-its-files-bytes-in-the-blob-store)).
 
 The bytes sit in the blob store under

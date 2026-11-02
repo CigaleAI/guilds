@@ -73,10 +73,11 @@ starts.
 broken state. Notes come before Tasks, because a Task that embeds a
 missing note cannot be written. Routines are created paused. If any
 step fails, everything the apply created so far is removed: its
-guild and agents, its collections, and every seed note it wrote. A
-seed note whose rows name only the apply's guild or agents goes with
-them, with its change history; every other one is soft-deleted by id,
-whatever rows it carries. An abort removes the same. When the undo cannot delete everything, the apply fails with
+guild and agents, its collections, and every seed note it wrote. Each
+seed note is soft-deleted by id, whatever rows it carries; the
+created guild's deletion leaves its notes to the organisation, so
+the note's own deletion is what removes it. An abort removes the
+same. When the undo cannot delete everything, the apply fails with
 both its failure and what was left in place (see
 [Activate and abort](#activate-and-abort)). The
 [steps](#create) are listed under Reference.

@@ -442,10 +442,10 @@ unique among the organisation's live notes. Its search document is
 the content; its search text is the title and key. Deletion sets
 `deleted_at`; the tombstone keeps its access rows and its home, so a
 note hidden from an operator stays hidden once deleted. Deleting a
-guild or an agent removes every note, live or deleted, whose only
-rows named it or its agents, with its change history
-([Access](access.md#access-lists)). A note homed in a deleted guild
-that stays is the organisation's from then on.
+private guild removes every note homed in it, live or deleted, with
+its change history; deleting another guild leaves its notes to the
+organisation, and deleting an agent removes only its rows
+([Access](access.md#access-lists)).
 
 Code: `apps/orchestrator/src/artifacts/notes.ts`,
 `apps/orchestrator/src/artifacts/memory.ts`,

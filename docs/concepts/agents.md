@@ -119,9 +119,10 @@ flowchart LR
   message: it does not replay older chat.
 - **Rename.** The name can change while the agent is idle. Its stored
   records keep the same id, so nothing breaks.
-- **Delete.** The agent, its runs, its routines, its Memory, its
-  home, and the notes and files only it reached go. Other notes and
-  files stay. Its posts in the group chat stay, under the name it had.
+- **Delete.** The agent, its runs, its routines, its Memory, and its
+  home go, with the access rows naming it. Every note and file stays
+  under its home, greyed on the pages where no row reaches it any
+  more. Its posts in the group chat stay, under the name it had.
 
 ## In the app
 
@@ -475,10 +476,9 @@ already generating`). It then:
   its home and its `/run/guilds/<agent id>/` files; the machine's
   container stays up for the other agents on it;
 - deletes the access-list rows that name the agent
-  (`artifact_access`), and removes every note and file, live or
-  deleted, those rows alone reached, with its change history; a note
-  or a file the agent created that stays keeps its home, the agent's
-  guild;
+  (`artifact_access`) and nothing else of a note or a file: every one
+  stays, live or deleted, under its home, the one the agent created
+  in its guild included;
 - deletes every secret granted only to that agent;
 - deletes the agent row.
 
