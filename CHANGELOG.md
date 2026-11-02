@@ -21,7 +21,8 @@ only its rows reached, and a deleted note or file keeps its rows, so
 it stays hidden where it was. A path's change history shows only the
 changes of the items held there that the reader reads, so a name
 another item now holds does not show a hidden deleted item's history.
-A recipe apply that fails deletes the notes it wrote. A change to an
+A recipe apply that fails, or is aborted, deletes every agent,
+collection, and note it made, into an existing guild too. A change to an
 item with an organisation row is announced to every guild.
 `note_write` takes a `key` or a `path`, `file_put` no `level`,
 `note_find` and `file_find` no `level`, and Studio's `studio_edit_note`

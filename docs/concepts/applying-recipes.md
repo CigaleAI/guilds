@@ -74,7 +74,8 @@ broken state. Notes come before Tasks, because a Task that embeds a
 missing note cannot be written. Routines are created paused. If any
 step fails, everything the apply created so far is removed: its
 guild and agents, its collections, and every seed note it wrote,
-soft-deleted by id, whatever rows the note carries. The
+soft-deleted by id, whatever rows the note carries. An abort removes
+the same. The
 [steps](#create) are listed under Reference.
 
 ### The checklist
@@ -508,16 +509,13 @@ gets its own binding.
 routines in `activate_keys`, and moves the row to `ready`. While any
 other step is open it is 422 (`checklist still open: …`).
 
-`POST /api/applies/:id/abort` deletes a guild apply created, with its
-agents, and the collections the apply created, then moves the row to
-`aborted`. The guild's deletion takes the notes and files whose only
-rows named the guild or its agents; a seed note with another row,
-such as the organisation's, stays. Reused collections and their records stay. Org-level logins
-created during the checklist stay. Only an apply that created its
-guild deletes anything: on an empty guild the operator brought, abort
-moves the row to `aborted` and leaves the guild, the agents apply made
-in it, and the collections it created in place. A `ready` apply cannot
-be aborted (422).
+`POST /api/applies/:id/abort` undoes the apply as a failed step does,
+then moves the row to `aborted`. It deletes every agent, collection,
+and seed note the apply made, whatever rows a note carries, and the
+guild when the apply created it. On an empty guild the operator
+brought, the guild stays and what the apply made in it goes. Reused
+collections and their records stay. Org-level logins created during
+the checklist stay. A `ready` apply cannot be aborted (422).
 
 ### Apply HTTP
 
@@ -568,7 +566,11 @@ moves it to `ready`; abort moves it to `aborted`. The status values
 `preview` and `skeleton` are allowed by the schema; the apply never
 writes them, because the preview is not stored. A guild has at most
 one apply at `skeleton` or `checklist`. `plan` holds the agent ids by
-role, the connections, secrets, collections, and `activate_keys`.
+role, the connections, secrets, collections, `activate_keys`, and
+`created`: the ids of the agents, collections, and notes the apply
+made, which a failure or an abort deletes. A plan without `created`
+falls back to the created guild's agents and the collections it
+planned to create.
 `warnings` starts with the preview's findings and gains each skipped
 step.
 

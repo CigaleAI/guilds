@@ -717,8 +717,10 @@ request's user is identified.
 `hours` follows the tools route. `kind` is `note`, `table`, `script`, or
 `memory` (another value is 422); `agent` keeps that agent's Memory and
 scripts and the items it changes or reads. Each item has
-`display_path`, `kind`, `agent_id` (the agent of a Memory or a script,
-else null), `title`, `size` (bytes, or records for a table), `version`
+`display_path`, `kind`, `artifact_id` (the note's, file's, Memory's,
+or script's artifact, whose changes the item counts as its own; null
+for a table), `agent_id` (the agent of a Memory or a script, else
+null), `title`, `size` (bytes, or records for a table), `version`
 (null for a table), `created_by`, `created_at`, `collection_id` (a
 table's id, else null), `note_id` (a note's id, else null), the
 window's `changes` and `reads`, `top_writer` and `top_reader` (`{
