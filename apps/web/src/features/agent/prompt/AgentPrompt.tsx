@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../../../api/client";
 import {
   useAgentTask,
-  useEmbeddableNotes,
+  useAgentEmbeddableNotes,
   useEmbedStatus,
   useSaveTask,
 } from "../../../api/queries/notes";
@@ -282,7 +282,7 @@ export function AgentPrompt() {
   const { org } = useIdentity();
   const task = useAgentTask(agentId);
   const save = useSaveTask(agentId, guildId);
-  const notes = useEmbeddableNotes();
+  const notes = useAgentEmbeddableNotes(agentId);
   const collections = useCollections();
   const embedStatus = useEmbedStatus(guildId);
 
