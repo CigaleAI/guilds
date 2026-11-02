@@ -47,10 +47,21 @@ export function capturedTableAccess(
   return { guild: access.guild ?? "read", writers: access.writers };
 }
 
-/** What a note's access list gives the captured guild, as a recipe carries it: the guild's mode and the roles that write it. */
-export function capturedNoteAccess(entries: AccessEntry[], guild: CapturedGuild): Pick<RecipeNote, "guild" | "writers"> {
+/**
+ * What a note's access list gives the organisation and the captured guild, as a recipe carries it:
+ * the organisation row's mode, the guild's mode, and the roles that write it.
+ */
+export function capturedNoteAccess(
+  entries: AccessEntry[],
+  guild: CapturedGuild,
+): Pick<RecipeNote, "org" | "guild" | "writers"> {
   const access = guildAccessOn(entries, guild);
-  return access.guild === null ? { writers: access.writers } : { guild: access.guild, writers: access.writers };
+  const org = entries.find((entry) => entry.type === "org")?.mode;
+  return {
+    ...(org === "read" || org === "write" ? { org } : {}),
+    ...(access.guild === null ? {} : { guild: access.guild }),
+    writers: access.writers,
+  };
 }
 
 /** The agents apply created for `roles`, skipping a role it did not create. */

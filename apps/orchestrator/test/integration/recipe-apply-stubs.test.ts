@@ -482,6 +482,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
         body: "Thread: one mail conversation.\n",
         kind: "seed",
         author: operatorAuthor(),
+        org: "read",
         guild: "write",
         writers: [],
       },
@@ -533,8 +534,9 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal(modeOf(rulesAccess, mixedGuild), "write");
     const glossary = await getByDisplayPath(artifacts, noteReader, "org/org_home/mixed-glossary.md");
     const glossaryAccess = await noteAccess(String(glossary.row?.id));
-    assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), null);
+    assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read", "an org mode is the organisation's row");
     assert.equal(modeOf(glossaryAccess, mixedGuild), "write");
+    assert.equal(modeOf(rulesAccess, { type: "org", id: "org_home" }), null);
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,

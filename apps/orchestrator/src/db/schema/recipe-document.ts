@@ -124,9 +124,10 @@ export type RecipeCollection = {
 };
 
 /**
- * A seed note. Its access is shaped like a table's: `guild` is the mode every
- * agent of the applied guild gets on it and `writers` the roles whose agents
- * write it; a note that states neither is written by the applied guild.
+ * A seed note. Its access is shaped like a table's: `org` is the mode every
+ * agent of the organisation gets on it, `guild` the mode every agent of the
+ * applied guild gets, and `writers` the roles whose agents write it; a note
+ * that states none of them is written by the applied guild.
  */
 export type RecipeNote = {
   id: string;
@@ -135,6 +136,8 @@ export type RecipeNote = {
   body: string;
   kind: "seed";
   author: FieldAuthor;
+  /** Absent on a note the organisation's row does not reach. */
+  org?: AccessMode;
   /** Absent on a note the guild does not reach beyond its writers. */
   guild?: AccessMode;
   writers: string[];

@@ -468,7 +468,7 @@ test("the list-only migration gives agent items their row, renames names several
     assert.deepEqual(body?.notes, [
       { id: "k", key: "k.md", body: "Kept.", kind: "seed", writers: ["scout"] },
       { id: "g", key: "g.md", body: "Shared.", kind: "seed", writers: [], guild: "write" },
-      { id: "o", key: "o.md", body: "Read.", kind: "seed", writers: ["writer"], guild: "read" },
+      { id: "o", key: "o.md", body: "Read.", kind: "seed", writers: ["writer"], guild: "read", org: "read" },
     ]);
     assert.equal(body?.roles[0]?.task.body, "![[org/g.md]] then note_get org/k.md, not catalog/guild/x.md");
 

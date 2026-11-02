@@ -276,6 +276,7 @@ test("builder_write_recipe tool schema names role and task.body", () => {
     "id",
     "key",
     "kind",
+    "org",
     "writers",
   ]);
   const roleProps = recipe.recipe.properties.roles.items.properties;

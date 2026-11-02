@@ -355,11 +355,16 @@ const recipeDocumentParameter: ToolSchema = {
           body: { type: "string" },
           kind: { type: "string" },
           author: authorProperties,
+          org: {
+            type: "string",
+            enum: ["read", "write"],
+            description: "The mode every agent of the organisation gets, for a note other guilds read or write too.",
+          },
           guild: {
             type: "string",
             enum: ["read", "write"],
             description:
-              "The mode every agent in the guild gets. Without guild or writers, the guild writes the note.",
+              "The mode every agent in the guild gets. Without org, guild, or writers, the guild writes the note.",
           },
           writers: {
             type: "array",

@@ -344,14 +344,15 @@ BEGIN
 END $$;
 --> statement-breakpoint
 -- A recipe note has no level: an agent note's role writes it, a guild note's guild writes it, and an
--- organisation note keeps the guild's read it had by default.
+-- organisation note keeps the organisation's and the guild's read it had by default.
 UPDATE public.recipes r
    SET body = jsonb_set(r.body, '{notes}', (
      SELECT COALESCE(jsonb_agg(
               (e.n - 'level' - 'role')
               || CASE
                    WHEN e.n->>'level' = 'guild' THEN jsonb_build_object('guild', 'write')
-                   WHEN e.n->>'level' = 'org' AND NOT (e.n ? 'guild') THEN jsonb_build_object('guild', 'read')
+                   WHEN e.n->>'level' = 'org' AND NOT (e.n ? 'guild') THEN jsonb_build_object('guild', 'read', 'org', 'read')
+                   WHEN e.n->>'level' = 'org' THEN jsonb_build_object('org', 'read')
                    ELSE '{}'::jsonb
                  END
               || CASE

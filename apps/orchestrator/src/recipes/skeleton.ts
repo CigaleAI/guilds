@@ -143,12 +143,13 @@ function appliedAccess(
 }
 
 /**
- * The rows a recipe note starts with: the new guild at its `guild` mode and its writers' agents at
- * write, leaving out a writer the guild's row already lets write; a note that states neither is
- * written by the new guild.
+ * The rows a recipe note starts with: the organisation at its `org` mode, the new guild at its
+ * `guild` mode, and its writers' agents at write, leaving out a row the others already give; a
+ * note that states none of them is written by the new guild.
  */
 function recipeNoteAccess(skeleton: Skeleton, note: RecipeNote): AccessGrant[] {
-  const rows = accessRaises([], appliedAccess(skeleton, note));
+  const orgRows: AccessGrant[] = note.org ? [{ type: "org", id: skeleton.source.org.id, mode: note.org }] : [];
+  const rows = [...orgRows, ...accessRaises(orgRows, appliedAccess(skeleton, note))];
   return rows.length ? rows : [{ type: "guild", id: skeleton.guildId, mode: "write" }];
 }
 

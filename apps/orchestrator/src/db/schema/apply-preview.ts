@@ -74,7 +74,7 @@ export type ApplyInventory = {
     native_tools: string[];
   }>;
   collections: CollectionPlan[];
-  notes: Array<{ key: string; guild: AccessMode | null; writers: string[] }>;
+  notes: Array<{ key: string; org: AccessMode | null; guild: AccessMode | null; writers: string[] }>;
   scripts: Array<{ role: string; name: string; description: string }>;
   routines: Array<{
     role: string;

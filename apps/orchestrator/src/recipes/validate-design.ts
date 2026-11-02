@@ -249,9 +249,9 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** A note only one role reaches: the guild has no mode on it and one role writes it. */
+/** A note only one role reaches: neither the organisation nor the guild has a mode on it, and one role writes it. */
 function isOneRoleNote(note: RecipeNote): boolean {
-  return note.guild === undefined && note.writers.length === 1;
+  return note.org === undefined && note.guild === undefined && note.writers.length === 1;
 }
 
 /** Shared notes that describe several roles, so each reader carries the others' work. */

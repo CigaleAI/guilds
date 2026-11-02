@@ -19,7 +19,7 @@ type KeyHint = { keys: readonly string[]; at?: RegExp; hint: string };
 
 const KEY_HINTS: readonly KeyHint[] = [
   { keys: ["name"], at: /^roles\[/, hint: "use `role` for the handle and `name_suggestion` for the create-time slug" },
-  { keys: ["name"], at: /^notes\[/, hint: "notes use `id`, `key`, `body`, `guild`, and `writers`" },
+  { keys: ["name"], at: /^notes\[/, hint: "notes use `id`, `key`, `body`, `org`, `guild`, and `writers`" },
   { keys: ["path"], at: /^notes\[/, hint: "notes have no folders; `key` is the whole `.md` file name, with no `/`" },
   { keys: ["text"], hint: "use `body`" },
   { keys: ["routines"], hint: "use `schedules` with { key, cron or window, description, instruction }" },
@@ -29,11 +29,11 @@ const KEY_HINTS: readonly KeyHint[] = [
   },
   { keys: ["model"], hint: "put model on `config.model`" },
   { keys: ["capabilities"], hint: "use `native_tools` and `connections`" },
-  { keys: ["title"], at: /^notes\[/, hint: "notes use `id`, `key`, `body`, `guild`, and `writers`" },
+  { keys: ["title"], at: /^notes\[/, hint: "notes use `id`, `key`, `body`, `org`, `guild`, and `writers`" },
   {
     keys: ["level", "role"],
     at: /^notes\[/,
-    hint: "a note has no level or role: `guild` is the applied guild's access mode and `writers` lists the roles that write it",
+    hint: "a note has no level or role: `org` is the organisation's access mode, `guild` the applied guild's, and `writers` lists the roles that write it",
   },
   { keys: ["key"], at: /^collections\[/, hint: "collections use `name`, not `key`" },
   {

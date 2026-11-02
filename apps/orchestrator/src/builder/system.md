@@ -205,12 +205,14 @@ the roles whose agents get `write` of their own, for a table the guild
 reads but one role maintains. A hand-off collection needs write for its producer
 and its consumer; a dedupe collection needs write for the role that polls.
 
-A note takes the same `guild` and `writers`, and nothing else decides who
-reaches it. A note that sets neither is written by every agent in the
-guild. A note one role keeps for itself has that role in `writers` and no
-`guild`. A note the guild reads but one role maintains has `guild: "read"`
-and that role in `writers`. A note's `key` is unique across the
-organisation, and the recipe names it as `org/<key>`.
+A note takes the same `guild` and `writers`, and `org`, the mode every
+agent of the organisation gets, for a note other guilds read or write too;
+nothing else decides who reaches it. A note that sets none of them is
+written by every agent in the guild. A note one role keeps for itself has
+that role in `writers` and no `org` or `guild`. A note the guild reads but
+one role maintains has `guild: "read"` and that role in `writers`. A note's
+`key` is unique across the organisation, and the recipe names it as
+`org/<key>`.
 Validation rejects a collection without columns, a hand-off collection
 without a required state column with `values`, a writer that is not a
 role, and a role that must write a table it cannot.

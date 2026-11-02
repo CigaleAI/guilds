@@ -363,6 +363,8 @@ test("captureGuild carries what each note's access list gives the guild and its 
     // a note no row of the guild reaches carries no guild mode and no writers
     "own.md": [null, []],
   });
+  const orgModes = Object.fromEntries(recipe.notes.map((item) => [item.key, item.org ?? null]));
+  assert.deepEqual(orgModes, { "glossary.md": "read", "open.md": "read", "rules.md": null, "map.md": null, "own.md": null });
 });
 
 test("captureGuild lists the guild's repositories by name, without their URLs", async () => {

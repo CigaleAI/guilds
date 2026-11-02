@@ -117,24 +117,25 @@ function parseNoteKey(value: unknown, path: string): string {
   }
 }
 
-function parseNoteGuild(value: unknown, path: string): AccessMode | undefined {
+function parseNoteMode(value: unknown, path: string): AccessMode | undefined {
   if (value === undefined || isAccessMode(value)) {
     return value;
   }
   throw new RecipeError(`${path} must be read or write`);
 }
 
-/** A note's `guild` and `writers`, as the recipe states them. */
-function parseNoteAccess(row: JsonObject, path: string): Pick<RecipeNote, "guild" | "writers"> {
-  const guild = parseNoteGuild(row.guild, `${path}.guild`);
+/** A note's `org`, `guild`, and `writers`, as the recipe states them. */
+function parseNoteAccess(row: JsonObject, path: string): Pick<RecipeNote, "org" | "guild" | "writers"> {
+  const org = parseNoteMode(row.org, `${path}.org`);
+  const guild = parseNoteMode(row.guild, `${path}.guild`);
   const writers = parseWriters(row.writers, `${path}.writers`);
-  return guild === undefined ? { writers } : { guild, writers };
+  return { ...(org === undefined ? {} : { org }), ...(guild === undefined ? {} : { guild }), writers };
 }
 
 export function parseNote(item: unknown, index: number): RecipeNote {
   const path = `notes[${index}]`;
   const row = assertObject(item, path);
-  assertKeys(row, ["id", "key", "body", "kind", "author", "guild", "writers"], path);
+  assertKeys(row, ["id", "key", "body", "kind", "author", "org", "guild", "writers"], path);
   const body = boundedText(row.body, `${path}.body`, RECIPE_NOTE_MAX_BYTES);
   return {
     id: asString(row.id, `${path}.id`, `note-${index + 1}`),

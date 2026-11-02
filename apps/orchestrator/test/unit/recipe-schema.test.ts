@@ -152,11 +152,14 @@ test("a note that states no access has no guild mode and no writers", () => {
   assert.deepEqual(note.writers, []);
 });
 
-test("a note carries the guild mode and the writers it states", () => {
-  const note = parseRecipe(withNote({ guild: "read", writers: ["reader", " reader "] })).notes[0]!;
+test("a note carries the organisation and guild modes and the writers it states", () => {
+  const note = parseRecipe(withNote({ org: "read", guild: "read", writers: ["reader", " reader "] })).notes[0]!;
+  assert.equal(note.org, "read");
   assert.equal(note.guild, "read");
   assert.deepEqual(note.writers, ["reader"]);
   assert.equal(parseRecipe(withNote({ guild: "write" })).notes[0]?.guild, "write");
+  assert.equal(parseRecipe(withNote({ guild: "write" })).notes[0]?.org, undefined);
+  assert.throws(() => parseRecipe(withNote({ org: "none" })), /notes\[0\]\.org must be read or write/);
 });
 
 test("a note's guild mode is read or write and its writers a list", () => {
@@ -472,7 +475,7 @@ test("unknown key errors list allowed keys and common aliases", () => {
   );
   assert.throws(
     () => parseRecipe({ ...base, notes: [{ name: "playbook", purpose: "x" }] }),
-    /unknown key notes\[0\]\.name; notes use `id`, `key`, `body`, `guild`, and `writers`/,
+    /unknown key notes\[0\]\.name; notes use `id`, `key`, `body`, `org`, `guild`, and `writers`/,
   );
   assert.throws(
     () => parseRecipe({ ...base, collections: [{ name: "queue", purpose: "x", role: "scout" }] }),
