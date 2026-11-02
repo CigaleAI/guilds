@@ -204,3 +204,24 @@ test("a file uploaded with a home lists in its home guild's own section, and one
   const memberFiles = (await app.inject({ method: "GET", url: "/api/org/files", headers: TEAMMATE })).json() as Listed[];
   assert.equal(memberFiles.some((item) => item.id === fileId), false);
 });
+
+test("an agent's embeddable notes are its page's two sections, each note with its text and the agent's mode", async () => {
+  type Embeddable = Listed & { display_path: string; content: string };
+  const sections = await list(`/api/org/embeddable-notes?agent_id=${encodeURIComponent(keeperId)}`, OWNER);
+  const own = sections.own as Embeddable[];
+  const shared = sections.shared as Embeddable[];
+  const plan = own.find((item) => item.display_path === "org/org_home/vault-plan.md");
+  assert.deepEqual([plan?.viewer_mode, plan?.content, plan?.home], ["read", "kept at home", { id: vaultId, name: "vault" }]);
+  const reached = shared.find((item) => item.display_path === "org/org_home/open-greyed.md");
+  assert.deepEqual([reached?.viewer_mode, reached?.content], ["read", "made on the open page"]);
+  assert.equal(shared.find((item) => item.display_path === "org/org_home/stays-home.md")?.viewer_mode, "write");
+
+  const hidden = await app.inject({
+    method: "GET",
+    url: `/api/org/embeddable-notes?agent_id=${encodeURIComponent(keeperId)}`,
+    headers: TEAMMATE,
+  });
+  assert.equal(hidden.statusCode, 404, "an agent of a private guild the caller does not operate is not found");
+  const flat = await app.inject({ method: "GET", url: "/api/org/embeddable-notes", headers: OWNER });
+  assert.ok(Array.isArray(flat.json()), "without an agent the list stays flat");
+});

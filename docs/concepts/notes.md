@@ -295,6 +295,7 @@ GET    /api/agents/:agent_id/notes/task.md, …/memory.md
 PUT    /api/agents/:agent_id/notes/task.md, …/memory.md    { content, expected_version? }
 GET    /api/org/embeddable-notes          every live note the caller may read, by key (500 at most)
 GET    /api/org/embeddable-notes?display_path=…   one note: display_path, title, content; 404 if missing
+GET    /api/org/embeddable-notes?agent_id=…       { own, shared }: the agent's page, each note with its text
 ```
 
 Every listing leaves out the notes hidden from the caller. A listing
@@ -302,6 +303,11 @@ gives each note `{ id, path, display_path, kind, title, version, home,
 viewer_mode }`: `id` names it to the access routes, `home` is
 `{ id, name }` of the guild the note is homed in, null for the
 organisation's.
+
+With `agent_id`, the embeddable notes are the two sections of that
+agent's page, each note as `note_find` gives it, with its `id`,
+`home`, and the agent's `viewer_mode`; an agent the caller cannot see
+is 404. `display_path` names one note, whatever `agent_id` says.
 
 A guild's and an agent's page list two sections. `own` holds the notes
 homed in the page's guild, whatever their rows. `shared` holds the

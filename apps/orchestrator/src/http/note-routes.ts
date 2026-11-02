@@ -16,6 +16,7 @@ import {
   listGuildPageNotes,
   listOrgPageNotes,
   readAgentFile,
+  readAgentEmbeddableNotes,
   readMemoryHistory,
   readOrgNote,
   writeAgentFile,
@@ -51,6 +52,12 @@ const AGENT_FILES = ["task.md", "memory.md"] as const;
 
 /** The file a change log or the embeddable notes name by its display path. */
 const DisplayPathQuerySchema = Type.Object({ display_path: Type.Optional(Type.String()) });
+
+/** The embeddable notes a query asks for: one by its display path, or an agent's sections, or every one. */
+const EmbeddableNotesQuerySchema = Type.Object({
+  display_path: Type.Optional(Type.String()),
+  agent_id: Type.Optional(Type.String()),
+});
 
 /** The files whose newest change a query asks for, comma-separated. */
 const DisplayPathsQuerySchema = Type.Object({ display_paths: Type.Optional(Type.String()) });
@@ -187,11 +194,16 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
 
   app.get(
     "/api/org/embeddable-notes",
-    { schema: { querystring: DisplayPathQuerySchema } },
+    { schema: { querystring: EmbeddableNotesQuerySchema } },
     async (request) => {
-      const actor = await orgActor(request);
       const displayPath = (request.query.display_path ?? "").trim();
-      return readEmbeddableNotes(deps.artifacts, actor, displayPath);
+      const agentId = (request.query.agent_id ?? "").trim();
+      if (agentId && !displayPath) {
+        const user = await currentUser(db, request, deps);
+        const agent = await requireVisibleAgent(db, agentId, user.id);
+        return readAgentEmbeddableNotes(services, agent, user);
+      }
+      return readEmbeddableNotes(deps.artifacts, await orgActor(request), displayPath);
     },
   );
 }

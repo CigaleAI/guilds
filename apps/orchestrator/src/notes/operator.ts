@@ -13,7 +13,13 @@ import {
   writeAgentHostFile,
   writeHostNote,
 } from "../artifacts/host-files.js";
-import { listAgentNotes, listGuildNotes, listOrgNotes } from "../artifacts/notes.js";
+import {
+  listAgentEmbeddableNotes,
+  listAgentNotes,
+  listGuildNotes,
+  listOrgNotes,
+  type EmbeddableNoteView,
+} from "../artifacts/notes.js";
 import { noteDisplayPath } from "../artifacts/paths.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import type { AgentViewerMode, GuildViewerMode } from "../db/artifact-lists.js";
@@ -119,6 +125,16 @@ export async function listAgentPageNotes(
 ): Promise<PageSections<HostNoteView<AgentViewerMode>>> {
   const actor = await agentActorFor(services, agent, user);
   return listAgentNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
+}
+
+/** The notes the agent's Task may embed, in the two sections of the agent's page, each with its text and the agent's mode. */
+export async function readAgentEmbeddableNotes(
+  services: OperatorNotesServices,
+  agent: AgentRow,
+  user: UserRow,
+): Promise<PageSections<EmbeddableNoteView>> {
+  const actor = await loadOperatorActor(services.db, user, { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id });
+  return listAgentEmbeddableNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
 }
 
 /** The organisation's note with this key. */

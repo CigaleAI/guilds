@@ -45,7 +45,7 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { findLimit, parseRecordId } from "./search.js";
-import { artifactMode, artifactTextView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, pageSections, reachesAgent, recordViewWithPath, type ArtifactStore, type ArtifactTextView, type HostNoteView, type PageSections, type StateArtifact, rowDisplayPath } from "./store.js";
+import { artifactMode, artifactTextView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, itemHome, pageSections, reachesAgent, recordViewWithPath, type ArtifactStore, type ArtifactTextView, type HostNoteView, type ItemHome, type PageSections, type StateArtifact, rowDisplayPath } from "./store.js";
 import {
   NO_HIDDEN_GUILDS,
   SEARCH_TEXT_MAX,
@@ -421,6 +421,19 @@ export async function listAgentNotes(
   agent: ReachingAgent,
 ): Promise<PageSections<HostNoteView<AgentViewerMode>>> {
   return pageSections(await listAgentPageArtifacts(store.db, actor, agentReader(actor, agent), "note"), hostNoteView);
+}
+
+/** A note an agent's Task may embed, as its insert picker lists it: its text, its id, its home, and the agent's mode on it. */
+export type EmbeddableNoteView = ArtifactTextView & { id: string; home: ItemHome | null; viewer_mode: AgentViewerMode };
+
+/** The notes an agent's page lists for the actor, in its two sections, each with its text and the agent's viewer mode. */
+export async function listAgentEmbeddableNotes(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  agent: ReachingAgent,
+): Promise<PageSections<EmbeddableNoteView>> {
+  const rows = await listAgentPageArtifacts(store.db, actor, agentReader(actor, agent), "note");
+  return pageSections(rows, (row) => ({ ...artifactTextView(row), id: row.id, home: itemHome(row), viewer_mode: row.viewer_mode }));
 }
 
 /**
