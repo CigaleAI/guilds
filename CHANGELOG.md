@@ -22,6 +22,13 @@ and a records query's `where` a `RecordWhere` (`api/types/tables`). `api`
 sends a `JsonValue` body. `api/wire` drops `isRecord`: `isJsonObject`
 narrows a JSON object, and `isJsonSchema` a JSON Schema object.
 
+The Gmail and Qonto tools check a call's arguments against the
+parameters their manifests list: an argument of another type, such as
+a `limit` or a `min_amount` sent as text, is refused with the
+argument it names instead of read as a number. A Gmail or Qonto
+response whose fields are not of the type the API documents fails the
+call with the field at fault.
+
 **Breaking for extensions.** A connector's code declares each tool it
 runs once with `adapterTool` (`connectors/tools.js`): its name, the
 TypeBox schema of its parameters, and its work on the arguments

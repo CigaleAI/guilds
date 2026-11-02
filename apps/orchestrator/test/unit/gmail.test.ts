@@ -9,16 +9,24 @@ import { clipText } from "../../src/connectors/format.js";
 import gmailAdapter from "../../src/connectors/gmail/adapter.js";
 import { ConnectorError, type ConnectorContext } from "../../src/connectors/types.js";
 import {
+  API_BASE,
   ATTACHMENT_CAP,
   GmailError,
   attachmentFileName,
-  callTool,
+  createDraft,
   decodeBodyData,
+  downloadAttachment,
+  getMessage,
+  getThread,
   headerMap,
+  listDrafts,
+  listLabels,
   messageAttachments,
   messageBody,
   ping,
   rfc2822Raw,
+  searchThreads,
+  sendMessage,
   stripTags,
 } from "../../src/connectors/gmail/client.js";
 import { McpDisconnectedError } from "../../src/mcp/errors.js";
@@ -26,6 +34,7 @@ import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
+import type { FetchFn } from "../../src/net/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
@@ -37,6 +46,16 @@ const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
 const TOKEN = "ya29.gmail-test";
 
+/** The context a run gives the Gmail adapter: `http` for its calls, and the agent's workspace when there is one. */
+function adapterContext(http: FetchFn, workspaceDir?: string): ConnectorContext {
+  return {
+    http,
+    remote: { initialize: async () => ({ name: "", instructions: "" }), list: async () => [], call: async () => "" },
+    connection_id: "conn_gmail",
+    settings: {},
+    ...(workspaceDir ? { workspace_dir: workspaceDir } : {}),
+  };
+}
 
 function payload(headers: Array<{ name: string; value: string }>, text: string) {
   return {
@@ -88,7 +107,7 @@ test("headerMap, decode, strip, and clip", () => {
       { name: "From", value: "Ada <ada@example.com>" },
       { name: "from", value: "ignored" },
     ]),
-    { from: "Ada <ada@example.com>" },
+    new Map([["from", "Ada <ada@example.com>"]]),
   );
   assert.equal(decodeBodyData(Buffer.from("hello").toString("base64url")), "hello");
   assert.equal(stripTags("<p>Hi&nbsp;<b>Ada</b></p>"), "Hi Ada");
@@ -154,8 +173,7 @@ test("rfc2822Raw encodes subject and optional copies", () => {
 });
 
 test("search_threads lists metadata and page tokens", async () => {
-  const stored = await callTool(
-    "search_threads",
+  const stored = await searchThreads(
     { query: "from:ada", limit: 10 },
     {
       accessToken: TOKEN,
@@ -201,9 +219,8 @@ test("search_threads lists metadata and page tokens", async () => {
 });
 
 test("get_thread and get_message render bodies", async () => {
-  const thread = await callTool(
-    "get_thread",
-    { thread_id: "t1" },
+  const thread = await getThread(
+    "t1",
     {
       accessToken: TOKEN,
       client: mockFetch((url) => {
@@ -228,9 +245,8 @@ test("get_thread and get_message render bodies", async () => {
     },
   );
   assert.equal(thread, "t1  messages=2\n---\nm1  Ada  Hi\nfirst\n---\nm2  me\nsecond");
-  const message = await callTool(
-    "get_message",
-    { message_id: "m1" },
+  const message = await getMessage(
+    "m1",
     {
       accessToken: TOKEN,
       client: mockFetch(() => ({
@@ -251,25 +267,27 @@ test("get_thread refuses a body that is not JSON or does not match its schema", 
     client: mockFetch(() => ({ status: 200, ...result })),
   });
   await assert.rejects(
-    () =>
-      callTool(
-        "get_thread",
-        { thread_id: "t1" },
-        answering({ json: { id: "t1", messages: "none" } }),
-      ),
+    () => getThread("t1", answering({ json: { id: "t1", messages: "none" } })),
     (error: unknown) =>
       error instanceof GmailError &&
       /^Gmail returned an unexpected response at \/messages: /.test(error.message),
   );
+  const nested = { id: "t1", messages: [{ id: "m1", payload: { parts: [{ partId: "1", filename: 7 }] } }] };
   await assert.rejects(
-    () => callTool("get_thread", { thread_id: "t1" }, answering({ text: "not json" })),
+    () => getThread("t1", answering({ json: nested })),
+    (error: unknown) =>
+      error instanceof GmailError &&
+      /^Gmail returned an unexpected response at \/messages\/0\/payload\/parts\/0\/filename: /.test(error.message),
+  );
+  await assert.rejects(
+    () => getThread("t1", answering({ text: "not json" })),
     (error: unknown) =>
       error instanceof GmailError && error.message === "Gmail returned a non-JSON body",
   );
 });
 
 test("get_message lists attachments between the headers and the body", async () => {
-  const message = await callTool("get_message", { message_id: "m1" }, { accessToken: TOKEN, client: attachmentsFetch() });
+  const message = await getMessage("m1", { accessToken: TOKEN, client: attachmentsFetch() });
   assert.equal(
     message,
     [
@@ -283,8 +301,7 @@ test("get_message lists attachments between the headers and the body", async () 
 
 test("download_attachment fetches an attachment by id and writes it under the workspace", async () => {
   const workspace = await agentWorkspace("gmail-download-");
-  const saved = await callTool(
-    "download_attachment",
+  const saved = await downloadAttachment(
     { message_id: "m1", part_id: "1" },
     { accessToken: TOKEN, client: attachmentsFetch(), workspaceDir: workspace },
   );
@@ -294,8 +311,7 @@ test("download_attachment fetches an attachment by id and writes it under the wo
 
 test("download_attachment writes inline attachment data to the requested file_path", async () => {
   const workspace = await agentWorkspace("gmail-download-");
-  const saved = await callTool(
-    "download_attachment",
+  const saved = await downloadAttachment(
     { message_id: "m1", part_id: "2", file_path: "/home/a_1/mail/notes.txt" },
     { accessToken: TOKEN, client: attachmentsFetch(), workspaceDir: workspace },
   );
@@ -309,34 +325,34 @@ test("download_attachment refuses calls it cannot serve", async () => {
   const refused = (status: number, pattern: RegExp) => (error: unknown) =>
     error instanceof GmailError && error.status === status && pattern.test(error.message);
   await assert.rejects(
-    () => callTool("download_attachment", { message_id: "m1", part_id: "1" }, { accessToken: TOKEN, client: attachmentsFetch() }),
+    () => downloadAttachment({ message_id: "m1", part_id: "1" }, { accessToken: TOKEN, client: attachmentsFetch() }),
     refused(422, /only available during an agent run/),
   );
-  await assert.rejects(() => callTool("download_attachment", { message_id: "m1" }, options), /part_id is required/);
-  await assert.rejects(() => callTool("download_attachment", { part_id: "1" }, options), /message_id is required/);
+  await assert.rejects(() => downloadAttachment({ message_id: "m1", part_id: " " }, options), /part_id is required/);
+  await assert.rejects(() => downloadAttachment({ message_id: "", part_id: "1" }, options), /message_id is required/);
   await assert.rejects(
-    () => callTool("download_attachment", { message_id: "m1", part_id: "0" }, options),
+    () => downloadAttachment({ message_id: "m1", part_id: "0" }, options),
     refused(422, /no attachment at part 0/),
   );
   await assert.rejects(
-    () => callTool("download_attachment", { message_id: "m1", part_id: "1", file_path: "/etc/invoice.pdf" }, options),
+    () => downloadAttachment({ message_id: "m1", part_id: "1", file_path: "/etc/invoice.pdf" }, options),
     refused(422, /must be under \/home\/a_1/),
   );
   const large = { ...options, client: attachmentsFetch(messageWithAttachments(ATTACHMENT_CAP + 1)) };
   await assert.rejects(
-    () => callTool("download_attachment", { message_id: "m1", part_id: "1" }, large),
+    () => downloadAttachment({ message_id: "m1", part_id: "1" }, large),
     refused(422, /larger than 25 MB/),
   );
 });
 
 test("the Gmail adapter passes the run's workspace to download_attachment", async () => {
   const workspace = await agentWorkspace("gmail-adapter-");
-  const ctx = { http: attachmentsFetch(), connection_id: "conn_gmail", settings: {} } as unknown as ConnectorContext;
   const args = { message_id: "m1", part_id: "1" };
-  const saved = await gmailAdapter.call!("download_attachment", args, { access_token: TOKEN }, { ...ctx, workspace_dir: workspace });
+  const creds = { access_token: TOKEN };
+  const saved = await gmailAdapter.call!("download_attachment", args, creds, adapterContext(attachmentsFetch(), workspace));
   assert.equal(saved, "file_path=/home/a_1/invoice.pdf  application/pdf  bytes=3");
   await assert.rejects(
-    () => gmailAdapter.call!("download_attachment", args, { access_token: TOKEN }, ctx),
+    () => gmailAdapter.call!("download_attachment", args, creds, adapterContext(attachmentsFetch())),
     (error: unknown) => error instanceof ConnectorError && error.status === 422,
   );
 });
@@ -348,8 +364,7 @@ test("download_attachment never writes through a link the agent planted", async 
   await symlink(host, path.join(workspace, "invoice.pdf"));
   await assert.rejects(
     () =>
-      callTool(
-        "download_attachment",
+      downloadAttachment(
         { message_id: "m1", part_id: "1" },
         { accessToken: TOKEN, client: attachmentsFetch(), workspaceDir: workspace },
       ),
@@ -359,9 +374,7 @@ test("download_attachment never writes through a link the agent planted", async 
 });
 
 test("list_labels and list_drafts", async () => {
-  const labels = await callTool(
-    "list_labels",
-    {},
+  const labels = await listLabels(
     {
       accessToken: TOKEN,
       client: mockFetch(() => ({
@@ -371,8 +384,7 @@ test("list_labels and list_drafts", async () => {
     },
   );
   assert.equal(labels, "INBOX  INBOX  system");
-  const drafts = await callTool(
-    "list_drafts",
+  const drafts = await listDrafts(
     {},
     {
       accessToken: TOKEN,
@@ -399,8 +411,7 @@ test("list_labels and list_drafts", async () => {
 test("create_draft and send_message post raw RFC2822", async () => {
   let draftRaw = "";
   let sendRaw = "";
-  const draft = await callTool(
-    "create_draft",
+  const draft = await createDraft(
     { to: "ada@example.com", subject: "Hi", body: "hello" },
     {
       accessToken: TOKEN,
@@ -413,8 +424,7 @@ test("create_draft and send_message post raw RFC2822", async () => {
   );
   assert.equal(draft, "draft=d1  message=m1");
   assert.match(Buffer.from(draftRaw, "base64url").toString("utf8"), /To: ada@example.com/);
-  const sent = await callTool(
-    "send_message",
+  const sent = await sendMessage(
     { to: "ada@example.com", subject: "Hi", body: "hello" },
     {
       accessToken: TOKEN,
@@ -437,8 +447,28 @@ test("Gmail errors surface provider messages", async () => {
       }),
     (error: unknown) => error instanceof GmailError && error.status === 401 && /Invalid Credentials/.test(error.message),
   );
-  await assert.rejects(() => callTool("nope", {}, { accessToken: TOKEN }), /unknown Gmail tool/);
-  await assert.rejects(() => callTool("search_threads", {}, { accessToken: TOKEN }), /query is required/);
+  await assert.rejects(() => searchThreads({ query: "  " }, { accessToken: TOKEN }), /query is required/);
+});
+
+test("the Gmail tools decode their arguments before they call Gmail", async () => {
+  const fetched: string[] = [];
+  const ctx = adapterContext(
+    mockFetch((url) => {
+      fetched.push(url);
+      return { status: 200, json: { labels: [] } };
+    }),
+  );
+  const creds = { access_token: TOKEN };
+  const refused = (status: number, pattern: RegExp) => (error: unknown) =>
+    error instanceof ConnectorError && error.status === status && pattern.test(error.message);
+  assert.equal(await gmailAdapter.call!("list_labels", {}, creds, ctx), "no results");
+  await assert.rejects(gmailAdapter.call!("search_threads", {}, creds, ctx), refused(422, /^query is required$/));
+  await assert.rejects(gmailAdapter.call!("search_threads", { query: "a", limit: "5" }, creds, ctx), refused(422, /^\/limit: /));
+  await assert.rejects(gmailAdapter.call!("download_attachment", { message_id: "m1" }, creds, ctx), refused(422, /^part_id is required$/));
+  await assert.rejects(gmailAdapter.call!("download_attachment", { part_id: "1" }, creds, ctx), refused(422, /^message_id is required$/));
+  await assert.rejects(gmailAdapter.call!("create_draft", { to: "ada@example.com", subject: "Hi" }, creds, ctx), refused(422, /^body is required$/));
+  await assert.rejects(gmailAdapter.call!("nope", {}, creds, ctx), refused(404, /^unknown tool nope$/));
+  assert.deepEqual(fetched, [`${API_BASE}/users/me/labels`]);
 });
 
 test("sync Gmail writes the curated catalog", async () => {
