@@ -221,6 +221,27 @@ UPDATE public.agents a
   FROM (SELECT id, pg_temp.rewrite_paths(task, org_id) AS task FROM public.agents) r
  WHERE r.id = a.id AND r.task <> a.task;
 --> statement-breakpoint
+-- What an agent reads at run time besides its Task: its peers' focus and wake triggers, its
+-- routines' instructions and descriptions, and its guild's about and description.
+UPDATE public.agents a
+   SET focus = r.focus, wake_triggers = r.wake_triggers
+  FROM (SELECT id, pg_temp.rewrite_paths(focus, org_id) AS focus, pg_temp.rewrite_paths(wake_triggers, org_id) AS wake_triggers
+          FROM public.agents) r
+ WHERE r.id = a.id AND (r.focus <> a.focus OR r.wake_triggers <> a.wake_triggers);
+--> statement-breakpoint
+UPDATE public.schedules s
+   SET instruction = r.instruction, description = r.description
+  FROM (SELECT sc.id, pg_temp.rewrite_paths(sc.instruction, ag.org_id) AS instruction,
+               pg_temp.rewrite_paths(sc.description, ag.org_id) AS description
+          FROM public.schedules sc JOIN public.agents ag ON ag.id = sc.agent_id) r
+ WHERE r.id = s.id AND (r.instruction <> s.instruction OR r.description <> s.description);
+--> statement-breakpoint
+UPDATE public.guilds g
+   SET about = r.about, description = r.description
+  FROM (SELECT id, pg_temp.rewrite_paths(about, org_id) AS about, pg_temp.rewrite_paths(description, org_id) AS description
+          FROM public.guilds) r
+ WHERE r.id = g.id AND (r.about <> g.about OR r.description <> g.description);
+--> statement-breakpoint
 UPDATE public.task_revisions t
    SET content_text = r.content_text
   FROM (SELECT id, pg_temp.rewrite_paths(content_text, org_id) AS content_text FROM public.task_revisions) r

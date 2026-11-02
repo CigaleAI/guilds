@@ -504,10 +504,18 @@ test("the list-only migration rewrites each moved path once and only where it is
       "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
       [at(0)],
     );
+    const named = "Read org/org_1/agents/a_1/plan.md first.";
     await pool.query(
-      `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
-       VALUES ('a_1', 'guild_a', 'scout', $1, $2, $2, 'org_1', '', '', $2, 'mach_1', 0)`,
-      [JSON.stringify(agentConfig({ model: "openrouter/openai/gpt-5.6-luna" })), at(0)],
+      `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot,
+                                  focus, wake_triggers)
+       VALUES ('a_1', 'guild_a', 'scout', $1, $2, $2, 'org_1', '', '', $2, 'mach_1', 0, $3, $3)`,
+      [JSON.stringify(agentConfig({ model: "openrouter/openai/gpt-5.6-luna" })), at(0), named],
+    );
+    await pool.query("UPDATE public.guilds SET about = $1, description = $1 WHERE id = 'guild_a'", [named]);
+    await pool.query(
+      `INSERT INTO public.schedules (id, agent_id, instruction, description, cron, next_run_at, created_at, updated_at)
+       VALUES ('sch_1', 'a_1', $1, $1, '0 9 * * 1', $2, $2, $2)`,
+      [named, at(0)],
     );
     const item = (id: string, level: "agent" | "org", kind: "note" | "file", key: string, minute: number, text: string | null) =>
       pool.query(
@@ -559,6 +567,16 @@ test("the list-only migration rewrites each moved path once and only where it is
     );
     const body = (await pool.query<{ body: { roles: Array<{ task: { body: string } }> } }>("SELECT body FROM public.recipes WHERE id = 'rcp_1'")).rows[0]?.body;
     assert.equal(body?.roles[0]?.task.body, "Steps:\norg/plan.md\tthen org/k.md");
+    const moved = "Read org/org_1/plan.md first.";
+    assert.deepEqual(
+      (await pool.query("SELECT focus, wake_triggers FROM public.agents WHERE id = 'a_1'")).rows[0],
+      { focus: moved, wake_triggers: moved },
+    );
+    assert.deepEqual((await pool.query("SELECT about, description FROM public.guilds WHERE id = 'guild_a'")).rows[0], { about: moved, description: moved });
+    assert.deepEqual(
+      (await pool.query("SELECT instruction, description FROM public.schedules WHERE id = 'sch_1'")).rows[0],
+      { instruction: moved, description: moved },
+    );
   } finally {
     await pool.end();
   }
