@@ -1,4 +1,5 @@
 import type { Manifest } from "../db/schema/index.js";
+import type { JsonValue } from "../lib/json.js";
 import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
 import type { LoadedConnector } from "./servers.js";
@@ -31,7 +32,7 @@ export class ConnectorRegistryError extends Error {
  * An entry for a connector folder shipped in the image, by core or by an extension: its
  * `connector.json`, checked against the folder name, its adapter, and who publishes it.
  */
-export function folderEntry(raw: unknown, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
+export function folderEntry(raw: JsonValue, adapter: Adapter, folder: string, publisher = "guilds"): ConnectorEntry {
   const name = folder.replace(/\/+$/, "").split("/").pop() ?? "";
   const manifest = loadManifest(raw, name);
   return {

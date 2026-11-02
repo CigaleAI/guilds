@@ -5,9 +5,15 @@ import type { LoadedConnector } from "./servers.js";
 /** The role of a connector that holds the operator's long-lived records. */
 export const SYSTEM_OF_RECORD = "system_of_record";
 
+/** Whether a server reference is the server's row, and not its slug or server id. */
+function isServerRow(serverRef: string | LoadedConnector): serverRef is LoadedConnector {
+  return typeof serverRef !== "string";
+}
+
+/** The installed connector a server reference names: by its row, else by a slug or a server id. */
 function entryOf(serverRef: string | LoadedConnector): ConnectorEntry | null {
   const connectors = installedConnectors();
-  if (typeof serverRef !== "string") {
+  if (isServerRow(serverRef)) {
     return connectors.forServer(serverRef);
   }
   return connectors.bySlug(serverRef) ?? connectors.byId(serverRef);

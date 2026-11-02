@@ -1,5 +1,8 @@
-import type { ConnectionSettings } from "../db/schema/index.js";
-import { isJsonObject } from "../lib/json.js";
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import type { ConnectionSettings, Manifest } from "../db/schema/index.js";
+import { keepMatching } from "../lib/decode.js";
+import { isJsonObject, isObjectNode, JsonObjectSchema, JsonValueSchema, type JsonObject, type JsonValue } from "../lib/json.js";
 
 /**
  * A login's settings: the document a connector's `settings_schema` describes, stored beside the
@@ -16,111 +19,145 @@ export class SettingsError extends Error {
   }
 }
 
-type Schema = Record<string, unknown>;
+/** The JSON Schema of the settings a login of a connector stores, as the connector's manifest declares it. */
+export type SettingsSchema = NonNullable<Manifest["settings_schema"]>;
 
-function schemaOf(value: unknown): Schema {
-  return isJsonObject(value) ? value : {};
-}
+/** A type name the check knows. */
+const SettingsTypeName = Type.Union([
+  Type.Literal("object"),
+  Type.Literal("array"),
+  Type.Literal("string"),
+  Type.Literal("number"),
+  Type.Literal("integer"),
+  Type.Literal("boolean"),
+]);
 
-function typeMatches(type: unknown, value: unknown): boolean {
-  switch (type) {
-    case "object":
-      return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-    case "array":
-      return Array.isArray(value);
-    case "string":
-      return typeof value === "string";
-    case "number":
-      return typeof value === "number" && Number.isFinite(value);
-    case "integer":
-      return typeof value === "number" && Number.isInteger(value);
-    case "boolean":
-      return typeof value === "boolean";
-    default:
-      return true;
-  }
+type SettingsTypeName = Static<typeof SettingsTypeName>;
+
+/** The values each type name accepts. */
+const TYPE_SHAPES = {
+  object: JsonObjectSchema,
+  array: Type.Array(JsonValueSchema),
+  string: Type.String(),
+  number: Type.Number(),
+  integer: Type.Integer(),
+  boolean: Type.Boolean(),
+} satisfies Record<SettingsTypeName, TSchema>;
+
+const Count = Type.Optional(Type.Integer({ minimum: 0 }));
+
+/**
+ * The keywords of a settings schema, or of a part of it, that the check reads. A keyword that does
+ * not hold what JSON Schema puts there is left out, and checks nothing.
+ */
+const SettingsKeywords = Type.Object({
+  type: Type.Optional(SettingsTypeName),
+  properties: Type.Optional(Type.Record(Type.String(), JsonObjectSchema)),
+  required: Type.Optional(Type.Array(Type.String())),
+  additionalProperties: Type.Optional(Type.Boolean()),
+  items: Type.Optional(JsonObjectSchema),
+  minItems: Count,
+  maxItems: Count,
+  minLength: Count,
+  maxLength: Count,
+  pattern: Type.Optional(Type.String()),
+  enum: Type.Optional(Type.Array(JsonValueSchema)),
+  "x-lookup": Type.Optional(Type.Boolean()),
+});
+
+type SettingsKeywords = Static<typeof SettingsKeywords>;
+
+/** The keywords of `schema` the check reads. */
+function keywordsOf(schema: JsonObject): SettingsKeywords {
+  return keepMatching(SettingsKeywords, schema) ?? {};
 }
 
 /** Checks a string against the schema's `minLength`, `maxLength` and `pattern`. */
-function checkString(schema: Schema, value: string, path: string): void {
-  if (typeof schema.minLength === "number" && value.length < schema.minLength) {
-    throw new SettingsError(`${path} must have at least ${schema.minLength} characters`);
+function checkString(keywords: SettingsKeywords, value: string, path: string): void {
+  if (keywords.minLength !== undefined && value.length < keywords.minLength) {
+    throw new SettingsError(`${path} must have at least ${keywords.minLength} characters`);
   }
-  if (typeof schema.maxLength === "number" && value.length > schema.maxLength) {
-    throw new SettingsError(`${path} must have at most ${schema.maxLength} characters`);
+  if (keywords.maxLength !== undefined && value.length > keywords.maxLength) {
+    throw new SettingsError(`${path} must have at most ${keywords.maxLength} characters`);
   }
-  if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) {
-    throw new SettingsError(`${path} must match ${schema.pattern}`);
+  if (keywords.pattern !== undefined && !new RegExp(keywords.pattern).test(value)) {
+    throw new SettingsError(`${path} must match ${keywords.pattern}`);
   }
 }
 
 /** Checks an array against the schema's `minItems` and `maxItems`, and each entry against its `items`. */
-function checkArray(schema: Schema, value: unknown[], path: string): void {
-  if (typeof schema.minItems === "number" && value.length < schema.minItems) {
-    throw new SettingsError(`${path} must have at least ${schema.minItems} entries`);
+function checkArray(keywords: SettingsKeywords, value: JsonValue[], path: string): void {
+  if (keywords.minItems !== undefined && value.length < keywords.minItems) {
+    throw new SettingsError(`${path} must have at least ${keywords.minItems} entries`);
   }
-  if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
-    throw new SettingsError(`${path} must have at most ${schema.maxItems} entries`);
+  if (keywords.maxItems !== undefined && value.length > keywords.maxItems) {
+    throw new SettingsError(`${path} must have at most ${keywords.maxItems} entries`);
   }
-  const items = schemaOf(schema.items);
+  const items = keywords.items ?? {};
   value.forEach((item, index) => check(items, item, `${path}[${index}]`));
 }
 
 /** Checks an object's `required` properties, each property against its schema, and `additionalProperties: false`. */
-function checkObject(schema: Schema, value: Record<string, unknown>, path: string): void {
-  const properties = schemaOf(schema.properties);
-  for (const name of Array.isArray(schema.required) ? schema.required : []) {
-    if (value[String(name)] === undefined) {
-      throw new SettingsError(`${path}.${String(name)} is required`);
+function checkObject(keywords: SettingsKeywords, value: JsonObject, path: string): void {
+  const properties = keywords.properties ?? {};
+  for (const name of keywords.required ?? []) {
+    if (value[name] === undefined) {
+      throw new SettingsError(`${path}.${name} is required`);
     }
   }
   for (const [name, item] of Object.entries(value)) {
-    if (name in properties) {
-      check(schemaOf(properties[name]), item, `${path}.${name}`);
-    } else if (schema.additionalProperties === false) {
+    const property = Object.hasOwn(properties, name) ? properties[name] : undefined;
+    if (property !== undefined) {
+      if (item !== undefined) {
+        check(property, item, `${path}.${name}`);
+      }
+    } else if (keywords.additionalProperties === false) {
       throw new SettingsError(`${path}.${name} is not a setting`);
     }
   }
 }
 
-function check(schema: Schema, value: unknown, path: string): void {
-  if (schema.type !== undefined && !typeMatches(schema.type, value)) {
-    throw new SettingsError(`${path} must be ${String(schema.type)}`);
+function check(schema: JsonObject, value: JsonValue, path: string): void {
+  const keywords = keywordsOf(schema);
+  if (keywords.type !== undefined && !Value.Check(TYPE_SHAPES[keywords.type], value)) {
+    throw new SettingsError(`${path} must be ${keywords.type}`);
   }
-  if (Array.isArray(schema.enum) && !schema.enum.some((option) => option === value)) {
-    throw new SettingsError(`${path} must be one of ${schema.enum.map(String).join(", ")}`);
+  if (keywords.enum !== undefined && !keywords.enum.some((option) => option === value)) {
+    throw new SettingsError(`${path} must be one of ${keywords.enum.map(String).join(", ")}`);
   }
-  if (typeof value === "string") {
-    checkString(schema, value, path);
+  if (Value.Check(TYPE_SHAPES.string, value)) {
+    checkString(keywords, value, path);
   }
   if (Array.isArray(value)) {
-    checkArray(schema, value, path);
+    checkArray(keywords, value, path);
   }
-  if (isJsonObject(value)) {
-    checkObject(schema, value, path);
+  if (isObjectNode(value)) {
+    checkObject(keywords, value, path);
   }
 }
 
-/** Checks a settings document against a manifest's `settings_schema`; throws `SettingsError` naming the first problem. */
-export function validateSettings(schema: Record<string, unknown>, value: unknown): ConnectionSettings {
+/**
+ * Asserts that `value`, a settings document as it arrives, is one a manifest's `settings_schema`
+ * describes; throws `SettingsError` naming the first problem.
+ */
+export function validateSettings(schema: SettingsSchema, value: unknown): asserts value is ConnectionSettings {
   if (!isJsonObject(value)) {
     throw new SettingsError("settings must be object");
   }
   check(schema, value, "settings");
-  return value;
 }
 
 /** Whether the schema's required properties are all present in the stored settings. */
-export function settingsComplete(schema: Record<string, unknown> | undefined, settings: ConnectionSettings): boolean {
+export function settingsComplete(schema: SettingsSchema | undefined, settings: ConnectionSettings): boolean {
   if (!schema) {
     return true;
   }
-  return (Array.isArray(schema.required) ? schema.required : []).every((name) => settings[String(name)] !== undefined);
+  return (keywordsOf(schema).required ?? []).every((name) => settings[name] !== undefined);
 }
 
 /** The properties a search box fills, by name. */
-export function lookupProperties(schema: Record<string, unknown> | undefined): string[] {
-  return Object.entries(schemaOf(schema?.properties))
-    .filter(([, property]) => schemaOf(property)["x-lookup"] === true)
+export function lookupProperties(schema: SettingsSchema | undefined): string[] {
+  return Object.entries(schema ? (keywordsOf(schema).properties ?? {}) : {})
+    .filter(([, property]) => keywordsOf(property)["x-lookup"] === true)
     .map(([name]) => name);
 }

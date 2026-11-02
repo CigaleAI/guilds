@@ -1,5 +1,6 @@
 import { Value } from "@sinclair/typebox/value";
 import { ManifestSchema, SLUG_PATTERN, type AuthField, type Manifest } from "../db/schema/index.js";
+import type { JsonValue } from "../lib/json.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
 
 export const SLUG_RE = new RegExp(SLUG_PATTERN);
@@ -183,10 +184,10 @@ const MANIFEST_PROBLEMS: ReadonlyArray<(manifest: Manifest) => string | null> = 
 ];
 
 /**
- * Checks a parsed `connector.json` against the schema and, when `folder` is given, its slug against
+ * Checks a parsed `connector.json`, the JSON as it arrives, against the schema and, when `folder` is given, its slug against
  * the folder name. Returns the manifest; throws `ManifestError` naming the first problem.
  */
-export function loadManifest(raw: unknown, folder?: string): Manifest {
+export function loadManifest(raw: JsonValue, folder?: string): Manifest {
   if (!Value.Check(ManifestSchema, raw)) {
     const first = Value.Errors(ManifestSchema, raw).First();
     const where = first ? `${first.path || "/"}: ${first.message}` : "invalid";

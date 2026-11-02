@@ -4,6 +4,7 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import type { ConnectorRow } from "../../src/db/connectors.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { JsonObject, JsonValue } from "../../src/lib/json.js";
 import { lookupProperties, settingsComplete, validateSettings } from "../../src/connectors/settings.js";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -75,7 +76,7 @@ const FOLDERS = readdirSync(CONNECTORS_DIR).filter((name) => statSync(path.join(
 test("every connector folder holds a valid manifest named after it, and the core list has it", () => {
   assert.equal(FOLDERS.length, CONNECTORS.entries().length);
   for (const folder of FOLDERS) {
-    const raw = JSON.parse(readFileSync(path.join(CONNECTORS_DIR, folder, "connector.json"), "utf8")) as unknown;
+    const raw: JsonValue = JSON.parse(readFileSync(path.join(CONNECTORS_DIR, folder, "connector.json"), "utf8"));
     const manifest = loadManifest(raw, folder);
     const entry = CONNECTORS.bySlug(folder);
     assert.ok(entry, folder);
@@ -101,7 +102,7 @@ test("a manifest declares a key or a client of its own within the rules", () => 
     endpoint: undefined,
   });
   assert.equal(shipped.auth.oauth?.provider, "google-connectors", "a provider brings its own discovery");
-  const refused = (raw: Record<string, unknown>, pattern: RegExp) =>
+  const refused = (raw: JsonObject, pattern: RegExp) =>
     assert.throws(() => loadManifest(raw), (error: unknown) => error instanceof ManifestError && pattern.test(error.message));
   refused(
     endpointManifest("acme", { auth: { kind: "oauth", oauth: { strategy: "dynamic" }, instance: { own: true } } }),
@@ -150,7 +151,7 @@ test("manifests keep their tools, endpoints, settings, and state within the rule
 });
 
 test("an endpoint's headers are custom headers, each named once and apart from the credential's", () => {
-  const withHeaders = (headers: Record<string, string>, auth: Record<string, unknown> = { kind: "token" }) =>
+  const withHeaders = (headers: Record<string, string>, auth: JsonObject = { kind: "token" }) =>
     endpointManifest("portal", { endpoint: { url: "https://mcp.example.com/mcp", headers }, auth });
   assert.deepEqual(loadManifest(withHeaders({ "X-Toolsets": "a,b" })).endpoint?.headers, { "X-Toolsets": "a,b" });
   for (const [headers, auth] of [
@@ -470,7 +471,9 @@ test("an integration lists the connectors whose manifests require it", () => {
 
 test("settings are checked against the manifest's schema", () => {
   const schema = QUOTES.manifest.settings_schema!;
-  assert.deepEqual(validateSettings(schema, { symbols: [{ id: "bitcoin" }] }), { symbols: [{ id: "bitcoin" }] });
+  assert.doesNotThrow(() => validateSettings(schema, { symbols: [{ id: "bitcoin", name: "Bitcoin" }] }));
+  assert.throws(() => validateSettings(schema, "symbols"), /settings must be object/);
+  assert.throws(() => validateSettings(schema, { symbols: "bitcoin" }), /settings.symbols must be array/);
   assert.throws(() => validateSettings(schema, {}), /settings.symbols is required/);
   assert.throws(() => validateSettings(schema, { symbols: [] }), /at least 1/);
   assert.throws(() => validateSettings(schema, { symbols: [{ id: "Bad Id" }] }), /must match/);

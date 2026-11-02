@@ -26,7 +26,10 @@ export function resolveSecrets(
   return values;
 }
 
-export function redact(text: string, secrets: Record<string, string>): string {
+/** Secret values a text is redacted of, each by the name its `[REDACTED:<name>]` mark shows. */
+export type Redactions = Record<string, string>;
+
+export function redact(text: string, secrets: Redactions): string {
   const items = Object.entries(secrets).sort((left, right) => right[1].length - left[1].length);
   let out = text;
   for (const [name, value] of items) {

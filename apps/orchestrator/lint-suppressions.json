@@ -104,11 +104,6 @@
       "count": 9
     }
   },
-  "src/connectors/builder.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
   "src/connectors/coingecko/client.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 2
@@ -209,19 +204,6 @@
       "count": 12
     }
   },
-  "src/connectors/instance.ts": {
-    "anti-slop/no-known-value-widening": {
-      "count": 1
-    },
-    "anti-slop/no-runtime-typeof": {
-      "count": 1
-    }
-  },
-  "src/connectors/manifest.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
   "src/connectors/qonto/client.ts": {
     "anti-slop/no-known-value-widening": {
       "count": 5
@@ -234,30 +216,6 @@
     },
     "anti-slop/no-unsafe-dictionary-type": {
       "count": 6
-    }
-  },
-  "src/connectors/registry.ts": {
-    "anti-slop/no-unknown-parameters": {
-      "count": 1
-    }
-  },
-  "src/connectors/servers.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 4
-    }
-  },
-  "src/connectors/settings.ts": {
-    "anti-slop/no-runtime-typeof": {
-      "count": 11
-    },
-    "anti-slop/no-unknown-parameters": {
-      "count": 5
-    },
-    "anti-slop/no-unsafe-dictionary-type": {
-      "count": 5
-    },
-    "limits/erased-alias": {
-      "count": 1
     }
   },
   "src/connectors/tavily/adapter.ts": {
