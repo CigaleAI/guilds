@@ -10,7 +10,6 @@ import {
   insertNote,
   updateMemoryContent,
   updateNoteContent,
-  type ArtifactAddress,
 } from "../../src/db/artifacts.js";
 import { insertAttachment } from "../../src/db/attachments.js";
 import { insertBindingIfAbsent, upsertPlatformBinding } from "../../src/db/bindings.js";
@@ -65,14 +64,7 @@ const AGENT_CONFIG = agentConfig({
   browser: false,
 });
 
-const NOTE_AT: ArtifactAddress = {
-  org_id: "org_home",
-  level: "guild",
-  owner_id: GUILD,
-  path: "",
-  key: "skipped.md",
-};
-const NOTE_OWNER = { guild_id: GUILD, agent_id: null, origin_guild_id: GUILD };
+const NOTE_AT = { org_id: "org_home", key: "skipped.md", origin_guild_id: GUILD };
 
 function newIssue(issueId: string): NewIssue {
   return {
@@ -578,7 +570,6 @@ describe("RowMissing", { concurrency: 1 }, () => {
           database.pool,
           {
             ...NOTE_AT,
-            ...NOTE_OWNER,
             title: "Skipped",
             content_text: "",
             search_text: "",
@@ -598,7 +589,6 @@ describe("RowMissing", { concurrency: 1 }, () => {
           database.pool,
           {
             ...NOTE_AT,
-            ...NOTE_OWNER,
             id: "art_skipped",
             key: "skipped.txt",
             title: "",

@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FileItem } from "../../api/types/files";
-import { fileMeta, filterFiles, uploadProblem } from "./fileList";
+import { ApiError } from "../../api/client";
+import { fileMeta, filterFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
 
 const item = (name: string, description: string): FileItem => ({
   id: `f_${name}`,
-  display_path: `org/o/guilds/g/files/${name}`,
+  display_path: `org/o/files/${name}`,
   name,
   description,
   mime: "application/pdf",
   bytes: 2048,
-  level: "guild",
-  owner_id: "g",
   version: 1,
   author: "operator",
   updated_at: "2026-10-26T09:00:00Z",
@@ -35,4 +34,23 @@ test("an upload needs a non-empty file under the cap and a description", () => {
 
 test("a file's meta line names its size, type, author, and time", () => {
   assert.equal(fileMeta(item("a.pdf", "d"), "2 min ago"), "2.0 KB · application/pdf · operator · 2 min ago");
+});
+
+test("an upload replaces the listed file of its name over the version loaded, and otherwise only creates", () => {
+  const listed = [{ ...item("report.pdf", "Figures"), version: 3 }, item("logo.png", "Mark")];
+  assert.equal(uploadExpectedVersion("report.pdf", listed), 3);
+  assert.equal(uploadExpectedVersion("new.csv", listed), 0);
+  assert.equal(uploadExpectedVersion("report.pdf", []), 0);
+});
+
+test("a refused upload says whether the name was taken or the file moved on, and other failures keep the server's words", () => {
+  assert.equal(
+    uploadFailure(new ApiError(409, "artifact already exists"), 0),
+    "A file with this name already exists in the organisation, outside this list.",
+  );
+  assert.equal(
+    uploadFailure(new ApiError(409, "version conflict"), 3),
+    "The file was replaced since this list loaded. Upload again to replace the new version.",
+  );
+  assert.equal(uploadFailure(new ApiError(422, "file storage limit reached"), 0), "file storage limit reached");
 });

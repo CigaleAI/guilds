@@ -1,7 +1,7 @@
 import path from "node:path";
 import { Type } from "typebox";
 import { ArtifactError } from "../artifacts/errors.js";
-import { FILE_MAX_BYTES, isArtifactLevel, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
+import { FILE_MAX_BYTES, type ArtifactActor } from "../artifacts/types.js";
 import { ArtifactFiles, mimeForName } from "../artifacts/files.js";
 import { AgentFileError, agentDisplayPath, readAgentFile, writeAgentFile } from "../lib/agent-file.js";
 import type { ToolServices } from "./services.js";
@@ -55,41 +55,20 @@ async function homeFile<T>(work: Promise<T>): Promise<T> {
   }
 }
 
-/** The level a call names, which must be one. */
-function requiredLevel(level: string): ArtifactLevel {
-  const named = level.trim();
-  if (!isArtifactLevel(named)) {
-    throw new ArtifactError("level must be agent, guild, or org", 422);
-  }
-  return named;
-}
-
-/** The level a call names; none when it names none, or one that is not a level. */
-function optionalLevel(level: string | undefined): ArtifactLevel | undefined {
-  const named = level?.trim() ?? "";
-  return isArtifactLevel(named) ? named : undefined;
-}
-
 export const fileFind = nativeTool({
   name: "file_find",
   description:
-    "Search or list the shared files you may read, by name and description. An empty query lists them, " +
-    "optionally at one level. Results are { files }, each with its display path, name, description, mime, " +
-    "bytes, and access (read or write). Files hold bytes, not Markdown: use note_find for notes.",
+    "Search or list the shared files you may read, by name and description. An empty query lists them. " +
+    "Results are { files }, each with its display path, name, description, mime, bytes, and access " +
+    "(read or write). Files hold bytes, not Markdown: use note_find for notes.",
   summary: "Search or list the shared files you may read.",
   parameters: Type.Object({
     query: Type.Optional(Type.String()),
-    level: Type.Optional(Type.String({ description: "agent, guild, or org; omit for every level you can read" })),
     limit: Type.Optional(Type.Integer({ description: "at most 100, default 20" })),
   }),
   async handler(services, run, _hooks, call) {
     const { query = "", limit = 20 } = call.arguments;
-    const level = optionalLevel(call.arguments.level);
-    const found = await files(services).findFiles(actor(run, call), {
-      query,
-      ...(level ? { level } : {}),
-      limit,
-    });
+    const found = await files(services).findFiles(actor(run, call), { query, limit });
     return JSON.stringify({ files: found });
   },
 });
@@ -119,25 +98,24 @@ export const fileFetch = nativeTool({
 export const filePut = nativeTool({
   name: "file_put",
   description:
-    "Share a file from your home: copy it into the store at a level (agent, guild, or org) under a name. " +
-    "A new file is created at agent or guild level; an existing file of that name is replaced when you have " +
-    "write access to it. name defaults to the file's own name. description says what the file is, so others " +
-    `find it with file_find. A file is at most ${FILE_MAX_BYTES / (1024 * 1024)} MiB. Returns the display path.`,
-  summary: "Share a file from your home at a level.",
+    "Share a file from your home: copy it into the store under a name. An existing file of that name is " +
+    "replaced when your access to it is write and refused otherwise; a missing one is created, written by " +
+    "you alone until an operator shares it. One name is one file across the organisation. name defaults to " +
+    "the file's own name. description says what the file is, so others find it with file_find. A file is at " +
+    `most ${FILE_MAX_BYTES / (1024 * 1024)} MiB. Returns the display path.`,
+  summary: "Share a file from your home.",
   parameters: Type.Object({
     home_path: Type.String({ description: "the file in your home, relative to it or absolute under it" }),
-    level: Type.String({ description: "agent, guild, or org" }),
     description: Type.String({ description: "what the file is, in one or two sentences" }),
     name: Type.Optional(Type.String({ description: "the file's name in the store; default its name in your home" })),
     mime: Type.Optional(Type.String({ description: "the file's media type; default from its name" })),
   }),
   async handler(services, run, _hooks, call) {
-    const { home_path: homePath, level, description } = call.arguments;
+    const { home_path: homePath, description } = call.arguments;
     const read = await homeFile(readAgentFile(workspace(run), homePath, { maxBytes: FILE_MAX_BYTES }));
     const name = call.arguments.name?.trim() || path.basename(read.path);
     const store = files(services);
     const row = await store.putFile(actor(run, call), {
-      level: requiredLevel(level),
       name,
       description,
       mime: call.arguments.mime?.trim() || mimeForName(name),

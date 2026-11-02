@@ -24,7 +24,8 @@ guild and pass work along as branches
 
 Coding CLIs are tuned for code work, and many operators already pay
 for one. A coding agent puts that CLI under an agent that knows the
-guild: its notes, its collections, its Memory, and its chat. The agent
+guild: the notes and collections shared with it, its Memory, and its
+chat. The agent
 passes the harness what it needs, answers the harness's questions, or
 takes them to the operator. The harness sees only the brief.
 
@@ -160,8 +161,8 @@ Such a team needs nothing beyond what every guild has:
   ([Collections](../collections.md));
 - **a tagged `group_post`** that names the item and the branch for the
   next agent. The tag wakes that agent ([Group chat](../group-chat.md));
-- **a guild note per repository** holding what the code does not say:
-  layout, build and test commands, and conventions. Each coding agent's
+- **a note per repository**, shared with the guild, holding what the
+  code does not say: layout, build and test commands, and conventions. Each coding agent's
   [Task](../task.md) embeds it, and `code_task` can append it to a
   brief through `notes`.
 

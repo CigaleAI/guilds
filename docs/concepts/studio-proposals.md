@@ -108,7 +108,7 @@ version, and outcome; its diff and **Publish**, **Edit**, and
 | Proposal | What the card shows | Apply button |
 |---|---|---|
 | Memory, note edit, guild text | A diff of the live text and the proposal | **Apply edit** |
-| New note | Its full text as added lines, and who reads it: the one agent, the guild's agents, or the organisation's | **Create note** |
+| New note | Its full text as added lines, and who reads and writes it: the one agent, or the source guild's agents | **Create note** |
 | Deleted note | Its text as removed lines, and the agents whose Task embeds it (applying fails until none does) | **Delete note** |
 | Collection | The collection before and after as text: a header with the owner, the purpose, one line per column, then its access: the organisation's row when it has one, the source guild's row, one line per member row, and the rows outside the guild | **Create table**, **Delete table**, or **Apply edit** |
 | Routine | The routine before and after as text: the agent, the description, the timing in words, whether it is paused, and the instruction | **Create routine**, **Delete routine**, or **Apply edit** |
@@ -193,21 +193,23 @@ and `edit_version`. A request resolves only once.
 
 ### Note requests
 
-`studio_edit_note(action: "create", level, agent_id?, key, title?,
+`studio_edit_note(action: "create", agent_id?, key, title?,
 content, reason)` and `studio_edit_note(action: "delete", display_path,
 base_version, reason)` return the same widget with `kind: "note"` and
 `action` (`create` or `delete`).
 
-- `level` is `agent` (with `agent_id`, a live member), `guild` (the
-  source guild), or `org`. `key` is a `.md` file name with no folders;
-  an agent note cannot take `task.md` or `memory.md`.
+- `key` is a `.md` file name with no folders, and names one note
+  across the organisation. The new note starts with one row: the
+  source guild at `write`, or, with `agent_id` (a live member of the
+  source guild), that agent at `write` alone. A bad `agent_id` is 422
+  `agent_id must name a live agent of the source guild`.
 - A create targets the display path the note will have and binds the
   fact that no note is live there. A note already there is refused with
   a pointer to the `edit` action. Apply writes it as the operator
   through `writeNote`, with an expected version no live note has, so a
   note written meanwhile is a 409 rather than overwritten.
-- A delete takes notes of the source guild, its live members, and the
-  organisation, and binds the note's content hash. Apply deletes
+- A delete takes a note in the session's reach, and binds the note's
+  content hash. Apply deletes
   through `deleteByDisplayPath`, which refuses with 409 while any Task
   in the organisation embeds the note.
 

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  assertNoteKeyFree,
   collectionDisplayPath,
   displayPathFor,
-  hostFileDisplayPath,
+  memoryDisplayPath,
   normalizeNoteKey,
+  noteDisplayPath,
   parseDisplayPath,
   recordDisplayPath,
 } from "../../src/artifacts/paths.js";
@@ -13,12 +13,11 @@ import { ArtifactError } from "../../src/artifacts/errors.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { parseActorPath } from "../../src/artifacts/notes.js";
 
-test("display paths put notes under their owner and records under the organisation", () => {
+test("display paths put notes and records under the organisation, and scripts under their agent", () => {
   assert.equal(
     displayPathFor({
       orgId: "org_1",
-      level: "org",
-      ownerId: "org_1",
+      agentId: null,
       kind: "note",
       path: "",
       key: "schema.md",
@@ -28,8 +27,7 @@ test("display paths put notes under their owner and records under the organisati
   assert.equal(
     displayPathFor({
       orgId: "org_1",
-      level: "org",
-      ownerId: "org_1",
+      agentId: null,
       kind: "object",
       collectionName: "papers",
       path: "",
@@ -37,14 +35,17 @@ test("display paths put notes under their owner and records under the organisati
     }),
     "org/org_1/collections/papers/12",
   );
+  assert.equal(
+    displayPathFor({ orgId: "org_1", agentId: "a_1", kind: "script", path: "scripts", key: "fetch" }),
+    "org/org_1/agents/a_1/scripts/fetch",
+  );
   assert.equal(collectionDisplayPath("org_1", "papers"), "org/org_1/collections/papers");
   assert.equal(recordDisplayPath("org_1", "papers", 12), "org/org_1/collections/papers/12");
   assert.throws(
     () =>
       displayPathFor({
         orgId: "org_1",
-        level: "org",
-        ownerId: "org_1",
+        agentId: null,
         kind: "object",
         collectionName: null,
         path: "",
@@ -54,25 +55,18 @@ test("display paths put notes under their owner and records under the organisati
   );
 });
 
-test("host file names map to display paths directly under the owner", () => {
-  assert.equal(hostFileDisplayPath("org_1", "agent", "a_1", "task.md"), "org/org_1/agents/a_1/task.md");
-  assert.equal(hostFileDisplayPath("org_1", "agent", "a_1", "memory.md"), "org/org_1/agents/a_1/memory.md");
-  assert.equal(hostFileDisplayPath("org_1", "guild", "guild_1", "brief.md"), "org/org_1/guilds/guild_1/brief.md");
-  assert.equal(hostFileDisplayPath("org_1", "org", "org_1", "schema.md"), "org/org_1/schema.md");
-  assert.throws(() => hostFileDisplayPath("org_1", "agent", "a_1", "research/queries.md"), ArtifactError);
-  assert.throws(() => hostFileDisplayPath("org_1", "agent", "a_1", "history-archive/20260101T000000Z-user.md"), ArtifactError);
-  assert.throws(() => hostFileDisplayPath("org_1", "org", "org_1", "collections/papers"), ArtifactError);
+test("a note's display path is its key directly under the organisation, Memory's under its agent", () => {
+  assert.equal(noteDisplayPath("org_1", "schema.md"), "org/org_1/schema.md");
+  assert.equal(memoryDisplayPath("org_1", "a_1"), "org/org_1/agents/a_1/memory.md");
+  assert.throws(() => noteDisplayPath("org_1", "research/queries.md"), ArtifactError);
+  assert.throws(() => noteDisplayPath("org_1", "collections/papers"), ArtifactError);
 });
 
-test("a note key is one .md file name, and task.md and memory.md stay the agent's", () => {
+test("a note key is one .md file name", () => {
   assert.equal(normalizeNoteKey(" queries.md "), "queries.md");
   assert.throws(() => normalizeNoteKey("queries"), /notes have no folders/);
   assert.throws(() => normalizeNoteKey("notes/queries.md"), /notes have no folders/);
   assert.throws(() => normalizeNoteKey("../queries.md"), ArtifactError);
-  assert.throws(() => assertNoteKeyFree("agent", "memory.md"), /reserved/);
-  assert.throws(() => assertNoteKeyFree("agent", "task.md"), /reserved/);
-  assertNoteKeyFree("guild", "task.md");
-  assertNoteKeyFree("agent", "queries.md");
 });
 
 test("parseDisplayPath tells notes, collections, records, and revisions apart", () => {
@@ -80,7 +74,7 @@ test("parseDisplayPath tells notes, collections, records, and revisions apart", 
   const parsed = parseDisplayPath("org/org_1/hello.md");
   assert.equal(parsed.kind, "artifact");
   if (parsed.kind === "artifact") {
-    assert.equal(parsed.level, "org");
+    assert.equal(parsed.agentId, null);
     assert.equal(parsed.key, "hello.md");
   }
   assert.deepEqual(parseDisplayPath("org/org_1/collections/papers"), {
@@ -96,6 +90,8 @@ test("parseDisplayPath tells notes, collections, records, and revisions apart", 
   });
   assert.throws(() => parseDisplayPath("org/org_1/collections/papers/sub/12"), ArtifactError);
   assert.throws(() => parseDisplayPath("org/org_1/guilds/guild_1/collections/papers/12"), ArtifactError);
+  assert.throws(() => parseDisplayPath("org/org_1/guilds/guild_1/rules.md"), ArtifactError);
+  assert.throws(() => parseDisplayPath("org/org_1/agents/a_1"), ArtifactError);
   assert.throws(() => parseDisplayPath("org/org_1/agents/a_1/collections/papers"), ArtifactError);
   assert.equal(parseDisplayPath("org/org_1/agents/a_1/history-archive/20260101T000000Z-user.md").kind, "revision");
 });
@@ -105,13 +101,19 @@ const agent = agentActor({ orgId: "org_1", guildId: "guild_1", agentId: "a_1", a
 const archived = "org/org_1/agents/a_1/history-archive/20260101T000000Z-user.md";
 
 test("parseActorPath parses a path in the actor's organisation", () => {
-  assert.deepEqual(parseActorPath(agent, "org/org_1/guilds/guild_1/rules.md"), {
+  assert.deepEqual(parseActorPath(agent, "org/org_1/rules.md"), {
     kind: "artifact",
     orgId: "org_1",
-    level: "guild",
-    ownerId: "guild_1",
+    agentId: null,
     path: "",
     key: "rules.md",
+  });
+  assert.deepEqual(parseActorPath(agent, "org/org_1/agents/a_1/memory.md"), {
+    kind: "artifact",
+    orgId: "org_1",
+    agentId: "a_1",
+    path: "",
+    key: "memory.md",
   });
 });
 

@@ -92,19 +92,20 @@ export type RecipeCollection = {
 };
 
 /**
- * A seed note apply writes at the organisation, guild, or one role's agent. `guild` is the applied
- * guild's mode on its access list (absent on an agent note the guild does not reach) and `writers`
- * lists the roles whose agents get a write row (db/schema/recipe-document.ts).
+ * A seed note apply writes in the organisation. `org` is the organisation's mode on its access list
+ * (absent on a note the organisation's row does not reach), `guild` the applied guild's (absent on
+ * a note the guild does not reach beyond its writers), and `writers` lists the roles whose agents
+ * get a write row; a note that states none of them is written by the applied guild
+ * (db/schema/recipe-document.ts).
  */
 export type RecipeNote = {
   id: string;
-  level: "org" | "guild" | "agent";
-  role?: string;
-  /** A `.md` file name with no `/`: notes are flat at their level. */
+  /** A `.md` file name with no `/`: notes are flat, one name per organisation. */
   key: string;
   body: string;
   kind: "seed";
   author: FieldAuthor;
+  org?: AccessMode;
   guild?: AccessMode;
   writers: string[];
 };
@@ -343,7 +344,7 @@ export type ApplyCreates = {
   guild: { name: string; about: string; objective: string };
   agents: CreatedAgent[];
   collections: CollectionPlan[];
-  notes: Array<{ key: string; level: RecipeNote["level"]; role: string | null }>;
+  notes: Array<{ key: string; org: AccessMode | null; guild: AccessMode | null; writers: string[] }>;
   scripts: Array<{ role: string; name: string; description: string }>;
   routines: CreatedRoutine[];
   connections: PlannedConnection[];

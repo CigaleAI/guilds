@@ -4,7 +4,7 @@ import { promptBlocks, promptText } from "./promptBlocks";
 
 test("tagged parts nest, and the text between them stays", () => {
   const blocks = promptBlocks(
-    'Intro line.\n<group>\n<members>a, b</members>\nTail</group>\n<note path="org/o/guilds/g/notes/plan.md">Plan body</note>',
+    'Intro line.\n<group>\n<members>a, b</members>\nTail</group>\n<note path="org/o/plan.md">Plan body</note>',
   );
   assert.equal(blocks.length, 3);
   assert.deepEqual(blocks[0], { type: "text", text: "Intro line." });
@@ -17,7 +17,7 @@ test("tagged parts nest, and the text between them stays", () => {
   ]);
   const note = blocks[2];
   assert.ok(note?.type === "tag");
-  assert.equal(note.path, "org/o/guilds/g/notes/plan.md");
+  assert.equal(note.path, "org/o/plan.md");
   assert.equal(note.children, null);
 });
 

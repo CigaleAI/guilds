@@ -73,8 +73,7 @@ export function hashTaskContent(content: string): string {
 export function taskDisplayPath(orgId: string, agentId: string): string {
   return displayPathFor({
     orgId,
-    level: "agent",
-    ownerId: agentId,
+    agentId,
     kind: "task",
     path: "",
     key: "task.md",

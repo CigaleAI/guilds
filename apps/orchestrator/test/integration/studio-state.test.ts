@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
-import { ownerPrefix } from "../../src/artifacts/paths.js";
+import { noteDisplayPath } from "../../src/artifacts/paths.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -135,9 +135,10 @@ test("studio's State lists the guild's items with who changed and read each one"
         now,
       );
 
-    const { row: rules } = await writeNote(artifacts, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
-    const rulesPath = `${ownerPrefix("org_home", "guild", "guild_st")}${rules.key}`;
-    await writeNote(artifacts, operator, { level: "guild", key: "idle.md", content: "Nobody reads this.\n" });
+    const stWrite = [{ type: "guild" as const, id: "guild_st", mode: "write" as const }];
+    const { row: rules } = await writeNote(artifacts, operator, { key: "rules.md", content: "Cite sources.\n", startingAccess: stWrite });
+    const rulesPath = noteDisplayPath("org_home", rules.key);
+    await writeNote(artifacts, operator, { key: "idle.md", content: "Nobody reads this.\n", startingAccess: stWrite });
     const { row: farNote } = await writeNote(
       artifacts,
       operatorActor({
@@ -146,7 +147,7 @@ test("studio's State lists the guild's items with who changed and read each one"
         actorName: "operator",
         guildId: "guild_far",
       }),
-      { level: "guild", key: "far.md", content: "Elsewhere.\n" },
+      { key: "far.md", content: "Elsewhere.\n", startingAccess: [{ type: "guild", id: "guild_far", mode: "write" }] },
     );
     const leads = await createCollection(artifacts, operator, {
       name: "leads",
@@ -156,9 +157,13 @@ test("studio's State lists the guild's items with who changed and read each one"
     });
     await scripts.create(operator, "a_writer", "tally", "Counts", "print(1)", { type: "object", properties: {} });
     // A run records the tables its Task embeds, directly or through a note it inlines.
-    const { row: viaNote } = await writeNote(artifacts, operator, { level: "guild", key: "leads-note.md", content: `![[${leads.display_path}]]\n` });
+    const { row: viaNote } = await writeNote(artifacts, operator, {
+      key: "leads-note.md",
+      content: `![[${leads.display_path}]]\n`,
+      startingAccess: stWrite,
+    });
     assert.deepEqual(
-      await snapshotTaskCollections(embedSource(artifacts), operator, `![[${ownerPrefix("org_home", "guild", "guild_st")}${viaNote.key}]]\n`),
+      await snapshotTaskCollections(embedSource(artifacts), operator, `![[${noteDisplayPath("org_home", viaNote.key)}]]\n`),
       [leads.display_path],
     );
 
@@ -174,7 +179,6 @@ test("studio's State lists the guild's items with who changed and read each one"
     ]);
     await run("r_far", "a_far", []);
     await writeNote(artifacts, asRun("a_writer", "writer", "guild_st", "r_writer"), {
-      level: "guild",
       key: "rules.md",
       content: "Cite every source.\n",
       expectedVersion: 1,
@@ -198,7 +202,7 @@ test("studio's State lists the guild's items with who changed and read each one"
     type Row = {
       display_path: string;
       kind: string;
-      level: string;
+      agent_id: string | null;
       changes: number;
       reads: number;
       writers: number;
@@ -208,12 +212,11 @@ test("studio's State lists the guild's items with who changed and read each one"
     };
     const rows = (listed.json() as { items: Row[] }).items;
     const at = (path: string) => rows.find((row) => row.display_path === path);
-    assert.equal(at(`org/org_home/guilds/guild_far/${farNote.key}`), undefined);
-    assert.equal(rows.some((row) => row.display_path.includes("guild_far")), false);
+    assert.equal(at(noteDisplayPath("org_home", farNote.key)), undefined);
 
     const rulesRow = at(rulesPath);
     assert.ok(rulesRow, JSON.stringify(rows.map((row) => row.display_path)));
-    assert.equal(rulesRow.level, "guild");
+    assert.equal(rulesRow.agent_id, null);
     assert.equal(rulesRow.changes, 2);
     assert.equal(rulesRow.writers, 2);
     assert.equal(rulesRow.reads, 2);
@@ -231,7 +234,7 @@ test("studio's State lists the guild's items with who changed and read each one"
     assert.equal(tallyRow?.reads, 2);
     const scoutMemory = rows.find((row) => row.kind === "memory" && row.display_path.includes("a_scout"));
     assert.equal(scoutMemory?.reads, 1);
-    const idle = at(`${ownerPrefix("org_home", "guild", "guild_st")}idle.md`);
+    const idle = at(noteDisplayPath("org_home", "idle.md"));
     assert.deepEqual(idle?.flags, ["no_agent_read"]);
 
     const tables = (await get("/state?kind=table")).json() as { items: Row[] };
@@ -264,11 +267,10 @@ test("studio's State lists the guild's items with who changed and read each one"
     assert.equal(deletes.history.length, 1);
     assert.equal((await get(`/state/item?path=${encodeURIComponent(leads.display_path)}&op=rename`)).statusCode, 422);
     assert.equal((await get(`/state/item?path=${encodeURIComponent(leads.display_path)}&cursor=oops`)).statusCode, 422);
-    assert.equal((await get(`/state/item?path=${encodeURIComponent(`org/org_home/guilds/guild_far/${farNote.key}`)}`)).statusCode, 404);
+    assert.equal((await get(`/state/item?path=${encodeURIComponent(noteDisplayPath("org_home", farNote.key))}`)).statusCode, 404);
 
     // A change by another guild's agent shows without its name and is not counted.
     await writeNote(artifacts, asRun("a_far", "far", "guild_far", "r_far"), {
-      level: "guild",
       key: "rules.md",
       content: "Cite no source.\n",
       expectedVersion: 2,

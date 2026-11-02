@@ -5,7 +5,7 @@ import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
-import { displayPathFor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/paths.js";
+import { displayPathFor, noteDisplayPath, recordDisplayPath } from "../../src/artifacts/paths.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { runItem } from "../../src/db/views.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
@@ -823,9 +823,14 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       actorName: "operator",
       guildId: "guild_ev",
     }),
-    { level: "guild", key: "house-rules.md", content: "Always cite the source.\n", title: "House rules" },
+    {
+      key: "house-rules.md",
+      content: "Always cite the source.\n",
+      title: "House rules",
+      startingAccess: [{ type: "guild", id: "guild_ev", mode: "write" }],
+    },
   );
-  const sharedPath = `${ownerPrefix("org_home", "guild", "guild_ev")}${shared.key}`;
+  const sharedPath = noteDisplayPath("org_home", shared.key);
   await writeAgentTask(db, operator, "a_ev", { content: `Curate the digest.\n\n![[${sharedPath}]]\n` });
 
   // A routine and one run it woke, then a memory written by that run.
@@ -1171,10 +1176,23 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal(firstPage.next_cursor, "1");
     await assert.rejects(studioGetMemoryVersion.handler(toolDeps, toolCtx(), { agent_id: "curator", version_index: "1" }), /\/version_index: must be integer/);
     await assert.rejects(studioListGroupMessages.handler(toolDeps, toolCtx(), { author_type: 3 }), /\/author_type: must be string/);
-    const found = await studioFindArtifacts.handler(toolDeps, toolCtx(), { query: "cite", level: "guild", limit: 5 });
+    const found = await studioFindArtifacts.handler(toolDeps, toolCtx(), { query: "cite", limit: 5 });
     assert.deepEqual((found.artifacts as Array<{ display_path: string }>).map((item) => item.display_path), [sharedPath]);
     const houseRules = await studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: sharedPath, cursor: "0" });
     assert.match(String(houseRules.content), /Always cite the source/);
+    // Studio reaches what the organisation's row gives the source guild, not what only another guild's row reaches.
+    const { href: orgWide } = await writeNote(artifacts, operator, {
+      key: "org-glossary.md",
+      content: "Terms everyone reads.\n",
+      startingAccess: [{ type: "org", id: "org_home", mode: "read" }],
+    });
+    const { href: farOnly } = await writeNote(artifacts, operator, {
+      key: "far-rules.md",
+      content: "Another guild's.\n",
+      startingAccess: [{ type: "guild", id: "guild_far", mode: "write" }],
+    });
+    assert.match(String((await studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: orgWide })).content), /Terms everyone reads/);
+    await assert.rejects(studioGetArtifact.handler(toolDeps, toolCtx(), { display_path: farOnly }), /not in the source guild's reach/);
     const firstChange = await studioListFileChanges.handler(toolDeps, toolCtx(), { display_path: memoryPath, limit: 1 });
     assert.equal((firstChange.changes as unknown[]).length, 1);
     await assert.rejects(studioFindArtifacts.handler(toolDeps, toolCtx(), { query: ["cite"] }), /\/query: must be string/);
@@ -1239,9 +1257,14 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       actorName: "operator",
       guildId: "guild_ed",
     }),
-    { level: "guild", key: "house-rules.md", content: "Always cite.\n", title: "House rules" },
+    {
+      key: "house-rules.md",
+      content: "Always cite.\n",
+      title: "House rules",
+      startingAccess: [{ type: "guild", id: "guild_ed", mode: "write" }],
+    },
   );
-  const notePath = `${ownerPrefix("org_home", "guild", "guild_ed")}${note.key}`;
+  const notePath = noteDisplayPath("org_home", note.key);
 
   try {
     const created = await app.inject({
@@ -1357,7 +1380,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     assert.equal(memoryApplied.statusCode, 200, memoryApplied.body);
     assert.equal((memoryApplied.json() as { applied_version: number }).applied_version, Number(memory?.version) + 1);
     assert.match((await getMemoryRow(artifacts, operator, "a_ed"))?.content_text ?? "", /notes\/digest\.md/);
-    const memoryPath = displayPathFor({ orgId: "org_home", level: "agent", ownerId: "a_ed", kind: "memory", path: "", key: "memory.md" });
+    const memoryPath = displayPathFor({ orgId: "org_home", agentId: "a_ed", kind: "memory", path: "", key: "memory.md" });
     const memoryChanges = (await studioListFileChanges.handler(toolDeps, await ctx(), { display_path: memoryPath })) as {
       changes: Array<{ actor: { type: string; name: string }; tool: { name: string } | null; studio: unknown }>;
     };
@@ -1394,7 +1417,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
         actorName: "operator",
         guildId: "guild_ed",
       }),
-      { level: "guild", key: "house-rules.md", content: "Always cite, twice.\n", title: "House rules" },
+      { key: "house-rules.md", content: "Always cite, twice.\n", title: "House rules" },
     );
     const staleView = await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${noteSeq}`, headers: AUTH });
     assert.equal((staleView.json() as { stale: boolean }).stale, true);
@@ -1835,12 +1858,12 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     guildId: "guild_nw",
   });
   const { row: roles } = await writeNote(artifacts, operator, {
-    level: "guild",
     key: "roles.md",
     content: "The scout finds candidates.\nThe archivist files them.\n",
     title: "Roles",
+    startingAccess: [{ type: "guild", id: "guild_nw", mode: "write" }],
   });
-  const rolesPath = `${ownerPrefix("org_home", "guild", "guild_nw")}${roles.key}`;
+  const rolesPath = noteDisplayPath("org_home", roles.key);
   for (const [agentId, name, task] of [
     ["a_sc", "scout", `Find candidates.\n\n![[${rolesPath}]]\n`],
     ["a_ar", "archivist", "File candidates."],
@@ -1942,15 +1965,14 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     const resolve = (seq: number, decision: string) =>
       app.inject({ method: "POST", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH, payload: { decision } });
 
-    // Create: the scout's own playbook, at its level, written once the operator applies.
-    const playbookPath = `${ownerPrefix("org_home", "agent", "a_sc")}playbook.md`;
+    // Create: the scout's own playbook, written by the scout alone once the operator applies.
+    const playbookPath = noteDisplayPath("org_home", "playbook.md");
     await assert.rejects(
-      studioEditNote.handler(toolDeps, await ctx(), { action: "create", level: "agent", key: "playbook.md", content: "x", reason: "r" }),
-      /agent_id/,
+      studioEditNote.handler(toolDeps, await ctx(), { action: "create", agent_id: "nobody", key: "playbook.md", content: "x", reason: "r" }),
+      /agent is not in the source guild/,
     );
     const createArgs = {
       action: "create",
-      level: "agent",
       agent_id: "scout",
       key: "playbook.md",
       title: "Playbook",
@@ -1971,11 +1993,17 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal(createView.stale, false);
     assert.equal(createView.live, "");
     assert.equal(createView.proposed, "A real candidate names its source.\n");
-    assert.ok(createView.effects.some((effect) => /Only scout reads it/.test(effect)), createView.effects.join(" | "));
+    assert.ok(createView.effects.some((effect) => /Only scout reads and writes it/.test(effect)), createView.effects.join(" | "));
     const createApplied = await resolve(createSeq, "apply");
     assert.equal(createApplied.statusCode, 200, createApplied.body);
     assert.equal((createApplied.json() as { applied_version: number }).applied_version, 1);
-    assert.equal((await getByDisplayPath(artifacts, operator, playbookPath)).row?.content_text, "A real candidate names its source.\n");
+    const playbook = await getByDisplayPath(artifacts, operator, playbookPath);
+    assert.equal(playbook.row?.content_text, "A real candidate names its source.\n");
+    const playbookRows = await database.pool.query<{ subject: string }>(
+      `SELECT subject_type || ' ' || subject_id || ' ' || mode AS subject FROM artifact_access WHERE target_kind = 'note' AND target_id = $1`,
+      [playbook.row?.id],
+    );
+    assert.deepEqual(playbookRows.rows.map((row) => row.subject), ["agent a_sc write"]);
     await assert.rejects(studioEditNote.handler(toolDeps, await ctx(), createArgs), /already exists/);
 
     // Delete: refused while a Task embeds the note, applied once none does.

@@ -7,16 +7,8 @@ import {
   isMutation,
   isScriptRun,
   kindBreakdown,
-  levelFromDisplayPath,
-  levelLabel,
   offeredToolNames,
 } from "./toolKinds";
-
-test("a level reads as its label, and no level as nothing", () => {
-  assert.equal(levelLabel("guild"), "guild");
-  assert.equal(levelLabel("all"), "all levels");
-  assert.equal(levelLabel(null), "");
-});
 
 function call(name: string, args: Record<string, unknown> = {}): ToolCall {
   return { id: "c1", type: "function", function: { name, arguments: JSON.stringify(args) } };
@@ -54,25 +46,18 @@ const run = {
   },
 };
 
-test("levelFromDisplayPath reads the owner prefix", () => {
-  assert.equal(levelFromDisplayPath("org/o1/agents/a1/memory.md"), "local");
-  assert.equal(levelFromDisplayPath("org/o1/guilds/g1/plan.md"), "guild");
-  assert.equal(levelFromDisplayPath("org/o1/shared.md"), "org");
-  assert.equal(levelFromDisplayPath("org/o1/collections/deals/7"), "org");
-  assert.equal(levelFromDisplayPath("plan.md"), null);
-});
-
-test("writes take their level from the level argument", () => {
-  assert.deepEqual(classifyToolCall(call("note_write", { level: "guild", key: "plan.md" })), {
+test("note and file calls name no level, whatever their arguments or result say", () => {
+  assert.deepEqual(classifyToolCall(call("note_write", { key: "plan.md" })), {
     name: "note_write",
     kind: "write",
-    level: "guild",
+    level: null,
     server: null,
   });
-  assert.equal(
-    classifyToolCall(call("note_write", { level: "agent", key: "x.md" })).level,
-    "local",
-  );
+  assert.equal(classifyToolCall(call("note_get", { path: "org/o1/plan.md" })).level, null);
+  assert.equal(classifyToolCall(call("note_get"), result("org/o1/plan.md\n\n# Plan")).level, null);
+  assert.equal(classifyToolCall(call("note_find", { query: "q" })).level, null);
+  assert.equal(classifyToolCall(call("file_put", { home_path: "out/report.pdf" })).level, null);
+  assert.equal(classifyToolCall(call("file_find", { query: "report" })).level, null);
 });
 
 test("record tools are organisation reads and writes whatever the arguments say", () => {
@@ -101,30 +86,7 @@ test("record tools are organisation reads and writes whatever the arguments say"
   assert.equal(classifyToolCall(call("record_search", { query: "acme" })).level, "org");
 });
 
-test("reads take their level from a display path in arguments or result", () => {
-  assert.equal(
-    classifyToolCall(call("note_get", { path: "org/o1/guilds/g1/plan.md" })).level,
-    "guild",
-  );
-  assert.equal(classifyToolCall(call("note_get", { path: "org/o1/shared.md" })).level, "org");
-  const fromResult = classifyToolCall(
-    call("note_get"),
-    result("org/o1/guilds/g1/plan.md\n\n# Plan"),
-  );
-  assert.equal(fromResult.level, "guild");
-  assert.equal(fromResult.kind, "read");
-});
-
-test("finds cover all readable levels unless narrowed", () => {
-  assert.equal(classifyToolCall(call("note_find", { query: "q" })).level, "all");
-  assert.equal(classifyToolCall(call("note_find", { level: "guild" })).level, "guild");
-  assert.equal(
-    classifyToolCall(call("note_find", { path_prefix: "org/o1/agents/a1/" })).level,
-    "local",
-  );
-});
-
-test("memory is its own kind at the local level", () => {
+test("an agent's Memory is its own kind at the local level, and a note named memory.md is not", () => {
   assert.deepEqual(classifyToolCall(call("memory_write", { content: "x" })), {
     name: "memory_write",
     kind: "memory",
@@ -139,6 +101,7 @@ test("memory is its own kind at the local level", () => {
     classifyToolCall(call("note_get", { path: "org/o1/agents/a1/memo.md" })).kind,
     "read",
   );
+  assert.equal(classifyToolCall(call("note_get", { path: "org/o1/memory.md" })).kind, "read");
 });
 
 test("fixed-level tools ignore arguments", () => {

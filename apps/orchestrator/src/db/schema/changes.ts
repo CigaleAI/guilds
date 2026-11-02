@@ -76,6 +76,7 @@ export const fileChanges = pgTable(
     index("file_changes_by_path").on(table.org_id, table.display_path, table.created_at),
     index("file_changes_by_org_time").on(table.org_id, table.created_at),
     index("file_changes_by_artifact").on(table.artifact_id, table.created_at),
+    index("file_changes_by_task_agent").on(table.task_agent_id, table.created_at),
     index("file_changes_by_tool_call").on(table.run_id, table.tool_call_id),
   ],
 );

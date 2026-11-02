@@ -29,7 +29,7 @@ import {
   type StateRow,
 } from "./state-list.js";
 import { listAgents } from "../db/agents.js";
-import { listStateArtifacts, type StateOwners } from "../artifacts/notes.js";
+import { listStateArtifacts } from "../artifacts/notes.js";
 import { listCollectionsWithCounts } from "../artifacts/collections.js";
 
 // The loaders behind Studio's State list: the items a guild's state holds,
@@ -77,8 +77,7 @@ async function stateTables(deps: StateDeps, actor: ArtifactActor, guildId: strin
     .map((table) => ({
       display_path: table.display_path,
       kind: "table",
-      level: table.scope === "org" ? "org" : "guild",
-      owner_id: table.guild?.id ?? actor.orgId,
+      agent_id: null,
       title: table.name,
       size: table.count ?? 0,
       version: null,
@@ -86,20 +85,21 @@ async function stateTables(deps: StateDeps, actor: ArtifactActor, guildId: strin
       created_at: table.created_at,
       collection_id: table.id,
       note_id: null,
+      artifact_id: null,
     }));
 }
 
 /** Every item of the guild's state the actor can open. */
-export async function loadStateItems(deps: StateDeps, actor: ArtifactActor, guild: StateOwners): Promise<StateItem[]> {
-  const files = await listStateArtifacts(deps.artifacts, actor, guild);
-  const tables = await stateTables(deps, actor, guild.guildId);
+export async function loadStateItems(deps: StateDeps, actor: ArtifactActor, guildId: string): Promise<StateItem[]> {
+  const files = await listStateArtifacts(deps.artifacts, actor, guildId);
+  const tables = await stateTables(deps, actor, guildId);
   return [...files.map((file) => ({ ...file, collection_id: null })), ...tables];
 }
 
 /** The items and every change and read of them in the window. */
 async function loadStateEvents(deps: StateDeps, scope: StateScope): Promise<{ items: StateItem[]; events: StateEvent[] }> {
   const agents = await agentNames(deps, scope.guildId);
-  const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
+  const items = await loadStateItems(deps, scope.actor, scope.guildId);
   const scripts = items.filter((item) => item.kind === "script").map((item) => item.title);
   const [files, configs, runs, calls] = await Promise.all([
     listWindowFileChanges(deps.db, scope.actor.orgId, scope.window),
@@ -179,11 +179,12 @@ export async function loadStateHistory(
   request: StateHistoryRequest,
 ): Promise<{ history: StateHistoryEntry[]; next_cursor: string | null }> {
   const agents = await agentNames(deps, scope.guildId);
-  const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
+  const items = await loadStateItems(deps, scope.actor, scope.guildId);
   const item = items.find((entry) => entry.display_path === request.path);
   if (!item) throw new StudioNotFoundError("item not found");
   const rows = await listItemChanges(deps.db, scope.actor.orgId, {
     displayPath: item.display_path,
+    artifactId: item.artifact_id,
     collectionId: item.collection_id,
     noteId: item.note_id,
     op: request.op,

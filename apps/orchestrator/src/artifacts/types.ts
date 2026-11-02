@@ -3,9 +3,6 @@
 import { ACCESS_MODES, type AccessMode } from "../db/schema/index.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 
-export const ARTIFACT_LEVELS = ["agent", "guild", "org"] as const;
-export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];
-
 export const ARTIFACT_KINDS = ["note", "object", "memory", "script", "file"] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 
@@ -20,7 +17,10 @@ export type ArtifactActor = ChangeActor & {
   guildId: string | null;
   agentId: string | null;
   operator: boolean;
-  /** What an operator actor never reaches: the notes, Memory, and own tables of these guilds and agents. */
+  /**
+   * What an operator actor never reaches: these agents' Memory, Task, and scripts, these guilds'
+   * own tables, and every note and file whose access list names only these guilds and agents.
+   */
   hidden: HiddenGuilds;
 };
 
@@ -54,12 +54,8 @@ export type AccessSubjectRef = { type: AccessSubject; id: string };
 
 export type AccessGrant = { type: AccessSubject; id: string; mode: AgentAccessMode };
 
-/**
- * An item's access list as the operator reads it. `owner_agent_id` is the
- * agent that owns an agent-level note: it always writes its own note, so the
- * list takes no row for it. Null for every other item.
- */
-export type AccessList = { subjects: AccessEntry[]; owner_agent_id: string | null };
+/** An item's access list as the operator reads it. */
+export type AccessList = { subjects: AccessEntry[] };
 
 export const WRITE_MAX_BYTES = 256 * 1024;
 /** The largest file one put may store. */
@@ -80,10 +76,6 @@ export const MEMORY_REVISIONS_MAX = 50;
 export const TASK_REVISIONS_MAX = 50;
 
 export const COLLECTION_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
-
-export function isArtifactLevel(value: string): value is ArtifactLevel {
-  return ARTIFACT_LEVELS.some((level) => level === value);
-}
 
 export function isArtifactKind(value: string): value is ArtifactKind {
   return ARTIFACT_KINDS.some((kind) => kind === value);

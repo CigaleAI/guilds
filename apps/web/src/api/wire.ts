@@ -28,7 +28,6 @@ import type {
   ShellArguments,
   ShellStatusArguments,
   StudioToolArguments,
-  ToolLevelArguments,
 } from "./types/runs";
 import type { SecretRequest, SecretRequestAsked } from "./types/secrets";
 import type {
@@ -215,11 +214,6 @@ export function isRecordToolArguments(value: unknown): value is RecordToolArgume
 /** Whether a tool call's arguments are a file tool's: its query, path and home path, as text. */
 export function isFileToolArguments(value: unknown): value is FileToolArguments {
   return hasTextParameters(value, ["query", "path", "home_path"]);
-}
-
-/** Whether a tool call's arguments name where it points: its level, path and path prefix, as text. */
-export function isToolLevelArguments(value: unknown): value is ToolLevelArguments {
-  return hasTextParameters(value, ["level", "path", "path_prefix"]);
 }
 
 /** Whether a tool call's arguments are a `shell` call's: its command as text, `background` true or false. */

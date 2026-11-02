@@ -1,9 +1,9 @@
 import type { ToolKind, ToolLevel } from "@guildsrun/ui";
 import type { RunConfigSnapshot, StepMessage, ToolCall } from "../../../api/types/runs";
-import { isToolLevelArguments, type JsonObject } from "../../../api/wire";
+import { isNoteToolArguments, type JsonObject } from "../../../api/wire";
 import { parseToolArgs } from "./toolFormat";
 
-/** How a recorded tool call reads in the run view: its effect, the level it touched, and the connected server that served it. */
+/** How a recorded tool call reads in the run view: its effect, where what it touched lives, and the connected server that served it. */
 export type ToolCallInfo = {
   name: string;
   kind: ToolKind;
@@ -29,23 +29,10 @@ export const TOOL_KINDS: readonly ToolKind[] = Object.freeze([
   "unknown",
 ]);
 
-const LEVEL_BY_ARGUMENT: Readonly<Record<string, ToolLevel>> = Object.freeze({
-  agent: "local",
-  local: "local",
-  guild: "guild",
-  org: "org",
-});
-
-const LEVEL_LABELS: Readonly<Record<ToolLevel, string>> = Object.freeze({
-  local: "local",
-  guild: "guild",
-  org: "org",
-  all: "all levels",
-});
-
-// `level` pins a fixed level: collections are organisation tables, so every
-// record tool is `org`. Without it the level comes from the call's `level`
-// argument, a display path in its arguments, or the result's first line.
+// `level` says where what a tool touches lives: the agent's own (scripts,
+// schedules, its shell), its guild (the group chat), or the organisation
+// (tables, secrets). A note or file tool has none: who reaches a note or a
+// file is its access list, not where it lives.
 const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   note_find: { kind: "read" },
   note_get: { kind: "read" },
@@ -126,20 +113,11 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   builder_ask_question: { kind: "post" },
 });
 
-const DISPLAY_PATH_RE = /^org\/[^/]+\/(?:(agents|guilds)\/[^/]+\/)?/;
-const MEMORY_PATH_RE = /\/memory\.md$/;
+/** An agent's Memory, `org/<org>/agents/<agent>/memory.md`. */
+const MEMORY_PATH_RE = /^org\/[^/]+\/agents\/[^/]+\/memory\.md$/;
 
 function lookup<T>(table: Readonly<Record<string, T>>, key: string): T | undefined {
   return Object.hasOwn(table, key) ? table[key] : undefined;
-}
-
-/** The level a display path such as `org/o1/guilds/g1/plan.md` belongs to; null when it is not one. */
-export function levelFromDisplayPath(path: string): ToolLevel | null {
-  const match = DISPLAY_PATH_RE.exec(path.trim());
-  if (!match) return null;
-  if (match[1] === "agents") return "local";
-  if (match[1] === "guilds") return "guild";
-  return "org";
 }
 
 /** The connected server slug for each tool a run's connected servers contributed, by tool name. */
@@ -163,45 +141,16 @@ export function offeredToolNames(run: RunWithTools | null | undefined): Set<stri
   return names;
 }
 
-function firstLine(content: string): string {
-  const end = content.indexOf("\n");
-  return end === -1 ? content : content.slice(0, end);
-}
-
-/** Where a call's arguments point; nowhere when they name no level or path as text. */
-function pointedLevel(args: JsonObject): ToolLevel | null {
-  if (!isToolLevelArguments(args)) return null;
-  const explicit = lookup(LEVEL_BY_ARGUMENT, (args.level ?? "").toLowerCase());
-  if (explicit) return explicit;
-  return levelFromDisplayPath(args.path ?? "") || levelFromDisplayPath(args.path_prefix ?? "");
-}
-
-function derivedLevel(
-  name: string,
-  args: JsonObject,
-  resultMsg: StepMessage | null | undefined,
-): ToolLevel | null {
-  const fromArgs = pointedLevel(args);
-  if (fromArgs) return fromArgs;
-  const fromResult = levelFromDisplayPath(firstLine(resultMsg?.payload.content ?? ""));
-  if (fromResult) return fromResult;
-  return name.includes("_find") ? "all" : null;
-}
-
+/** Whether a call names an agent's Memory by its display path. */
 function touchesMemory(args: JsonObject): boolean {
-  return isToolLevelArguments(args) && MEMORY_PATH_RE.test(args.path ?? "");
+  return isNoteToolArguments(args) && MEMORY_PATH_RE.test(args.path ?? "");
 }
 
-/** How a call of a tool the app knows reads: its kind and level, a read of the agent's memory counting as memory. */
-function knownToolInfo(
-  name: string,
-  entry: ToolEntry,
-  args: JsonObject,
-  resultMsg: StepMessage | null | undefined,
-): ToolCallInfo {
+/** How a call of a tool the app knows reads: its kind and level, a read of an agent's Memory counting as memory of its own. */
+function knownToolInfo(name: string, entry: ToolEntry, args: JsonObject): ToolCallInfo {
   const memory = entry.kind === "read" && touchesMemory(args);
   const kind = memory ? "memory" : entry.kind;
-  const level = memory ? "local" : (entry.level ?? derivedLevel(name, args, resultMsg));
+  const level = memory ? "local" : (entry.level ?? null);
   return { name, kind, level, server: null };
 }
 
@@ -210,7 +159,7 @@ function calledToolName(call: ToolCall, resultMsg: StepMessage | null | undefine
   return call.function.name || resultMsg?.metadata.tool_name || "";
 }
 
-/** Classifies a recorded tool call by effect, level, and serving connected server, using its result and the run's snapshot. */
+/** Classifies a recorded tool call by effect, level, and serving connected server, using the tool name its result records and the run's snapshot. */
 export function classifyToolCall(
   call: ToolCall,
   resultMsg?: StepMessage | null,
@@ -218,7 +167,7 @@ export function classifyToolCall(
 ): ToolCallInfo {
   const name = calledToolName(call, resultMsg);
   const entry = lookup(TABLE, name);
-  if (entry) return knownToolInfo(name, entry, parseToolArgs(call.function.arguments), resultMsg);
+  if (entry) return knownToolInfo(name, entry, parseToolArgs(call.function.arguments));
   const servers = connectedToolServers(run);
   if (servers.has(name)) {
     return { name, kind: "connected", level: null, server: servers.get(name) || null };
@@ -237,11 +186,6 @@ export function isMutation(info: ToolCallInfo): boolean {
 /** Whether a call runs one of the agent's scripts. */
 export function isScriptRun(info: ToolCallInfo): boolean {
   return info.name === "script_run";
-}
-
-/** The label for a level ("all levels" for a search across every level); empty for no level. */
-export function levelLabel(level: ToolLevel | null): string {
-  return level ? LEVEL_LABELS[level] : "";
 }
 
 /** A one-line summary of the kinds of calls made, in kind order with counts, such as "memory · read × 2 · write". */

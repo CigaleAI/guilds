@@ -371,9 +371,8 @@ function SectionBody({ id, plan, findings, catalog, hooks }: SectionBodyProps) {
                   <Icon icon={FileText} size={16} className="text-muted" />
                   <span className="font-mono text-sm font-semibold">{card.title}</span>
                   <Tag tone="well" font="sans">
-                    {card.owner}
+                    {card.access}
                   </Tag>
-                  <span className="text-xs text-muted">{card.access}</span>
                   <span className="min-w-0 flex-1 truncate text-sm text-fg-2">{card.snippet}</span>
                   <Icon
                     icon={ChevronDown}

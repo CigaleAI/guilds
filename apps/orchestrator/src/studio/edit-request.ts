@@ -20,19 +20,16 @@ const LineCounts = Type.Object({ added: Type.Number(), removed: Type.Number() })
 
 const Action = Type.Union([Type.Literal("create"), Type.Literal("edit"), Type.Literal("delete")]);
 
-const Level = Type.Union([Type.Literal("agent"), Type.Literal("guild"), Type.Literal("org")]);
-
 /** The agent whose Memory or access an edit changes. */
 const AgentTarget = Type.Object({ agent_id: Type.String(), agent_name: Type.String() });
 
 /** The note whose body an edit replaces. */
 const NoteTarget = Type.Object({ display_path: Type.String(), title: Type.Union([Type.String(), Type.Null()]) });
 
-/** The note a create or delete names; an agent note names its agent. */
+/** The note a create or delete names; a note created for one agent names that agent. */
 const NoteLifecycleTarget = Type.Object({
   display_path: Type.String(),
   title: Type.Union([Type.String(), Type.Null()]),
-  level: Level,
   agent_id: Type.Optional(Type.String()),
 });
 

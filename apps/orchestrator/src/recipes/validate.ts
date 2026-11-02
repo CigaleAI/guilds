@@ -297,13 +297,12 @@ function collectionWriters(recipe: RecipeDocument): RecipeFinding[] {
   );
 }
 
-/** Notes of an unknown role, or with writers the recipe has no role for. */
+/** Notes with writers the recipe has no role for. */
 function noteRoles(recipe: RecipeDocument): RecipeFinding[] {
   const roles = roleNames(recipe);
-  return recipe.notes.flatMap((note) => [
-    ...(note.role && !roles.has(note.role) ? [finding("note.role", "error", `notes.${note.id}`, "unknown role")] : []),
-    ...unknownWriterFindings(note.writers, roles, { code: "note.writer", path: `notes.${note.id}` }),
-  ]);
+  return recipe.notes.flatMap((note) =>
+    unknownWriterFindings(note.writers, roles, { code: "note.writer", path: `notes.${note.id}` }),
+  );
 }
 
 /** The notes a role's texts may link to: by id and by destination path. */
@@ -323,7 +322,7 @@ function unknownEmbeds(role: RecipeRole, notes: NoteRefs): RecipeFinding[] {
         "task.embed",
         "error",
         `roles.${role.role}.task`,
-        `unknown file link ${href}. Use the note's destination path (guild/…, org/…, agent/<role>/…) or ![[recipe:<note-id>]].`,
+        `unknown file link ${href}. Use the note's destination path (org/<key>) or ![[recipe:<note-id>]].`,
       ),
     );
 }
@@ -342,7 +341,7 @@ function unknownNotePaths(role: RecipeRole, notes: NoteRefs): RecipeFinding[] {
           "task.note_path",
           "error",
           path,
-          `unknown note path ${notePath}. Name a note from notes[] by its destination path (guild/…, org/…, agent/<role>/…).`,
+          `unknown note path ${notePath}. Name a note from notes[] by its destination path (org/<key>).`,
         ),
       ),
   );

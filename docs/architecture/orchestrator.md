@@ -450,7 +450,7 @@ events and what each carries, beside the stream: `CoachEvents` in
 | `group.limit_reached` | guild | durable | The guild's message budget is spent |
 | `group.idle` | guild | durable | Group dispatch has nothing left to deliver |
 | `group.delivery.started`, `group.delivery.finished`, `group.delivery.failed` | guild | durable | A delivery run's progress |
-| `guild.artifacts.changed` | guild | invalidation | Re-read the guild's notes, files, Memory, and records |
+| `guild.artifacts.changed` | guild | invalidation | A note, file, record, or agent item the guild reaches changed, announced on every guild of the organisation when the item's access list has an organisation row: `{ path, scope?, agent_id? }`, `scope` `agent` for an agent's Task or Memory and `files` for a shared file; re-read them |
 | `guild.issues.changed` | guild | invalidation | Re-read the guild's issues |
 | `agent.scripts.changed` | guild | invalidation | Re-read an agent's scripts |
 | `agent.routines.changed` | guild | invalidation | Re-read an agent's routines |
@@ -533,6 +533,7 @@ Core's tables:
 - artifacts
 - artifact_collections
 - artifact_access
+- artifact_renames
 - attachments
 - file_changes
 - config_changes
@@ -546,7 +547,10 @@ Core's tables:
 - recipes
 - recipe_applies
 
-Scripts are `artifacts` with `kind` `script` at agent level.
+Notes and files are `artifacts` of the organisation, with no
+`agent_id`; a name is unique among the organisation's live notes, and
+among its live files. Memory and scripts are `artifacts` with the
+agent's `agent_id`, unique per agent.
 
 Collections live in `artifact_collections` (name, purpose, typed
 `columns`, `next_id`). Their records live in `artifacts` (`kind`
@@ -554,13 +558,18 @@ Collections live in `artifact_collections` (name, purpose, typed
 `artifact_collections.guild_id` places a collection in one guild, or
 at the organisation when null.
 
-Notes and collections share one access list table, `artifact_access`:
-one row per item and subject, the subject being the organisation, a
-guild, or an agent. An agent's own row wins, and `none` there shuts it
-out; otherwise it takes the better of its guild's and the
-organisation's `read` or `write`. A new guild item starts with its
-guild at `write`, a new organisation item with the organisation at
-`read`. Rows go with their collection, guild, or agent
+Notes, files, and collections share one access list table,
+`artifact_access`: one row per item and subject, the subject being the
+organisation, a guild, or an agent. A note's or a file's rows are all
+that decides who reaches it. An agent's own row wins, and `none` there
+shuts it out; otherwise it takes the better of its guild's and the
+organisation's `read` or `write`. A new note or file starts with one
+row: the creating agent at `write`, or the subject the operator names,
+the organisation at `write` by default. A new guild collection starts
+with its guild at `write`, a new organisation collection with the
+organisation at `read`. A deleted note or file keeps its rows on its
+tombstone. Rows go with the guild or agent they name, and a note or a
+file that only those rows reached is deleted with them
 ([Access](../concepts/access.md#access-lists)).
 
 The standing task lives on `agents.task`. Agent names are globally

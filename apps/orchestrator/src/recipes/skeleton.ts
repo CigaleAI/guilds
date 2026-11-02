@@ -3,19 +3,18 @@ import { addAgent } from "../agents/service.js";
 import { writeAgentTask } from "../artifacts/task.js";
 import { validateAgentConfig } from "../agents/validation.js";
 import { operatorActor } from "../artifacts/actors.js";
-import { createCollection, deleteCollection } from "../artifacts/collections.js";
+import { createCollection } from "../artifacts/collections.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import type { ArtifactActor } from "../artifacts/types.js";
+import type { AccessGrant, ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
-import type { AccessRaise } from "../artifacts/access.js";
+import { accessRaises, type AccessRaise } from "../artifacts/access.js";
 import { raiseAccess } from "../artifacts/access-lists.js";
-import { writeNote } from "../artifacts/notes.js";
-import { deleteAgent } from "../db/agents.js";
-import { deleteGuild } from "../db/guilds.js";
+import { isNoteKeyTaken, writeNote } from "../artifacts/notes.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import { insertRecipeApply, type RecipeApplyRow } from "../db/recipe-applies.js";
 import type { RecipeRow } from "../db/recipes.js";
 import type {
+  ApplyCreated,
   ApplyPlan,
   PlannedCollection,
   PlannedConnection,
@@ -34,10 +33,11 @@ import { assertCanCreateAgents, assertCanCreateGuild, assertCanPlaceAgents } fro
 import { agentsOfRoles } from "./access.js";
 import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
-import { RecipeConflictError, RecipeError } from "./errors.js";
+import { ApplyUndoError, RecipeConflictError, RecipeError } from "./errors.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap } from "./plan.js";
 import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
+import { undoApply } from "./undo.js";
 
 // The skeleton of an apply: the guild, its agents with their tasks, scripts, paused routines and
 // native tools, the recipe's notes and collections with their access, and the reused connections'
@@ -60,7 +60,7 @@ type Skeleton = {
   roleToAgent: Map<string, string>;
   /** The display path each recipe note was written at, by every name the recipe links it with. */
   noteHref: Map<string, string>;
-  created: { guild: boolean; agents: string[]; collections: string[] };
+  created: ApplyCreated & { guild: boolean };
 };
 
 /** Refuses a preview the skeleton cannot be created from, naming what the operator still has to settle. */
@@ -142,19 +142,32 @@ function appliedAccess(
   };
 }
 
-/** Writes one recipe note at its level as `actor`, with the access list the recipe gives it, remembering where it went. */
-async function writeRecipeNote(
-  skeleton: Skeleton,
-  note: RecipeNote,
-  actor: ArtifactActor,
-): Promise<void> {
-  const written = await writeNote(skeleton.apply.artifacts, actor, {
-    level: note.level,
-    key: note.key,
+/**
+ * The rows a recipe note starts with: the organisation at its `org` mode, the new guild at its
+ * `guild` mode, and its writers' agents at write, leaving out a row the others already give; a
+ * note that states none of them is written by the new guild.
+ */
+function recipeNoteAccess(skeleton: Skeleton, note: RecipeNote): AccessGrant[] {
+  const orgRows: AccessGrant[] = note.org ? [{ type: "org", id: skeleton.source.org.id, mode: note.org }] : [];
+  const rows = [...orgRows, ...accessRaises(orgRows, appliedAccess(skeleton, note))];
+  return rows.length ? rows : [{ type: "guild", id: skeleton.guildId, mode: "write" }];
+}
+
+/**
+ * Creates one recipe note as the operator, with the access list the recipe gives it, remembering
+ * where it went. A key the organisation already uses takes the new guild's name as a prefix.
+ */
+async function writeRecipeNote(skeleton: Skeleton, note: RecipeNote): Promise<void> {
+  const taken = await isNoteKeyTaken(skeleton.apply.artifacts, skeleton.source.org.id, note.key);
+  const written = await writeNote(skeleton.apply.artifacts, skeleton.actor, {
+    key: taken ? `${skeleton.guildName}-${note.key}` : note.key,
     content: note.body,
     title: note.key,
-    access: appliedAccess(skeleton, note),
+    startingAccess: recipeNoteAccess(skeleton, note),
+    // No live note has version 0, so a note of that key written meanwhile is a conflict, not overwritten.
+    expectedVersion: 0,
   });
+  skeleton.created.notes.push(written.row.id);
   rememberNoteHref(skeleton, note, written.href);
 }
 
@@ -169,7 +182,7 @@ async function createGuild(skeleton: Skeleton, recipe: RecipeDocument): Promise<
     agentMessageLimit: recipe.guild.group_agent_message_limit,
     creatorUserId: user.id,
   };
-  await addGuild(skeleton.apply, { guild, orgSlug: org.slug }, skeleton.now);
+  await addGuild(skeleton.apply, { guild, orgSlug: org.slug }, skeleton.actor, skeleton.now);
   skeleton.created.guild = true;
 }
 
@@ -199,19 +212,10 @@ async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeD
   skeleton.roleToAgent.set(role.role, agentId);
 }
 
-/**
- * Writes the recipe's notes once its agents exist, each with its access list: the organisation's
- * and guild's first, then each agent note under its role's agent.
- */
+/** Writes the recipe's notes once its agents exist, each with its access list. */
 async function writeNotes(skeleton: Skeleton, recipe: RecipeDocument): Promise<void> {
-  for (const note of recipe.notes.filter((item) => item.level !== "agent")) {
-    await writeRecipeNote(skeleton, note, skeleton.actor);
-  }
-  for (const note of recipe.notes.filter((item) => item.level === "agent")) {
-    const agentId = note.role ? skeleton.roleToAgent.get(note.role) : skeleton.created.agents[0];
-    if (agentId) {
-      await writeRecipeNote(skeleton, note, agentOperator(skeleton, agentId));
-    }
+  for (const note of recipe.notes) {
+    await writeRecipeNote(skeleton, note);
   }
 }
 
@@ -355,18 +359,10 @@ async function bindReusedConnections(skeleton: Skeleton, planned: PlannedConnect
   return bound;
 }
 
-/** Removes what the skeleton created so far; each removal goes on when another fails. */
-async function rollBack(skeleton: Skeleton): Promise<void> {
-  const { db, artifacts } = skeleton.apply;
-  for (const agentId of [...skeleton.created.agents].reverse()) {
-    await deleteAgent(db, agentId).catch(() => undefined);
-  }
-  if (skeleton.created.guild) {
-    await deleteGuild(db, skeleton.guildId).catch(() => undefined);
-  }
-  for (const collectionId of [...skeleton.created.collections].reverse()) {
-    await deleteCollection(artifacts, skeleton.actor, collectionId).catch(() => undefined);
-  }
+/** Removes what the skeleton created so far, as an abort of the apply would; returns each deletion that failed. */
+async function rollBack(skeleton: Skeleton): Promise<string[]> {
+  const { guild, ...made } = skeleton.created;
+  return undoApply(skeleton.apply, skeleton.actor, { ...made, guildId: guild ? skeleton.guildId : null });
 }
 
 /** Creates everything the skeleton holds and records the apply with its plan and checklist. */
@@ -382,7 +378,9 @@ async function build(skeleton: Skeleton, recipe: RecipeDocument, preview: ApplyP
   for (const role of recipe.roles) {
     await fillAgent(skeleton, role, recipe);
   }
+  const { guild: _guild, ...created } = skeleton.created;
   const plan: ApplyPlan = {
+    created,
     names: plannedAgents(skeleton.names, skeleton.roleToAgent),
     collections: await settleCollections(skeleton, preview.collections),
     connections: await bindReusedConnections(skeleton, preview.connections),
@@ -438,13 +436,17 @@ export async function createSkeleton(
     names: new Map(preview.names.map((item) => [item.role, item.name])),
     roleToAgent: new Map(),
     noteHref: new Map(),
-    created: { guild: false, agents: [], collections: [] },
+    created: { guild: false, agents: [], collections: [], notes: [] },
   };
   let applied: RecipeApplyRow;
   try {
     applied = await build(skeleton, recipe, preview, choices);
   } catch (error) {
-    await rollBack(skeleton);
+    // The failure is thrown as it is when the undo is whole, else as the cause of what the undo left.
+    const left = await rollBack(skeleton);
+    if (left.length) {
+      throw new ApplyUndoError(left, error instanceof Error ? error : undefined);
+    }
     throw error;
   }
   // Granted once the apply stands: a rolled-back guild would take a secret whose only grant it held.

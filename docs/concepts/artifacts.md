@@ -7,11 +7,13 @@ records, each agent's [Memory](memory.md), and each agent's
 organisation has one store. Agents read and write it with tools, and
 operators read and edit it in the app.
 
-Each item has a level: the organisation, one guild, or one agent.
-The level says where it sits. Each item also has a display path, a
-text address that names it exactly. Notes, collections, and files each
-carry an access list that decides which agents read and write them
+Each item has a display path, a text address that names it exactly.
+Notes and files belong to the organisation and have an access list
+and nothing else. Collections carry an access list too, beside the
+guild or organisation that owns them. The access list decides which
+agents read and write the item
 ([Access](access.md#access-lists-for-notes-collections-and-files)).
+Memory, the Task, and scripts belong to one agent.
 
 ## Why it exists
 
@@ -27,11 +29,10 @@ and where to write:
 |---|---|
 | The operator's standing purpose | the [Task](task.md), on the agent, outside the store |
 | What the agent wants its future runs to remember | its [Memory](memory.md) |
-| Long-form knowledge for one agent's work | agent-level [notes](notes.md) |
-| Long-form knowledge shared by a team | guild- and organisation-level [notes](notes.md) |
+| Long-form knowledge, for one agent's work or shared | [notes](notes.md), reached through their access lists |
 | Structured records | [collections](collections.md) |
-| Bytes that are not Markdown: a report, a dataset, an image | [files](files.md) at any level |
-| Python the agent runs in its sandbox | agent-level [scripts](scripts.md) |
+| Bytes that are not Markdown: a report, a dataset, an image | [files](files.md), reached through their access lists |
+| Python the agent runs in its sandbox | the agent's [scripts](scripts.md) |
 | The exact messages of a conversation | run and group-chat history ([Runs](runs.md), [Group chat](group-chat.md)) |
 
 A note may summarise a conversation into a durable finding. The
@@ -39,28 +40,19 @@ exact transcript stays in the run or group history.
 
 ## How it works
 
-### Levels
+### Where items sit
 
-```mermaid
-flowchart TD
-  O["Organisation<br/>org-level notes and files<br/>collections and their records"]
-  G["Guild<br/>guild-level notes and files<br/>owns some collections"]
-  A["Agent<br/>agent-level notes and files<br/>Memory<br/>scripts"]
-  O --> G --> A
-```
-
-- **Notes** exist at all three levels. Each note's access list decides
-  who reaches it beyond its owner agent ([Notes](notes.md#how-far-an-agent-reaches)).
-- **Files** exist at all three levels. Each file's access list decides
-  who reaches it ([Files](files.md#how-far-an-agent-reaches)).
-- **Collections** live at the organisation. Some belong to one guild.
+- **Notes** belong to the organisation, one set side by side, one
+  name per note. Each note's access list alone decides who reaches it
+  ([Notes](notes.md#how-far-an-agent-reaches)).
+- **Files** belong to the organisation the same way. Each file's
+  access list alone decides who reaches it
+  ([Files](files.md#how-far-an-agent-reaches)).
+- **Collections** live at the organisation. Some belong to one guild,
+  which sets the collection's display path and where it is listed.
   Each collection's access list decides who reaches it ([Collections](collections.md#who-reaches-a-collection)).
 - **Memory** and **scripts** belong to one agent. They have no access
   list: only that agent and the operators reach them.
-
-The level is placement. A note's or a file's level and a collection's guild set
-its display path and where it is listed. The access list alone
-decides who reads and writes it.
 
 ### Agents use tools, never a folder
 
@@ -81,16 +73,19 @@ can use ([System prompt](system-prompt.md)).
 ### Display paths
 
 A display path is the unique reference to an item. It starts with
-the organisation id, then the level's owner, then the item:
+the organisation id, then the agent for what belongs to one agent,
+then the item:
 
 ```text
-org/<org_id>/agents/<agent_id>/research.md     an agent-level note
-org/<org_id>/guilds/<guild_id>/glossary.md     a guild-level note
+org/<org_id>/glossary.md                       a note
+org/<org_id>/files/report.pdf                  a file
+org/<org_id>/agents/<agent_id>/memory.md       an agent's Memory
 org/<org_id>/collections/leads/42              record 42 of the leads collection
 ```
 
-Paths use ids, not names. Renaming a guild or an agent does not
-change its paths, and a reused name gets fresh paths.
+Paths use ids for the organisation and the agent, not names.
+Renaming an agent does not change its paths, and a reused name gets
+fresh paths. A note's or a file's path holds its own name.
 
 A tool returns the display path of what it wrote. That path is the
 canonical way to link to the item elsewhere. In a Task or a note,
@@ -99,9 +94,9 @@ it ([Notes](notes.md#embeds-and-references)). Nothing rewrites other
 text into a link.
 
 The model never supplies an organisation, guild, or agent id. For a
-note it sends a `level` and a `key` (the file name), or the display
-path of a note that exists. For a record it sends the collection name
-and the record id.
+note it sends a `key` (the file name), or the display path of a note
+that exists. For a record it sends the collection name and the record
+id.
 
 ### Every change is recorded
 
@@ -143,11 +138,12 @@ in the agent's Chat tab, or in Studio's History tab inside Studio.
 | Size of one write | 256 KB |
 | Size of one file | 10 MiB ([Files](files.md)) |
 | Live files of an organisation together | 1 GiB |
-| Live notes, Memory, scripts, and files per owner | 10 000 |
+| Live notes and files per organisation | 10 000 together |
 | Live records per collection | 10 000 ([Collections](collections.md)) |
 | `task.md` and `memory.md` | reserved names at the agent root; neither can be deleted |
 | Previous Memory versions | read only, and only by the operator |
-| Paths | built from ids, never names |
+| Paths | built from ids, never names, except a note's or a file's own name |
+| Note and file names | unique in the organisation |
 
 ## Reference
 
@@ -155,13 +151,20 @@ in the agent's Chat tab, or in Studio's History tab inside Studio.
 
 One PostgreSQL table, `artifacts`, holds every item. Its `kind` is:
 
-| Kind | What | Levels |
+| Kind | What | Belongs to |
 |---|---|---|
-| `note` | a Markdown note | agent, guild, org |
-| `object` | a collection record | org |
-| `memory` | an agent's Memory | agent |
-| `script` | an agent's Python script | agent |
-| `file` | a shared file; its bytes sit in the blob store | agent, guild, org |
+| `note` | a Markdown note | the organisation |
+| `object` | a collection record | the organisation |
+| `memory` | an agent's Memory | one agent |
+| `script` | an agent's Python script | one agent |
+| `file` | a shared file; its bytes sit in the blob store | the organisation |
+
+`agent_id` is set on Memory and scripts, and only there. A live item
+is unique by (`org_id`, `agent_id`, `collection_id`, `path`, `key`),
+with nulls counted equal: a note's or a file's name is unique in its
+organisation, and Memory and scripts are unique per agent.
+`origin_guild_id` records the guild its creator wrote from; it
+decides no access and no listing.
 
 A collection itself is an `artifact_collections` row, not an
 artifact kind. The live Task is `agents.task`.
@@ -177,27 +180,24 @@ org/<org_id>/agents/<agent_id>/task.md
 org/<org_id>/agents/<agent_id>/memory.md
 org/<org_id>/agents/<agent_id>/history-archive/<stamp>-<source>.md
 org/<org_id>/agents/<agent_id>/scripts/<name>
-org/<org_id>/agents/<agent_id>/files/<name>
-org/<org_id>/guilds/<guild_id>/files/<name>
 org/<org_id>/files/<name>
-org/<org_id>/agents/<agent_id>/<note>.md
-org/<org_id>/guilds/<guild_id>/<note>.md
+org/<org_id>/<note>.md
 org/<org_id>/collections/<name>
 org/<org_id>/collections/<name>/<id>
-org/<org_id>/<note>.md
 ```
 
-- The owner prefix is a property of the level:
-  `org/<org_id>/agents/<agent_id>/`, `org/<org_id>/guilds/<guild_id>/`,
-  or `org/<org_id>/`.
-- Notes are flat: `{ownerPrefix}{key}`, where `key` is one `.md`
+- The prefix is `org/<org_id>/agents/<agent_id>/` for what belongs
+  to one agent, and `org/<org_id>/` for a note or a file.
+- Notes are flat: `org/<org_id>/{key}`, where `key` is one `.md`
   file name with no `/`. Because a note key ends in `.md`, it never
-  shadows `collections/`, `agents/`, `guilds/`, `scripts/`, `files/`,
-  or `history-archive/`.
+  shadows `collections/`, `agents/`, `files/`, `scripts/`, or
+  `history-archive/`.
 - A collection is `org/<org_id>/collections/<name>`. A record is that
   path plus the record id.
-- Scripts are `{ownerPrefix}scripts/{name}`, at the agent level only.
-- Files are `{ownerPrefix}files/{name}`, at every level ([Files](files.md#storage)).
+- Scripts are `org/<org_id>/agents/<agent_id>/scripts/{name}`.
+- Files are `org/<org_id>/files/{name}` ([Files](files.md#storage)).
+- A note or a file sits at most one folder down: a path under
+  `org/<org_id>/` that is deeper does not parse.
 - `task.md` is a virtual path over `agents.task`. `memory.md` is the
   agent's `memory` artifact. Neither is deletable (422
   `cannot delete this file`).
@@ -246,6 +246,16 @@ POST /api/file-changes/latest                     the same, with { display_paths
 `display_paths` in the body a list of strings. A query value given
 more than once, a body that is not a JSON object, or a field of
 another type is 422 naming the field, before the caller is identified.
+
+A path's history is read by item, not by text: the path resolves to
+the notes, files, Memory, and scripts that ever sat there, live or
+deleted, that the caller reads, a record of a collection the caller
+reads, or an agent's Task the caller reaches, and only those items'
+changes are returned. A name a hidden deleted note or file held, and
+another item holds now, shows only the visible item's changes. Memory
+history and Studio's file history, focus, and State read changes the
+same way; Studio counts a change on the item whose artifact made it,
+and a record's change on the table whose collection holds it.
 
 A run-owned change in the history expands to the run's agent,
 guild, kind, status, and routine. Each change carries `studio`:
@@ -302,6 +312,10 @@ Code: `apps/orchestrator/src/db/config-changes.ts`.
   ([Memory](memory.md)).
 - Access lists of notes, collections, and files: `artifact_access` rows
   ([Access](access.md#access-lists)).
+- Renamed notes and files: `artifact_renames`, one row per note or
+  file whose name was changed to keep every name unique in its
+  organisation (`org_id`, `artifact_id`, `old_display_path`,
+  `new_display_path`, `renamed_at`). No route reads it.
 - The bytes of files: the blob store ([Files](files.md#storage)).
 - Run transcripts: run rows ([Runs](runs.md)).
 

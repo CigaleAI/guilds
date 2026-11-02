@@ -42,9 +42,9 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | Term | What it is |
 | --- | --- |
 | [Memory](concepts/memory.md) | An agent's private notes to its future runs. The agent owns them. |
-| [Note](concepts/notes.md) | Long-form text at agent, guild, or organisation level. |
+| [Note](concepts/notes.md) | Long-form text of the organisation, reached through its access list. |
 | [Collection](concepts/collections.md) | A table of structured records, at guild or organisation level. |
-| [File](concepts/files.md) | Bytes that are not Markdown, at any of those levels. |
+| [File](concepts/files.md) | Bytes that are not Markdown, of the organisation, reached through its access list. |
 | [Script](concepts/scripts.md) | Python an agent keeps and runs again. It belongs to that agent. |
 | [Artifact](concepts/artifacts.md) | The store under notes, files, collection records, Memory, and scripts. One store per organisation. |
 | [Access list](concepts/access.md#access-lists-for-notes-collections-and-files) | Who may read or write one note, collection, or file. |

@@ -1,8 +1,8 @@
-// The files an operator's pages list, read and write at each level, and their provenance.
+// The notes an operator's pages read and write by key, an agent's Task and Memory, and their provenance.
 import { ArtifactError } from "./errors.js";
-import { hostFileDisplayPath, normalizeNoteKey, parseDisplayPath, MEMORY_KEY, TASK_KEY } from "./paths.js";
-import { listFileChanges, listLatestFileChanges, type FileChangeView } from "../db/file-changes.js";
-import type { ArtifactActor, ArtifactLevel } from "./types.js";
+import { MEMORY_KEY, memoryDisplayPath, normalizeNoteKey, noteDisplayPath, parseDisplayPath, TASK_KEY } from "./paths.js";
+import { listFileChanges, listLatestFileChanges, type ChangeTarget, type FileChangeView } from "../db/file-changes.js";
+import type { AccessGrant, ArtifactActor } from "./types.js";
 import { taskDisplayPath, writeAgentTask } from "./task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
@@ -12,20 +12,29 @@ import {
   deleteByDisplayPath,
   getByDisplayPath,
   listEmbeddableNotes,
-  listOwnerNotes,
+  readableChangeTarget,
   writeNote,
 } from "./notes.js";
-import { artifactTextView, type ArtifactStore, type ArtifactTextView, type HostNoteView } from "./store.js";
+import { artifactTextView, type ArtifactStore, type ArtifactTextView } from "./store.js";
 import { ensureAgentRows, writeMemory } from "./memory.js";
 
 /** What host files are read and written through: the artifact store, and the database an agent's Task lives in. */
 export type HostFileServices = { store: ArtifactStore; db: Queryable };
 
-/** The level and owner a host file belongs to. */
-export type HostFileOwner = { level: ArtifactLevel; ownerId: string };
-
 /** A host file as an operator writes it: its name, its content, and the version they edited, when they say. */
 export type HostFileWrite = { path: string; content: string; expectedVersion: number | undefined };
+
+/**
+ * A note as an operator writes it by key: its name and content, the version they edited when they
+ * say (0 for a note that must not exist yet), and the rows its access list starts with when the
+ * write creates it.
+ */
+export type HostNoteWrite = {
+  path: string;
+  content: string;
+  expectedVersion: number | undefined;
+  startingAccess: AccessGrant[];
+};
 
 /** A host file as it was read or written: what the page receives, its kind, and its version. */
 type LoadedHostFile = { payload: HostFilePayload; kind: string; version: number };
@@ -117,12 +126,8 @@ function fallbackChange(
 
 /** The agent whose Task a display path names, or null for any other path. */
 function taskOwnerOf(parsed: ReturnType<typeof parseDisplayPath>): string | null {
-  const isTask =
-    parsed.kind === "artifact" &&
-    parsed.level === "agent" &&
-    parsed.path === "" &&
-    parsed.key === TASK_KEY;
-  return isTask ? parsed.ownerId : null;
+  const isTask = parsed.kind === "artifact" && parsed.path === "" && parsed.key === TASK_KEY;
+  return isTask ? parsed.agentId : null;
 }
 
 /** A live row's saver, version and time at a display path, or null for a path it cannot read or that holds none. */
@@ -178,11 +183,11 @@ export async function latestFileChanges(
   const paths = await readablePaths(services.store, actor, [
     ...new Set(displayPaths.filter((path) => path)),
   ]);
-  const latest: Record<string, LatestFileChange> = await listLatestFileChanges(
-    services.db,
-    actor.orgId,
-    paths,
-  );
+  const targets = new Map<string, ChangeTarget>();
+  for (const path of paths) {
+    targets.set(path, await readableChangeTarget(services.store, actor, path));
+  }
+  const latest: Record<string, LatestFileChange> = await listLatestFileChanges(services.db, actor.orgId, targets);
   for (const path of paths) {
     const fallback = latest[path] ? null : await unrecordedChange(services, actor, path);
     if (fallback) {
@@ -192,122 +197,112 @@ export async function latestFileChanges(
   return latest;
 }
 
-/** The notes one owner holds, by file name. An agent's Task and Memory are read by name, not listed. */
-export async function listHostFiles(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  owner: HostFileOwner,
-): Promise<HostNoteView[]> {
-  return listOwnerNotes(store, actor, owner.level, owner.ownerId);
-}
-
 /** The payload with its version, and for an agent's Task the versions it replaced. */
 async function withFileMeta(
   services: HostFileServices,
   actor: ArtifactActor,
-  owner: HostFileOwner,
+  agentId: string | null,
   file: LoadedHostFile,
 ): Promise<HostFilePayload> {
   const next = { ...file.payload, version: file.version };
-  if (file.kind === "task") {
-    next.revisions = (await listAgentTaskRevisions(services.db, actor.orgId, owner.ownerId)).map(
-      (row) => ({
-        ...row,
-        replaced_at: formatColumnTimestamp(row.replaced_at),
-      }),
-    );
+  if (file.kind === "task" && agentId !== null) {
+    next.revisions = (await listAgentTaskRevisions(services.db, actor.orgId, agentId)).map((row) => ({
+      ...row,
+      replaced_at: formatColumnTimestamp(row.replaced_at),
+    }));
   }
   return next;
 }
 
 /** The file name the Host sends: a note key, or an agent's `task.md` or `memory.md`. */
-function hostFileName(relative: string): string {
+export function hostFileName(relative: string): string {
   return normalizeNoteKey((relative || "").trim().replace(/^\/+/, ""));
 }
 
-export async function readHostFile(
+/** The organisation's note with this key, as the actor reads it. */
+export async function readHostNote(services: HostFileServices, actor: ArtifactActor, relative: string): Promise<HostFilePayload> {
+  const name = hostFileName(relative);
+  const displayPath = noteDisplayPath(actor.orgId, name);
+  const loaded = await getByDisplayPath(services.store, actor, displayPath);
+  if (loaded.tombstone || !loaded.row || loaded.row.kind !== "note") {
+    throw new ArtifactError("artifact not found", 404);
+  }
+  const payload = {
+    id: loaded.row.id,
+    path: name,
+    display_path: displayPath,
+    content: loaded.row.content_text ?? "",
+  };
+  return withFileMeta(services, actor, null, { payload, kind: "note", version: loaded.row.version });
+}
+
+/** Writes the organisation's note at the key the write names: the live one, or a new one starting with the write's access rows. */
+export async function writeHostNote(services: HostFileServices, actor: ArtifactActor, write: HostNoteWrite): Promise<HostFilePayload> {
+  const name = hostFileName(write.path);
+  const { row, href } = await writeNote(services.store, actor, {
+    key: name,
+    content: write.content,
+    startingAccess: write.startingAccess,
+    ...(write.expectedVersion !== undefined ? { expectedVersion: write.expectedVersion } : {}),
+  });
+  const payload = { id: row.id, path: name, content: write.content, display_path: href };
+  return withFileMeta(services, actor, null, { payload, kind: row.kind, version: row.version });
+}
+
+/** Deletes the organisation's note with this key. */
+export async function deleteHostNote(store: ArtifactStore, actor: ArtifactActor, relative: string): Promise<void> {
+  await deleteByDisplayPath(store, actor, noteDisplayPath(actor.orgId, hostFileName(relative)));
+}
+
+/** An agent's `task.md` or `memory.md` as the actor reads it; any other name is not the agent's. */
+export async function readAgentHostFile(
   services: HostFileServices,
   actor: ArtifactActor,
-  owner: HostFileOwner,
+  agentId: string,
   relative: string,
 ): Promise<HostFilePayload> {
   const name = hostFileName(relative);
-  if (owner.level === "agent" && name === TASK_KEY) {
-    const row = await getAgentTask(services.db, actor.orgId, owner.ownerId);
+  if (name === TASK_KEY) {
+    const row = await getAgentTask(services.db, actor.orgId, agentId);
     if (!row) {
       throw new ArtifactError("task.md not found", 404);
     }
-    const payload = {
-      path: name,
-      display_path: taskDisplayPath(actor.orgId, owner.ownerId),
-      content: row.content_text,
-    };
-    return withFileMeta(services, actor, owner, { payload, kind: "task", version: row.version });
+    const payload = { path: name, display_path: taskDisplayPath(actor.orgId, agentId), content: row.content_text };
+    return withFileMeta(services, actor, agentId, { payload, kind: "task", version: row.version });
   }
-  const displayPath = hostFileDisplayPath(actor.orgId, owner.level, owner.ownerId, name);
+  if (name !== MEMORY_KEY) {
+    throw new ArtifactError("artifact not found", 404);
+  }
+  const displayPath = memoryDisplayPath(actor.orgId, agentId);
   const loaded = await getByDisplayPath(services.store, actor, displayPath);
   if (loaded.tombstone || !loaded.row) {
     throw new ArtifactError("artifact not found", 404);
   }
-  const payload = {
-    ...(loaded.row.kind === "note" ? { id: loaded.row.id } : {}),
-    path: name,
-    display_path: displayPath,
-    content: String(loaded.row.content_text ?? ""),
-  };
-  return withFileMeta(services, actor, owner, {
-    payload,
-    kind: loaded.row.kind,
-    version: loaded.row.version,
-  });
+  const payload = { path: name, display_path: displayPath, content: loaded.row.content_text ?? "" };
+  return withFileMeta(services, actor, agentId, { payload, kind: loaded.row.kind, version: loaded.row.version });
 }
 
-export async function writeHostFile(
+/** Writes an agent's `task.md` or `memory.md`; any other name is not the agent's. */
+export async function writeAgentHostFile(
   services: HostFileServices,
   actor: ArtifactActor,
-  owner: HostFileOwner,
+  agentId: string,
   write: HostFileWrite,
 ): Promise<HostFilePayload> {
   const { store, db } = services;
   const name = hostFileName(write.path);
   const { content } = write;
-  if (owner.level === "agent" && name === TASK_KEY) {
-    const row = await writeAgentTask(db, actor, owner.ownerId, { content, expectedVersion: write.expectedVersion });
-    const payload = {
-      path: name,
-      content,
-      display_path: taskDisplayPath(actor.orgId, owner.ownerId),
-    };
-    return withFileMeta(services, actor, owner, { payload, kind: "task", version: row.version });
+  if (name === TASK_KEY) {
+    const row = await writeAgentTask(db, actor, agentId, { content, expectedVersion: write.expectedVersion });
+    const payload = { path: name, content, display_path: taskDisplayPath(actor.orgId, agentId) };
+    return withFileMeta(services, actor, agentId, { payload, kind: "task", version: row.version });
   }
-  if (owner.level === "agent" && name === MEMORY_KEY) {
-    const { row, href } = await writeMemory(store, actor, owner.ownerId, { content: content, detail: `host ${actor.actorName}` });
-    const payload = { path: name, content, display_path: href };
-    return withFileMeta(services, actor, owner, { payload, kind: "memory", version: row.version });
+  if (name !== MEMORY_KEY) {
+    throw new ArtifactError("artifact not found", 404);
   }
-  const { row, href } = await writeNote(store, actor, { level: owner.level, key: name, content });
-  const payload = {
-    id: row.id,
-    path: name,
-    content,
-    display_path: href,
-  };
-  return withFileMeta(services, actor, owner, { payload, kind: row.kind, version: row.version });
-}
-
-export async function deleteHostFile(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  owner: HostFileOwner,
-  relative: string,
-): Promise<void> {
-  const displayPath = hostFileDisplayPath(
-    actor.orgId,
-    owner.level,
-    owner.ownerId,
-    hostFileName(relative),
-  );
-  await deleteByDisplayPath(store, actor, displayPath);
+  const { row, href } = await writeMemory(store, actor, agentId, { content, detail: `host ${actor.actorName}` });
+  const payload = { path: name, content, display_path: href };
+  return withFileMeta(services, actor, agentId, { payload, kind: "memory", version: row.version });
 }
 
 /** The recorded changes of one display path, newest first; none for a path the actor may not read. */
@@ -319,14 +314,11 @@ export async function listPathChanges(
   if (!displayPath) {
     throw new ArtifactError("display_path is required", 422);
   }
-  if (!(await canReadDisplayPath(services.store, actor, displayPath))) {
-    return [];
-  }
-  return listFileChanges(services.db, actor.orgId, displayPath);
+  return listFileChanges(services.db, actor.orgId, await readableChangeTarget(services.store, actor, displayPath));
 }
 
-/** A note as an embed reads it: where it sits, its title, its level, and its text. */
-export type EmbeddedNote = { display_path: string; title: string; level: ArtifactLevel; content: string };
+/** A note as an embed reads it: where it sits, its title, and its text. */
+export type EmbeddedNote = { display_path: string; title: string; content: string };
 
 /**
  * The notes the actor may embed, or with `displayPath` the one note it names.
@@ -347,7 +339,6 @@ export async function readEmbeddableNotes(
   return {
     display_path: displayPath,
     title: row.title || row.key.replace(/\.md$/, ""),
-    level: row.level,
     content: row.content_text ?? "",
   };
 }

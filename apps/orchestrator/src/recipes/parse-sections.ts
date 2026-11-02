@@ -117,54 +117,33 @@ function parseNoteKey(value: unknown, path: string): string {
   }
 }
 
-/** The mode a note's level gives the guild when the recipe names none. */
-const NOTE_GUILD_DEFAULT: Record<RecipeNote["level"], AccessMode | undefined> = {
-  org: "read",
-  guild: "write",
-  agent: undefined,
-};
-
-function parseNoteGuild(value: unknown, level: RecipeNote["level"], path: string): AccessMode | undefined {
-  const guild = value === undefined ? NOTE_GUILD_DEFAULT[level] : value;
-  if (guild === undefined || isAccessMode(guild)) {
-    return guild;
+function parseNoteMode(value: unknown, path: string): AccessMode | undefined {
+  if (value === undefined || isAccessMode(value)) {
+    return value;
   }
   throw new RecipeError(`${path} must be read or write`);
 }
 
-/** A note's `guild` and `writers`, defaulting `guild` to what the note's level gives. A guild note takes guild write and no writers. */
-function parseNoteAccess(row: JsonObject, level: RecipeNote["level"], path: string): Pick<RecipeNote, "guild" | "writers"> {
-  const guild = parseNoteGuild(row.guild, level, `${path}.guild`);
+/** A note's `org`, `guild`, and `writers`, as the recipe states them. */
+function parseNoteAccess(row: JsonObject, path: string): Pick<RecipeNote, "org" | "guild" | "writers"> {
+  const org = parseNoteMode(row.org, `${path}.org`);
+  const guild = parseNoteMode(row.guild, `${path}.guild`);
   const writers = parseWriters(row.writers, `${path}.writers`);
-  if (level === "guild" && (guild !== "write" || writers.length)) {
-    throw new RecipeError(`${path} takes guild write and no writers: every agent in the guild already writes a guild note`);
-  }
-  return guild === undefined ? { writers } : { guild, writers };
-}
-
-function parseNoteLevel(value: unknown, path: string): RecipeNote["level"] {
-  const level = asString(value, path);
-  if (level !== "org" && level !== "guild" && level !== "agent") {
-    throw new RecipeError(`${path} must be org, guild, or agent`);
-  }
-  return level;
+  return { ...(org === undefined ? {} : { org }), ...(guild === undefined ? {} : { guild }), writers };
 }
 
 export function parseNote(item: unknown, index: number): RecipeNote {
   const path = `notes[${index}]`;
   const row = assertObject(item, path);
-  assertKeys(row, ["id", "level", "role", "key", "body", "kind", "author", "guild", "writers"], path);
+  assertKeys(row, ["id", "key", "body", "kind", "author", "org", "guild", "writers"], path);
   const body = boundedText(row.body, `${path}.body`, RECIPE_NOTE_MAX_BYTES);
-  const level = parseNoteLevel(row.level, `${path}.level`);
   return {
     id: asString(row.id, `${path}.id`, `note-${index + 1}`),
-    level,
     key: parseNoteKey(row.key, `${path}.key`),
     body,
     kind: "seed",
     author: parseAuthor(row.author, operatorAuthor()),
-    ...parseNoteAccess(row, level, path),
-    ...(row.role ? { role: asString(row.role, `${path}.role`) } : {}),
+    ...parseNoteAccess(row, path),
   };
 }
 

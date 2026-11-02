@@ -4,35 +4,36 @@ import { formatOperationalTimestamp } from "../db/codecs.js";
 import { isUniqueViolation, withTransaction } from "../db/pg.js";
 import { newId } from "../lib/ids.js";
 import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
-import { createsWritable, defaultGrants } from "./access.js";
+import { creatorGrant } from "./access.js";
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
 import { findLimit } from "./search.js";
-import { artifactMode, assertLiveCount, assertRead, assertWrite, ownerFor, type ArtifactStore, rowDisplayPath } from "./store.js";
+import { artifactMode, assertLiveCount, assertRead, assertWrite, type ArtifactStore, rowDisplayPath } from "./store.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import {
   FILE_DESCRIPTION_MAX,
   FILE_MAX_BYTES,
   ORG_FILE_BYTES_MAX,
   SEARCH_TEXT_MAX,
+  type AccessGrant,
   type ArtifactActor,
-  type ArtifactLevel,
 } from "./types.js";
 import type { AccessMode } from "../db/schema/index.js";
-import { writeGrants } from "./grants.js";
-import { deleteAccessList } from "../db/artifact-access.js";
+import { requireSubject, writeGrants } from "./grants.js";
 import {
   getLiveArtifact,
   insertFile,
   listArtifactsByKind,
-  listOwnerArtifacts,
+  listGuildArtifacts,
+  listOrgArtifacts,
+  listReachedArtifacts,
   searchArtifactsByKind,
   softDeleteArtifact,
   sumOrgFileBytes,
   updateFileContent,
 } from "../db/artifacts.js";
-import { loadParsed } from "./notes.js";
+import { agentReader, loadParsed, type ReachingAgent } from "./notes.js";
 
 /** A file as tools and the API return it. */
 export type FileView = {
@@ -42,33 +43,30 @@ export type FileView = {
   description: string;
   mime: string;
   bytes: number;
-  level: ArtifactLevel;
-  owner_id: string;
   version: number;
   author: string;
   updated_at: string;
   access?: AccessMode;
 };
 
-type Owner = { orgId: string; ownerId: string; guildId: string | null; agentId: string | null };
-
 type FileContent = { description: string; mime: string; bytes: Buffer };
 
-/** A file as a writer sends it: the level it goes to, its name, description, media type and bytes, and the version it replaces when the writer read one. */
+/**
+ * A file as a writer sends it: its name, description, media type and bytes, the version it replaces
+ * when the writer read one, and the rows its access list starts with when the put creates it;
+ * without them, the creator's own row (`creatorGrant`).
+ */
 export type FileUpload = {
-  level: ArtifactLevel;
   name: string;
   description: string;
   mime: string;
   bytes: Buffer;
   expectedVersion?: number;
+  startingAccess?: AccessGrant[];
 };
 
-/** A search of the files an actor reads: the words to match, the level to keep, and how many to return. */
-export type FileSearch = { query?: string; level?: ArtifactLevel; limit: number };
-
-/** Where a new file is created: its level, its owner, and its name. */
-type FileTarget = { level: ArtifactLevel; owner: Owner; name: string };
+/** A search of the files an actor reads: the words to match, and how many to return. */
+export type FileSearch = { query?: string; limit: number };
 
 const MIME_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i;
 
@@ -158,8 +156,10 @@ export class ArtifactFiles {
   ) {}
 
   /**
-   * Stores a file under one owner. An existing file of the same name is replaced with write
-   * access to it; a new one is created where the level's starting access lets the writer write it.
+   * Stores the organisation's file of the upload's name. A live file of that name is replaced with
+   * write access to it, and is otherwise refused as not writable; a missing one is created with the
+   * upload's starting access list. An expected version of 0 asks for a new file, a 409 when one is
+   * live; any other expected version must be the live file's, a 409 otherwise.
    */
   async putFile(
     actor: ArtifactActor,
@@ -172,19 +172,20 @@ export class ArtifactFiles {
       bytes: args.bytes,
     };
     assertFileBytes(content.bytes);
-    const owner = ownerFor(actor, args.level);
     const live = await loadParsed(this.store, {
       kind: "artifact",
-      orgId: owner.orgId,
-      level: args.level,
-      ownerId: owner.ownerId,
+      orgId: actor.orgId,
+      agentId: null,
       path: FILES_SEGMENT,
       key: name,
     });
     if (live) {
       return this.replaceFile(actor, live, content, args.expectedVersion);
     }
-    return this.createFile(actor, { level: args.level, owner, name }, content);
+    if (args.expectedVersion !== undefined && args.expectedVersion !== 0) {
+      throw new ArtifactError("version conflict", 409);
+    }
+    return this.createFile(actor, name, content, args.startingAccess ?? [creatorGrant(actor)]);
   }
 
   /** The live file a display path names, with the actor's mode; 404 when it is not one the actor reaches. */
@@ -222,18 +223,28 @@ export class ArtifactFiles {
     const query = (args.query ?? "").trim();
     const limit = findLimit(args.limit);
     const rows = query
-      ? await searchArtifactsByKind(this.store.db, actor, "file", { query, level: args.level, limit })
-      : await listArtifactsByKind(this.store.db, actor, "file", { level: args.level, limit });
+      ? await searchArtifactsByKind(this.store.db, actor, "file", { query, limit })
+      : await listArtifactsByKind(this.store.db, actor, "file", limit);
     return rows.map((row) => this.view(row));
   }
 
-  /** The files one owner holds that the actor may read, by name. */
-  async listOwnerFiles(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): Promise<FileView[]> {
-    const rows = await listOwnerArtifacts(this.store.db, actor, { level, owner_id: ownerId, kind: "file" });
-    return rows.map((row) => this.view(row));
+  /** Every file of the organisation the actor may read, by name. */
+  async listOrgFiles(actor: ArtifactActor): Promise<FileView[]> {
+    return (await listOrgArtifacts(this.store.db, actor, "file")).map((row) => this.view(row));
   }
 
-  /** Soft-deletes a file the actor writes, drops its access list, and removes its bytes. */
+  /** The files whose access list has a row for the guild, one of its agents, or the organisation, that the actor may read, by name. */
+  async listGuildFiles(actor: ArtifactActor, guildId: string): Promise<FileView[]> {
+    return (await listGuildArtifacts(this.store.db, actor, guildId, "file")).map((row) => this.view(row));
+  }
+
+  /** The files the agent reads, without those hidden from the actor, by name, each with the agent's mode. */
+  async listAgentFiles(actor: ArtifactActor, agent: ReachingAgent): Promise<FileView[]> {
+    const reacher = agentReader(actor, agent);
+    return (await listReachedArtifacts(this.store.db, actor, reacher, "file")).map((row) => this.view(row));
+  }
+
+  /** Soft-deletes a file the actor writes, keeping its access list on the tombstone, and removes its bytes. */
   async deleteFile(actor: ArtifactActor, row: ArtifactRow): Promise<void> {
     await assertWrite(this.store, actor, row);
     await withTransaction(this.store.db, async (client) => {
@@ -242,7 +253,6 @@ export class ArtifactFiles {
       if (version === null) {
         throw new ArtifactError("artifact not found", 404);
       }
-      await deleteAccessList(client, { kind: "file", id: row.id });
       await recordFileChange(client, actor, {
         orgId: row.org_id,
         artifactId: row.id,
@@ -263,8 +273,6 @@ export class ArtifactFiles {
       description: row.title ?? "",
       mime: row.mime ?? "application/octet-stream",
       bytes: row.bytes ?? 0,
-      level: row.level,
-      owner_id: row.owner_id,
       version: row.version,
       author: row.updated_by_name,
       updated_at: formatOperationalTimestamp(row.updated_at),
@@ -282,16 +290,17 @@ export class ArtifactFiles {
 
   private async createFile(
     actor: ArtifactActor,
-    target: FileTarget,
+    name: string,
     content: FileContent,
+    startingAccess: AccessGrant[],
   ): Promise<ArtifactRow> {
-    if (!actor.operator && !createsWritable(target.level)) {
-      throw new ArtifactError("write not allowed", 422);
+    await assertLiveCount(this.store, actor.orgId);
+    for (const grant of startingAccess) {
+      await requireSubject(this.store.db, actor, grant);
     }
-    await assertLiveCount(this.store, target.owner.orgId, target.level, target.owner.ownerId);
-    await this.assertOrgBytes(target.owner.orgId, content.bytes.length, null);
+    await this.assertOrgBytes(actor.orgId, content.bytes.length, null);
     const id = newId("art");
-    const key = fileBlobKey(target.owner.orgId, id, 1);
+    const key = fileBlobKey(actor.orgId, id, 1);
     await this.blobs.put(key, content.bytes, content.mime);
     try {
       return await withTransaction(this.store.db, async (client) => {
@@ -299,16 +308,11 @@ export class ArtifactFiles {
           client,
           {
             id,
-            org_id: target.owner.orgId,
-            level: target.level,
-            owner_id: target.owner.ownerId,
-            guild_id: target.owner.guildId,
-            agent_id: target.owner.agentId,
+            org_id: actor.orgId,
             origin_guild_id: actor.guildId,
-            path: FILES_SEGMENT,
-            key: target.name,
+            key: name,
             title: content.description,
-            search_text: searchTextFor(target.name, content.description),
+            search_text: searchTextFor(name, content.description),
             mime: content.mime,
             bytes: content.bytes.length,
             content_hash: sha256(content.bytes),
@@ -316,7 +320,7 @@ export class ArtifactFiles {
           actor,
           new Date(),
         );
-        await writeGrants(client, actor, { kind: "file", id: row.id }, defaultGrants(row.level, row.owner_id));
+        await writeGrants(client, actor, { kind: "file", id: row.id }, startingAccess);
         await recordFileChange(client, actor, {
           orgId: row.org_id,
           artifactId: row.id,
@@ -343,6 +347,9 @@ export class ArtifactFiles {
   ): Promise<ArtifactRow> {
     if ((await artifactMode(this.store, actor, live)) !== "write") {
       throw new ArtifactError("write not allowed", 422);
+    }
+    if (expectedVersion === 0) {
+      throw new ArtifactError("artifact already exists", 409);
     }
     if (expectedVersion !== undefined && live.version !== expectedVersion) {
       throw new ArtifactError("version conflict", 409);

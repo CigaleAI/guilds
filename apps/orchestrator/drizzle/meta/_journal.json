@@ -134,6 +134,13 @@
       "when": 1791943200000,
       "tag": "0019_browser_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791946800000,
+      "tag": "0020_access_list_only",
+      "breakpoints": true
     }
   ]
 }

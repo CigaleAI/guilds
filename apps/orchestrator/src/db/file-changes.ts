@@ -120,41 +120,71 @@ function mapChange(orgId: string, row: FileChangeRow): FileChangeView {
   };
 }
 
-export async function listFileChanges(db: Queryable, orgId: string, displayPath: string): Promise<FileChangeView[]> {
+/**
+ * What a history is read for: the artifacts whose changes it holds, live or deleted, and the agent
+ * whose Task's changes it holds. A display path names one of these; it never selects changes itself,
+ * since a name an item held may be held by another item later.
+ */
+export type ChangeTarget = { artifactIds: string[]; taskAgentId: string | null };
+
+/** The changes of a target, newest first. */
+export async function listFileChanges(db: Queryable, orgId: string, target: ChangeTarget): Promise<FileChangeView[]> {
+  if (!target.artifactIds.length && target.taskAgentId === null) {
+    return [];
+  }
   const result = await db.query<FileChangeRow>(
-    `${CHANGE_SELECT}
-      WHERE fc.org_id = $1 AND fc.display_path = $2
-      ORDER BY fc.created_at DESC, fc.id DESC`,
-    [orgId, displayPath],
+    `SELECT * FROM (
+       ${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.artifact_id = ANY($2::text[])
+       UNION ALL
+       ${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.task_agent_id = $3
+     ) changes
+     ORDER BY created_at DESC, id DESC`,
+    [orgId, target.artifactIds, target.taskAgentId],
   );
   return result.rows.map((row) => mapChange(orgId, row));
 }
 
-// The newest change for each of several display paths, so a listing can
-// label its rows with one query.
+// The newest change of each of several targets, by the display path a listing names it by, so
+// a listing can label its rows with one query.
 export async function listLatestFileChanges(
   db: Queryable,
   orgId: string,
-  displayPaths: string[],
+  targets: ReadonlyMap<string, ChangeTarget>,
 ): Promise<Record<string, FileChangeView>> {
-  const unique = [...new Set(displayPaths.filter((path) => path))];
-  if (!unique.length) {
+  const paths: string[] = [];
+  const artifactIds: Array<string | null> = [];
+  const taskAgentIds: Array<string | null> = [];
+  for (const [path, target] of targets) {
+    for (const id of target.artifactIds) {
+      paths.push(path);
+      artifactIds.push(id);
+      taskAgentIds.push(null);
+    }
+    if (target.taskAgentId !== null) {
+      paths.push(path);
+      artifactIds.push(null);
+      taskAgentIds.push(target.taskAgentId);
+    }
+  }
+  if (!paths.length) {
     return {};
   }
-  const result = await db.query<FileChangeRow>(
-    `${CHANGE_SELECT}
-      WHERE fc.id IN (
-        SELECT DISTINCT ON (display_path) id
-          FROM file_changes
-         WHERE org_id = $1 AND display_path = ANY($2::text[])
-         ORDER BY display_path, created_at DESC, id DESC
-      )`,
-    [orgId, unique],
+  const result = await db.query<FileChangeRow & { requested_path: string }>(
+    `SELECT DISTINCT ON (p.path) p.path AS requested_path, latest.*
+       FROM unnest($2::text[], $3::text[], $4::text[]) AS p(path, artifact_id, task_agent_id)
+       CROSS JOIN LATERAL (
+         (${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.artifact_id = p.artifact_id
+           ORDER BY fc.created_at DESC, fc.id DESC LIMIT 1)
+         UNION ALL
+         (${CHANGE_SELECT} WHERE fc.org_id = $1 AND fc.task_agent_id = p.task_agent_id
+           ORDER BY fc.created_at DESC, fc.id DESC LIMIT 1)
+       ) latest
+      ORDER BY p.path, latest.created_at DESC, latest.id DESC`,
+    [orgId, paths, artifactIds, taskAgentIds],
   );
   const latest: Record<string, FileChangeView> = {};
   for (const row of result.rows) {
-    const change = mapChange(orgId, row);
-    latest[change.display_path] = change;
+    latest[row.requested_path] = mapChange(orgId, row);
   }
   return latest;
 }

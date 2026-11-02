@@ -11,10 +11,10 @@ work through, the tagged messages their Tasks budget) are the only
 coupling. Narrow is not isolated: every hand-off has a channel both Tasks
 name.
 
-- One fact has one home, at the narrowest level that holds every reader:
-  an agent note for one agent, a guild note only for what several of the
-  guild's agents all use, an organisation note only for what other guilds
-  use too. It is not pasted into every Task.
+- One fact has one home, shared with exactly the readers it has: a note
+  only one agent reads and writes for that agent, a note the guild reads
+  only for what several of the guild's agents all use, a note other guilds
+  read only for what they use too. It is not pasted into every Task.
 - No file describes every role. An agent learns who its peers are from
   their `focus` in the roster, and what they exchange from the purpose and
   columns of the tables they share. A shared note holds only what every
@@ -48,7 +48,7 @@ name.
 - Compact learned continuity belongs in Memory. Rewrite it when a wake
   changed how the next wake should act.
 - Playbooks, watchlists, and other files that change future behavior belong
-  in named agent-level notes, or in organisation collections whose access
+  in named notes the agent writes, or in organisation collections whose access
   list gives the guild or the agent read or write, that the Task points at. A collection is a typed table
   with operator-defined columns; agents write records, never the columns.
   Agents do not rewrite Task.
@@ -93,12 +93,11 @@ on some wakes; those working notes belong in Files, not frozen inside
 Task.
 
 When linking in prose, use the display path returned by note tools. Do
-not guess `org_id`, `guild_id`, or `agent_id`.
+not guess `org_id`.
 
-A recipe is portable, so it cannot contain those ids yet. Write the
-destination file instead: `![[guild/house-style.md]]`, `![[org/glossary.md]]`,
-or `![[agent/scout/playbook.md]]`. A reference or a working note named
-for `note_get` takes the same destination path:
-`[[agent/scout/playbook.md]]`, `note_get agent/scout/playbook.md`. Apply
+A recipe is portable, so it cannot contain that id yet. Write the
+destination file instead: `![[org/house-style.md]]`, `![[org/playbook.md]]`.
+A reference or a working note named for `note_get` takes the same
+destination path: `[[org/playbook.md]]`, `note_get org/playbook.md`. Apply
 creates the file and rewrites every form to the live display path. A leftover `recipe:<id>` still
 works when it matches `notes[].id`.

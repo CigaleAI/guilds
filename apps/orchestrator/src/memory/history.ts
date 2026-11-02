@@ -1,5 +1,6 @@
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactActor } from "../artifacts/types.js";
+import { readableChangeTarget } from "../artifacts/notes.js";
 import { listFileChanges } from "../db/file-changes.js";
 import { iso } from "../db/views.js";
 import { memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
@@ -103,7 +104,7 @@ export async function memoryHistory(
   agent: Pick<AgentRow, "id" | "name">,
 ): Promise<MemoryHistory> {
   const timeline = await memoryTimeline(deps.artifacts, actor, agent.id);
-  const changes = await listFileChanges(deps.db, actor.orgId, timeline.displayPath);
+  const changes = await listFileChanges(deps.db, actor.orgId, await readableChangeTarget(deps.artifacts, actor, timeline.displayPath));
   const callByRun = firstMemoryWriteByRun(changes);
   const runIds = [...new Set(timeline.entries.flatMap((entry) => (entry.run_id ? [entry.run_id] : [])))];
   const runs = await runsById(deps.db, runIds);

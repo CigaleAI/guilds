@@ -1,11 +1,11 @@
-import type { ArtifactActor, ArtifactLevel } from "../artifacts/types.js";
+import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import type { ArtifactStore, CollectionView } from "../artifacts/store.js";
 import { taskDisplayPath, taskEmbedRun, type TaskEmbedRun } from "../artifacts/task.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { listGuildCollections } from "../artifacts/guild-tables.js";
-import { readStateNotes, type StateOwners } from "../artifacts/notes.js";
+import { readStateNotes } from "../artifacts/notes.js";
 import {
   collectTaskEmbeds,
   embedGraph,
@@ -21,8 +21,7 @@ export type ReferenceNode = {
   id: string;
   kind: ReferenceNodeKind;
   label: string;
-  level: ArtifactLevel | null;
-  /** The agent whose Task it is, or who owns an agent-level note. */
+  /** The agent whose Task it is; null for a note, a table, and a link that does not resolve. */
   agent_id: string | null;
   collection_id: string | null;
   /** Part of the guild's state, rather than only reached from it. */
@@ -70,8 +69,6 @@ export type ReferenceFile = {
   display_path: string;
   kind: "note" | "table";
   label: string;
-  level: ArtifactLevel;
-  agent_id: string | null;
   collection_id: string | null;
   in_state: boolean;
   text: string | null;
@@ -171,7 +168,6 @@ function taskNode(task: ReferenceTask, run: TaskEmbedRun | undefined, texts: Map
     id: task.display_path,
     kind: "task",
     label: task.label,
-    level: "agent",
     agent_id: task.agent_id,
     collection_id: null,
     in_state: true,
@@ -189,8 +185,7 @@ function fileNode(file: ReferenceFile, hops: Map<string, Record<string, number>>
     id: file.display_path,
     kind: file.kind,
     label: file.label,
-    level: file.level,
-    agent_id: file.agent_id,
+    agent_id: null,
     collection_id: file.collection_id,
     in_state: file.in_state,
     bytes: byteSize(file.text),
@@ -210,7 +205,6 @@ function unresolvedNode(
     id: link.href,
     kind: "unresolved",
     label: link.href,
-    level: null,
     agent_id: null,
     collection_id: null,
     in_state: false,
@@ -308,8 +302,9 @@ function deepen(
 export type ReferenceDeps = { db: Queryable; artifacts: ArtifactStore };
 
 /**
- * What every Task and file in a guild's state embeds or names, read as `actor`: the guild's
- * agents' notes, the guild's and organisation's notes and tables, and what their embeds reach.
+ * What every Task and file in a guild's state embeds or names, read as `actor`: the notes whose
+ * access list names the guild, one of its agents, or the organisation, the guild's and the
+ * organisation's tables, and what their embeds reach.
  * Each Task's run is walked as its agent, so an embed the agent cannot read shows as broken.
  */
 export async function loadGuildReferences(
@@ -319,10 +314,7 @@ export async function loadGuildReferences(
 ): Promise<GuildReferences> {
   const agents = await listAgents(deps.db, guildId);
   const tasks = agents.map((agent) => referenceTask(actor.orgId, agent));
-  const state = await loadStateFiles(deps.artifacts, actor, {
-    guildId,
-    agentIds: tasks.map((task) => task.agent_id),
-  });
+  const state = await loadStateFiles(deps.artifacts, actor, guildId);
   const graph = await embedGraph(
     deps.artifacts,
     actor,
@@ -366,10 +358,10 @@ function referenceTask(orgId: string, agent: Pick<AgentRow, "id" | "name" | "tas
 async function loadStateFiles(
   store: ArtifactStore,
   actor: ArtifactActor,
-  scope: StateOwners,
+  guildId: string,
 ): Promise<ReferenceFile[]> {
-  const notes = await readStateNotes(store, actor, scope);
-  const tables = await listGuildCollections(store, actor, scope.guildId);
+  const notes = await readStateNotes(store, actor, guildId);
+  const tables = await listGuildCollections(store, actor, guildId);
   return [
     ...notes.map((note) => ({ ...noteFile(note.href, note.row), in_state: true })),
     ...tables.map((table) => tableFile(table, true)),
@@ -381,8 +373,6 @@ function noteFile(displayPath: string, row: ArtifactRow): ReferenceFile {
     display_path: displayPath,
     kind: "note",
     label: row.title || row.key.replace(/\.md$/, ""),
-    level: row.level,
-    agent_id: row.level === "agent" ? row.owner_id : null,
     collection_id: null,
     in_state: false,
     text: row.content_text ?? "",
@@ -397,8 +387,6 @@ function tableFile(
     display_path: table.display_path,
     kind: "table",
     label: table.name,
-    level: table.scope,
-    agent_id: null,
     collection_id: table.id,
     in_state: inState,
     text: null,

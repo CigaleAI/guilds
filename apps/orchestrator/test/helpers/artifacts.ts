@@ -1,5 +1,10 @@
 import type { ArtifactRow } from "../../src/db/artifacts.js";
 import { parseDisplayPath } from "../../src/artifacts/paths.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
+import { listPathChanges } from "../../src/artifacts/host-files.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import type { FileChangeView } from "../../src/db/file-changes.js";
+import type { Queryable } from "../../src/db/pg.js";
 
 const STAMP = "2026-09-22T05:42:10.000Z";
 
@@ -8,9 +13,6 @@ export function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
   return {
     id: "art_1",
     org_id: "org_1",
-    level: "org",
-    owner_id: "org_1",
-    guild_id: null,
     agent_id: null,
     origin_guild_id: null,
     kind: "note",
@@ -41,13 +43,16 @@ export function noteRowAt(displayPath: string, content: string, overrides: Parti
   }
   return artifactRow({
     org_id: parsed.orgId,
-    level: parsed.level,
-    owner_id: parsed.ownerId,
-    guild_id: parsed.level === "guild" ? parsed.ownerId : null,
-    agent_id: parsed.level === "agent" ? parsed.ownerId : null,
+    agent_id: parsed.agentId,
     path: parsed.path,
     key: parsed.key,
     content_text: content,
     ...overrides,
   });
+}
+
+/** The changes an operator of the organisation reads at a display path, newest first. */
+export async function changesAt(db: Queryable, orgId: string, displayPath: string): Promise<FileChangeView[]> {
+  const operator = operatorActor({ orgId, actorId: "user_operator", actorName: "operator" });
+  return listPathChanges({ store: artifactStore(db), db }, operator, displayPath);
 }

@@ -99,9 +99,9 @@ The Guidelines teach a few habits every agent shares:
   calls left. Near the end, the agent stops exploring, writes down
   what it found, and finishes.
 - **One home per fact.** Private working knowledge goes in Memory and
-  agent-level notes. Shared long-form knowledge goes in guild- and
-  organisation-level notes. Structured records go in collections.
-  Messages stay in run or group history.
+  in notes the agent creates. Shared long-form knowledge goes in notes
+  shared with the agents who need them. Structured records go in
+  collections. Messages stay in run or group history.
 - **Search, update, link.** Before writing, the agent searches for
   the existing item and updates it. Elsewhere it links to that item:
   a note by its display path, a record by its collection and id.
@@ -278,12 +278,14 @@ this order:
    action or the operator confirms it. Only a `complete` result is
    verified ([Browser](browser.md)).
 7. Notes, when offered: `note_find` and the `access` of each note it
-   returns, `note_get`, `note_write` at a level or by display path, a
-   new note only at `agent` or `guild` level, `.md` keys with no
-   folders, and `note_delete` ([Notes](notes.md)).
+   returns, `note_get`, `note_write` by key or by display path, a new
+   note written by its creator alone until an operator shares it,
+   `.md` keys with no folders and one key per note across the
+   organisation, and `note_delete` ([Notes](notes.md)).
 8. Files, when offered: `file_find`, `file_fetch` into the home,
-   `file_put` at a level with a description, a new file only at `agent`
-   or `guild` level, and `file_delete` ([Files](files.md)).
+   `file_put` with a description, a new file written by its creator
+   alone until an operator shares it, one name per file across the
+   organisation, and `file_delete` ([Files](files.md)).
 9. Collections and records: what State lists, the record tools, the
    `where`, `since`, and `order` filters, `record_search` syntax, and
    queue collections that carry their state in a column

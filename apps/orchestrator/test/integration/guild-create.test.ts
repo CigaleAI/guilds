@@ -8,7 +8,7 @@ import { GuildAgentLimitError } from "../../src/guilds/errors.js";
 import { addGuild, assertGuildAgentRoom } from "../../src/guilds/service.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { connect } from "../../src/seed/connect.js";
-import { addTestAgent } from "../helpers/agents.js";
+import { addTestAgent, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { agentConfig } from "../helpers/generation.js";
@@ -48,6 +48,7 @@ test("adding a guild writes its row with its creator as admin and makes its note
       },
       orgSlug: "home",
     },
+    OPERATOR_ACTOR,
     new Date(),
   );
   assert.equal(created.about, "weekly synthesis");
@@ -66,6 +67,7 @@ test("a guild whose notes folder cannot be made is taken back out", async () => 
     addGuild(
       { db, notes },
       { guild: { guildId: "guild_unmade", name: "unmade", orgId: "org_home" }, orgSlug: "home" },
+      OPERATOR_ACTOR,
       new Date(),
     ),
     /notes failed/,

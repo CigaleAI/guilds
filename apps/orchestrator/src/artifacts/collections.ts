@@ -28,7 +28,7 @@ import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
 import type { JsonValue } from "../lib/json.js";
-import { type AccessRaise, accessRaises, defaultGrants, reachedMode } from "./access.js";
+import { type AccessRaise, accessRaises, reachedMode } from "./access.js";
 import {
   collectionCleared,
   collectionColumnsChanged,
@@ -54,6 +54,7 @@ import {
   LIVE_COLLECTIONS_MAX,
   PURPOSE_MAX,
   STATE_COLLECTIONS_MAX,
+  type AccessGrant,
   type ArtifactActor,
 } from "./types.js";
 
@@ -184,6 +185,11 @@ export async function accessibleCollections(
   return rows.map(({ mode, ...row }) => ({ row, mode }));
 }
 
+/** The rows a new collection starts with: a guild's own is written by that guild, an organisation's read by the organisation. */
+function collectionGrants(orgId: string, guildId: string | null): AccessGrant[] {
+  return guildId ? [{ type: "guild", id: guildId, mode: "write" }] : [{ type: "org", id: orgId, mode: "read" }];
+}
+
 export async function createCollection(
   store: ArtifactStore,
   actor: ArtifactActor,
@@ -205,7 +211,7 @@ export async function createCollection(
         actor,
         new Date(),
       );
-      const grants = guildId ? defaultGrants("guild", guildId) : defaultGrants("org", actor.orgId);
+      const grants = collectionGrants(actor.orgId, guildId);
       await writeGrants(client, actor, { kind: "collection", id: created.id }, grants);
       for (const row of args.access ? accessRaises(grants, args.access) : []) {
         await setAccessRow(client, actor, collectionAccessItem(created), row);

@@ -4,9 +4,13 @@ import type { ArtifactActor } from "../../src/artifacts/types.js";
 import { addAgent } from "../../src/agents/service.js";
 import type { AgentRow, NewAgent } from "../../src/db/agents.js";
 import type { Queryable } from "../../src/db/pg.js";
+import { userActor, type ChangeActor } from "../../src/lib/change-actor.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
+
+/** The operator a test's guild and agent creations and deletions are logged against. */
+export const OPERATOR_ACTOR: ChangeActor = userActor({ id: "user_operator", name: "operator" });
 
 /** The system operator a seeded agent's creation is logged against, writing as that agent. */
 export function systemActor(orgId: string, agent: Pick<NewAgent, "guildId" | "agentId">): ArtifactActor {

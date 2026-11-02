@@ -249,23 +249,19 @@ What capture writes:
   `agent`. Values are never captured.
 - Notes a Task embeds are always captured as seed notes. Notes listed
   in `include_notes` are captured too. A capture reads notes as the
-  user who captures: a note of a private guild the user does not
-  operate is left out, by display path or by key. Memory (`memory.md`)
-  is never captured. Lived agent notes, organisation notes, Memory
-  bodies, and collection records stay out unless the operator includes
-  them.
-- Each captured note carries its access the way a collection does. A
-  guild note is `guild: "write"` with no `writers`. On an organisation
-  or agent note, `guild` is the better of the organisation's row and
-  the guild's row, left out on an agent note neither reaches. `writers`
-  lists the roles whose agents have a `write` row when `guild` is not
-  `write`; the role that owns an agent note reaches it without a row
-  and is never one of them. An agent row of `read` or `none` is not
-  carried. Rows that name other guilds or their agents are not
-  carried.
+  user who captures: a note hidden from the user is left out, by
+  display path or by key. Memory (`memory.md`) is never captured.
+  Other notes, Memory bodies, and collection records stay out unless
+  the operator includes them.
+- Each captured note carries its access. `org` is the
+  organisation's row, left out when the note has none. `guild` is the
+  better of the organisation's row and the guild's row, left out when
+  neither reaches the note. `writers` lists the
+  roles whose agents end up with `write` when `guild` is not `write`.
+  An agent row of `read` or `none` is not carried. Rows that name
+  other guilds or their agents are not carried.
 - Capture rewrites display paths of captured notes to recipe-local refs,
-  in embeds (`![[guild/<key>]]`, `![[org/<key>]]`,
-  `![[agent/<role>/<key>]]`) and as plain text (`guild/<key>`, …).
+  in embeds (`![[org/<key>]]`) and as plain text (`org/<key>`).
   It rewrites tags of source agent names to `@{role}` in Tasks,
   routine instructions, script sources, and notes. `@user` is never
   rewritten.

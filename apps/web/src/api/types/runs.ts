@@ -142,9 +142,6 @@ export type RecordToolArguments = { collection?: string; query?: string; id?: nu
 /** A file tool's arguments (`file_find`, `file_fetch`, `file_put`, `file_delete`): the search, the file, and the home path it shares. */
 export type FileToolArguments = { query?: string; path?: string; home_path?: string };
 
-/** Where a note or file call points: the level it names, or the display path it reads or lists under. */
-export type ToolLevelArguments = { level?: string; path?: string; path_prefix?: string };
-
 /** A `shell` call's arguments: the command, and whether it runs in the background. */
 export type ShellArguments = { command?: string; background?: boolean };
 

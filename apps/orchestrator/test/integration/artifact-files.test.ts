@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { addAgent } from "../../src/agents/service.js";
-import { systemActor } from "../helpers/agents.js";
+import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { ArtifactFiles, fileBlobKey } from "../../src/artifacts/files.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import {
@@ -13,7 +13,7 @@ import {
   type SharedFileChange,
   type SharedFileWriteDeps,
 } from "../../src/artifacts/operator-files.js";
-import { listFileChanges } from "../../src/db/file-changes.js";
+import { changesAt } from "../helpers/artifacts.js";
 import { artifactStore, type ArtifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
@@ -94,7 +94,6 @@ describe("shared files", { concurrency: 1 }, () => {
 
   test("a file is created, replaced version by version, and found by its description", async () => {
     const created = await files.putFile(alpha, {
-      level: "guild",
       name: "figures.csv",
       description: "Quarterly figures by region",
       mime: "",
@@ -105,13 +104,13 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal(created.bytes, 21);
     assert.equal(created.version, 1);
     assert.equal(created.access, "write");
+    assert.equal(created.agent_id, null);
     const view = files.view(created);
-    assert.equal(view.display_path, "org/org_home/guilds/guild_alpha/files/figures.csv");
+    assert.equal(view.display_path, "org/org_home/files/figures.csv");
     assert.equal(view.description, "Quarterly figures by region");
     assert.deepEqual(await blobs.get(fileBlobKey("org_home", created.id, 1)), Buffer.from("region,total\nnorth,1\n"));
 
     const replaced = await files.putFile(alpha, {
-      level: "guild",
       name: "figures.csv",
       description: "Quarterly figures by region, restated",
       mime: "text/csv",
@@ -123,52 +122,84 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal(blobs.objects.has(fileBlobKey("org_home", created.id, 1)), false, "the replaced version's bytes are gone");
 
     await assert.rejects(
-      () => files.putFile(alpha, { level: "guild", name: "figures.csv", description: "d", mime: "", bytes: Buffer.from("x"), expectedVersion: 1 }),
+      () => files.putFile(alpha, { name: "figures.csv", description: "d", mime: "", bytes: Buffer.from("x"), expectedVersion: 1 }),
       /version conflict/,
     );
 
     const found = await files.findFiles(alpha, { query: "restated", limit: 20 });
     assert.deepEqual(found.map((item) => item.name), ["figures.csv"]);
     assert.equal(found[0]?.access, "write");
-    const listed = await files.findFiles(alpha, { level: "guild", limit: 20 });
+    const listed = await files.findFiles(alpha, { limit: 20 });
     assert.deepEqual(listed.map((item) => item.name), ["figures.csv"]);
-    assert.deepEqual((await files.findFiles(alpha, { level: "org", limit: 20 })).length, 0);
+    assert.deepEqual((await files.findFiles(beta, { limit: 20 })).length, 0);
 
-    const changes = await listFileChanges(database.pool, "org_home", view.display_path);
+    const changes = await changesAt(database.pool, "org_home", view.display_path);
     assert.deepEqual(changes.map((change) => [change.operation, change.version]), [["update", 2], ["create", 1]]);
   });
 
   test("a file follows its access list, and the operator edits that list as for a note", async () => {
-    const row = await files.loadFile(alpha, "org/org_home/guilds/guild_alpha/files/figures.csv");
-    await assert.rejects(() => files.loadFile(beta, "org/org_home/guilds/guild_alpha/files/figures.csv"), /artifact not found/);
+    const path_ = "org/org_home/files/figures.csv";
+    const row = await files.loadFile(alpha, path_);
+    await assert.rejects(() => files.loadFile(beta, path_), /artifact not found/);
 
     const target = { kind: "file" as const, id: row.id };
     const access = await accessList(store, operator, target);
-    assert.deepEqual(access.subjects.map((entry) => [entry.type, entry.id, entry.mode]), [["guild", "guild_alpha", "write"]]);
-    await grantAccess(store, operator, target, { type: "guild", id: "guild_beta", mode: "read" });
-    const read = await files.loadFile(beta, "org/org_home/guilds/guild_alpha/files/figures.csv");
-    assert.equal(read.access, "read");
-    await assert.rejects(() => files.deleteFile(beta, read), /write not allowed/);
-    // `guild` always means the writer's own guild, so beta's put makes a new file in guild_beta.
-    const betas = await files.putFile(beta, { level: "guild", name: "figures.csv", description: "Beta's own figures", mime: "", bytes: Buffer.from("x") });
-    assert.equal(files.view(betas).display_path, "org/org_home/guilds/guild_beta/files/figures.csv");
-    await assert.rejects(() => files.putFile(beta, { level: "org", name: "figures.csv", description: "d", mime: "", bytes: Buffer.from("x") }), /write not allowed/);
-    const logged = await listConfigChanges(database.pool, "org_home", { kind: "file", id: row.id });
-    assert.match(String(logged[0]?.summary), /Gave guild beta read on the file org\/org_home\/guilds\/guild_alpha\/files\/figures\.csv/);
-
-    assert.equal((await listStateArtifacts(store, operator, { guildId: "guild_alpha", agentIds: ["a_alpha"] })).some(
-      (item) => item.kind === "file" && item.title === "figures.csv" && item.size === 21,
-    ), true);
-  });
-
-  test("an agent creates files at agent and guild level only, and the note tools point at the file tools", async () => {
+    assert.deepEqual(access.subjects.map((entry) => [entry.type, entry.id, entry.mode]), [["agent", "a_alpha", "write"]]);
+    // a name is one file across the organisation: beta cannot replace a file it does not reach
     await assert.rejects(
-      () => files.putFile(alpha, { level: "org", name: "logo.png", description: "d", mime: "", bytes: Buffer.from("x") }),
+      () => files.putFile(beta, { name: "figures.csv", description: "Beta's own figures", mime: "", bytes: Buffer.from("x") }),
       /write not allowed/,
     );
-    const own = await files.putFile(alpha, { level: "agent", name: "scratch.bin", description: "Scratch bytes", mime: "", bytes: Buffer.from([0, 1, 2]) });
+    await grantAccess(store, operator, target, { type: "guild", id: "guild_beta", mode: "read" });
+    const read = await files.loadFile(beta, path_);
+    assert.equal(read.access, "read");
+    await assert.rejects(() => files.deleteFile(beta, read), /write not allowed/);
+    await assert.rejects(
+      () => files.putFile(beta, { name: "figures.csv", description: "d", mime: "", bytes: Buffer.from("x") }),
+      /write not allowed/,
+    );
+    const logged = await listConfigChanges(database.pool, "org_home", { kind: "file", id: row.id });
+    assert.match(String(logged[0]?.summary), /Gave guild beta read on the file org\/org_home\/files\/figures\.csv/);
+
+    // a guild's state holds the files its list names the guild or one of its agents for
+    assert.equal((await listStateArtifacts(store, operator, "guild_alpha")).some(
+      (item) => item.kind === "file" && item.title === "figures.csv" && item.size === 21,
+    ), true);
+    assert.equal((await listStateArtifacts(store, operator, "guild_beta")).some((item) => item.title === "figures.csv"), true);
+  });
+
+  test("an operator creates a file with the row it names, the organisation at write by default", async () => {
+    const upload = { description: "Logo", mime: "", bytes: Buffer.from("png") };
+    const logo = await files.putFile(operator, { name: "logo.png", ...upload });
+    assert.deepEqual(
+      (await accessList(store, operator, { kind: "file", id: logo.id })).subjects.map((entry) => [entry.type, entry.id, entry.mode]),
+      [["org", "org_home", "write"]],
+    );
+    const brief = await files.putFile(operator, {
+      name: "beta-brief.txt",
+      ...upload,
+      startingAccess: [{ type: "guild", id: "guild_beta", mode: "read" }],
+    });
+    assert.equal((await files.loadFile(beta, files.view(brief).display_path)).access, "read");
+    await assert.rejects(() => files.loadFile(alpha, files.view(brief).display_path), /artifact not found/);
+    assert.deepEqual((await files.listGuildFiles(operator, "guild_beta")).map((file) => file.name).includes("beta-brief.txt"), true);
+    assert.deepEqual((await files.listGuildFiles(operator, "guild_alpha")).map((file) => file.name).includes("beta-brief.txt"), false);
+    assert.deepEqual((await files.listAgentFiles(operator, { agentId: "a_beta", guildId: "guild_beta" })).map((file) => file.name).sort(), [
+      "beta-brief.txt",
+      "figures.csv",
+      "logo.png",
+    ]);
+    assert.deepEqual((await files.listAgentFiles(operator, { agentId: "a_alpha", guildId: "guild_alpha" })).map((file) => file.name).sort(), [
+      "figures.csv",
+      "logo.png",
+    ]);
+    assert.deepEqual((await files.listOrgFiles(operator)).map((file) => file.name).sort(), ["beta-brief.txt", "figures.csv", "logo.png"]);
+  });
+
+  test("an agent's file is reached by that agent alone, and the note tools point at the file tools", async () => {
+    const own = await files.putFile(alpha, { name: "scratch.bin", description: "Scratch bytes", mime: "", bytes: Buffer.from([0, 1, 2]) });
     assert.equal(own.mime, "application/octet-stream");
-    assert.equal(files.view(own).display_path, "org/org_home/agents/a_alpha/files/scratch.bin");
+    assert.equal(files.view(own).display_path, "org/org_home/files/scratch.bin");
     await assert.rejects(() => files.loadFile(beta, files.view(own).display_path), /artifact not found/);
 
     await assert.rejects(() => deleteByDisplayPath(store, alpha, files.view(own).display_path), /use file_delete for files/);
@@ -195,10 +226,14 @@ describe("shared files", { concurrency: 1 }, () => {
     const call = (name: string, args: Record<string, unknown>) =>
       invokeTool(ctx.services, ctx.run, ctx.hooks, { id: `c_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } }).then(([message]) => String(message.content));
 
-    const put = await call("file_put", { home_path: "out/report.pdf", level: "guild", description: "The quarterly report" });
-    assert.equal(put, "org/org_home/guilds/guild_alpha/files/report.pdf");
-    assert.match(await call("file_put", { home_path: "../escape", level: "guild", description: "d" }), /ERROR: .*under \/home\/a_alpha/);
-    assert.match(await call("file_put", { home_path: "out/report.pdf", level: "nowhere", description: "d" }), /level must be agent, guild, or org/);
+    const put = await call("file_put", { home_path: "out/report.pdf", description: "The quarterly report" });
+    assert.equal(put, "org/org_home/files/report.pdf");
+    assert.match(await call("file_put", { home_path: "../escape", description: "d" }), /ERROR: .*under \/home\/a_alpha/);
+    const putRow = await files.loadFile(alpha, put);
+    assert.deepEqual(
+      (await accessList(store, operator, { kind: "file", id: putRow.id })).subjects.map((entry) => [entry.type, entry.id, entry.mode]),
+      [["agent", "a_alpha", "write"]],
+    );
 
     const found = JSON.parse(await call("file_find", { query: "quarterly report" })) as { files: Array<{ name: string; mime: string; bytes: number }> };
     assert.deepEqual(found.files.map((item) => [item.name, item.mime, item.bytes]), [["report.pdf", "application/pdf", 13]]);
@@ -208,70 +243,114 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal(readFileSync(path.join(workspace, "shared", "report.pdf"), "utf8"), "%PDF-1.4 fake");
     const elsewhere = JSON.parse(await call("file_fetch", { path: put, home_path: "in/copy.pdf" })) as { home_path: string };
     assert.equal(elsewhere.home_path, "/home/a_alpha/in/copy.pdf");
-    assert.match(await call("file_fetch", { path: "org/org_home/guilds/guild_alpha/files/missing.pdf" }), /artifact not found/);
+    assert.match(await call("file_fetch", { path: "org/org_home/files/missing.pdf" }), /artifact not found/);
 
     const row = await files.loadFile(alpha, put);
     assert.equal(await call("file_delete", { path: put }), put);
     assert.equal(blobs.objects.has(fileBlobKey("org_home", row.id, row.version)), false);
     await assert.rejects(() => files.loadFile(alpha, put), /artifact not found/);
     assert.equal((await accessList(store, operator, { kind: "file", id: row.id }).catch((error: Error) => error.message)), "file not found");
-    const changes = await listFileChanges(database.pool, "org_home", put);
+    const changes = await changesAt(database.pool, "org_home", put);
     assert.deepEqual(changes.map((change) => change.operation), ["delete", "create"]);
   });
 
-  test("an operator's upload and delete are announced to the file's guild, and an organisation file's to none", async () => {
+  test("an operator's upload and delete are announced to each guild the file's list names", async () => {
     const published: Array<[string, SharedFileChange]> = [];
     const deps: SharedFileWriteDeps = {
+      artifacts: store,
       files,
       publishSharedFileChanged: async (guildId, change) => {
         published.push([guildId, change]);
       },
     };
-    const upload = { name: "brief.txt", description: "The brief", mime: "", bytes: Buffer.from("brief") };
-    const guildFile = await uploadSharedFile(deps, beta, { level: "guild", ...upload });
-    const agentFile = await uploadSharedFile(deps, beta, { level: "agent", ...upload });
-    const orgFile = await uploadSharedFile(deps, operator, { level: "org", ...upload });
-    await deleteSharedFile(deps, beta, guildFile.id);
+    const upload = { description: "The brief", mime: "", bytes: Buffer.from("brief"), expectedVersion: undefined };
+    const guildFile = await uploadSharedFile(deps, operator, {
+      name: "brief.txt",
+      ...upload,
+      access: { type: "guild", id: "guild_beta", mode: "write" },
+    });
+    const agentFile = await uploadSharedFile(deps, operator, {
+      name: "alpha-brief.txt",
+      ...upload,
+      access: { type: "agent", id: "a_alpha", mode: "read" },
+    });
+    const orgFile = await uploadSharedFile(deps, operator, { name: "org-brief.txt", ...upload, access: undefined });
+    await deleteSharedFile(deps, operator, guildFile.id);
     await deleteSharedFile(deps, operator, orgFile.id);
+    const orgPath = { displayPath: "org/org_home/files/org-brief.txt" };
     assert.deepEqual(published, [
-      ["guild_beta", { displayPath: "org/org_home/guilds/guild_beta/files/brief.txt" }],
-      ["guild_beta", { displayPath: "org/org_home/agents/a_beta/files/brief.txt" }],
-      ["guild_beta", { displayPath: "org/org_home/guilds/guild_beta/files/brief.txt" }],
+      ["guild_beta", { displayPath: "org/org_home/files/brief.txt" }],
+      ["guild_alpha", { displayPath: "org/org_home/files/alpha-brief.txt" }],
+      // an organisation row puts the file in every guild's scope
+      ["guild_alpha", orgPath],
+      ["guild_beta", orgPath],
+      ["guild_beta", { displayPath: "org/org_home/files/brief.txt" }],
+      ["guild_alpha", orgPath],
+      ["guild_beta", orgPath],
     ]);
+    await assert.rejects(
+      () => uploadSharedFile(deps, operator, { name: "bad.txt", ...upload, access: { type: "team", id: "x", mode: "read" } }),
+      /access: type must be org, guild, or agent/,
+    );
 
-    await deleteSharedFile({ files }, beta, agentFile.id);
-    await assert.rejects(() => files.loadFileById(beta, agentFile.id), /artifact not found/);
-    assert.equal(published.length, 3, "a write without a publisher announces nothing");
+    await deleteSharedFile({ artifacts: store, files }, operator, agentFile.id);
+    await assert.rejects(() => files.loadFileById(operator, agentFile.id), /artifact not found/);
+    assert.equal(published.length, 7, "a write without a publisher announces nothing");
   });
 
-  test("deleting an agent or a guild drops the access lists of the files it holds", async () => {
+  test("deleting an agent or a guild drops the rows naming it; a file others reach survives, one only it reached goes", async () => {
     await insertGuild(db, { guildId: "guild_gone", name: "gone", orgId: "org_home", about: "" }, new Date());
     await seedAgent("a_gone", "guild_gone", "gone");
+    await seedAgent("a_gone_two", "guild_gone", "gone-two");
     const gone = agentActor({ orgId: "org_home", guildId: "guild_gone", agentId: "a_gone", agentName: "gone" });
-    const upload = { name: "left.txt", description: "Left behind", mime: "", bytes: Buffer.from("left") };
-    const agentFile = await files.putFile(gone, { level: "agent", ...upload });
-    const guildFile = await files.putFile(gone, { level: "guild", ...upload });
+    const upload = { description: "Left behind", mime: "", bytes: Buffer.from("left") };
+    const agentFile = await files.putFile(gone, { name: "left.txt", ...upload });
+    const agentOnly = await files.putFile(gone, { name: "gone-own.txt", ...upload });
+    const guildFile = await files.putFile(operator, {
+      name: "gone-guild.txt",
+      ...upload,
+      startingAccess: [{ type: "guild", id: "guild_gone", mode: "write" }],
+    });
+    const guildOnly = await files.putFile(operator, {
+      name: "gone-guild-own.txt",
+      ...upload,
+      startingAccess: [{ type: "guild", id: "guild_gone", mode: "write" }],
+    });
+    await grantAccess(store, operator, { kind: "file", id: guildOnly.id }, { type: "agent", id: "a_gone_two", mode: "read" });
     for (const file of [agentFile, guildFile]) {
       await grantAccess(store, operator, { kind: "file", id: file.id }, { type: "guild", id: "guild_alpha", mode: "read" });
     }
-    const accessRows = async (fileId: string) =>
-      (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM artifact_access WHERE target_kind = 'file' AND target_id = $1`, [fileId])).rows[0]?.n;
+    const subjects = async (fileId: string) =>
+      (await db.query<{ subject: string }>(
+        `SELECT subject_type || ' ' || subject_id AS subject FROM artifact_access
+          WHERE target_kind = 'file' AND target_id = $1 ORDER BY subject`,
+        [fileId],
+      )).rows.map((row) => row.subject);
 
-    const guildRows = await accessRows(guildFile.id);
-    assert.ok((await accessRows(agentFile.id) ?? 0) > 0);
-    await deleteAgent(db, "a_gone");
-    assert.equal(await accessRows(agentFile.id), 0, "the agent's file loses its access list");
-    assert.equal(await accessRows(guildFile.id), guildRows, "the guild's file keeps its access list while the guild stands");
-    await deleteGuild(db, "guild_gone");
-    assert.equal(await accessRows(guildFile.id), 0, "the guild's file loses its access list");
+    const deletion = async (fileId: string) =>
+      (await db.query<{ operation: string; actor_id: string }>(
+        `SELECT operation, actor_id FROM file_changes WHERE artifact_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [fileId],
+      )).rows[0];
+
+    await deleteAgent(db, "a_gone", OPERATOR_ACTOR);
+    assert.deepEqual(await subjects(agentFile.id), ["guild guild_alpha"], "the agent's own row goes, the others stay");
+    assert.equal((await files.loadFileById(alpha, agentFile.id)).access, "read", "the file survives its creator");
+    await assert.rejects(() => files.loadFileById(operator, agentOnly.id), /artifact not found/, "a file only the agent reached goes with it");
+    assert.deepEqual(await deletion(agentOnly.id), { operation: "delete", actor_id: "user_operator" });
+    await deleteGuild(db, "guild_gone", OPERATOR_ACTOR);
+    assert.deepEqual(await subjects(guildFile.id), ["guild guild_alpha"], "the guild's row goes, the others stay");
+    assert.equal((await files.loadFileById(alpha, guildFile.id)).access, "read", "the file survives the guild");
+    await assert.rejects(() => files.loadFileById(operator, guildOnly.id), /artifact not found/, "a file only the guild and its agents reached goes with it");
+    assert.deepEqual(await deletion(guildOnly.id), { operation: "delete", actor_id: "user_operator" });
   });
 
   test("a find returns at least one file and at most the cap, whatever limit it asks", async () => {
     for (let index = 0; index <= FIND_MAX; index += 1) {
-      await files.putFile(alpha, { level: "agent", name: `batch-${index}.txt`, description: "Batch", mime: "", bytes: Buffer.from("b") });
+      await files.putFile(alpha, { name: `batch-${index}.txt`, description: "Batch", mime: "", bytes: Buffer.from("b") });
     }
-    assert.equal((await files.findFiles(alpha, { level: "agent", limit: -5 })).length, 1);
-    assert.equal((await files.findFiles(alpha, { level: "agent", limit: FIND_MAX * 10 })).length, FIND_MAX);
+    assert.equal((await files.findFiles(alpha, { limit: -5 })).length, 1);
+    assert.equal((await files.findFiles(alpha, { limit: FIND_MAX * 10 })).length, FIND_MAX);
     assert.equal((await files.findFiles(alpha, { query: "batch", limit: -5 })).length, 1);
     assert.equal((await files.findFiles(alpha, { query: "batch", limit: FIND_MAX * 10 })).length, FIND_MAX);
   });

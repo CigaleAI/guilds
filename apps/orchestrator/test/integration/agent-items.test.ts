@@ -539,9 +539,10 @@ test(
       const numberedOrgNote = await put(brief, { content: 5 });
       assert.equal(numberedOrgNote.statusCode, 422);
       assert.deepEqual(numberedOrgNote.json().detail[0].loc, ["body", "content"]);
-      const numberedGuildNote = await put(`${guild}/notes/brief.md`, { content: 5 });
-      assert.equal(numberedGuildNote.statusCode, 422);
-      assert.deepEqual(numberedGuildNote.json().detail[0].loc, ["body", "content"]);
+      const numberedAccess = await put(brief, { content: "x", access: { type: "org", id: "org_x", mode: 5 } });
+      assert.equal(numberedAccess.statusCode, 422);
+      assert.deepEqual(numberedAccess.json().detail[0].loc, ["body", "access", "mode"]);
+      assert.equal((await put(`${guild}/notes/brief.md`, { content: "x" })).statusCode, 404, "a guild has no note of its own");
       const displayPath = String(written.json().display_path);
       assert.equal((await get(brief)).json().content, "# Brief\n");
       assert.deepEqual(
@@ -561,15 +562,39 @@ test(
         `/api/file-changes?display_path=${encodeURIComponent(displayPath)}`,
       );
       assert.equal(changes.json().length, 1);
+
+      // expected_version: 0 asks for a new note, any other value for the live version, none for no check.
+      const exists = await put(brief, { content: "again", expected_version: 0 });
+      assert.equal(exists.statusCode, 409, exists.body);
+      assert.deepEqual(exists.json(), { detail: "artifact already exists" });
+      const behind = await put(brief, { content: "again", expected_version: 7 });
+      assert.equal(behind.statusCode, 409, behind.body);
+      assert.deepEqual(behind.json(), { detail: "version conflict" });
+      assert.equal((await get(brief)).json().content, "# Brief\n", "a refused write leaves the note as it was");
+      const current = await put(brief, { content: "# Brief v2\n", expected_version: 1 });
+      assert.equal(current.statusCode, 200, current.body);
+      assert.equal(current.json().version, 2);
+      const unchecked = await put(brief, { content: "# Brief v3\n" });
+      assert.equal(unchecked.json().version, 3);
+      const fresh = await put("/api/org/notes/fresh.md", { content: "new\n", expected_version: 0 });
+      assert.equal(fresh.statusCode, 200, fresh.body);
+      assert.equal(fresh.json().version, 1);
+      const absent = await put("/api/org/notes/absent.md", { content: "x", expected_version: 2 });
+      assert.equal(absent.statusCode, 409, absent.body);
+      assert.deepEqual(absent.json(), { detail: "version conflict" });
+      assert.equal((await get("/api/org/notes/absent.md")).statusCode, 404, "a refused create writes nothing");
+      const textual = await put(brief, { content: "x", expected_version: "1" });
+      assert.equal(textual.statusCode, 422);
+      assert.deepEqual(textual.json().detail[0].loc, ["body", "expected_version"]);
+
       assert.equal((await remove(brief)).statusCode, 204);
       assert.equal((await get(brief)).statusCode, 404);
 
-      const log = `${agent}/notes/log.md`;
-      const stale = await put(log, { content: "day one\n", expected_version: "first" });
+      const stale = await put(`${agent}/notes/task.md`, { content: "day one\n", expected_version: "first" });
       assert.equal(stale.statusCode, 422, "an expected version is a number");
       assert.deepEqual(stale.json().detail[0].loc, ["body", "expected_version"]);
-      assert.equal((await put(log, { content: "day one\n" })).statusCode, 200);
-      assert.equal((await remove(log)).statusCode, 204);
+      assert.equal((await put(`${agent}/notes/memory.md`, { content: "day one\n" })).statusCode, 200);
+      assert.equal((await get(`${agent}/notes/log.md`)).statusCode, 404, "an agent's notes routes serve its Task and Memory alone");
       assert.equal((await get(`${agent}/memory`)).statusCode, 200);
     } finally {
       await app.close();

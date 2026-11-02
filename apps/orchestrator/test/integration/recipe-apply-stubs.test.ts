@@ -29,6 +29,7 @@ import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { getByDisplayPath } from "../../src/artifacts/notes.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 
@@ -461,7 +462,6 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     mixed.notes = [
       {
         id: "desk-rules",
-        level: "guild",
         key: "desk-rules.md",
         body: "Skip thread ids already in seen-ids.\n",
         kind: "seed",
@@ -470,31 +470,29 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       },
       {
         id: "crm-map",
-        level: "agent",
-        role: "writer",
         key: "crm-map.md",
         body: "Map the sender to one CRM person.\n",
         kind: "seed",
         author: operatorAuthor(),
         guild: "read",
-        writers: ["reader"],
+        writers: ["writer", "reader"],
       },
       {
         id: "mixed-glossary",
-        level: "org",
         key: "mixed-glossary.md",
         body: "Thread: one mail conversation.\n",
         kind: "seed",
         author: operatorAuthor(),
+        org: "read",
         guild: "write",
         writers: [],
       },
     ];
-    mixed.roles[0]!.task.body += "\n\n![[guild/desk-rules.md]]";
-    mixed.roles[0]!.task.embeds = ["guild/desk-rules.md"];
-    mixed.roles[1]!.task.body += "\n\n![[agent/writer/crm-map.md]]\n\nThen note_get guild/desk-rules.md.";
-    mixed.roles[1]!.schedules[0]!.instruction += " Read agent/writer/crm-map.md first.";
-    mixed.roles[1]!.task.embeds = ["agent/writer/crm-map.md"];
+    mixed.roles[0]!.task.body += "\n\n![[org/desk-rules.md]]";
+    mixed.roles[0]!.task.embeds = ["org/desk-rules.md"];
+    mixed.roles[1]!.task.body += "\n\n![[org/crm-map.md]]\n\nThen note_get org/desk-rules.md.";
+    mixed.roles[1]!.schedules[0]!.instruction += " Read org/crm-map.md first.";
+    mixed.roles[1]!.task.embeds = ["org/crm-map.md"];
     const mixedId = await importReady(mixed);
     const mixedApply = await applyRecipe(mixedId, "fixture-desk-mixed");
     const mixedAgents = await listAgents(db, mixedApply.guild_id);
@@ -502,9 +500,9 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const mixedWriter = mixedAgents.find((row) => row.name === "mixed-writer");
     assert.ok(mixedReader && mixedWriter);
 
-    // Recipe notes land flat at their owner, and task embeds point at the written files.
-    const rulesPath = `org/org_home/guilds/${mixedApply.guild_id}/desk-rules.md`;
-    const mapPath = `org/org_home/agents/${mixedWriter.id}/crm-map.md`;
+    // Recipe notes land flat at the organisation, and task embeds point at the written files.
+    const rulesPath = "org/org_home/desk-rules.md";
+    const mapPath = "org/org_home/crm-map.md";
     const mixedReaderTask = await getAgentTask(db, "org_home", String(mixedReader.id));
     const mixedWriterTask = await getAgentTask(db, "org_home", String(mixedWriter.id));
     assert.ok(mixedReaderTask?.content_text.includes(`![[${rulesPath}]]`));
@@ -526,16 +524,196 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const mapNote = await getByDisplayPath(artifacts, noteReader, mapPath);
     assert.equal(mapNote.row?.key, "crm-map.md");
     assert.equal(mapNote.row?.path, "");
-    // Each note's access list gains the recipe's guild mode and writers on top of its level's rows.
+    // Each note's access list is the recipe's guild mode and writers; a note that states neither is written by the guild.
     const mixedGuild = { type: "guild", id: mixedApply.guild_id };
     const mapAccess = await noteAccess(String(mapNote.row?.id));
     assert.equal(modeOf(mapAccess, mixedGuild), "read");
     assert.equal(modeOf(mapAccess, { type: "agent", id: String(mixedReader.id) }), "write");
-    assert.equal(modeOf(await noteAccess(String(rulesNote.row?.id)), mixedGuild), "write");
+    assert.equal(modeOf(mapAccess, { type: "agent", id: String(mixedWriter.id) }), "write");
+    const rulesAccess = await noteAccess(String(rulesNote.row?.id));
+    assert.deepEqual(rulesAccess.length, 1);
+    assert.equal(modeOf(rulesAccess, mixedGuild), "write");
     const glossary = await getByDisplayPath(artifacts, noteReader, "org/org_home/mixed-glossary.md");
     const glossaryAccess = await noteAccess(String(glossary.row?.id));
-    assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read");
+    assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read", "an org mode is the organisation's row");
     assert.equal(modeOf(glossaryAccess, mixedGuild), "write");
+    assert.equal(modeOf(rulesAccess, { type: "org", id: "org_home" }), null);
+
+    // A note key the organisation already uses is written under the new guild's name, and the Task points at it.
+    const repeat = (guildName: string, prefix: string) => {
+      const recipe = fixtureDeskRecipe();
+      recipe.guild.name_suggestion = guildName;
+      recipe.roles[0]!.name_suggestion = `${prefix}-reader`;
+      recipe.roles[1]!.name_suggestion = `${prefix}-writer`;
+      recipe.connections[0]!.recommended_scope = "guild";
+      recipe.connections[1]!.recommended_scope = "guild";
+      recipe.notes = [
+        { id: "desk-rules", key: "desk-rules.md", body: "Again.\n", kind: "seed", author: operatorAuthor(), writers: [] },
+      ];
+      recipe.roles[0]!.task.body += "\n\n![[org/desk-rules.md]]";
+      recipe.roles[0]!.task.embeds = ["org/desk-rules.md"];
+      return recipe;
+    };
+    const againApply = await applyRecipe(await importReady(repeat("fixture-desk-again", "again")), "fixture-desk-again");
+    const againReader = (await listAgents(db, againApply.guild_id)).find((row) => row.name === "again-reader");
+    assert.ok(againReader);
+    const againPath = "org/org_home/fixture-desk-again-desk-rules.md";
+    assert.ok((await getAgentTask(db, "org_home", String(againReader.id)))?.content_text.includes(`![[${againPath}]]`));
+    assert.equal((await getByDisplayPath(artifacts, noteReader, againPath)).row?.content_text, "Again.\n");
+    assert.equal(
+      (await getByDisplayPath(artifacts, noteReader, rulesPath)).row?.content_text,
+      "Skip thread ids already in seen-ids.\n",
+      "the note already there is left as it was",
+    );
+
+    // When the prefixed key is taken too, the apply is refused and nothing it made stays.
+    const taken = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/fixture-desk-third-desk-rules.md",
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { content: "Taken.\n" },
+    });
+    assert.equal(taken.statusCode, 200, taken.body);
+    const third = repeat("fixture-desk-third", "third");
+    // A note the organisation's row alone reaches, written before the one that fails.
+    third.notes.unshift({
+      id: "third-glossary",
+      key: "third-glossary.md",
+      body: "Only the organisation reads this.\n",
+      kind: "seed",
+      author: operatorAuthor(),
+      org: "read",
+      writers: [],
+    });
+    const thirdId = await importReady(third);
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/recipes/${thirdId}/apply`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { guild_name: "fixture-desk-third" },
+    });
+    assert.equal(refused.statusCode, 409, refused.body);
+    const guildsAfter = await app.inject({ method: "GET", url: "/api/guilds", headers: AUTH });
+    assert.equal(
+      (guildsAfter.json() as Array<{ name: string }>).some((guild) => guild.name === "fixture-desk-third"),
+      false,
+      "the refused apply leaves no guild",
+    );
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/fixture-desk-third-desk-rules.md")).row?.content_text, "Taken.\n");
+    const orgOnly = await getByDisplayPath(artifacts, noteReader, "org/org_home/third-glossary.md");
+    assert.equal(orgOnly.tombstone, true, "the refused apply deletes a note it wrote, whatever its rows");
+
+    // An abort deletes what the apply made as a failed apply does, its notes included.
+    const aborting = repeat("fixture-desk-abort", "abort");
+    aborting.notes = [
+      { id: "abort-glossary", key: "abort-glossary.md", body: "Read by all.\n", kind: "seed", author: operatorAuthor(), org: "read", writers: [] },
+      { id: "abort-rules", key: "abort-rules.md", body: "Ours.\n", kind: "seed", author: operatorAuthor(), writers: [] },
+    ];
+    aborting.roles[0]!.task.body = aborting.roles[0]!.task.body.replace("![[org/desk-rules.md]]", "![[org/abort-rules.md]]");
+    aborting.roles[0]!.task.embeds = ["org/abort-rules.md"];
+    const abortApplied = await applyRecipe(await importReady(aborting), "fixture-desk-abort");
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/abort-glossary.md")).tombstone, undefined);
+    const aborted = await app.inject({ method: "POST", url: `/api/applies/${abortApplied.id}/abort`, headers: AUTH });
+    assert.equal(aborted.statusCode, 200, aborted.body);
+    for (const key of ["abort-glossary.md", "abort-rules.md"]) {
+      assert.equal((await getByDisplayPath(artifacts, noteReader, `org/org_home/${key}`)).tombstone, true, `${key} goes with the abort`);
+    }
+    assert.deepEqual(await listAgents(db, abortApplied.guild_id), []);
+
+    const abort = (applyId: string) => app.inject({ method: "POST", url: `/api/applies/${applyId}/abort`, headers: AUTH });
+    const applyStatus = async (applyId: string) =>
+      (await db.query<{ status: string }>("SELECT status FROM recipe_applies WHERE id = $1", [applyId])).rows[0]?.status;
+    const solo = (guildName: string, prefix: string, key: string) => {
+      const recipe = repeat(guildName, prefix);
+      recipe.notes = [{ id: key, key, body: "Mine.\n", kind: "seed", author: operatorAuthor(), writers: [] }];
+      recipe.roles[0]!.task.body = recipe.roles[0]!.task.body.replace("![[org/desk-rules.md]]", `![[org/${key}]]`);
+      recipe.roles[0]!.task.embeds = [`org/${key}`];
+      return recipe;
+    };
+
+    // An item whose rows name only two of the apply's agents goes with the second of them.
+    const shareApplied = await applyRecipe(await importReady(solo("fixture-desk-share", "share", "share-rules.md")), "fixture-desk-share");
+    const shareAgents = await listAgents(db, shareApplied.guild_id);
+    const sharedNote = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/share-between.md",
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { content: "Between the two.\n", access: { type: "agent", id: String(shareAgents[0]?.id), mode: "write" } },
+    });
+    assert.equal(sharedNote.statusCode, 200, sharedNote.body);
+    const sharedAccess = await app.inject({
+      method: "PUT",
+      url: `/api/notes/${String(sharedNote.json().id)}/access`,
+      headers: { ...AUTH, "content-type": "application/json" },
+      payload: { subjects: shareAgents.map((agent) => ({ type: "agent", id: String(agent.id), mode: "write" })) },
+    });
+    assert.equal(sharedAccess.statusCode, 200, sharedAccess.body);
+    assert.equal((await abort(shareApplied.id)).statusCode, 200);
+    assert.equal(
+      (await getByDisplayPath(artifacts, noteReader, "org/org_home/share-between.md")).tombstone,
+      true,
+      "a note only the apply's agents reached goes with them",
+    );
+
+    // A deletion the store refuses is reported, and the apply is not marked aborted.
+    // The note is read by the whole organisation, so the guild's deletion does not take it and its own deletion is refused.
+    const embedding = solo("fixture-desk-embed", "embed", "embed-rules.md");
+    embedding.notes[0]!.org = "read";
+    const embedApplied = await applyRecipe(await importReady(embedding), "fixture-desk-embed");
+    await writeAgentTask(db, noteReader, String(mixedReader.id), { content: "Follow ![[org/org_home/embed-rules.md]]\n" });
+    const refusedAbort = await abort(embedApplied.id);
+    assert.equal(refusedAbort.statusCode, 409, refusedAbort.body);
+    assert.match(refusedAbort.body, /undoing the apply left part of it in place: note [^:]+: note is embedded in task/);
+    assert.notEqual(await applyStatus(embedApplied.id), "aborted");
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/embed-rules.md")).tombstone, undefined);
+    await writeAgentTask(db, noteReader, String(mixedReader.id), { content: "Read the inbox.\n" });
+
+    // An abort of an apply into an existing guild leaves the guild and what it held before alone.
+    const json = { ...AUTH, "content-type": "application/json" };
+    const hostGuild = await app.inject({ method: "POST", url: "/api/guilds", headers: json, payload: { name: "fixture-host" } });
+    assert.equal(hostGuild.statusCode, 201, hostGuild.body);
+    const hostId = String(hostGuild.json().id);
+    const hostNote = await app.inject({
+      method: "PUT",
+      url: "/api/org/notes/host-rules.md",
+      headers: json,
+      payload: { content: "The host's.\n", access: { type: "guild", id: hostId, mode: "write" } },
+    });
+    assert.equal(hostNote.statusCode, 200, hostNote.body);
+    const hostTable = await app.inject({
+      method: "POST",
+      url: "/api/collections",
+      headers: json,
+      payload: { name: "host-ledger", purpose: "The host's own table", guild_id: hostId },
+    });
+    assert.equal(hostTable.statusCode, 201, hostTable.body);
+    const intoHost = async (prefix: string, key: string) => {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/recipes/${await importReady(solo(`fixture-desk-${prefix}`, prefix, key))}/apply`,
+        headers: json,
+        payload: { guild_id: hostId },
+      });
+      assert.equal(response.statusCode, 201, response.body);
+      return response.json() as { id: string };
+    };
+    const assertHostKept = async () => {
+      const guilds = (await app.inject({ method: "GET", url: "/api/guilds", headers: AUTH })).json() as Array<{ id: string }>;
+      assert.ok(guilds.some((guild) => guild.id === hostId), "the guild stays");
+      assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/host-rules.md")).row?.content_text, "The host's.\n");
+      assert.ok((await listCollections()).some((table) => table.id === String(hostTable.json().id)), "the guild's own table stays");
+    };
+    const addedApply = await intoHost("added", "added-rules.md");
+    assert.equal((await abort(addedApply.id)).statusCode, 200);
+    await assertHostKept();
+    assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/added-rules.md")).tombstone, true);
+    assert.deepEqual(await listAgents(db, hostId), [], "the apply's own agents go");
+
+    // A plan that records nothing it made deletes nothing that stood before.
+    const unrecordedApply = await intoHost("unrecorded", "unrecorded-rules.md");
+    await db.query("UPDATE recipe_applies SET plan = plan - 'created' WHERE id = $1", [unrecordedApply.id]);
+    assert.equal((await abort(unrecordedApply.id)).statusCode, 200);
+    await assertHostKept();
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,

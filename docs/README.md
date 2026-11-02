@@ -128,10 +128,10 @@ How the product works, for the operator. Start with
 
 - [Artifacts](concepts/artifacts.md) — the store and its display
   paths
-- [Notes](concepts/notes.md) — markdown at agent, guild, and
-  organisation level
-- [Files](concepts/files.md) — bytes agents share at agent, guild,
-  and organisation level
+- [Notes](concepts/notes.md) — markdown shared through each note's
+  access list
+- [Files](concepts/files.md) — bytes agents share through each
+  file's access list
 - [Collections](concepts/collections.md) — typed records agents
   read and write
 

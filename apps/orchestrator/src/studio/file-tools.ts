@@ -5,8 +5,7 @@ import { Type, type Static } from "typebox";
 import { operatorActor } from "../artifacts/actors.js";
 import { artifactAt, findNotes, parseActorPath } from "../artifacts/notes.js";
 import { listFileChanges } from "../db/file-changes.js";
-import { ARTIFACT_LEVELS } from "../artifacts/types.js";
-import { studioChoice, studioTool } from "./arguments.js";
+import { studioTool } from "./arguments.js";
 import { EditNoteArguments } from "./edit-arguments.js";
 import {
   STUDIO_ARTIFACT_LIST_MAX,
@@ -18,14 +17,13 @@ import { editRequest } from "./edits.js";
 import { loadNoteBase, noteCreateRequest, noteDeleteRequest } from "./note-edits.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { clampLimit, cursorOffset } from "./paging.js";
-import { studioReachesParsed, studioReachesPath } from "./reach.js";
+import { studioChangeTarget, studioReachesParsed, studioReachesPath } from "./reach.js";
 import { editScope, resolveHandle } from "./source-guild.js";
 import { wrapEvidence } from "./system.js";
 import type { StudioTool, StudioToolCall, StudioToolDeps } from "./tools.js";
 
 const FindArtifactsArguments = Type.Object({
   query: Type.Optional(Type.String({ description: "words to find in note titles and bodies" })),
-  level: Type.Optional(studioChoice(ARTIFACT_LEVELS)),
   cursor: Type.Optional(Type.String()),
   limit: Type.Optional(Type.Integer()),
 });
@@ -33,7 +31,7 @@ type FindArtifactsArguments = Static<typeof FindArtifactsArguments>;
 
 export const studioFindArtifacts: StudioTool = studioTool({
   name: "studio_find_artifacts",
-  description: "Search notes relevant to the source guild.",
+  description: "Search the notes whose access list names the source guild, one of its agents, or the organisation.",
   parameters: FindArtifactsArguments,
   async run(deps, call, input: FindArtifactsArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
@@ -43,11 +41,7 @@ export const studioFindArtifacts: StudioTool = studioTool({
       actorName: call.user.name ?? "operator",
       guildId: call.sourceGuildId,
     });
-    const found = await findNotes(deps.artifacts, actor, {
-      query: input.query ?? "",
-      ...(input.level !== undefined ? { level: input.level } : {}),
-      limit: STUDIO_ARTIFACT_LIST_MAX,
-    });
+    const found = await findNotes(deps.artifacts, actor, { query: input.query ?? "", limit: STUDIO_ARTIFACT_LIST_MAX });
     const allowed = [];
     for (const item of found.notes) {
       if (await studioReachesPath(deps, call, String(item.display_path ?? ""))) allowed.push(item);
@@ -57,7 +51,6 @@ export const studioFindArtifacts: StudioTool = studioTool({
     return {
       artifacts: slice.map((item) => ({
         display_path: item.display_path,
-        level: item.level,
         kind: item.kind,
         version: item.version,
         title: item.title,
@@ -91,7 +84,7 @@ export const studioGetArtifact: StudioTool = studioTool({
       throw new StudioUnprocessableError(`${parsed.collectionName} is a table; read it with studio_get_collection`);
     }
     if (!(await studioReachesParsed(deps, call, parsed))) {
-      throw new StudioUnprocessableError("artifact is not in the source guild or the organisation's shared files");
+      throw new StudioUnprocessableError("artifact is not in the source guild's reach");
     }
     const view = await artifactAt(deps.artifacts, actor, displayPath);
     if (view.kind !== "row") {
@@ -138,12 +131,13 @@ export const studioListFileChanges: StudioTool = studioTool({
       actorName: call.user.name ?? "operator",
       guildId: call.sourceGuildId,
     });
-    if (!(await studioReachesParsed(deps, call, parseActorPath(actor, displayPath)))) {
-      throw new StudioUnprocessableError("path is not in the source guild or the organisation's shared files");
+    const parsed = parseActorPath(actor, displayPath);
+    if (!(await studioReachesParsed(deps, call, parsed))) {
+      throw new StudioUnprocessableError("path is not in the source guild's reach");
     }
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(input.cursor);
-    const rows = await listFileChanges(deps.db, call.orgId, displayPath);
+    const rows = await listFileChanges(deps.db, call.orgId, await studioChangeTarget(deps, call, parsed));
     const slice = rows.slice(offset, offset + limit);
     return {
       display_path: displayPath,
@@ -164,13 +158,13 @@ export const studioListFileChanges: StudioTool = studioTool({
   },
 });
 
-/** The agent a note created at level agent belongs to; null at another level or when none is named. */
+/** The agent a created note starts written by alone; null when none is named. */
 async function noteAgentId(
   deps: StudioToolDeps,
   call: StudioToolCall,
   input: EditNoteArguments,
 ): Promise<string | null> {
-  if (input.level !== "agent" || !input.agent_id) {
+  if (!input.agent_id) {
     return null;
   }
   return (await resolveHandle(deps, call, input.agent_id)).id;
@@ -179,7 +173,7 @@ async function noteAgentId(
 export const studioEditNote: StudioTool = studioTool({
   name: "studio_edit_note",
   description:
-    "Propose a change to one note of the source guild, one of its agents, or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new note at the narrowest level that holds every reader; search with studio_find_artifacts first and edit a note that fits instead; the result's target carries the display path to embed or name in a Task draft. edit: a complete replacement of an existing note's body. delete: applying fails while any Task embeds the note, so draft those Tasks first. edit and delete name the note by display_path and pass the version studio_get_artifact returned as base_version. Memory, Tasks, scripts, and records are not changed here.",
+    "Propose a change to one note the source guild reaches. Nothing is written: the turn pauses and the operator applies or declines. create: a new note, read and written by the source guild's agents, or by the one agent agent_id names; a note name is unique across the organisation, so search with studio_find_artifacts first and edit a note that fits instead; the result's target carries the display path to embed or name in a Task draft. edit: a complete replacement of an existing note's body. delete: applying fails while any Task embeds the note, so draft those Tasks first. edit and delete name the note by display_path and pass the version studio_get_artifact returned as base_version. Memory, Tasks, scripts, and records are not changed here.",
   parameters: EditNoteArguments,
   async run(deps, call, input: EditNoteArguments) {
     const { action } = input;

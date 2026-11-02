@@ -26,7 +26,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("operators upload, list, download, share, and delete files per level", { timeout: 60_000 }, async () => {
+test("operators upload with a starting row, list per page, download, share, and delete files", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-http-files-notes-"), templatesRoot());
@@ -81,31 +81,55 @@ test("operators upload, list, download, share, and delete files per level", { ti
 
     const missingHeaders = await app.inject({
       method: "POST",
-      url: `/api/guilds/${guildId}/files`,
+      url: "/api/org/files",
       headers: { ...OWNER, ...BYTES, "x-filename": "report.pdf" },
       payload: Buffer.from("%PDF-1.4"),
     });
     assert.equal(missingHeaders.statusCode, 422, missingHeaders.body);
     assert.match(missingHeaders.body, /X-Filename and X-Description/);
-
-    const uploaded = await app.inject({
+    const partialAccess = await app.inject({
+      method: "POST",
+      url: "/api/org/files",
+      headers: { ...OWNER, ...BYTES, "x-filename": "report.pdf", "x-description": "d", "x-access-type": "guild" },
+      payload: Buffer.from("%PDF-1.4"),
+    });
+    assert.equal(partialAccess.statusCode, 422, partialAccess.body);
+    assert.match(partialAccess.body, /X-Access-Type, X-Access-Id, and X-Access-Mode go together/);
+    const perGuildUpload = await app.inject({
       method: "POST",
       url: `/api/guilds/${guildId}/files`,
-      headers: { ...OWNER, ...BYTES, "x-filename": encodeURIComponent("Q3 report.pdf"), "x-description": "The quarterly report", "x-mime": "application/pdf" },
+      headers: { ...OWNER, ...BYTES, "x-filename": "report.pdf", "x-description": "d" },
+      payload: Buffer.from("%PDF-1.4"),
+    });
+    assert.equal(perGuildUpload.statusCode, 404, "files are uploaded to the organisation alone");
+
+    const guildRow = { "x-access-type": "guild", "x-access-id": guildId, "x-access-mode": "write" };
+    const uploaded = await app.inject({
+      method: "POST",
+      url: "/api/org/files",
+      headers: {
+        ...OWNER,
+        ...BYTES,
+        ...guildRow,
+        "x-filename": encodeURIComponent("Q3 report.pdf"),
+        "x-description": "The quarterly report",
+        "x-mime": "application/pdf",
+      },
       payload: Buffer.from("%PDF-1.4"),
     });
     assert.equal(uploaded.statusCode, 201, uploaded.body);
     const file = uploaded.json() as { id: string; display_path: string; name: string; mime: string; bytes: number; version: number };
     assert.equal(file.name, "Q3 report.pdf");
-    assert.equal(file.display_path, `org/org_home/guilds/${guildId}/files/Q3 report.pdf`);
+    assert.equal(file.display_path, "org/org_home/files/Q3 report.pdf");
     assert.equal(file.mime, "application/pdf");
     assert.equal(file.bytes, 8);
+    assert.equal("level" in file, false);
 
     const listed = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: OWNER });
     assert.equal(listed.statusCode, 200);
     assert.deepEqual((listed.json() as Array<{ id: string }>).map((item) => item.id), [file.id]);
     const agentFiles = await app.inject({ method: "GET", url: `/api/agents/${agentId}/files`, headers: OWNER });
-    assert.deepEqual(agentFiles.json(), []);
+    assert.deepEqual((agentFiles.json() as Array<{ id: string }>).map((item) => item.id), [file.id], "the guild's row reaches its agent");
 
     const download = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(download.statusCode, 200);
@@ -122,16 +146,31 @@ test("operators upload, list, download, share, and delete files per level", { ti
       payload: Buffer.from("<script>alert(1)</script>"),
     });
     assert.equal(html.statusCode, 201, html.body);
-    const page = await app.inject({ method: "GET", url: `/api/files/${String(html.json().id)}`, headers: OWNER });
+    const htmlId = String(html.json().id);
+    const page = await app.inject({ method: "GET", url: `/api/files/${htmlId}`, headers: OWNER });
     assert.equal(page.headers["content-type"], "text/html");
     assert.match(String(page.headers["content-disposition"]), /^attachment;/);
+    const htmlAccess = await app.inject({ method: "GET", url: `/api/files/${htmlId}/access`, headers: OWNER });
+    assert.deepEqual(
+      (htmlAccess.json() as { subjects: Array<{ type: string; id: string; mode: string }> }).subjects.map((entry) => [entry.type, entry.id, entry.mode]),
+      [["org", "org_home", "write"]],
+      "an upload that names no row is written by the organisation",
+    );
     const orgFiles = await app.inject({ method: "GET", url: `/api/org/files`, headers: OWNER });
     assert.equal(orgFiles.statusCode, 200);
-    assert.deepEqual((orgFiles.json() as Array<{ id: string }>).map((item) => item.id), [html.json().id]);
+    assert.deepEqual((orgFiles.json() as Array<{ id: string }>).map((item) => item.id).sort(), [file.id, htmlId].sort());
+    const guildAfter = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: OWNER });
+    assert.deepEqual(
+      (guildAfter.json() as Array<{ id: string }>).map((item) => item.id).sort(),
+      [file.id, htmlId].sort(),
+      "a guild page lists what names the guild and what the organisation's row reaches",
+    );
 
-    // A member who cannot see the private guild does not see its file, by list or by id.
+    // A member who does not operate the private guild does not see a file only the guild's row reaches, by list or by id.
     const hiddenList = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/files`, headers: TEAMMATE });
     assert.equal(hiddenList.statusCode, 404);
+    const teammateOrg = await app.inject({ method: "GET", url: "/api/org/files", headers: TEAMMATE });
+    assert.deepEqual((teammateOrg.json() as Array<{ id: string }>).map((item) => item.id), [htmlId]);
     const hiddenFile = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: TEAMMATE });
     assert.equal(hiddenFile.statusCode, 404);
     const hiddenAccess = await app.inject({ method: "GET", url: `/api/files/${file.id}/access`, headers: TEAMMATE });
@@ -139,10 +178,9 @@ test("operators upload, list, download, share, and delete files per level", { ti
 
     const access = await app.inject({ method: "GET", url: `/api/files/${file.id}/access`, headers: OWNER });
     assert.equal(access.statusCode, 200, access.body);
-    assert.deepEqual(
-      (access.json() as { subjects: Array<{ type: string; id: string; mode: string }> }).subjects.map((entry) => [entry.type, entry.id, entry.mode]),
-      [["guild", guildId, "write"]],
-    );
+    assert.deepEqual(access.json(), {
+      subjects: [{ type: "guild", id: guildId, name: "archive", mode: "write", guild_id: guildId, guild_name: "archive" }],
+    });
     const replaced = await app.inject({
       method: "PUT",
       url: `/api/files/${file.id}/access`,
@@ -150,6 +188,8 @@ test("operators upload, list, download, share, and delete files per level", { ti
       payload: { subjects: [{ type: "guild", id: guildId, mode: "write" }, { type: "org", id: "org_home", mode: "read" }] },
     });
     assert.equal(replaced.statusCode, 200, replaced.body);
+    const shared = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: TEAMMATE });
+    assert.equal(shared.statusCode, 200, "a row outside the private guild makes the file visible");
     const unlisted = await app.inject({
       method: "PUT",
       url: `/api/files/${file.id}/access`,
@@ -169,7 +209,7 @@ test("operators upload, list, download, share, and delete files per level", { ti
 
     const replacedFile = await app.inject({
       method: "POST",
-      url: `/api/guilds/${guildId}/files`,
+      url: "/api/org/files",
       headers: { ...OWNER, ...BYTES, "x-filename": encodeURIComponent("Q3 report.pdf"), "x-description": "The quarterly report, final" },
       payload: Buffer.from("%PDF-1.4 final"),
     });
@@ -177,29 +217,51 @@ test("operators upload, list, download, share, and delete files per level", { ti
     assert.equal((replacedFile.json() as { id: string; version: number }).id, file.id);
     assert.equal((replacedFile.json() as { version: number }).version, 2);
 
+    // X-Expected-Version: 0 asks for a new file, any other value for the live version, none for no check.
+    const replace = (headers: Record<string, string>, name = "Q3 report.pdf") =>
+      app.inject({
+        method: "POST",
+        url: "/api/org/files",
+        headers: { ...OWNER, ...BYTES, "x-filename": encodeURIComponent(name), "x-description": "The quarterly report", ...headers },
+        payload: Buffer.from("%PDF-1.4 again"),
+      });
+    const exists = await replace({ "x-expected-version": "0" });
+    assert.equal(exists.statusCode, 409, exists.body);
+    assert.deepEqual(exists.json(), { detail: "artifact already exists" });
+    const behind = await replace({ "x-expected-version": "1" });
+    assert.equal(behind.statusCode, 409, behind.body);
+    assert.deepEqual(behind.json(), { detail: "version conflict" });
+    const current = await replace({ "x-expected-version": "2" });
+    assert.equal(current.statusCode, 201, current.body);
+    assert.equal((current.json() as { version: number }).version, 3);
+    const notThere = await replace({ "x-expected-version": "4" }, "absent.pdf");
+    assert.equal(notThere.statusCode, 409, notThere.body);
+    assert.deepEqual(notThere.json(), { detail: "version conflict" });
+    const fresh = await replace({ "x-expected-version": "0" }, "fresh.pdf");
+    assert.equal(fresh.statusCode, 201, fresh.body);
+    assert.equal((fresh.json() as { version: number }).version, 1);
+    const malformed = await replace({ "x-expected-version": "two" });
+    assert.equal(malformed.statusCode, 422, malformed.body);
+    assert.match(malformed.body, /X-Expected-Version must be a whole number/);
+
     const removed = await app.inject({ method: "DELETE", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(removed.statusCode, 204);
     const gone = await app.inject({ method: "GET", url: `/api/files/${file.id}`, headers: OWNER });
     assert.equal(gone.statusCode, 404);
-    assert.equal(blobs.objects.size, 1, "only the organisation file's bytes remain");
+    assert.equal(blobs.objects.size, 2, "only the organisation files' bytes remain");
 
-    const agentUpload = await app.inject({
-      method: "POST",
-      url: `/api/agents/${agentId}/files`,
-      headers: { ...OWNER, ...BYTES, "x-filename": "notes.txt", "x-description": "Working notes" },
-      payload: Buffer.from("notes"),
-    });
-    assert.equal(agentUpload.statusCode, 201, agentUpload.body);
     const guildPath = file.display_path;
     assert.deepEqual(
       published,
       [
         [guildId, { displayPath: guildPath }],
+        [guildId, { displayPath: "org/org_home/files/page.html" }],
         [guildId, { displayPath: guildPath }],
         [guildId, { displayPath: guildPath }],
-        [guildId, { displayPath: `org/org_home/agents/${agentId}/files/notes.txt` }],
+        [guildId, { displayPath: "org/org_home/files/fresh.pdf" }],
+        [guildId, { displayPath: guildPath }],
       ],
-      "a guild or agent file's upload, replacement and deletion are each announced once to its guild; an organisation file's are not",
+      "an upload, a replacement and a deletion are each announced to every guild whose scope the file is in",
     );
   } finally {
     await app.close();

@@ -142,8 +142,8 @@ export type StateFlag = "no_agent_read" | "writers" | "deletes_others_rows" | "u
 export type StateItemRow = {
   display_path: string;
   kind: "note" | "memory" | "script" | "file" | "table";
-  level: "agent" | "guild" | "org";
-  owner_id: string;
+  /** The agent whose Memory or script it is; null for a note, a file, and a table. */
+  agent_id: string | null;
   title: string;
   /** Bytes of text, or records for a table. */
   size: number;
@@ -152,6 +152,8 @@ export type StateItemRow = {
   created_at: string;
   collection_id: string | null;
   note_id: string | null;
+  /** The note's, file's, Memory's, or script's artifact, whose changes are its own; null for a table. */
+  artifact_id: string | null;
   changes: number;
   reads: number;
   top_writer: StateShare | null;
@@ -647,8 +649,7 @@ export type ReferenceNode = {
   id: string;
   kind: ReferenceNodeKind;
   label: string;
-  level: "agent" | "guild" | "org" | null;
-  /** The agent whose Task it is, or who owns an agent-level note. */
+  /** The agent whose Task it is; null for a note, a table, and a link that does not resolve. */
   agent_id: string | null;
   collection_id: string | null;
   /** Part of the guild's state, rather than only reached from it. */

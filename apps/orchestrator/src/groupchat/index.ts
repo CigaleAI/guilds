@@ -98,10 +98,11 @@ export type RoutinesChanged = { agent_id: string; action: string; schedule_id: s
 export type ScriptsChanged = { agent_id: string; action: string; name?: string };
 
 /**
- * A file of the guild that changed: its path, the level it sits at when the change names one, and
- * the agent whose file it is when it is an agent's.
+ * A note, file, or agent item the guild reaches that changed: its path, `agent` for an agent's
+ * Task or Memory and `files` for a shared file when the change names it, and the agent whose item
+ * or tool call it is when there is one.
  */
-export type ArtifactsChanged = { path: string; scope?: "agent" | "guild" | "files"; agent_id?: string };
+export type ArtifactsChanged = { path: string; scope?: "agent" | "files"; agent_id?: string };
 
 /** An issue that was created, resolved or reopened, and the agent that reported it when one did. */
 export type IssuesChanged = { action: string; issue_id?: string; agent_id?: string };

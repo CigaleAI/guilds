@@ -43,11 +43,11 @@ const memory = `Require a verified contract plus current market/onchain traction
 Await next selected queue. Watch pass at 12:35Z had zero watch projects: 0 assessments, 0 snapshots, 0 transitions, 0 manager alerts.
 `;
 
-const taskWithEmbeds = `Every 24h, run a retrospective with researchoor. Check closed and exited calls against ![[org/org_01j9x2k7/guilds/g_01j9x3m1/fund-thesis.md]] and log each decision in ![[org/org_01j9x2k7/collections/degen-orders]].
+const taskWithEmbeds = `Every 24h, run a retrospective with researchoor. Check closed and exited calls against ![[org/org_01j9x2k7/fund-thesis.md]] and log each decision in ![[org/org_01j9x2k7/collections/degen-orders]].
 
-Keep your scoring rules in ![[org/org_01j9x2k7/agents/a_01j9x4p2/scoring.md]].
+Keep your scoring rules in ![[org/org_01j9x2k7/scoring.md]].
 
-Text inside code stays literal: \`![[org/org_01j9x2k7/guilds/g_01j9x3m1/fund-thesis.md]]\`.
+Text inside code stays literal: \`![[org/org_01j9x2k7/fund-thesis.md]]\`.
 `;
 
 const everythingElse = `### Before sizing a trade
@@ -127,7 +127,7 @@ Updated \`portfolio_valuation.md\` · No orders executed.`}
         <Markdown density="compact" tone="tinted">
           {`If the manager requires a **$1k buy** but wallet only holds the native token on that chain, swap the equivalent amount of ETH first.
 
-See ![[org/org_01j9x2k7/guilds/g_01j9x3m1/fund-thesis.md]] and \`degen-orders\`.`}
+See ![[org/org_01j9x2k7/fund-thesis.md]] and \`degen-orders\`.`}
         </Markdown>
       </Bubble>
       <Bubble variant="agent">

@@ -425,7 +425,7 @@ async function noteBlock(context: InlineContext, note: LiveNote, depth: number):
     body = await expandEmbedLayer(context, body, depth - 1);
   }
   const tag = embedTagName(row.key);
-  return `<${tag} path="${escapeXml(href)}" level="${row.level}">\n${body.replace(/\s+$/, "")}\n</${tag}>`;
+  return `<${tag} path="${escapeXml(href)}">\n${body.replace(/\s+$/, "")}\n</${tag}>`;
 }
 
 function escapeXml(value: string): string {

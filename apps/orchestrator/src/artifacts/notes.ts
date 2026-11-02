@@ -1,14 +1,17 @@
-import { deleteAccessList } from "../db/artifact-access.js";
 import {
   getArtifactAt,
+  getLiveArtifact,
   getArtifactOrTombstoneAt,
   getLiveNote,
   getMemoryRevisionText,
   insertNote,
   listAgentsEmbedding,
+  listArtifactsEverAt,
   listArtifactsByKind,
   listGuildArtifacts,
-  listOwnerArtifacts,
+  listGuildStateArtifacts,
+  listOrgArtifacts,
+  listReachedArtifacts,
   listReadableNotes,
   searchArtifactsByKind,
   softDeleteArtifact,
@@ -18,19 +21,18 @@ import {
   type ArtifactRow,
 } from "../db/artifacts.js";
 import { getRecordOrTombstone } from "../db/collections.js";
-import { recordFileChange } from "../db/file-changes.js";
+import { recordFileChange, type ChangeTarget } from "../db/file-changes.js";
 import { isUniqueViolation, withTransaction } from "../db/pg.js";
-import { type AccessRaise, createsWritable, defaultGrants } from "./access.js";
+import { creatorGrant } from "./access.js";
 import { deleteCollection, describeCollection, loadCollectionByName, requireReadable } from "./collections.js";
 import { ArtifactError } from "./errors.js";
-import { writeGrants } from "./grants.js";
+import { requireSubject, writeGrants } from "./grants.js";
 import { listRevisions } from "./memory.js";
-import { listAccess, raiseAccess } from "./access-lists.js";
+import { listAccess } from "./access-lists.js";
 import {
-  assertNoteKeyFree,
-  displayPathFor,
   isDisplayPath,
   normalizeNoteKey,
+  noteDisplayPath,
   parseDisplayPath,
   revisionDisplayPath,
   TASK_KEY,
@@ -38,16 +40,20 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { findLimit, parseRecordId } from "./search.js";
-import { artifactMode, artifactTextView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, ownerFor, reachesOwner, recordViewWithPath, type ArtifactOwnerRef, type ArtifactStore, type ArtifactTextView, type HostNoteView, type StateArtifact, rowDisplayPath } from "./store.js";
+import { artifactMode, artifactTextView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, reachesAgent, recordViewWithPath, type ArtifactStore, type ArtifactTextView, type HostNoteView, type StateArtifact, rowDisplayPath } from "./store.js";
 import {
+  NO_HIDDEN_GUILDS,
   SEARCH_TEXT_MAX,
   type AccessEntry,
+  type AccessGrant,
   type ArtifactActor,
-  type ArtifactLevel,
 } from "./types.js";
 
 /** A parsed display path that names a note, file, Memory, or script by where it sits. */
 export type ArtifactPath = Extract<ParsedDisplayPath, { kind: "artifact" }>;
+
+/** A parsed display path that names a record of a collection. */
+export type RecordPath = Extract<ParsedDisplayPath, { kind: "record" }>;
 
 /** A parsed display path that names an archived Memory revision. */
 export type RevisionPath = Extract<ParsedDisplayPath, { kind: "revision" }>;
@@ -59,20 +65,21 @@ export type DisplayPathRead = {
   tombstone?: boolean;
 };
 
-/** A note's text as a write sets it, at its owner, folder, and file name. */
+/**
+ * A note's text as a write sets it under its key, and the rows of the access list it starts with
+ * when the write creates it.
+ */
 export type NoteUpsert = {
-  level: ArtifactLevel;
-  owner: ArtifactOwnerRef;
-  path: string;
   key: string;
   title: string | null;
   contentText: string;
   searchText: string | null;
   expectedVersion?: number;
+  startingAccess: AccessGrant[];
 };
 
 function addressOf(parsed: ArtifactPath): ArtifactAddress {
-  return { org_id: parsed.orgId, level: parsed.level, owner_id: parsed.ownerId, path: parsed.path, key: parsed.key };
+  return { org_id: parsed.orgId, agent_id: parsed.agentId, path: parsed.path, key: parsed.key };
 }
 
 /** The live row a parsed display path names. */
@@ -88,15 +95,22 @@ export async function loadParsedOrTombstone(
   return getArtifactOrTombstoneAt(store.db, addressOf(parsed));
 }
 
-/** Writes a note: the live one at its address with write access to it, else a new one with its starting access list. */
+/**
+ * Writes the organisation's note at its key: the live one with write access to it, refused as not
+ * writable without it, else a new one whose access list starts with `note.startingAccess`. An
+ * expected version of 0 asks for a new note, a 409 when one is live; any other expected version
+ * must be the live note's, a 409 otherwise.
+ */
 export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, note: NoteUpsert): Promise<ArtifactRow> {
   return withTransaction(store.db, async (client) => {
-    const address = { org_id: note.owner.orgId, level: note.level, owner_id: note.owner.ownerId, path: note.path, key: note.key };
-    const live = await getLiveNote(client, address);
+    const live = await getLiveNote(client, actor.orgId, note.key);
     const hash = hashArtifactContent(note.contentText);
     if (live) {
       if ((await artifactMode(store, actor, live)) !== "write") {
         throw new ArtifactError("write not allowed", 422);
+      }
+      if (note.expectedVersion === 0) {
+        throw new ArtifactError("artifact already exists", 409);
       }
       if (note.expectedVersion !== undefined && live.version !== note.expectedVersion) {
         throw new ArtifactError("version conflict", 409);
@@ -116,17 +130,20 @@ export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, not
       });
       return row;
     }
-    if (!actor.operator && !createsWritable(note.level)) {
-      throw new ArtifactError("write not allowed", 422);
+    if (note.expectedVersion !== undefined && note.expectedVersion !== 0) {
+      throw new ArtifactError("version conflict", 409);
+    }
+    await assertLiveCount(store, actor.orgId);
+    for (const grant of note.startingAccess) {
+      await requireSubject(client, actor, grant);
     }
     let row: ArtifactRow;
     try {
       row = await insertNote(
         client,
         {
-          ...address,
-          guild_id: note.owner.guildId,
-          agent_id: note.owner.agentId,
+          org_id: actor.orgId,
+          key: note.key,
           origin_guild_id: actor.guildId,
           title: note.title,
           content_text: note.contentText,
@@ -142,7 +159,7 @@ export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, not
       }
       throw error;
     }
-    await writeGrants(client, actor, { kind: "note", id: row.id }, defaultGrants(row.level, row.owner_id));
+    await writeGrants(client, actor, { kind: "note", id: row.id }, note.startingAccess);
     await recordFileChange(client, actor, {
       orgId: row.org_id,
       artifactId: row.id,
@@ -152,6 +169,11 @@ export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, not
     });
     return { ...row, access: "write" as const };
   });
+}
+
+/** Whether the organisation has a live note with this key. */
+export async function isNoteKeyTaken(store: ArtifactStore, orgId: string, key: string): Promise<boolean> {
+  return (await getLiveNote(store.db, orgId, normalizeNoteKey(key))) !== null;
 }
 
 /** Refuses deleting a note while an agent's task embeds it. */
@@ -186,9 +208,17 @@ export async function deleteByDisplayPath(store: ArtifactStore, actor: ArtifactA
   await deleteNoteAt(store, actor, parsed);
 }
 
+/** Deletes the live note with this id as the actor; a note no longer live is left as it is. */
+export async function deleteNoteById(store: ArtifactStore, actor: ArtifactActor, noteId: string): Promise<void> {
+  const row = await getLiveArtifact(store.db, actor.orgId, { id: noteId, kind: "note" });
+  if (row) {
+    await deleteByDisplayPath(store, actor, rowDisplayPath(row));
+  }
+}
+
 /** Deletes the note or script a display path names, refusing a task, Memory, a file, or an embedded note. */
 async function deleteNoteAt(store: ArtifactStore, actor: ArtifactActor, parsed: ArtifactPath): Promise<void> {
-  if (parsed.level === "agent" && parsed.path === "" && parsed.key === TASK_KEY) {
+  if (parsed.agentId !== null && parsed.path === "" && parsed.key === TASK_KEY) {
     throw new ArtifactError("cannot delete this file", 422);
   }
   const row = await loadParsed(store, parsed);
@@ -210,7 +240,6 @@ async function deleteNoteAt(store: ArtifactStore, actor: ArtifactActor, parsed: 
     if (version === null) {
       throw new ArtifactError("artifact not found", 404);
     }
-    await deleteAccessList(client, { kind: "note", id: row.id });
     await recordFileChange(client, actor, {
       orgId: row.org_id,
       artifactId: row.id,
@@ -269,7 +298,7 @@ async function readRevision(
   if (parsed.orgId !== actor.orgId) {
     throw new ArtifactError("artifact is not in this organisation", 404);
   }
-  if (!actor.operator || !reachesOwner(actor, "agent", parsed.agentId)) {
+  if (!actor.operator || !reachesAgent(actor, parsed.agentId)) {
     throw new ArtifactError("artifact not found", 404);
   }
   const content = await getMemoryRevisionText(store.db, parsed.orgId, parsed.agentId, parsed.stamp);
@@ -294,19 +323,53 @@ export async function canReadDisplayPath(store: ArtifactStore, actor: ArtifactAc
     return (await describeCollection(store, actor, parsed.collectionName)) !== null;
   }
   if (parsed.kind === "revision") {
-    return actor.operator && reachesOwner(actor, "agent", parsed.agentId);
+    return actor.operator && reachesAgent(actor, parsed.agentId);
   }
   const row = await loadParsedOrTombstone(store, parsed);
   if (!row) {
-    return reachesOwner(actor, parsed.level, parsed.ownerId);
+    return parsed.agentId === null ? actor.operator : reachesAgent(actor, parsed.agentId);
   }
   return (await artifactMode(store, actor, row)) !== null;
 }
 
-/** A search of the notes an actor reads: the words to match, the level to keep, and how many to return. */
-export type NoteSearch = { query?: string; level?: ArtifactLevel; limit?: number };
+/**
+ * Whose changes a display path's history shows the actor: every note, file, Memory, or script
+ * that sat at the path, live or deleted, that the actor reads; the record it names in a
+ * collection the actor reads; the agent's Task when it names one the actor reaches. Nothing for a
+ * path the actor reads nothing at.
+ */
+export async function readableChangeTarget(store: ArtifactStore, actor: ArtifactActor, displayPath: string): Promise<ChangeTarget> {
+  const none: ChangeTarget = { artifactIds: [], taskAgentId: null };
+  const parsed = isDisplayPath(displayPath) ? parseDisplayPath(displayPath) : null;
+  if (parsed?.orgId !== actor.orgId || parsed.kind === "revision" || parsed.kind === "collection") {
+    return none;
+  }
+  if (parsed.kind === "record") {
+    return readableRecordTarget(store, actor, parsed);
+  }
+  if (parsed.agentId !== null && parsed.path === "" && parsed.key === TASK_KEY) {
+    return reachesAgent(actor, parsed.agentId) ? { artifactIds: [], taskAgentId: parsed.agentId } : none;
+  }
+  const rows = await listArtifactsEverAt(store.db, addressOf(parsed));
+  const readable = await Promise.all(rows.map(async (row) => ((await artifactMode(store, actor, row)) === null ? [] : [row.id])));
+  return { artifactIds: readable.flat(), taskAgentId: null };
+}
 
-/** Notes the actor may read, searched by `query` or listed, optionally at one level. */
+/** The record a record path names, live or deleted, when the actor reads its collection; nothing otherwise. */
+async function readableRecordTarget(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  parsed: RecordPath,
+): Promise<ChangeTarget> {
+  const collection = await describeCollection(store, actor, parsed.collectionName);
+  const record = collection ? await getRecordOrTombstone(store.db, collection.id, parseRecordId(parsed.recordId)) : null;
+  return { artifactIds: record ? [record.id] : [], taskAgentId: null };
+}
+
+/** A search of the notes an actor reads: the words to match, and how many to return. */
+export type NoteSearch = { query?: string; limit?: number };
+
+/** Notes the actor may read, searched by `query` or listed. */
 export async function findNotes(
   store: ArtifactStore,
   actor: ArtifactActor,
@@ -315,39 +378,47 @@ export async function findNotes(
   const limit = findLimit(args.limit);
   const query = (args.query ?? "").trim();
   const rows = query
-    ? await searchArtifactsByKind(store.db, actor, "note", { query, level: args.level, limit })
-    : await listArtifactsByKind(store.db, actor, "note", { level: args.level, limit });
+    ? await searchArtifactsByKind(store.db, actor, "note", { query, limit })
+    : await listArtifactsByKind(store.db, actor, "note", limit);
   return { notes: rows.map(artifactTextView) };
 }
 
-/** The notes one owner holds, as the Host lists them. */
-export async function listOwnerNotes(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  level: ArtifactLevel,
-  ownerId: string,
-): Promise<HostNoteView[]> {
-  const rows = await listOwnerArtifacts(store.db, actor, { level, owner_id: ownerId, kind: "note" });
-  return rows.map(hostNoteView);
+/** Every note of the organisation the actor reads, as the Host lists them. */
+export async function listOrgNotes(store: ArtifactStore, actor: ArtifactActor): Promise<HostNoteView[]> {
+  return (await listOrgArtifacts(store.db, actor, "note")).map(hostNoteView);
 }
 
-/** The owners of one guild's state: the guild and its agents. */
-export type StateOwners = { guildId: string; agentIds: string[] };
+/** The notes whose access list has a row for the guild, one of its agents, or the organisation, that the actor reads, as the Host lists them. */
+export async function listGuildNotes(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<HostNoteView[]> {
+  return (await listGuildArtifacts(store.db, actor, guildId, "note")).map(hostNoteView);
+}
+
+/** An agent whose reach a listing reads: the agent and the guild it sits in. */
+export type ReachingAgent = { agentId: string; guildId: string };
+
+/** `actor` reading as the agent: what the agent reaches through access lists, and nothing hidden from `actor`. */
+export function agentReader(actor: ArtifactActor, agent: ReachingAgent): ArtifactActor {
+  return { ...actor, operator: false, guildId: agent.guildId, agentId: agent.agentId, hidden: NO_HIDDEN_GUILDS };
+}
+
+/** The notes the agent reads, without those hidden from the actor, as the Host lists them. */
+export async function listAgentNotes(store: ArtifactStore, actor: ArtifactActor, agent: ReachingAgent): Promise<HostNoteView[]> {
+  return (await listReachedArtifacts(store.db, actor, agentReader(actor, agent), "note")).map(hostNoteView);
+}
 
 /**
- * The notes, Memory, scripts, and files of one guild's state the actor can read: its own,
- * its agents', and the organisation's.
+ * What one guild's state holds that the actor can read: its agents' Memory and scripts, and the
+ * notes and files whose access list has a row for the guild, one of its agents, or the organisation.
  */
 export async function listStateArtifacts(
   store: ArtifactStore,
   actor: ArtifactActor,
-  owners: StateOwners,
+  guildId: string,
 ): Promise<StateArtifact[]> {
-  return (await listGuildArtifacts(store.db, actor, owners)).map((row) => ({
+  return (await listGuildStateArtifacts(store.db, actor, guildId)).map((row) => ({
     display_path: rowDisplayPath(row),
     kind: stateKind(row.kind),
-    level: row.level,
-    owner_id: row.owner_id,
+    agent_id: row.agent_id,
     // A script's or a file's title column holds its description; its key is its name.
     title: row.kind === "script" || row.kind === "file" ? row.key : (row.title ?? row.key),
     size: row.bytes ?? Buffer.byteLength(row.content_text ?? JSON.stringify(row.content_json ?? ""), "utf8"),
@@ -355,6 +426,7 @@ export async function listStateArtifacts(
     created_by: row.created_by_name,
     created_at: row.created_at,
     note_id: row.kind === "note" ? row.id : null,
+    artifact_id: row.id,
   }));
 }
 
@@ -367,21 +439,14 @@ function stateKind(kind: ArtifactRow["kind"]): StateArtifact["kind"] {
 export type LiveNote = { href: string; row: ArtifactRow };
 
 /**
- * The live notes of one guild's state the actor reads, with their text: each of its agents', then
- * its own, then the organisation's, each owner's in file name order. A note the store refuses to
- * read, an `ArtifactError`, is left out; any other failure throws.
+ * The live notes of one guild's state the actor reads, with their text: those whose access list
+ * has a row for the guild, one of its agents, or the organisation, in file name order. A note the
+ * store refuses to read, an `ArtifactError`, is left out; any other failure throws.
  */
-export async function readStateNotes(store: ArtifactStore, actor: ArtifactActor, owners: StateOwners): Promise<LiveNote[]> {
-  const levels: Array<[ArtifactLevel, string]> = [
-    ...owners.agentIds.map((id): [ArtifactLevel, string] => ["agent", id]),
-    ["guild", owners.guildId],
-    ["org", actor.orgId],
-  ];
-  const listed = await Promise.all(
-    levels.map(([level, ownerId]) => listOwnerArtifacts(store.db, actor, { level, owner_id: ownerId, kind: "note" })),
-  );
+export async function readStateNotes(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<LiveNote[]> {
+  const listed = await listGuildArtifacts(store.db, actor, guildId, "note");
   const notes = await Promise.all(
-    listed.flat().map(async (listedRow): Promise<LiveNote | null> => {
+    listed.map(async (listedRow): Promise<LiveNote | null> => {
       const href = rowDisplayPath(listedRow);
       try {
         const loaded = await getByDisplayPath(store, actor, href);
@@ -451,16 +516,16 @@ export async function artifactAt(store: ArtifactStore, actor: ArtifactActor, hre
 }
 
 /**
- * A note as a write sets it: its file name at a level, its title and text, the version it replaces
- * when the writer read one, and the access list it is raised to, when one is given.
+ * A note as a write sets it: its file name, its title and text, the version it replaces when the
+ * writer read one, and the rows its access list starts with when the write creates it; without
+ * them, the creator's own row (`creatorGrant`).
  */
 export type NoteDraft = {
-  level: ArtifactLevel;
   key: string;
   title?: string;
   content: string;
   expectedVersion?: number;
-  access?: AccessRaise;
+  startingAccess?: AccessGrant[];
 };
 
 /** A note as written: its display path and its row. */
@@ -470,45 +535,35 @@ export type NoteWrite = { href: string; row: ArtifactRow };
 export type PlannedNote = { href: string; key: string; hash: string };
 
 /**
- * Where a draft lands under `owner`, the owner its level names, before anything writes it.
- * ArtifactError when its key is not a note file name or is reserved at its level.
+ * Where a draft lands in the organisation `orgId`, before anything writes it. ArtifactError when
+ * its key is not a note file name.
  */
-export function planNote(owner: Pick<ArtifactOwnerRef, "orgId" | "ownerId">, note: NoteDraft): PlannedNote {
+export function planNote(orgId: string, note: NoteDraft): PlannedNote {
   const key = normalizeNoteKey(note.key);
-  assertNoteKeyFree(note.level, key);
   return {
-    href: displayPathFor({ orgId: owner.orgId, level: note.level, ownerId: owner.ownerId, kind: "note", path: "", key }),
+    href: noteDisplayPath(orgId, key),
     key,
     hash: hashArtifactContent(JSON.stringify([note.title ?? null, hashArtifactContent(note.content)])),
   };
 }
 
 /**
- * Writes a note directly under the owner its level names for the actor. An existing note is
- * written with write access to it, and is otherwise refused as not writable; a new one only where
- * its starting access lets the writer write it. With `access`, the note's access list is then
- * raised to it as the operator through `raiseAccess`.
+ * Writes the organisation's note at the draft's key. A live note is written with write access to
+ * it, and is otherwise refused as not writable; a missing one is created with the draft's starting
+ * access list.
  */
 export async function writeNote(store: ArtifactStore, actor: ArtifactActor, note: NoteDraft): Promise<NoteWrite> {
   const key = normalizeNoteKey(note.key);
-  assertNoteKeyFree(note.level, key);
   assertBytes(note.content);
-  const owner = ownerFor(actor, note.level);
-  await assertLiveCount(store, owner.orgId, note.level, owner.ownerId);
   const searchText = [note.title ?? "", key].filter(Boolean).join(" ").slice(0, SEARCH_TEXT_MAX);
   const row = await upsertNote(store, actor, {
-    level: note.level,
-    owner,
-    path: "",
     key,
     title: note.title ?? null,
     contentText: note.content,
     searchText,
+    startingAccess: note.startingAccess ?? [creatorGrant(actor)],
     ...(note.expectedVersion !== undefined ? { expectedVersion: note.expectedVersion } : {}),
   });
-  if (note.access) {
-    await raiseAccess(store, actor, { kind: "note", id: row.id }, note.access);
-  }
   return { href: rowDisplayPath(row), row };
 }
 
@@ -532,13 +587,11 @@ export async function writeNoteAt(store: ArtifactStore, actor: ArtifactActor, hr
   await assertRead(store, actor, live);
   assertBytes(rewrite.content);
   const row = await upsertNote(store, actor, {
-    level: live.level,
-    owner: { orgId: live.org_id, ownerId: live.owner_id, guildId: live.guild_id, agentId: live.agent_id },
-    path: live.path,
     key: live.key,
     title: live.title,
     contentText: rewrite.content,
     searchText: live.search_text,
+    startingAccess: [creatorGrant(actor)],
     ...(rewrite.expectedVersion !== undefined ? { expectedVersion: rewrite.expectedVersion } : {}),
   });
   return { href: rowDisplayPath(row), row };
@@ -548,8 +601,8 @@ export async function writeNoteAt(store: ArtifactStore, actor: ArtifactActor, hr
 export type NoteAccess = { href: string; row: ArtifactRow; access: AccessEntry[] };
 
 /**
- * The live notes the actor reads whose display path or file name is one of `names`, in level and
- * file name order, each with its access list. Access lists are the operator's to read.
+ * The live notes the actor reads whose display path or file name is one of `names`, in file name
+ * order, each with its access list. Access lists are the operator's to read.
  */
 export async function notesNamed(store: ArtifactStore, actor: ArtifactActor, names: ReadonlySet<string>): Promise<NoteAccess[]> {
   const notes: NoteAccess[] = [];

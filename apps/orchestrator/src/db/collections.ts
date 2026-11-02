@@ -323,14 +323,14 @@ export async function insertRecord(
 ): Promise<RecordRow> {
   const result = await db.query<RecordRow>(
     `INSERT INTO artifacts (
-       id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind,
+       id, org_id, agent_id, origin_guild_id, kind,
        collection_id, path, key, title, content_text, content_json, search_text,
        content_hash, version,
        created_by_type, created_by_id, created_by_name,
        updated_by_type, updated_by_id, updated_by_name, created_at, updated_at,
        search_blob, identity
      ) VALUES (
-       $1,$2,'org',$2,NULL,NULL,$3,'object',
+       $1,$2,NULL,$3,'object',
        $4,'',$5,NULL,NULL,$6::jsonb,NULL,
        $7,1,
        $8,$9,$10,$8,$9,$10,$11,$11,

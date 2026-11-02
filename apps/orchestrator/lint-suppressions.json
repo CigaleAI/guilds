@@ -337,9 +337,6 @@
   "src/recipes/lifecycle.ts": {
     "limits/inline-parameter-type": {
       "count": 1
-    },
-    "limits/silent-catch": {
-      "count": 3
     }
   },
   "src/recipes/minimal.ts": {
@@ -365,9 +362,6 @@
   "src/recipes/skeleton.ts": {
     "limits/inline-parameter-type": {
       "count": 1
-    },
-    "limits/silent-catch": {
-      "count": 3
     }
   },
   "src/recipes/validate-design.ts": {

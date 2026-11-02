@@ -35,7 +35,7 @@ export const UnderAMessage: Story = {
         lines={[
           {
             status: "ok",
-            label: "note_get org/degen/guilds/degen-capital/chains.yaml",
+            label: "note_get org/degen/chains.yaml",
             meta: "112ms",
           },
           { status: "failed", label: "script_run fetch_balances.py", meta: "812ms" },

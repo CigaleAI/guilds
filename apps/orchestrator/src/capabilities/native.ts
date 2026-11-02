@@ -7,7 +7,7 @@ export const NATIVE_CAPABILITY_GROUPS = [
     id: "notes",
     label: "Notes",
     description:
-      "Local markdown at agent, guild, or organisation level. Use for playbooks, field maps, and working files. Long-lived operator CRMs and wikis stay in a connected system of record.",
+      "Local markdown notes, one per name across the organisation; each note's access list gives the organisation, a guild, or an agent read or write, and a note an agent creates is written by that agent alone until an operator shares it. Use for playbooks, field maps, and working files. Long-lived operator CRMs and wikis stay in a connected system of record.",
     tools: ["note_find", "note_get", "note_write", "note_delete"],
   },
   {
@@ -21,7 +21,7 @@ export const NATIVE_CAPABILITY_GROUPS = [
     id: "files",
     label: "Files",
     description:
-      "Shared files at agent, guild, or organisation level: any bytes an agent produced or needs, such as a report, a dataset, or an image. Each file carries a description and an access list. An agent shares a file from its home and fetches one into it; the bytes never pass through the model.",
+      "Shared files, one per name across the organisation: any bytes an agent produced or needs, such as a report, a dataset, or an image. Each file carries a description and an access list that gives the organisation, a guild, or an agent read or write. An agent shares a file from its home and fetches one into it; the bytes never pass through the model.",
     tools: ["file_find", "file_fetch", "file_put", "file_delete"],
   },
   {

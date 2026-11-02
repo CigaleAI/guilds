@@ -1,5 +1,6 @@
-import { getLiveArtifact, listReachedNotes } from "../db/artifacts.js";
+import { getLiveArtifact, listReachedArtifacts } from "../db/artifacts.js";
 import { recordConfigChange } from "../db/config-changes.js";
+import { listGuilds } from "../db/guilds.js";
 import { withTransaction } from "../db/pg.js";
 import {
   type AccessRaise,
@@ -16,7 +17,6 @@ import {
   accessChange,
   type AccessItem,
   type AccessRowChange,
-  assertNotOwner,
   collectionAccessItem,
   loadEntries,
   removeGrants,
@@ -25,7 +25,7 @@ import {
   subjectLabel,
   writeGrants,
 } from "./grants.js";
-import { reachesOwner, type ArtifactStore, type ReachedNote, type ReachedTable, rowDisplayPath } from "./store.js";
+import { isHiddenItem, type ArtifactStore, type ReachedNote, type ReachedTable, rowDisplayPath } from "./store.js";
 import type { AccessMode } from "../db/schema/index.js";
 import {
   type AccessEntry,
@@ -45,16 +45,10 @@ async function requireTarget(store: ArtifactStore, actor: ArtifactActor, target:
     return collectionAccessItem(collection);
   }
   const row = await getLiveArtifact(store.db, actor.orgId, { id: target.id, kind: target.kind });
-  if (!row || !reachesOwner(actor, row.level, row.owner_id)) {
+  if (!row || (await isHiddenItem(store, actor, row))) {
     throw new ArtifactError(`${target.kind} not found`, 404);
   }
-  return {
-    target,
-    orgId: row.org_id,
-    guildId: row.guild_id,
-    ownerAgentId: row.level === "agent" ? row.owner_id : null,
-    label: `the ${target.kind} ${rowDisplayPath(row)}`,
-  };
+  return { target, orgId: row.org_id, guildId: null, label: `the ${target.kind} ${rowDisplayPath(row)}` };
 }
 
 /** An item's access list, without the subjects of guilds the actor cannot see. */
@@ -62,11 +56,11 @@ export async function listAccess(store: ArtifactStore, actor: ArtifactActor, tar
   return (await accessList(store, actor, target)).subjects;
 }
 
-/** An item's access list with the agent that owns it, when one does. */
+/** An item's access list. */
 export async function accessList(store: ArtifactStore, actor: ArtifactActor, target: AccessTarget): Promise<AccessList> {
   assertOperator(actor);
-  const item = await requireTarget(store, actor, target);
-  return { subjects: await loadEntries(store.db, actor, target), owner_agent_id: item.ownerAgentId };
+  await requireTarget(store, actor, target);
+  return { subjects: await loadEntries(store.db, actor, target) };
 }
 
 /**
@@ -90,7 +84,6 @@ export async function replaceAccess(
     const { upserts, removals } = diffGrants(before, wanted);
     for (const grant of upserts) {
       const where = subjectAt(wanted.indexOf(grant));
-      assertNotOwner(item, grant, where);
       names.set(
         grantKey(grant),
         subjectLabel(grant.type, await requireSubject(store.db, actor, grant, where)),
@@ -106,8 +99,20 @@ export async function replaceAccess(
     for (const change of changes) {
       await recordConfigChange(client, actor, change);
     }
-    return { subjects: await loadEntries(client, actor, target), owner_agent_id: item.ownerAgentId };
+    return { subjects: await loadEntries(client, actor, target) };
   });
+}
+
+/**
+ * The guilds whose scope an item is in, each once: every guild of the organisation when its access
+ * list has an organisation row, else the guilds a guild row or one of a guild's agents' rows names.
+ */
+export async function guildsOnList(store: ArtifactStore, actor: ArtifactActor, target: AccessTarget): Promise<string[]> {
+  const entries = await loadEntries(store.db, actor, target);
+  if (entries.some((entry) => entry.type === "org")) {
+    return (await listGuilds(store.db, actor.orgId)).map((guild) => guild.id);
+  }
+  return [...new Set(entries.flatMap((entry) => (entry.guild_id === null ? [] : [entry.guild_id])))];
 }
 
 /** Sets one subject's row on an item as the operator through `setAccessRow`, in a transaction of its own. */
@@ -127,8 +132,8 @@ export type ReachSubject = { type: "guild" | "agent"; id: string; guildId: strin
 
 /**
  * What a guild or an agent reaches: the notes and tables its rows give it,
- * with the mode it ends up with. An agent also reaches its own notes. A
- * guild reaches what its own and its organisation's rows give.
+ * with the mode it ends up with. A guild reaches what its own and its
+ * organisation's rows give.
  */
 export async function reachOf(
   store: ArtifactStore,
@@ -147,14 +152,10 @@ export async function reachOf(
 
 /** The live notes `reacher` reads, without those of guilds `actor` cannot see. */
 async function reachedNotes(store: ArtifactStore, actor: ArtifactActor, reacher: ArtifactActor): Promise<ReachedNote[]> {
-  return (await listReachedNotes(store.db, actor, reacher)).map((row) => ({
+  return (await listReachedArtifacts(store.db, actor, reacher, "note")).map((row) => ({
     id: row.id,
     display_path: rowDisplayPath(row),
     title: row.title ?? row.key,
-    level: row.level,
-    owner_id: row.owner_id,
-    owner_name: row.owner_name,
-    guild_id: row.guild_id,
     mode: row.access,
   }));
 }

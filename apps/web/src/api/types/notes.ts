@@ -1,3 +1,4 @@
+import type { AccessRow } from "./access";
 import type { RunKind } from "./runs";
 
 /**
@@ -29,13 +30,10 @@ export type TaskFile = {
 /** A Task's new text; with `expected_version`, a save over a version written since is refused. */
 export type TaskInput = { content: string; expected_version?: number };
 
-export type NoteLevel = "org" | "guild" | "agent";
-
 /** A note a Task can embed as `![[display_path]]`. */
 export type EmbeddableNote = {
   display_path: string;
   kind: "note";
-  level: NoteLevel;
   /** The note's file name, such as `process.md`. */
   key: string;
   title: string | null;
@@ -44,6 +42,9 @@ export type EmbeddableNote = {
   updated_at: string;
   content: string;
 };
+
+/** One note as an embed reads it, by its display path: where it sits, its title, and its text. */
+export type EmbeddedNote = { display_path: string; title: string; content: string };
 
 /** Per agent, the Task embeds that do not resolve to a file that agent can read; its runs get a marker in their place. */
 export type EmbedStatus = { agents: { id: string; broken_embeds: string[] }[] };
@@ -62,7 +63,7 @@ export type FileChange = {
   recorded?: boolean;
 };
 
-/** A note in a notes scope; `path` is its file name, such as `process.md`. */
+/** One of the organisation's notes as a notes list holds it; `path` is its key, such as `process.md`. */
 export type NoteItem = {
   /** The note's id, which names it to the access API. */
   id: string;
@@ -82,8 +83,18 @@ export type FileContent = {
   version?: number;
 };
 
-/** A note's text, by its path in its scope. */
-export type NoteInput = { path: string; content: string };
+/**
+ * A note's text by its key, the row its access list starts with when the write creates it (without
+ * one, the organisation writes it), and the version the writer expects: 0 when the note must not
+ * exist yet, the version it read otherwise. The server refuses (409) a write whose version does not
+ * match; without one, the write is not checked.
+ */
+export type NoteInput = {
+  path: string;
+  content: string;
+  access?: AccessRow;
+  expected_version?: number;
+};
 
 /** Who wrote a memory version. */
 export type MemoryActor = {

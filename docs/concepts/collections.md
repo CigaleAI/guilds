@@ -294,7 +294,7 @@ A collection is an `artifact_collections` row: `name`, `purpose`,
   (`scope: "guild"`).
 - `guild_id` null: an organisation collection (`scope: "org"`).
 
-Records are organisation-level artifacts of `kind` `object`. `key` is
+Records are artifacts of `kind` `object` that belong to the organisation. `key` is
 the decimal id. `content_json` holds the declared columns only.
 `identity` holds the normalised unique value. There is no guild or
 agent form of a record, and no folder inside a collection.
@@ -556,7 +556,7 @@ DELETE /api/collections/:collection_id/records             every live record; th
 GET    /api/collections/:collection_id/records/:record_id
 PATCH  /api/collections/:collection_id/records/:record_id  { body }; { record, warnings }
 DELETE /api/collections/:collection_id/records/:record_id  204
-GET    /api/collections/:collection_id/access              { subjects, owner_agent_id }: the access list
+GET    /api/collections/:collection_id/access              { subjects }: the access list
 PUT    /api/collections/:collection_id/access              { subjects: [{ type, id, mode }] }: the full list, replacing it
 ```
 

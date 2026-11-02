@@ -124,20 +124,21 @@ export type RecipeCollection = {
 };
 
 /**
- * A seed note. Its access is shaped like a table's: `guild` is the mode every
- * agent of the applied guild gets on it and `writers` the roles whose agents
- * write it, both beyond the rows the note starts with at its level.
+ * A seed note. Its access is shaped like a table's: `org` is the mode every
+ * agent of the organisation gets on it, `guild` the mode every agent of the
+ * applied guild gets, and `writers` the roles whose agents write it; a note
+ * that states none of them is written by the applied guild.
  */
 export type RecipeNote = {
   id: string;
-  level: "org" | "guild" | "agent";
-  role?: string;
-  /** A `.md` file name with no `/`: notes are flat at their level. */
+  /** A `.md` file name with no `/`: notes are flat, one name per organisation. */
   key: string;
   body: string;
   kind: "seed";
   author: FieldAuthor;
-  /** Absent on an agent note the guild does not reach. */
+  /** Absent on a note the organisation's row does not reach. */
+  org?: AccessMode;
+  /** Absent on a note the guild does not reach beyond its writers. */
   guild?: AccessMode;
   writers: string[];
 };

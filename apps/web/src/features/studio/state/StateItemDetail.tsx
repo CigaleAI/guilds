@@ -54,7 +54,7 @@ export function StateItemDetail({ row, hours, pending }: StateItemDetailProps) {
           <span className="flex flex-col gap-1">
             <span className="font-mono break-all">{row.display_path}</span>
             <span className="flex flex-wrap items-center gap-1.5">
-              {row.kind} · {row.level} · {itemSize(row)}
+              {row.kind} · {itemSize(row)}
               {stateFlagLabels(row, pending).map((label) => (
                 <Tag key={label} tone={label === "needs approval" ? "signal" : "ochre"} font="sans">
                   {label}
@@ -157,6 +157,7 @@ type ItemActionsProps = {
 function ItemActions({ row, editing, onEdit }: ItemActionsProps) {
   const { go, ask } = useStudio();
   const edit = editLabels[row.kind];
+  const scriptAgent = row.kind === "script" ? row.agent_id : null;
   return (
     <>
       {edit ? (
@@ -165,12 +166,12 @@ function ItemActions({ row, editing, onEdit }: ItemActionsProps) {
           {editing ? "Close" : edit.label}
         </Button>
       ) : null}
-      {row.kind === "script" ? (
+      {scriptAgent ? (
         <Button
           variant="outline"
           size="sm"
           onClick={() =>
-            go({ section: "agents", agent: row.owner_id, tab: "scripts", item: row.title })
+            go({ section: "agents", agent: scriptAgent, tab: "scripts", item: row.title })
           }
         >
           <Icon icon={Code} size={14} />
@@ -184,7 +185,7 @@ function ItemActions({ row, editing, onEdit }: ItemActionsProps) {
           onClick={() =>
             ask({
               kind: "file",
-              ...(row.level === "agent" ? { agent_id: row.owner_id } : {}),
+              ...(row.agent_id ? { agent_id: row.agent_id } : {}),
               display_path: row.display_path,
               label: `File · ${row.title}`,
             })
@@ -202,13 +203,10 @@ type ItemEditorProps = { row: StateItemRow };
 
 /** Today's notes browser or records panel, opened on the item, so editing stays in State. */
 function ItemEditor({ row }: ItemEditorProps) {
-  const { agents } = useStudio();
   if (row.kind === "table" && row.collection_id) {
     return <TableRecords collectionId={row.collection_id} />;
   }
-  const agent =
-    row.level === "agent" ? (agents.find((item) => item.id === row.owner_id) ?? null) : null;
-  return <NoteEditor agent={agent} path={row.display_path} />;
+  return <NoteEditor path={row.display_path} />;
 }
 
 type TallySectionProps = {

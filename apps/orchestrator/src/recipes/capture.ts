@@ -354,22 +354,16 @@ async function captureRepositories(capture: Capture): Promise<void> {
   capture.recipe.repositories = rows.map((row) => ({ name: row.name, purpose: "" }));
 }
 
-/** The seed note a live note becomes, with the role of the agent that owns an agent note. */
-function seedNote(capture: Capture, note: ArtifactRow): RecipeNote {
-  const seed: RecipeNote = {
+/** The seed note a live note becomes. */
+function seedNote(note: ArtifactRow): RecipeNote {
+  return {
     id: newId("nte").slice(0, 16),
-    level: note.level,
     key: note.key,
     body: note.content_text ?? "",
     kind: "seed",
     author: operatorAuthor(),
     writers: [],
   };
-  const owner = note.level === "agent" ? capture.agents.find((agent) => agent.id === note.owner_id) : undefined;
-  if (owner) {
-    seed.role = owner.name;
-  }
-  return seed;
 }
 
 /**
@@ -384,8 +378,8 @@ async function captureNotes(capture: Capture, includeNotes: string[]): Promise<M
     if (note.row.key === "memory.md" || note.row.kind !== "note") {
       continue;
     }
-    const seed = seedNote(capture, note.row);
-    Object.assign(seed, capturedNoteAccess(note.access, seed, capture.captured));
+    const seed = seedNote(note.row);
+    Object.assign(seed, capturedNoteAccess(note.access, capture.captured));
     hrefToNoteId.set(note.href, recipeNotePath(seed));
     capture.recipe.notes.push(seed);
   }

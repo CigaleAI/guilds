@@ -1,6 +1,6 @@
 import { Type, type Static } from "typebox";
 import { ArtifactError } from "../artifacts/errors.js";
-import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactActor } from "../artifacts/types.js";
 import { isJsonObject, type JsonObject, type JsonValue } from "../lib/json.js";
 import { jsonArgument } from "./schema.js";
 import type { ToolServices } from "./services.js";
@@ -73,21 +73,15 @@ async function publish(services: ToolServices, run: ToolRun, path: string): Prom
   }
 }
 
-/** A `note_find` call's arguments: what to search for, the level to list, and how many notes at most. */
+/** A `note_find` call's arguments: what to search for, and how many notes at most. */
 const NoteFindParameters = Type.Object({
   query: Type.Optional(Type.String()),
-  level: Type.Optional(Type.String({ description: "agent, guild, or org; omit for every level you can read" })),
   limit: Type.Optional(Type.Integer({ description: "at most 100, default 20" })),
 });
 
-/** The search a `note_find` call names; a level it names that is none is every level. */
+/** The search a `note_find` call names. */
 function noteSearch(args: Static<typeof NoteFindParameters>): NoteSearch {
-  const level = args.level?.trim() ?? "";
-  return {
-    query: args.query ?? "",
-    limit: args.limit ?? 20,
-    ...(isArtifactLevel(level) ? { level } : {}),
-  };
+  return { query: args.query ?? "", limit: args.limit ?? 20 };
 }
 
 /** A row `note_get` may show: a script or a file is read with its own family's tool. */
@@ -144,8 +138,8 @@ const RECORD_TOOLS_HINT = "Use record_search or record_list for collection recor
 export const noteFind = nativeTool({
   name: "note_find",
   description:
-    "Search or list Markdown notes the agent may read. An empty query lists them, " +
-    `optionally at one level. Results are { notes }. ${RECORD_TOOLS_HINT}`,
+    "Search or list the Markdown notes you may read. An empty query lists them. " +
+    `Results are { notes }, each with its display path, key, title, and access (read or write). ${RECORD_TOOLS_HINT}`,
   summary: "Search or list Markdown notes the agent may read.",
   parameters: NoteFindParameters,
   async handler(services, run, _hooks, call) {
@@ -172,31 +166,30 @@ export const noteGet = nativeTool({
 });
 
 const NOTE_WRITE_DESCRIPTION =
-  "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note " +
-  "at that level: a new note is created at agent or guild level, and an org note is updated only when it " +
-  "exists and you have write access. With path, rewrite any existing note whose access is write. " +
-  "key is the .md file name (for example queries.md); notes have no folders. " +
-  "Do not pass org, guild, or agent ids.";
+  "Create or update a Markdown note. With key, write the note of that name: an existing note is " +
+  "updated when your access to it is write and refused otherwise, and a missing one is created, " +
+  "written by you alone until an operator shares it. With path, rewrite the existing note that display " +
+  "path names, when your access to it is write. key is the .md file name (for example queries.md); " +
+  "notes have no folders, and one name is one note across the organisation. Do not pass org, guild, or agent ids.";
 
-/** A `note_write` call's arguments: the note it rewrites by display path, or the level and key of the agent's own, and the content. */
+/** A `note_write` call's arguments: the note it rewrites by display path, or the key of the note it writes, and the content. */
 const NoteWriteParameters = Type.Object({
-  path: Type.Optional(Type.String({ description: "the display path of an existing note to rewrite; omit level and key" })),
-  level: Type.Optional(Type.String({ description: "agent, guild, or org; with key, when path is omitted" })),
+  path: Type.Optional(Type.String({ description: "the display path of an existing note to rewrite; omit key" })),
   key: Type.Optional(Type.String({ description: "the .md file name, for example queries.md" })),
   content: Type.String(),
 });
 
-/** The note `note_write` names: an existing note by display path, or a level and key. */
+/** The note `note_write` names: an existing note by display path, or a key. */
 async function writeNoteArgs(services: ToolServices, run: ToolRun, call: ToolInvocation<Static<typeof NoteWriteParameters>>) {
-  const { content, level = "", key = "" } = call.arguments;
+  const { content, key = "" } = call.arguments;
   const path = call.arguments.path?.trim();
   if (path) {
     return store(services).writeNoteAt(actor(run, call), path, { content });
   }
-  if (!isArtifactLevel(level)) {
-    throw new ArtifactError("level must be agent, guild, or org", 422);
+  if (!key.trim()) {
+    throw new ArtifactError("key or path is required", 422);
   }
-  return store(services).writeNote(actor(run, call), { level, key, content });
+  return store(services).writeNote(actor(run, call), { key, content });
 }
 
 export const noteWrite = nativeTool({

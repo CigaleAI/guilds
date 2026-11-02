@@ -35,12 +35,13 @@ async function createGuild(name: string, visibility: "org" | "private"): Promise
   return String(guild.json().id);
 }
 
+/** Writes the organisation's note at `key`, written by the guild alone. */
 async function writeGuildNote(guildId: string, key: string, content: string): Promise<string> {
   const note = await app.inject({
     method: "PUT",
-    url: `/api/guilds/${guildId}/notes/${key}`,
+    url: `/api/org/notes/${key}`,
     headers: { ...OWNER, ...JSON_BODY },
-    payload: { content },
+    payload: { content, access: { type: "guild", id: guildId, mode: "write" } },
   });
   assert.equal(note.statusCode, 200, note.body);
   return String(note.json().display_path);

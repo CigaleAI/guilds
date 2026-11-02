@@ -9,11 +9,11 @@ import { taskDisplayPath } from "../../src/artifacts/task.js";
 import type { Database } from "../../src/db/client.js";
 import { getAgent, markHarnessLogin } from "../../src/db/agents.js";
 import { GuildNameTaken } from "../../src/db/errors.js";
-import { listFileChanges } from "../../src/db/file-changes.js";
+import { changesAt } from "../helpers/artifacts.js";
 import { addGuild } from "../../src/guilds/service.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { connect } from "../../src/seed/connect.js";
-import { systemActor } from "../helpers/agents.js";
+import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { agentConfig } from "../helpers/generation.js";
@@ -38,7 +38,7 @@ before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));
   notes = new NotesStore(tempDir("guilds-agent-create-"), templatesRoot());
   const guild = { guildId: GUILD, name: "desk", orgId: "org_home", creatorUserId: "user_operator" };
-  await addGuild({ db: database.pool, notes }, { guild, orgSlug: "home" }, new Date());
+  await addGuild({ db: database.pool, notes }, { guild, orgSlug: "home" }, OPERATOR_ACTOR, new Date());
 });
 
 after(async () => {
@@ -54,7 +54,7 @@ test("an agent with an artifact store gets its Memory, its task, and no notes fo
   assert.equal(created.name, "keeper");
   assert.equal(created.task, "Assist the user and collaborate with the guild members.\n");
   assert.ok(await getMemoryRow(store, actor, "a_memory"));
-  const logged = await listFileChanges(db, "org_home", taskDisplayPath("org_home", "a_memory"));
+  const logged = await changesAt(db, "org_home", taskDisplayPath("org_home", "a_memory"));
   assert.deepEqual(logged.map((change) => change.operation), ["create"]);
   assert.equal(existsSync(path.join(notes.root, "orgs", "home", "guilds", "desk", "agents", "keeper")), false);
 });

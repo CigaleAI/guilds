@@ -9,8 +9,8 @@ test("apply notes keep the recipe body matched by id or key", () => {
   const plan = planFromRecipe(recipe, {
     creates: {
       notes: [
-        { key: "style.md", level: "guild", role: null },
-        { key: "new.md", level: "agent", role: "writer" },
+        { key: "style.md", org: null, guild: null, writers: [] },
+        { key: "new.md", org: "read", guild: "read", writers: ["writer"] },
       ],
     },
   });
@@ -20,44 +20,33 @@ test("apply notes keep the recipe body matched by id or key", () => {
   assert.equal(planFromRecipe(recipe).notes[0], recipe.notes?.[0]);
 });
 
-test("noteCard shows the title, owner, first line, and where apply writes the note", () => {
-  const card = noteCard({
-    key: "style.md",
-    level: "guild",
-    body: "\n## Style\r\nKeep it short.",
-  });
+test("noteCard shows the title, who reaches it, first line, and the key apply writes the note at", () => {
+  const card = noteCard({ key: "style.md", body: "\n## Style\r\nKeep it short." });
   assert.deepEqual(card, {
     title: "style.md",
-    owner: "guild",
     access: "guild write",
     snippet: "Style",
-    destination: "guild/style.md",
+    destination: "style.md",
     body: "\n## Style\r\nKeep it short.",
   });
-  const agentNote = noteCard({
-    key: "k.md",
-    level: "agent",
-    role: "writer",
-    body: "",
-  });
-  assert.equal(agentNote.owner, "agent · writer");
-  assert.equal(agentNote.access, "@writer only");
-  assert.equal(agentNote.destination, "agent/writer/k.md");
-  assert.equal(agentNote.snippet, "Empty note");
+  const writersNote = noteCard({ key: "k.md", writers: ["writer"], body: "" });
+  assert.equal(writersNote.access, "@writer write");
+  assert.equal(writersNote.destination, "k.md");
+  assert.equal(writersNote.snippet, "Empty note");
   assert.equal(noteTitle({ id: "  " }), "note");
   assert.equal(noteSnippet("x".repeat(100)), `${"x".repeat(85)}…`);
 });
 
-test("noteAccessLabel shows the guild's mode, or the role alone, with the roles that write", () => {
-  assert.equal(noteAccessLabel({ level: "org" }), "guild read");
-  assert.equal(noteAccessLabel({ level: "org", guild: "write" }), "guild write");
-  assert.equal(noteAccessLabel({ level: "guild" }), "guild write");
+test("noteAccessLabel shows the organisation's and the guild's modes with the roles that write, the writers alone, or the guild writing it", () => {
+  assert.equal(noteAccessLabel({ guild: "read" }), "guild read");
+  assert.equal(noteAccessLabel({ org: "read" }), "org read");
   assert.equal(
-    noteAccessLabel({ level: "agent", role: "writer", guild: "read", writers: ["reader"] }),
-    "guild read · writers: @reader",
+    noteAccessLabel({ org: "read", guild: "write", writers: ["reader"] }),
+    "org read · guild write · writers: @reader",
   );
-  assert.equal(
-    noteAccessLabel({ level: "agent", role: "writer", writers: ["reader"] }),
-    "@writer · writers: @reader",
-  );
+  assert.equal(noteAccessLabel({ org: "read", guild: null }), "org read");
+  assert.equal(noteAccessLabel({ guild: "read", writers: ["reader"] }), "guild read · writers: @reader");
+  assert.equal(noteAccessLabel({ writers: ["reader", "writer"] }), "@reader, @writer write");
+  assert.equal(noteAccessLabel({}), "guild write");
+  assert.equal(noteAccessLabel({ writers: [] }), "guild write");
 });

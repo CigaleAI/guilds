@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { addAgent } from "../../src/agents/service.js";
-import { systemActor } from "../helpers/agents.js";
+import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { getMcpServer, saveOauthClient } from "../../src/connectors/servers.js";
 import { addGuild } from "../../src/guilds/service.js";
 import { buildApp } from "../../src/app.js";
@@ -332,6 +332,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
       guild: { guildId: "guild_catalog", name: "catalog-guild", orgId: "org_home", about: "", creatorUserId: "user_operator" },
       orgSlug: "home",
     },
+    OPERATOR_ACTOR,
     now,
   );
   const config = agentConfig({

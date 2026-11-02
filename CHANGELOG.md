@@ -8,6 +8,58 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking.** A note or a file has an access list and nothing else:
+no level and no owner. A name is one note or one file across the
+organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`; Memory,
+Tasks, and scripts stay at `org/<org>/agents/<agent>/…`. An agent
+creates a note or a file written by itself alone, and reaches any other
+through its rows; an operator creates one with the row it names, the
+organisation at write by default, and writes every note and file but
+those whose rows all name private guilds it does not operate or their
+agents. Deleting a guild or an agent also deletes the notes and files
+only its rows reached, and a deleted note or file keeps its rows, so
+it stays hidden where it was. A path's change history shows only the
+changes of the items held there that the reader reads, so a name
+another item now holds does not show a hidden deleted item's history.
+A recipe apply that fails, or is aborted, deletes every agent,
+collection, and note it made, into an existing guild too. A change to an
+item with an organisation row is announced to every guild.
+`note_write` takes a `key` or a `path`, `file_put` no `level`,
+`note_find` and `file_find` no `level`, and Studio's `studio_edit_note`
+no `level`; results carry no `level` or `owner_id`. Notes are written
+under `PUT /api/org/notes/*` with `{ content, expected_version?, access? }`
+and files uploaded to `POST /api/org/files` with optional
+`X-Expected-Version`, `X-Access-Type`, `X-Access-Id`, and
+`X-Access-Mode`; an expected version of `0` is 409 `artifact already
+exists` on a live item and any other is 409 `version conflict` unless
+it is the live version; the app's New note dialog sends `0`, and its
+upload dialog the version of the file of that name in the page's
+list, or `0` when the list holds none; the note routes under
+`/api/guilds/:id/notes/*` and `/api/agents/:id/notes/*` (but `task.md`
+and `memory.md`) and the upload routes `POST /api/guilds/:id/files` and
+`POST /api/agents/:id/files` are gone. A guild's page lists the notes
+and files whose rows name the guild, one of its agents, or the
+organisation, and an agent's page what the agent reads. The access
+routes answer `{ subjects }` without `owner_agent_id`, and the reach
+routes list notes as `{ id, display_path, title, mode }`. A recipe's
+notes have no `level` or `role`, which import refuses, take `org`
+beside `guild` and `writers`, use each key once, and are named in
+Tasks as `org/<key>`; apply writes a key the organisation already
+holds as `<guild name>-<key>`. The 10 000 live notes and files are
+counted per organisation. Updating gives each agent note and file a row for its
+agent, renames a name several owners held to `<owner>-<name>` and
+records it in `artifact_renames`, gives each note or file deleted
+before the update a row for the guild or agent that held it, so its
+tombstone stays hidden where it was, and rewrites every embed and mention
+of a moved item in Tasks and their revisions, notes, Memory, routine
+instructions and descriptions, agent focus and wake triggers, guild
+about and description, recipes, change history, and Studio drafts. A
+stored recipe's notes lose `level` and `role`: its organisation notes
+gain `org: read`, and `guild: read` where they stated no `guild`; an
+agent note with a role gains that role as a writer; an agent note
+without one is written by the guild; and a key it held at several levels is renamed to
+`<role>-<key>`, `guild-<key>`, or `org-<key>`.
+
 The inbox stream's notice of a new group message names the message's
 guild. A message posted in the chat an operator is watching no
 longer chimes or raises a desktop notification, and a desktop

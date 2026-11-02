@@ -1,4 +1,3 @@
-import { COLLECTIONS_SEGMENT } from "../artifacts/paths.js";
 import { Type, type Static } from "typebox";
 import type { ConfigChangeEventRow, FileChangeEventRow, ReadCallRow, WindowRunRow } from "../db/state.js";
 import { iso } from "../db/views.js";
@@ -12,13 +11,12 @@ import { isJsonObject } from "../lib/json.js";
 // state-data.ts fetch the rows.
 
 export type StateKind = "note" | "memory" | "script" | "file" | "table";
-export type StateLevel = "agent" | "guild" | "org";
 
 export type StateItem = {
   display_path: string;
   kind: StateKind;
-  level: StateLevel;
-  owner_id: string;
+  /** The agent whose Memory or script it is; null for a note, a file, and a table. */
+  agent_id: string | null;
   title: string;
   /** Bytes of text, or records for a table. */
   size: number;
@@ -30,6 +28,8 @@ export type StateItem = {
   collection_id: string | null;
   /** A note's id; null for the others. */
   note_id: string | null;
+  /** The note's, file's, Memory's, or script's artifact, whose changes are its own; null for a table. */
+  artifact_id: string | null;
 };
 
 /**
@@ -127,13 +127,6 @@ export function changeLink(row: ChangeOrigin): StateLink | null {
     : null;
 }
 
-/** A record's path names its table: `org/<org>/collections/<name>/<id>`. */
-export function tablePathOf(displayPath: string): string | null {
-  const parts = displayPath.split("/");
-  const at = parts.indexOf(COLLECTIONS_SEGMENT);
-  return at >= 0 && parts.length === at + 3 ? parts.slice(0, at + 2).join("/") : null;
-}
-
 /** The config-log key of an item's own changes: a table's shape and access, a note's access. */
 export function configKey(kind: string, id: string): string {
   return `${kind}:${id}`;
@@ -153,17 +146,23 @@ export function changeEvents(
   configChanges: ConfigChangeEventRow[],
   context: StateContext,
 ): StateEvent[] {
-  const paths = new Set(context.items.map((item) => item.display_path));
+  const byArtifact = new Map(context.items.flatMap((item) => (item.artifact_id ? [[item.artifact_id, item.display_path] as const] : [])));
+  const byCollection = new Map(
+    context.items.flatMap((item) => (item.collection_id ? [[item.collection_id, item.display_path] as const] : [])),
+  );
   const configured = new Map(
     context.items.flatMap((item) => {
       const key = itemConfigKey(item);
       return key ? [[key, item.display_path] as const] : [];
     }),
   );
+  // A change is an item's own by its artifact, and a record's its table's by its collection, never
+  // by a display path another item or table held before.
   const files = fileChanges.flatMap((row) => {
-    const own = row.display_path;
-    const path = paths.has(own) ? own : tablePathOf(own);
-    return path && paths.has(path) ? [changeEvent(row, path, own === path ? null : own, context.agents)] : [];
+    const own = row.artifact_id ? byArtifact.get(row.artifact_id) : undefined;
+    if (own) return [changeEvent(row, own, null, context.agents)];
+    const table = row.collection_id ? byCollection.get(row.collection_id) : undefined;
+    return table ? [changeEvent(row, table, row.display_path, context.agents)] : [];
   });
   const shapes = configChanges.flatMap((row) => {
     const path = configured.get(configKey(row.target_kind, row.target_id));
@@ -206,7 +205,7 @@ function runReads(run: WindowRunRow, context: StateContext): StateEvent[] {
     ...(run.task_source?.embeds ?? []).map((embed) => embed.display_path),
     ...(run.task_source?.collections ?? []),
   ].filter((path) => context.items.some((item) => item.display_path === path));
-  const memory = itemAt(context.items, (item) => item.kind === "memory" && item.owner_id === run.agent_id);
+  const memory = itemAt(context.items, (item) => item.kind === "memory" && item.agent_id === run.agent_id);
   const source: ReadSource = { run_id: run.run_id, agent_id: run.agent_id, created_at: run.created_at, call_id: null };
   const reads = [...new Set(embedded)].map((path) => readEvent(path, source, "embed", context));
   return memory ? [...reads, readEvent(memory, source, "memory", context)] : reads;
@@ -236,7 +235,7 @@ const callTargets = new Map<string, CallTarget>([
 ]);
 
 function scriptOf(items: StateItem[], agentId: string, name: string | null): string | null {
-  return itemAt(items, (item) => item.kind === "script" && item.owner_id === agentId && item.title === name);
+  return itemAt(items, (item) => item.kind === "script" && item.agent_id === agentId && item.title === name);
 }
 
 /** What one tool call read: the note, table, or script it names, or the script tool it is. */
@@ -324,7 +323,7 @@ export function stateRow(item: StateItem, events: StateEvent[]): StateRow {
 /** The list's rows, narrowed to one kind or to items one agent changed or read when asked. */
 export function stateRows(items: StateItem[], events: StateEvent[], filter: StateFilter): StateRow[] {
   const touched = (item: StateItem) =>
-    item.owner_id === filter.agentId ||
+    item.agent_id === filter.agentId ||
     events.some((event) => event.path === item.display_path && event.actor.id === filter.agentId);
   return items
     .filter((item) => !filter.kind || item.kind === filter.kind)

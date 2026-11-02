@@ -12,7 +12,7 @@ import {
   type ReferenceTask,
 } from "../../src/studio/references.js";
 
-const path = (name: string) => `org/o/guilds/g/${name}.md`;
+const path = (name: string) => `org/o/${name}.md`;
 const LEADS = "org/o/collections/leads";
 const byteLength = (text: string) => Buffer.byteLength(text, "utf8");
 
@@ -21,8 +21,6 @@ function note(name: string, text: string | null, inState = true): ReferenceFile 
     display_path: path(name),
     kind: "note",
     label: name,
-    level: "guild",
-    agent_id: null,
     collection_id: null,
     in_state: inState,
     text,
@@ -59,8 +57,6 @@ const leads: ReferenceFile = {
   display_path: LEADS,
   kind: "table",
   label: "leads",
-  level: "org",
-  agent_id: null,
   collection_id: "col_1",
   in_state: true,
   text: null,
@@ -203,7 +199,7 @@ test("namedPaths finds known paths in prose, trims punctuation, and skips embeds
   const known = new Set([path("one"), path("two"), path("three")]);
   assert.deepEqual(
     namedPaths(
-      `Read ${path("one")}, then (${path("two")}). Not ![[${path("three")}]] or org/o/guilds/g/else.md`,
+      `Read ${path("one")}, then (${path("two")}). Not ![[${path("three")}]] or org/o/else.md`,
       known,
     ),
     [path("one"), path("two")],

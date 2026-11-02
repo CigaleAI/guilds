@@ -2,7 +2,7 @@
 // revision, built and parsed here and imported directly by other domains.
 import { isId } from "../lib/ids.js";
 import { ArtifactError } from "./errors.js";
-import type { ArtifactKind, ArtifactLevel } from "./types.js";
+import type { ArtifactKind } from "./types.js";
 
 export const TASK_KEY = "task.md";
 export const MEMORY_KEY = "memory.md";
@@ -18,8 +18,8 @@ export type ParsedDisplayPath =
   | {
       kind: "artifact";
       orgId: string;
-      level: ArtifactLevel;
-      ownerId: string;
+      /** The agent whose Memory, Task, or script the path names; null for a note or a file. */
+      agentId: string | null;
       path: string;
       key: string;
     }
@@ -41,14 +41,12 @@ export type ParsedDisplayPath =
       stamp: string;
     };
 
-export function ownerPrefix(orgId: string, level: ArtifactLevel, ownerId: string): string {
-  if (level === "agent") {
-    return `org/${orgId}/agents/${ownerId}/`;
-  }
-  if (level === "guild") {
-    return `org/${orgId}/guilds/${ownerId}/`;
-  }
-  return `org/${orgId}/`;
+/**
+ * The prefix every display path of an item starts with: the agent's for its Memory, Task, and
+ * scripts, the organisation's for every note and file.
+ */
+export function itemPrefix(orgId: string, agentId: string | null): string {
+  return agentId === null ? `org/${orgId}/` : `org/${orgId}/agents/${agentId}/`;
 }
 
 /** Collections live at the organisation: `org/<org_id>/collections/<name>`. */
@@ -61,13 +59,13 @@ export function recordDisplayPath(orgId: string, collectionName: string, recordI
 }
 
 /**
- * Where an artifact sits, as its display path is built from it: its organisation, level and owner,
- * its kind, the collection a record or collection names, its folder, and its file name or record id.
+ * Where an artifact sits, as its display path is built from it: its organisation, the agent a
+ * Memory, Task, or script belongs to, its kind, the collection a record or collection names, its
+ * folder, and its file name or record id.
  */
 export type ArtifactLocation = {
   orgId: string;
-  level: ArtifactLevel;
-  ownerId: string;
+  agentId: string | null;
   kind: ArtifactKind | "collection" | "task";
   collectionName?: string | null;
   path: string;
@@ -85,15 +83,20 @@ export function displayPathFor(args: ArtifactLocation): string {
     }
     return collectionDisplayPath(args.orgId, collectionName);
   }
-  const prefix = ownerPrefix(args.orgId, args.level, args.ownerId);
+  const prefix = itemPrefix(args.orgId, args.agentId);
   return args.path ? `${prefix}${args.path}/${args.key}` : `${prefix}${args.key}`;
 }
 
-export function revisionDisplayPath(orgId: string, agentId: string, stamp: string): string {
-  return `${ownerPrefix(orgId, "agent", agentId)}${HISTORY_ARCHIVE_SEGMENT}/${stamp}`;
+/** The display path of an agent's Memory: `org/<org_id>/agents/<agent_id>/memory.md`. */
+export function memoryDisplayPath(orgId: string, agentId: string): string {
+  return `${itemPrefix(orgId, agentId)}${MEMORY_KEY}`;
 }
 
-/** A note key is a `.md` file name: notes sit directly under their owner, without folders. */
+export function revisionDisplayPath(orgId: string, agentId: string, stamp: string): string {
+  return `${itemPrefix(orgId, agentId)}${HISTORY_ARCHIVE_SEGMENT}/${stamp}`;
+}
+
+/** A note key is a `.md` file name: notes sit directly under their organisation, without folders. */
 export function normalizeNoteKey(raw: string): string {
   const key = (raw || "").trim();
   if (!NOTE_KEY_RE.test(key) || key.includes("..") || key.includes("\0")) {
@@ -102,16 +105,9 @@ export function normalizeNoteKey(raw: string): string {
   return key;
 }
 
-/** `task.md` and `memory.md` name the agent's Task and Memory, so no agent note takes them. */
-export function assertNoteKeyFree(level: ArtifactLevel, key: string): void {
-  if (level === "agent" && (key === TASK_KEY || key === MEMORY_KEY)) {
-    throw new ArtifactError(`${key} is reserved`, 422);
-  }
-}
-
-/** The display path of a file the Host names inside one owner: a note, or an agent's `task.md` or `memory.md`. */
-export function hostFileDisplayPath(orgId: string, level: ArtifactLevel, ownerId: string, name: string): string {
-  return `${ownerPrefix(orgId, level, ownerId)}${normalizeNoteKey(name)}`;
+/** The display path of the note with this key: `org/<org_id>/<key>`. */
+export function noteDisplayPath(orgId: string, key: string): string {
+  return `${itemPrefix(orgId, null)}${normalizeNoteKey(key)}`;
 }
 
 function isScopedId(value: string, prefix: string): boolean {
@@ -141,7 +137,7 @@ export function parseDisplayPath(raw: string): ParsedDisplayPath {
   if (rest[0] === COLLECTIONS_SEGMENT) {
     return parseCollectionPath(orgId, rest);
   }
-  return parseOwnedPath(orgId, parseOwnerSegments(orgId, rest));
+  return parseItemPath(orgId, parseAgentSegments(rest));
 }
 
 /** The segments under `collections/`: a collection by name, or one of its records by id. */
@@ -156,47 +152,38 @@ function parseCollectionPath(orgId: string, segments: string[]): ParsedDisplayPa
   return { kind: "record", orgId, collectionName, recordId: segments[2] ?? "" };
 }
 
-/** The owner a display path's segments after its organisation name, and the segments under that owner. */
-type OwnerSegments = { level: ArtifactLevel; ownerId: string; rest: string[] };
+/** The agent a display path's segments after its organisation name, and the segments under it. */
+type AgentSegments = { agentId: string | null; rest: string[] };
 
-/** The owner the segments name: an agent, a guild, or else the organisation itself. */
-function parseOwnerSegments(orgId: string, segments: string[]): OwnerSegments {
+/** The agent the segments name, or none: the segments then name a note or a file of the organisation. */
+function parseAgentSegments(segments: string[]): AgentSegments {
   const [head, id] = segments;
-  if (head === "agents" && id && isScopedId(id, "a")) {
-    return { level: "agent", ownerId: id, rest: segments.slice(2) };
+  if (head !== "agents") {
+    return { agentId: null, rest: segments };
   }
-  if (head === "guilds" && id && isScopedId(id, "guild")) {
-    return { level: "guild", ownerId: id, rest: segments.slice(2) };
-  }
-  if (head === "agents" || head === "guilds") {
+  if (!id || !isScopedId(id, "a")) {
     throw new ArtifactError("unknown artifact path", 404);
   }
-  return { level: "org", ownerId: orgId, rest: segments };
+  return { agentId: id, rest: segments.slice(2) };
 }
 
-/** What an owner's segments name: a Memory revision in an agent's archive, or an artifact by folder and file name. */
-function parseOwnedPath(orgId: string, owner: OwnerSegments): ParsedDisplayPath {
-  const { level, ownerId, rest } = owner;
-  if (level === "agent" && rest[0] === HISTORY_ARCHIVE_SEGMENT) {
+/** What the segments name: a Memory revision in an agent's archive, or an artifact by folder and file name. */
+function parseItemPath(orgId: string, item: AgentSegments): ParsedDisplayPath {
+  const { agentId, rest } = item;
+  if (agentId !== null && rest[0] === HISTORY_ARCHIVE_SEGMENT) {
     const stamp = rest.slice(1).join("/");
     if (!stamp) {
       throw new ArtifactError("unknown artifact path", 404);
     }
-    return { kind: "revision", orgId, agentId: ownerId, stamp };
+    return { kind: "revision", orgId, agentId, stamp };
   }
-  if (rest.length === 0 || rest[0] === COLLECTIONS_SEGMENT) {
+  // A note or a file of the organisation sits at most one folder down: a note at its root, a file under `files/`.
+  if (rest.length === 0 || rest[0] === COLLECTIONS_SEGMENT || (agentId === null && rest.length > 2)) {
     throw new ArtifactError("unknown artifact path", 404);
   }
   const key = rest[rest.length - 1] ?? "";
   const path = rest.slice(0, -1).join("/");
-  return {
-    kind: "artifact",
-    orgId,
-    level,
-    ownerId,
-    path,
-    key,
-  };
+  return { kind: "artifact", orgId, agentId, path, key };
 }
 
 /** A file name is one path segment: no folder, no `.` or `..`, no control character, at most 255 characters. */
@@ -211,9 +198,9 @@ export function normalizeFileName(raw: string): string {
   return name;
 }
 
-/** The display path of a file inside one owner: `{ownerPrefix}files/<name>`. */
-export function fileDisplayPath(orgId: string, level: ArtifactLevel, ownerId: string, name: string): string {
-  return `${ownerPrefix(orgId, level, ownerId)}${FILES_SEGMENT}/${normalizeFileName(name)}`;
+/** The display path of the file with this name: `org/<org_id>/files/<name>`. */
+export function fileDisplayPath(orgId: string, name: string): string {
+  return `${itemPrefix(orgId, null)}${FILES_SEGMENT}/${normalizeFileName(name)}`;
 }
 
 function hasControlCharacter(text: string): boolean {

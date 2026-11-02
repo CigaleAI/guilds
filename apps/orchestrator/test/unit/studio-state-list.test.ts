@@ -8,7 +8,6 @@ import {
   readEvents,
   stateFlags,
   stateRows,
-  tablePathOf,
   tallyBy,
   topActor,
   type StateEvent,
@@ -24,8 +23,7 @@ const agents = new Map([
 const item = (path: string, overrides: Partial<StateItem> = {}): StateItem => ({
   display_path: path,
   kind: "note",
-  level: "guild",
-  owner_id: "guild_1",
+  agent_id: null,
   title: path.split("/").pop() ?? path,
   size: 10,
   version: 1,
@@ -33,6 +31,7 @@ const item = (path: string, overrides: Partial<StateItem> = {}): StateItem => ({
   created_at: "2026-10-19T10:00:00.000Z",
   collection_id: null,
   note_id: null,
+  artifact_id: `art:${path}`,
   ...overrides,
 });
 
@@ -49,8 +48,10 @@ const event = (overrides: Partial<StateEvent>): StateEvent => ({
   ...overrides,
 });
 
-/** A file change a person made, as the window query returns it, with `overrides`. */
+/** A file change a person made, as the window query returns it, with `overrides`; its artifact is the one its path names by default. */
 const fileChange = (overrides: Partial<FileChangeEventRow>): FileChangeEventRow => ({
+  artifact_id: `art:${overrides.display_path ?? "p"}`,
+  collection_id: null,
   display_path: "p",
   operation: "update",
   actor_type: "user",
@@ -130,22 +131,20 @@ test("a change links to the coach message it was applied from, else its run step
   assert.equal(changeLink(fileChange({ studio_session_id: "stu_1", studio_seq: null })), null);
 });
 
-test("a record's path names its table", () => {
-  assert.equal(tablePathOf("org/o/collections/leads/4"), "org/o/collections/leads");
-  assert.equal(tablePathOf("org/o/collections/leads"), null);
-  assert.equal(tablePathOf("org/o/guilds/g/rules.md"), null);
-});
-
-test("changes land on their item, records on their table, and config changes on the table or note by id", () => {
+test("changes land on their item by its artifact, records on their table by its collection, and config changes on the table or note by id", () => {
   const items = [
-    item("org/o/guilds/g/rules.md", { note_id: "art_1" }),
+    item("org/o/rules.md", { note_id: "art_1" }),
     item("org/o/collections/leads", { kind: "table", collection_id: "col_1" }),
   ];
   const events = changeEvents(
     [
-      fileChange({ display_path: "org/o/guilds/g/rules.md" }),
-      fileChange({ display_path: "org/o/collections/leads/3", operation: "delete", actor_type: "run", run_agent_id: "a_2" }),
-      fileChange({ display_path: "org/o/guilds/g/other.md" }),
+      fileChange({ display_path: "org/o/rules.md" }),
+      fileChange({ display_path: "org/o/collections/leads/3", collection_id: "col_1", operation: "delete", actor_type: "run", run_agent_id: "a_2" }),
+      // a record of a deleted table that had the same name is not this table's
+      fileChange({ display_path: "org/o/collections/leads/9", collection_id: "col_gone" }),
+      fileChange({ display_path: "org/o/other.md" }),
+      // a change of another item that held the same path before this one is not this item's
+      fileChange({ display_path: "org/o/rules.md", artifact_id: "art_old" }),
     ],
     [
       configChange({ target_kind: "collection", target_id: "col_1" }),
@@ -158,20 +157,20 @@ test("changes land on their item, records on their table, and config changes on 
   assert.deepEqual(
     events.map((entry) => [entry.path, entry.how, entry.record]),
     [
-      ["org/o/guilds/g/rules.md", "update", null],
+      ["org/o/rules.md", "update", null],
       ["org/o/collections/leads", "delete", "org/o/collections/leads/3"],
       ["org/o/collections/leads", "update", null],
-      ["org/o/guilds/g/rules.md", "create", null],
+      ["org/o/rules.md", "create", null],
     ],
   );
 });
 
 test("reads come from what a run inlined, its Memory, and the tool calls that name an item", () => {
   const items = [
-    item("org/o/guilds/g/rules.md"),
+    item("org/o/rules.md"),
     item("org/o/collections/leads", { kind: "table", title: "leads" }),
-    item("org/o/agents/a_1/memory.md", { kind: "memory", owner_id: "a_1" }),
-    item("org/o/agents/a_1/scripts/tally", { kind: "script", owner_id: "a_1", title: "tally" }),
+    item("org/o/agents/a_1/memory.md", { kind: "memory", agent_id: "a_1" }),
+    item("org/o/agents/a_1/scripts/tally", { kind: "script", agent_id: "a_1", title: "tally" }),
   ];
   const run = { id: "r_1", run_id: "r_1", agent_id: "a_1", created_at: at };
   const embed = (displayPath: string) => ({ display_path: displayPath, version: 1, content_hash: "h", kind: "note" });
@@ -183,7 +182,7 @@ test("reads come from what a run inlined, its Memory, and the tool calls that na
           version: 1,
           hash: "t",
           display_path: "org/o/agents/a_1/task.md",
-          embeds: [embed("org/o/guilds/g/rules.md"), embed("org/o/guilds/g/gone.md")],
+          embeds: [embed("org/o/rules.md"), embed("org/o/gone.md")],
           collections: ["org/o/collections/leads"],
           has_embeds: true,
         },
@@ -191,7 +190,7 @@ test("reads come from what a run inlined, its Memory, and the tool calls that na
       { id: "r_2", run_id: "r_2", agent_id: "a_2", created_at: at, task_source: null },
     ],
     [
-      readCall("note_get", '{"path":"org/o/guilds/g/rules.md"}'),
+      readCall("note_get", '{"path":"org/o/rules.md"}'),
       readCall("record_search", '{"collection":"leads"}'),
       readCall("script_run", '{"name":"tally"}'),
       readCall("tally", "not json"),
@@ -220,7 +219,7 @@ test("an item is flagged when no agent reads it, it has many writers, an agent d
 });
 
 test("rows count people and this guild's agents, and narrow by kind and agent", () => {
-  const items = [item("n1", { owner_id: "a_2" }), item("n2"), item("t", { kind: "table" })];
+  const items = [item("n1", { kind: "memory", agent_id: "a_2" }), item("n2"), item("t", { kind: "table" })];
   const events = [
     event({ path: "n2" }),
     event({ path: "n2", actor: { kind: "other_guild", id: "", name: "another guild" } }),

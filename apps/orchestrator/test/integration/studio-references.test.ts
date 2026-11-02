@@ -77,8 +77,9 @@ test(
       );
       return response.statusCode === 204 ? {} : (response.json() as Record<string, unknown>);
     };
-    const write = async (prefix: string, name: string, content: string) =>
-      String((await call("PUT", `${prefix}/notes/${name}`, OWNER, { content })).display_path);
+    type Row = { type: string; id: string; mode: string };
+    const write = async (access: Row, name: string, content: string) =>
+      String((await call("PUT", `/api/org/notes/${name}`, OWNER, { content, access })).display_path);
 
     try {
       // A private guild the operator does not operate, with a note.
@@ -88,9 +89,9 @@ test(
       });
       const vaultNote = await call(
         "PUT",
-        `/api/guilds/${String(vault.id)}/notes/plans.md`,
+        "/api/org/notes/plans.md",
         TEAMMATE,
-        { content: "kept in the vault" },
+        { content: "kept in the vault", access: { type: "guild", id: String(vault.id), mode: "write" } },
       );
       const vaultPath = String(vaultNote.display_path);
 
@@ -109,16 +110,17 @@ test(
       const reviewer = await agent("reviewer");
       const editor = await agent("editor");
 
-      const deep = await write(guild, "deep.md", "Deepest.");
-      const glossary = await write("/api/org", "glossary.md", `Terms. ![[${deep}]]`);
-      const style = await write(`/api/agents/${writer}`, "style.md", `Style. ![[${glossary}]]`);
-      const rules = await write(guild, "rules.md", `Rules. ![[${style}]]`);
-      const temp = await write(guild, "temp.md", "Temporary.");
-      const checklist = await write(guild, "checklist.md", `Checklist. ![[${temp}]]`);
-      const aside = await write(guild, "aside.md", "Read when asked.");
-      const lonely = await write(guild, "lonely.md", "Nobody points here.");
+      const desks = { type: "guild", id: String(desk.id), mode: "write" };
+      const deep = await write(desks, "deep.md", "Deepest.");
+      const glossary = await write({ type: "org", id: "org_home", mode: "read" }, "glossary.md", `Terms. ![[${deep}]]`);
+      const style = await write({ type: "agent", id: writer, mode: "write" }, "style.md", `Style. ![[${glossary}]]`);
+      const rules = await write(desks, "rules.md", `Rules. ![[${style}]]`);
+      const temp = await write(desks, "temp.md", "Temporary.");
+      const checklist = await write(desks, "checklist.md", `Checklist. ![[${temp}]]`);
+      const aside = await write(desks, "aside.md", "Read when asked.");
+      const lonely = await write(desks, "lonely.md", "Nobody points here.");
       // Only Task text guards a delete, so a note another note embeds can go.
-      await call("DELETE", `${guild}/notes/temp.md`, OWNER);
+      await call("DELETE", "/api/org/notes/temp.md", OWNER);
       await call("POST", "/api/collections", OWNER, {
         name: "leads",
         purpose: "Leads to follow up",
@@ -175,9 +177,7 @@ test(
 
       // The private guild's note is never read or listed.
       assert.equal(
-        refs.nodes.filter(
-          (item) => item.kind !== "unresolved" && item.id.includes(String(vault.id)),
-        ).length,
+        refs.nodes.filter((item) => item.kind !== "unresolved" && item.id === vaultPath).length,
         0,
       );
 
@@ -187,7 +187,7 @@ test(
       assert.equal(node(glossary)?.depth, 3);
       assert.equal(node(deep)?.depth, 4);
       assert.equal(node(lonely)?.depth, null);
-      assert.equal(node(style)?.agent_id, writer);
+      assert.equal(node(style)?.agent_id, null);
       assert.equal(edge(style, glossary)?.status, "too_deep");
       assert.equal(edge(`org/org_home/agents/${writer}/task.md`, aside)?.status, "named");
       assert.equal(node(leads)?.kind, "table");

@@ -1,4 +1,5 @@
 import type { Harness, WakeWindow } from "./agents.js";
+import type { AccessMode } from "./artifacts.js";
 import type { PlannedConnection, PlannedSecret } from "./coaches.js";
 import type { machines } from "./organisations.js";
 import type { RecipeCollection, RecipeDocument } from "./recipe-document.js";
@@ -73,7 +74,7 @@ export type ApplyInventory = {
     native_tools: string[];
   }>;
   collections: CollectionPlan[];
-  notes: Array<{ key: string; level: string; role: string | null; guild: string | null; writers: string[] }>;
+  notes: Array<{ key: string; org: AccessMode | null; guild: AccessMode | null; writers: string[] }>;
   scripts: Array<{ role: string; name: string; description: string }>;
   routines: Array<{
     role: string;

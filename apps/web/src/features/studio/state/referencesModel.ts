@@ -34,10 +34,7 @@ export function nodeHop(node: ReferenceNode, agentId?: string): number | null {
 const byLabel = (left: ReferenceNode, right: ReferenceNode) =>
   left.label.localeCompare(right.label);
 
-/**
- * The nodes the map shows. With an agent, only what its run meets, and its own notes in the band
- * when its run does not meet them.
- */
+/** The nodes the map shows: with an agent, only what its run meets; without one, every node, those no run meets in the band. */
 export function referenceMapView(data: StudioReferences, agentId?: string): ReferenceMapView {
   const view: ReferenceMapView = {
     columns: referenceColumnLabels(data.depth).map(() => []),
@@ -51,7 +48,7 @@ export function referenceMapView(data: StudioReferences, agentId?: string): Refe
 function placeNode(view: ReferenceMapView, node: ReferenceNode, agentId?: string): void {
   const hop = nodeHop(node, agentId);
   if (hop === null) {
-    if (!agentId || node.agent_id === agentId) view.band.push(node);
+    if (!agentId) view.band.push(node);
     return;
   }
   const column = view.columns[hop];
@@ -173,7 +170,7 @@ export function standoutGroups(
     },
     {
       title: "Nothing points here",
-      rows: standouts.unpointed.map((node) => ({ node, meta: node.level ?? "" })),
+      rows: standouts.unpointed.map((node) => ({ node, meta: referenceMeta(node, data) })),
     },
   ];
   return groups.filter((group) => group.rows.length);
@@ -252,25 +249,18 @@ function followEmbeds(embeds: ReferenceEdge[], start: string, side: "from" | "to
   return [...seen];
 }
 
-/** What a box says under its name: a Task's budget, a file's level and size, or why it is broken. */
+/** What a box says under its name: a Task's budget, a note's size or that it is a table, or why it is broken. */
 export function referenceMeta(node: ReferenceNode, data: StudioReferences): string {
   if (node.kind === "task")
     return `${formatSize(node.inlined_bytes ?? 0)} of ${formatSize(data.budget)} inlined`;
   if (isBroken(node)) return brokenReason(data, node);
-  return [node.level, node.kind === "note" ? formatSize(node.bytes) : "table"]
-    .filter(Boolean)
-    .join(" · ");
+  return node.kind === "note" ? formatSize(node.bytes) : "table";
 }
 
-/** Where State's list opens a note or a table: by its path, under its agent when it has one. */
+/** Where State's list opens a note or a table: by its path. */
 export function stateListLocation(node: ReferenceNode): StudioSearch | null {
   if (node.kind !== "note" && node.kind !== "table") return null;
-  return {
-    section: "state",
-    ...(node.agent_id ? { agent: node.agent_id } : {}),
-    tab: "list",
-    item: node.id,
-  };
+  return { section: "state", tab: "list", item: node.id };
 }
 
 // ---------------------------------------------------------------------------

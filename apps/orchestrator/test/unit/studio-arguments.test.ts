@@ -107,7 +107,7 @@ const MALFORMED: Record<string, [JsonObject, RegExp]> = {
   studio_list_task_revisions: [{ agent_id: "a_1", cursor: 2 }, /^\/cursor: must be string$/],
   studio_list_memory_revisions: [{ agent_id: "a_1", limit: "5" }, /^\/limit: must be integer$/],
   studio_get_memory_version: [{ agent_id: "a_1", revision_id: 3 }, /^\/revision_id: must be string$/],
-  studio_find_artifacts: [{ level: "team" }, /^\/level: must match pattern/],
+  studio_find_artifacts: [{ query: ["a"] }, /^\/query: must be string$/],
   studio_get_artifact: [{ display_path: ["notes/a.md"] }, /^\/display_path: must be string$/],
   studio_list_file_changes: [{ limit: 5 }, /^display_path is required$/],
   studio_get_script: [{ agent_id: "a_1" }, /^name is required$/],
@@ -118,7 +118,7 @@ const MALFORMED: Record<string, [JsonObject, RegExp]> = {
   studio_list_guilds: [{ limit: "2" }, /^\/limit: must be integer$/],
   studio_get_collection: [{}, /^collection is required$/],
   studio_edit_memory: [{ agent_id: "a_1", content: "x", reason: "r" }, /^base_version is required$/],
-  studio_edit_note: [{ action: "create", level: "team", reason: "r" }, /^\/level: must match pattern/],
+  studio_edit_note: [{ action: "create", key: { name: "a.md" }, reason: "r" }, /^\/key: must be string$/],
   studio_edit_guild: [{ about: 1, reason: "r" }, /^\/about: must be string$/],
   studio_edit_access: [
     { agent_id: "a_1", connections: { c_1: "yes" }, reason: "r" },

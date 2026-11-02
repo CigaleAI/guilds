@@ -119,8 +119,9 @@ flowchart LR
   message: it does not replay older chat.
 - **Rename.** The name can change while the agent is idle. Its stored
   records keep the same id, so nothing breaks.
-- **Delete.** The agent, its runs, its routines, and its own files go.
-  Its posts in the group chat stay, under the name it had.
+- **Delete.** The agent, its runs, its routines, its Memory, its
+  home, and the notes and files only it reached go. Other notes and
+  files stay. Its posts in the group chat stay, under the name it had.
 
 ## In the app
 
@@ -193,7 +194,11 @@ and its focus. Two warnings can sit there:
 A **Browser login needed** strip can show after a recipe apply
 ([Browser](browser.md)).
 
-The menu deletes the agent after the operator types its name.
+The menu deletes the agent after the operator types its name. The
+confirm reads: "Its sessions, routines, Memory, home, usage row, the
+access rows naming it and the notes and files only it reached are
+removed; other notes and files stay, and its posts stay in the group
+chat. This can't be undone."
 
 The tabs, one route each, with an icon each. The tab strip scrolls
 sideways when they do not fit.
@@ -461,13 +466,14 @@ already generating`). It then:
 - stops the agent's Chrome and terminal on its machine, and removes
   its home and its `/run/guilds/<agent id>/` files; the machine's
   container stays up for the other agents on it;
-- deletes the access-list rows that name the agent, and the rows on
-  its notes (`artifact_access`);
+- deletes the access-list rows that name the agent
+  (`artifact_access`), and soft-deletes, as the deleting operator,
+  every live note and file those rows alone reached;
 - deletes every secret granted only to that agent;
 - deletes the agent row.
 
 PostgreSQL cascades the agent's runs, messages, schedules, secret
-grants, connections, scoped bindings, and agent-level artifacts. A
+grants, connections, scoped bindings, Memory, and scripts. A
 secret the agent stored that reaches others stays, with no creator.
 
 The agent's usage counter goes with it. Guild, organisation, and

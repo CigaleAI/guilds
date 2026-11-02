@@ -6,7 +6,7 @@ again in later runs. Scripting is one of an agent's four
 capabilities, next to the [browser](browser.md),
 [coding](coding/index.md), and [Memory](memory.md).
 
-Scripts are agent-level [artifacts](artifacts.md). They live in the
+Scripts are [artifacts](artifacts.md) that belong to one agent. They live in the
 database, and each run copies them into the `scripts` folder of the
 agent's [home](agent-home.md) on its [machine](machines.md), where
 they execute.
@@ -155,10 +155,10 @@ on by default.
 ### Storage
 
 PostgreSQL is canonical for an agent's scripts. Rows live in
-`artifacts` with `kind` `script` at agent level (`path` `scripts`,
-`key` the script name).
+`artifacts` with `kind` `script` and the agent's `agent_id` (`path`
+`scripts`, `key` the script name).
 
-`(owner, name)` is unique. `parameters` is either null or a validated
+`(agent, name)` is unique. `parameters` is either null or a validated
 JSON Schema object (`type` `object`). The source is required and must
 hold non-whitespace text. Its `source_hash` is the SHA-256 of the
 source.

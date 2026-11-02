@@ -90,7 +90,7 @@ first working content, as Design describes.
    `design.specialization` (`narrower_tools`, `narrower_access`,
    `narrower_context`, `volume`, or `other`). Each role gets:
    - a narrow `focus` and a `task.body` in the Task shape;
-   - the agent-level `notes` or `collections` it owns and revises
+   - the `notes` or `collections` it alone writes and revises
      (playbooks, watchlists, scoring rules, style guides), named in its Task;
    - only the tools its Task calls. Every native tool is offered unless
      `native_tools` sets it `false`, and a connection role with `tools: {}`
@@ -205,11 +205,14 @@ the roles whose agents get `write` of their own, for a table the guild
 reads but one role maintains. A hand-off collection needs write for its producer
 and its consumer; a dedupe collection needs write for the role that polls.
 
-A note takes the same `guild` and `writers`. A guild note is written by
-every agent in the guild. An org note is read by the whole organisation;
-set `guild: "write"` when the guild maintains it. An agent note is
-reached by its role alone; set `guild` or `writers` when other roles
-read or write it.
+A note takes the same `guild` and `writers`, and `org`, the mode every
+agent of the organisation gets, for a note other guilds read or write too;
+nothing else decides who reaches it. A note that sets none of them is
+written by every agent in the guild. A note one role keeps for itself has
+that role in `writers` and no `org` or `guild`. A note the guild reads but
+one role maintains has `guild: "read"` and that role in `writers`. A note's
+`key` is unique across the organisation, and the recipe names it as
+`org/<key>`.
 Validation rejects a collection without columns, a hand-off collection
 without a required state column with `values`, a writer that is not a
 role, and a role that must write a table it cannot.
