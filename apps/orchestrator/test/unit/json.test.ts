@@ -30,6 +30,22 @@ test("isJsonObject accepts a plain object, and a field left out as undefined", (
   assert.equal(isJsonObject(Object.assign(Object.create(null), { a: 1 })), true);
 });
 
+test("isJsonObject accepts an object whose prototypes hold nothing, and refuses one that inherits a member", () => {
+  function Empty() {}
+  Empty.prototype = Object.create(null);
+  const bag = Object.assign(Reflect.construct(Empty, []), { a: "1", b: ["2"] });
+  assert.equal(isJsonObject(bag), true);
+  assert.equal(isJsonObject(Object.assign(Object.create(Object.create(null)), { a: 1 })), true);
+  class Holder {
+    a = 1;
+    read(): number {
+      return this.a;
+    }
+  }
+  assert.equal(isJsonObject(new Holder()), false);
+  assert.equal(isJsonObject(Object.create({ inherited: 1 })), false);
+});
+
 test("isJsonObject refuses an array, a scalar, a class instance, and a field JSON cannot carry", () => {
   for (const value of [null, [], "text", 1, true, new Date(0), new Map(), { a: 1n }, { a: { b: () => 1 } }]) {
     assert.equal(isJsonObject(value), false, String(value));

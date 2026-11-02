@@ -14,11 +14,18 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return isJsonObject(value);
 }
 
-/** Whether a value is a JSON object: a plain object, every field of it a JSON value or left out. */
+/**
+ * Whether a value is a JSON object, every field of it a JSON value or left out. A JSON object is a bag of
+ * fields with nothing inherited: its prototype chain reaches `Object.prototype` or `null` through
+ * prototypes that hold no own properties. A class instance inherits its class's members and is not one.
+ */
 export function isJsonObject(value: unknown): value is JsonObject {
   if (typeof value !== "object" || value === null) return false;
-  const prototype: unknown = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return false;
+  let prototype: object | null = Object.getPrototypeOf(value);
+  while (prototype !== Object.prototype && prototype !== null) {
+    if (Reflect.ownKeys(prototype).length > 0) return false;
+    prototype = Object.getPrototypeOf(prototype);
+  }
   return Object.values(value).every((field) => field === undefined || isJsonValue(field));
 }
 
