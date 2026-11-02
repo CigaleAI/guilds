@@ -1,6 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
-import { guildPath } from "./guilds";
 import type { ItemSections, ReachSubject } from "../types/access";
 import type {
   EmbeddableNote,
@@ -40,12 +39,17 @@ export const noteKeys = {
   note: (key: string) => ["artifacts", "note", key] as const,
 };
 
+/** Where a guild's agents' broken Task embeds are read. */
+function embedStatusPath(guildId: string): string {
+  return `/api/guilds/${encodeURIComponent(guildId)}/embed-status`;
+}
+
 /** Each listed guild's agents whose Task embeds something the agent cannot reach, by agent. */
 export function useBrokenEmbeds(guildIds: readonly string[]) {
   return useQueries({
     queries: guildIds.map((guildId) => ({
       queryKey: noteKeys.embedStatus(guildId),
-      queryFn: () => api<EmbedStatus>(`${guildPath(guildId)}/embed-status`),
+      queryFn: () => api<EmbedStatus>(embedStatusPath(guildId)),
       staleTime: 60_000,
     })),
     combine: (results) => {
@@ -173,7 +177,7 @@ export function useEmbeddableNote(displayPath: string | null, enabled: boolean) 
 export function useEmbedStatus(guildId: string) {
   return useQuery({
     queryKey: noteKeys.embedStatus(guildId),
-    queryFn: () => api<EmbedStatus>(`/api/guilds/${encodeURIComponent(guildId)}/embed-status`),
+    queryFn: () => api<EmbedStatus>(embedStatusPath(guildId)),
   });
 }
 
