@@ -120,6 +120,7 @@ export async function listUserGuilds(
 export async function addGuild(
   services: Pick<GuildServices, "db" | "notes">,
   draft: GuildDraft,
+  actor: ChangeActor,
   now: Date,
 ): Promise<GuildRow> {
   const { db, notes } = services;
@@ -128,7 +129,7 @@ export async function addGuild(
   try {
     await notes.createGuild(draft.orgSlug, guild.name);
   } catch (error) {
-    await deleteGuildRow(db, guild.guildId);
+    await deleteGuildRow(db, guild.guildId, actor);
     throw error;
   }
   const created = await getGuild(db, guild.guildId);
@@ -161,7 +162,7 @@ export async function createGuild(
     creatorUserId: creator.id,
   };
   try {
-    return await addGuild(services, { guild, orgSlug: org.slug }, new Date());
+    return await addGuild(services, { guild, orgSlug: org.slug }, userActor(creator), new Date());
   } catch (error) {
     throw nameConflict(error);
   }
@@ -319,10 +320,10 @@ export async function updateGuildSettings(
   return row;
 }
 
-/** Deletes a guild with its agents, runs and notes, through the generation loop that runs them. */
-export async function deleteGuild(services: GuildServices, guild: GuildRow): Promise<void> {
+/** Deletes a guild with its agents, runs and notes, as `actor`, through the generation loop that runs them. */
+export async function deleteGuild(services: GuildServices, guild: GuildRow, actor: ChangeActor): Promise<void> {
   if (services.generation === null) {
     throw new GuildError(503, "generation is unavailable");
   }
-  await services.generation.deleteGuild(guild.id);
+  await services.generation.deleteGuild(guild.id, actor);
 }

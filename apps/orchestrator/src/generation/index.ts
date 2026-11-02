@@ -5,6 +5,7 @@ import { browseService } from "../browse/service.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import type { ChangeActor } from "../lib/change-actor.js";
 import {
   appendRunError,
   completeGroupDelivery,
@@ -344,7 +345,8 @@ export class GenerationLoop implements GroupRunner {
     return this.generations.waitForLockRelease(seen);
   }
 
-  async deleteAgent(agentId: string): Promise<void> {
+  /** Deletes the agent, as `actor`, once its runs stop and its machine lets it go. */
+  async deleteAgent(agentId: string, actor: ChangeActor): Promise<void> {
     const agent = await this.db.getAgent(agentId);
     if (agent === null) {
       throw new RunRequestError(404, "agent not found");
@@ -353,13 +355,14 @@ export class GenerationLoop implements GroupRunner {
     try {
       logOperationFailure(await this.machines.removeAgent(agent));
       await this.notes.deleteAgent(agent.org_slug, agent.guild_name, agent.name);
-      await this.db.deleteAgent(agentId);
+      await this.db.deleteAgent(agentId, actor);
     } finally {
       this.generations.releaseAgent(agentId);
     }
   }
 
-  async deleteGuild(guildId: string): Promise<void> {
+  /** Deletes the guild with its agents, as `actor`, once their runs stop and their machines let them go. */
+  async deleteGuild(guildId: string, actor: ChangeActor): Promise<void> {
     const guild = await this.db.getGuild(guildId);
     if (guild === null) {
       throw new RunRequestError(404, "guild not found");
@@ -380,7 +383,7 @@ export class GenerationLoop implements GroupRunner {
         }
       }
       await this.notes.deleteGuild(guild.org_slug, guild.name);
-      await this.db.deleteGuild(guildId);
+      await this.db.deleteGuild(guildId, actor);
     } finally {
       this.generations.releaseGuild(guildId, agentIds);
     }

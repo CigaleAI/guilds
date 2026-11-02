@@ -1,4 +1,5 @@
 import type { DatabaseError } from "pg";
+import type { ChangeActor } from "../lib/change-actor.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { ensureAgentRows } from "../artifacts/memory.js";
@@ -235,7 +236,7 @@ export async function addAgent(
       await notes.createAgent(guild.org_slug, guild.name, agent.name, draft.task);
     }
   } catch (error) {
-    await deleteAgentRow(db, agent.agentId);
+    await deleteAgentRow(db, agent.agentId, actor);
     throw error;
   }
   const created = await getAgent(db, agent.agentId);
@@ -458,7 +459,7 @@ export async function moveAgentToMachine(
   return reloadAgent(services.db, agent.id);
 }
 
-/** Deletes an agent with its runs and notes, through the generation loop that runs it. */
-export async function deleteAgent(services: AgentServices, agent: AgentRow): Promise<void> {
-  await generationOf(services).deleteAgent(agent.id);
+/** Deletes an agent with its runs and notes, as `actor`, through the generation loop that runs it. */
+export async function deleteAgent(services: AgentServices, agent: AgentRow, actor: ChangeActor): Promise<void> {
+  await generationOf(services).deleteAgent(agent.id, actor);
 }

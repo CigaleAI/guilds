@@ -99,14 +99,22 @@ from no one. Creating an item writes one row: an agent its own at
 `write`, an operator the subject it names. Migration
 `0020_access_list_only.sql` gives every live agent-level note and file
 a row for its agent at `write`, so no agent loses what it reached.
-Memory, the Task, and scripts stay bound to their agent and hidden with
-its guild. `test/integration/artifacts.test.ts`,
+A deleted note or file keeps its rows, so its tombstone and its change
+history stay hidden by the same rule. Deleting a guild or an agent deletes
+the rows naming it, and with them every note and file those rows alone
+reached, recorded as a deletion by the operator who deleted it. Memory,
+the Task, and scripts stay bound to their agent and hidden with its
+guild. `test/integration/artifacts.test.ts`,
 `test/integration/private-guild-artifacts.test.ts`, and
 `test/integration/migrations.test.ts` pin the rules and the migration.
 
 **Residual risk:** an operator who removes every row of a private
-guild's note makes it visible, and writable, to every operator of the
-organisation. Creation never leaves an item without a row.
+guild's note on its Access panel makes it visible, and writable, to every
+operator of the organisation; creation never leaves an item without a
+row. The tombstone of a note or a file deleted with its guild or agent
+has no row left, so its change history shows to every operator of the
+organisation. A file deleted that way keeps its
+bytes in the blob store (SEC-46).
 
 ## SEC-54 — While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge
 

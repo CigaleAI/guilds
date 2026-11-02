@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
+import { retireUnlistedArtifacts } from "./artifacts.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
@@ -241,12 +242,18 @@ export async function agentNameTaken(pool: Queryable, name: string): Promise<boo
   return result.rows.length > 0;
 }
 
-export async function deleteAgent(pool: Queryable, agentId: string): Promise<void> {
+/**
+ * Deletes an agent with the access rows naming it; a note or a file only those rows reached is
+ * deleted with it, as `actor`.
+ */
+export async function deleteAgent(pool: Queryable, agentId: string, actor: ChangeActor): Promise<void> {
   await withTransaction(pool, async (client) => {
-    await client.query(
-      `DELETE FROM artifact_access WHERE subject_type = 'agent' AND subject_id = $1`,
+    const named = await client.query<{ target_id: string }>(
+      `DELETE FROM artifact_access WHERE subject_type = 'agent' AND subject_id = $1
+       RETURNING target_kind, target_id`,
       [agentId],
     );
+    await retireUnlistedArtifacts(client, named.rows.map((row) => row.target_id), actor, new Date());
     // A secret granted only to this agent goes with it.
     await client.query(
       `DELETE FROM secrets s

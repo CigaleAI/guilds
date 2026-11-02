@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { addAgent } from "../../src/agents/service.js";
-import { systemActor } from "../helpers/agents.js";
+import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { ArtifactFiles, fileBlobKey } from "../../src/artifacts/files.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import {
@@ -292,17 +292,25 @@ describe("shared files", { concurrency: 1 }, () => {
     assert.equal(published.length, 3, "a write without a publisher announces nothing");
   });
 
-  test("deleting an agent or a guild drops the rows naming it, and its files survive", async () => {
+  test("deleting an agent or a guild drops the rows naming it; a file others reach survives, one only it reached goes", async () => {
     await insertGuild(db, { guildId: "guild_gone", name: "gone", orgId: "org_home", about: "" }, new Date());
     await seedAgent("a_gone", "guild_gone", "gone");
+    await seedAgent("a_gone_two", "guild_gone", "gone-two");
     const gone = agentActor({ orgId: "org_home", guildId: "guild_gone", agentId: "a_gone", agentName: "gone" });
     const upload = { description: "Left behind", mime: "", bytes: Buffer.from("left") };
     const agentFile = await files.putFile(gone, { name: "left.txt", ...upload });
+    const agentOnly = await files.putFile(gone, { name: "gone-own.txt", ...upload });
     const guildFile = await files.putFile(operator, {
       name: "gone-guild.txt",
       ...upload,
       startingAccess: [{ type: "guild", id: "guild_gone", mode: "write" }],
     });
+    const guildOnly = await files.putFile(operator, {
+      name: "gone-guild-own.txt",
+      ...upload,
+      startingAccess: [{ type: "guild", id: "guild_gone", mode: "write" }],
+    });
+    await grantAccess(store, operator, { kind: "file", id: guildOnly.id }, { type: "agent", id: "a_gone_two", mode: "read" });
     for (const file of [agentFile, guildFile]) {
       await grantAccess(store, operator, { kind: "file", id: file.id }, { type: "guild", id: "guild_alpha", mode: "read" });
     }
@@ -313,12 +321,22 @@ describe("shared files", { concurrency: 1 }, () => {
         [fileId],
       )).rows.map((row) => row.subject);
 
-    await deleteAgent(db, "a_gone");
+    const deletion = async (fileId: string) =>
+      (await db.query<{ operation: string; actor_id: string }>(
+        `SELECT operation, actor_id FROM file_changes WHERE artifact_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [fileId],
+      )).rows[0];
+
+    await deleteAgent(db, "a_gone", OPERATOR_ACTOR);
     assert.deepEqual(await subjects(agentFile.id), ["guild guild_alpha"], "the agent's own row goes, the others stay");
     assert.equal((await files.loadFileById(alpha, agentFile.id)).access, "read", "the file survives its creator");
-    await deleteGuild(db, "guild_gone");
+    await assert.rejects(() => files.loadFileById(operator, agentOnly.id), /artifact not found/, "a file only the agent reached goes with it");
+    assert.deepEqual(await deletion(agentOnly.id), { operation: "delete", actor_id: "user_operator" });
+    await deleteGuild(db, "guild_gone", OPERATOR_ACTOR);
     assert.deepEqual(await subjects(guildFile.id), ["guild guild_alpha"], "the guild's row goes, the others stay");
     assert.equal((await files.loadFileById(alpha, guildFile.id)).access, "read", "the file survives the guild");
+    await assert.rejects(() => files.loadFileById(operator, guildOnly.id), /artifact not found/, "a file only the guild and its agents reached goes with it");
+    assert.deepEqual(await deletion(guildOnly.id), { operation: "delete", actor_id: "user_operator" });
   });
 
   test("a find returns at least one file and at most the cap, whatever limit it asks", async () => {

@@ -8,7 +8,7 @@ import { listFileChanges } from "../../src/db/file-changes.js";
 import { unreachableMarker, embedSource, inlineTaskEmbeds, inspectTaskEmbeds } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { addAgent } from "../../src/agents/service.js";
-import { systemActor } from "../helpers/agents.js";
+import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import type { Database } from "../../src/db/client.js";
 import type { JsonObject, JsonValue } from "../../src/lib/json.js";
 import { connect } from "../../src/seed/connect.js";
@@ -782,7 +782,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual((await listAccess(store, operator, target)).map((row) => [row.type, row.id, row.mode]), [["guild", "guild_own", "write"]]);
 
     // deleting a guild soft-deletes its own tables and their records, and drops their access lists
-    await deleteGuild(db, "guild_other");
+    await deleteGuild(db, "guild_other", OPERATOR_ACTOR);
     await assert.rejects(() => getCollection(store, operator, own.id), /unknown collection/);
     const records = await database.pool.query(
       `SELECT count(*)::int AS n FROM artifacts WHERE collection_id = $1 AND deleted_at IS NULL`,
@@ -1023,10 +1023,15 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(await canReadDisplayPath(store, north, revision), false);
     assert.equal(await canReadDisplayPath(store, operator, revision), true);
 
-    // a deleted note takes its access rows with it
+    // a deleted note keeps its access rows on its tombstone, so the hiding rule still holds for it
     await deleteByDisplayPath(store, operator, planPath);
     const left = await database.pool.query(`SELECT count(*)::int AS n FROM artifact_access WHERE target_id = $1`, [plan.id]);
-    assert.equal(left.rows[0]?.n, 0);
+    assert.equal(left.rows[0]?.n, 2);
+    await deleteByDisplayPath(store, operator, ownPath);
+    assert.equal((await getByDisplayPath(store, operator, ownPath)).tombstone, true);
+    await assert.rejects(() => getByDisplayPath(store, blind, ownPath), /artifact not found/);
+    assert.equal(await canReadDisplayPath(store, blind, ownPath), false, "a hidden tombstone's history is not read");
+    assert.equal(await canReadDisplayPath(store, operator, ownPath), true);
   });
 
   test("run tool calls record file create, update, and delete provenance", async () => {

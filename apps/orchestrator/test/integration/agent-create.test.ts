@@ -13,7 +13,7 @@ import { listFileChanges } from "../../src/db/file-changes.js";
 import { addGuild } from "../../src/guilds/service.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { connect } from "../../src/seed/connect.js";
-import { systemActor } from "../helpers/agents.js";
+import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { agentConfig } from "../helpers/generation.js";
@@ -38,7 +38,7 @@ before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));
   notes = new NotesStore(tempDir("guilds-agent-create-"), templatesRoot());
   const guild = { guildId: GUILD, name: "desk", orgId: "org_home", creatorUserId: "user_operator" };
-  await addGuild({ db: database.pool, notes }, { guild, orgSlug: "home" }, new Date());
+  await addGuild({ db: database.pool, notes }, { guild, orgSlug: "home" }, OPERATOR_ACTOR, new Date());
 });
 
 after(async () => {

@@ -67,11 +67,11 @@ export async function activateApply(apply: RecipeApply, row: RecipeApplyRow, act
 
 /** Removes the guild an apply created, with its agents and the collections it created; each removal goes on when another fails. */
 async function removeCreatedGuild(apply: RecipeApply, row: RecipeApplyRow, guildId: string): Promise<void> {
-  for (const member of await listAgents(apply.db, guildId)) {
-    await deleteAgent(apply.db, member.id).catch(() => undefined);
-  }
-  await deleteGuild(apply.db, guildId).catch(() => undefined);
   const actor = operatorActor({ orgId: row.org_id, actorId: row.created_by_user_id ?? row.org_id, actorName: "operator" });
+  for (const member of await listAgents(apply.db, guildId)) {
+    await deleteAgent(apply.db, member.id, actor).catch(() => undefined);
+  }
+  await deleteGuild(apply.db, guildId, actor).catch(() => undefined);
   for (const item of row.plan.collections) {
     if (item.action === "create" && item.collection_id) {
       await deleteCollection(apply.artifacts, actor, item.collection_id).catch(() => undefined);

@@ -21,7 +21,6 @@ import {
 } from "./types.js";
 import type { AccessMode } from "../db/schema/index.js";
 import { requireSubject, writeGrants } from "./grants.js";
-import { deleteAccessList } from "../db/artifact-access.js";
 import {
   getLiveArtifact,
   insertFile,
@@ -241,7 +240,7 @@ export class ArtifactFiles {
     return (await listReachedArtifacts(this.store.db, actor, reacher, "file")).map((row) => this.view(row));
   }
 
-  /** Soft-deletes a file the actor writes, drops its access list, and removes its bytes. */
+  /** Soft-deletes a file the actor writes, keeping its access list on the tombstone, and removes its bytes. */
   async deleteFile(actor: ArtifactActor, row: ArtifactRow): Promise<void> {
     await assertWrite(this.store, actor, row);
     await withTransaction(this.store.db, async (client) => {
@@ -250,7 +249,6 @@ export class ArtifactFiles {
       if (version === null) {
         throw new ArtifactError("artifact not found", 404);
       }
-      await deleteAccessList(client, { kind: "file", id: row.id });
       await recordFileChange(client, actor, {
         orgId: row.org_id,
         artifactId: row.id,

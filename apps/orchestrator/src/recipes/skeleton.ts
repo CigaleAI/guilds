@@ -181,7 +181,7 @@ async function createGuild(skeleton: Skeleton, recipe: RecipeDocument): Promise<
     agentMessageLimit: recipe.guild.group_agent_message_limit,
     creatorUserId: user.id,
   };
-  await addGuild(skeleton.apply, { guild, orgSlug: org.slug }, skeleton.now);
+  await addGuild(skeleton.apply, { guild, orgSlug: org.slug }, skeleton.actor, skeleton.now);
   skeleton.created.guild = true;
 }
 
@@ -362,10 +362,10 @@ async function bindReusedConnections(skeleton: Skeleton, planned: PlannedConnect
 async function rollBack(skeleton: Skeleton): Promise<void> {
   const { db, artifacts } = skeleton.apply;
   for (const agentId of [...skeleton.created.agents].reverse()) {
-    await deleteAgent(db, agentId).catch(() => undefined);
+    await deleteAgent(db, agentId, skeleton.actor).catch(() => undefined);
   }
   if (skeleton.created.guild) {
-    await deleteGuild(db, skeleton.guildId).catch(() => undefined);
+    await deleteGuild(db, skeleton.guildId, skeleton.actor).catch(() => undefined);
   }
   for (const collectionId of [...skeleton.created.collections].reverse()) {
     await deleteCollection(artifacts, skeleton.actor, collectionId).catch(() => undefined);

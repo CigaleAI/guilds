@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { addAgent } from "../../src/agents/service.js";
-import { systemActor } from "../helpers/agents.js";
+import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
@@ -403,6 +403,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
         guild: { guildId: "guild_capture", name: "capture-src", orgId: "org_home", about: "source", creatorUserId: "user_operator" },
         orgSlug: "home",
       },
+      OPERATOR_ACTOR,
       now,
     );
     await addAgent(

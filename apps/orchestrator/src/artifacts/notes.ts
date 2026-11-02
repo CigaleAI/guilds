@@ -1,4 +1,3 @@
-import { deleteAccessList } from "../db/artifact-access.js";
 import {
   getArtifactAt,
   getArtifactOrTombstoneAt,
@@ -228,7 +227,6 @@ async function deleteNoteAt(store: ArtifactStore, actor: ArtifactActor, parsed: 
     if (version === null) {
       throw new ArtifactError("artifact not found", 404);
     }
-    await deleteAccessList(client, { kind: "note", id: row.id });
     await recordFileChange(client, actor, {
       orgId: row.org_id,
       artifactId: row.id,
