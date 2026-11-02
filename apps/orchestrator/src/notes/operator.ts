@@ -1,14 +1,23 @@
+import { requireVisibleAgent } from "../agents/access.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { creatorGrant, parseGrant, type SubjectEntry } from "../artifacts/access.js";
 import { guildsShowing } from "../artifacts/access-lists.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import { homedActor, type ArtifactStore, type HostNoteView, type PageSections } from "../artifacts/store.js";
+import {
+  homedActor,
+  type ArtifactStore,
+  type ArtifactTextView,
+  type HostNoteView,
+  type PageSections,
+} from "../artifacts/store.js";
 import {
   deleteHostNote,
   ensureAgentArtifacts,
   hostFileName,
+  type EmbeddedNote,
   type HostFilePayload,
   readAgentHostFile,
+  readEmbeddableNotes,
   readHostNote,
   writeAgentHostFile,
   writeHostNote,
@@ -127,14 +136,32 @@ export async function listAgentPageNotes(
   return listAgentNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
 }
 
-/** The notes the agent's Task may embed, in the two sections of the agent's page, each with its text and the agent's mode. */
-export async function readAgentEmbeddableNotes(
+/**
+ * The embeddable notes an operator asks for: one note by its display path, the notes an agent's Task
+ * may embed, or every note they may embed. Either field empty asks for neither.
+ */
+export type EmbeddableNotesQuery = { displayPath: string; agentId: string };
+
+/**
+ * The embeddable notes `query` asks for, read as the user: with a display path, the one note it
+ * names; with an agent and no display path, the notes the agent's Task may embed in the two sections
+ * of the agent's page, each with its text and the agent's mode; with neither, every note of the
+ * organisation `orgId` the user may embed. ArtifactError 404 for a display path naming no note the
+ * user reads; AgentError 404 for an agent hidden from them.
+ */
+export async function readOperatorEmbeddableNotes(
   services: OperatorNotesServices,
-  agent: AgentRow,
+  orgId: string,
   user: UserRow,
-): Promise<PageSections<EmbeddableNoteView>> {
-  const actor = await loadOperatorActor(services.db, user, { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id });
-  return listAgentEmbeddableNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
+  query: EmbeddableNotesQuery,
+): Promise<PageSections<EmbeddableNoteView> | ArtifactTextView[] | EmbeddedNote> {
+  if (query.agentId && !query.displayPath) {
+    const agent = await requireVisibleAgent(services.db, query.agentId, user.id);
+    const actor = await loadOperatorActor(services.db, user, { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id });
+    return listAgentEmbeddableNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
+  }
+  const actor = await loadOperatorActor(services.db, user, { orgId });
+  return readEmbeddableNotes(services.artifacts, actor, query.displayPath);
 }
 
 /** The organisation's note with this key. */

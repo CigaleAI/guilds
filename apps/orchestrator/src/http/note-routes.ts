@@ -6,7 +6,6 @@ import { loadOperatorActor } from "../artifacts/actors.js";
 import {
   latestFileChanges,
   listPathChanges,
-  readEmbeddableNotes,
 } from "../artifacts/host-files.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
@@ -16,8 +15,8 @@ import {
   listGuildPageNotes,
   listOrgPageNotes,
   readAgentFile,
-  readAgentEmbeddableNotes,
   readMemoryHistory,
+  readOperatorEmbeddableNotes,
   readOrgNote,
   writeAgentFile,
   writeOrgNote,
@@ -196,14 +195,12 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
     "/api/org/embeddable-notes",
     { schema: { querystring: EmbeddableNotesQuerySchema } },
     async (request) => {
-      const displayPath = (request.query.display_path ?? "").trim();
-      const agentId = (request.query.agent_id ?? "").trim();
-      if (agentId && !displayPath) {
-        const user = await currentUser(db, request, deps);
-        const agent = await requireVisibleAgent(db, agentId, user.id);
-        return readAgentEmbeddableNotes(services, agent, user);
-      }
-      return readEmbeddableNotes(deps.artifacts, await orgActor(request), displayPath);
+      const user = await currentUser(db, request, deps);
+      const org = await currentOrg(db, request, user);
+      return readOperatorEmbeddableNotes(services, String(org.id), user, {
+        displayPath: (request.query.display_path ?? "").trim(),
+        agentId: (request.query.agent_id ?? "").trim(),
+      });
     },
   );
 }
