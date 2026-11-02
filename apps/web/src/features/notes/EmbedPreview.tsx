@@ -1,5 +1,5 @@
 import { useEmbeddableNote } from "../../api/queries/notes";
-import type { EmbeddableNote } from "../../api/types/notes";
+import type { EmbeddableNotes } from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import { Link } from "@tanstack/react-router";
 import {
@@ -16,12 +16,13 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@guildsrun/ui";
-import { collectionDisplayPath } from "./embeds";
+import { collectionDisplayPath, noteEmbed } from "./embeds";
 
 type EmbedPreviewProps = {
   /** The embed to show; null keeps the dialog closed. */
   path: string | null;
-  notes: readonly EmbeddableNote[] | undefined;
+  /** The notes the Task or note can embed; undefined while they load. */
+  notes: EmbeddableNotes | undefined;
   collections: readonly Collection[] | undefined;
   orgId: string;
   onClose: () => void;
@@ -43,15 +44,15 @@ function TablePreview({ collection }: TablePreviewProps) {
 
 type NotePreviewProps = {
   path: string | null;
-  /** The notes the operator can see; a note not among them is fetched by its path. */
-  notes: readonly EmbeddableNote[] | undefined;
+  /** The notes the Task or note can embed; a note they cannot tell of is fetched by its path. */
+  notes: EmbeddableNotes | undefined;
 };
 
 /** A note embed: its text, that it is empty, or that it is not reachable. */
 function NotePreview({ path, notes }: NotePreviewProps) {
-  const listed = path ? notes?.find((note) => note.display_path === path) : undefined;
-  const fetched = useEmbeddableNote(path, notes !== undefined && !listed);
-  const note = listed ?? fetched.data;
+  const embed = path && notes ? noteEmbed(path, notes) : undefined;
+  const fetched = useEmbeddableNote(path, embed?.state === "unknown");
+  const note = embed?.state === "readable" ? embed.note : fetched.data;
   if (note) {
     return note.content.trim() ? (
       <Markdown density="compact">{note.content}</Markdown>
@@ -59,7 +60,7 @@ function NotePreview({ path, notes }: NotePreviewProps) {
       <p className="text-sm text-muted">This note is empty.</p>
     );
   }
-  if (fetched.isError) {
+  if (embed?.state === "unreadable" || fetched.isError) {
     return (
       <Banner tone="error" title="This note is not reachable">
         Runs get a line saying the file is not reachable in its place.
