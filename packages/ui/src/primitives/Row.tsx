@@ -9,6 +9,9 @@ import { cn } from "../cn";
  *
  * Selected rows fill plum and are the only plum row in their list. Rows set `data-selected`, so
  * children can switch colour with `group-data-[selected=true]/row:…`.
+ *
+ * A muted row greys its text and stays interactive, for an item the viewer sees but cannot open
+ * as itself; a disabled row takes no pointer events and is marked `aria-disabled`.
  */
 export const row = cva("group/row flex min-w-0 items-center gap-2 text-left text-fg", {
   variants: {
@@ -24,6 +27,10 @@ export const row = cva("group/row flex min-w-0 items-center gap-2 text-left text
     },
     interactive: {
       true: "cursor-pointer transition-colors hover:bg-paper-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+      false: "",
+    },
+    muted: {
+      true: "text-muted",
       false: "",
     },
     selected: {
@@ -44,6 +51,7 @@ export const row = cva("group/row flex min-w-0 items-center gap-2 text-left text
     density: "default",
     tone: "plain",
     interactive: false,
+    muted: false,
     selected: false,
     danger: false,
     disabled: false,
@@ -67,6 +75,7 @@ export function Row({
   density,
   tone,
   interactive,
+  muted,
   selected,
   danger,
   disabled,
@@ -101,7 +110,7 @@ export function Row({
     <Comp
       data-selected={selected ? "true" : undefined}
       aria-disabled={disabled || undefined}
-      className={cn(row({ density, tone, interactive, selected, danger, disabled }), className)}
+      className={cn(row({ density, tone, interactive, muted, selected, danger, disabled }), className)}
       {...props}
     >
       {lead ? <span className="flex shrink-0 items-center">{lead}</span> : null}
