@@ -569,6 +569,15 @@ another guild's about and description are not. One rule
 (`apps/orchestrator/src/studio/reach.ts`) decides reach for every tool
 that takes a display path, and for focus pins.
 
+Reach comes from access rows alone. Every tool, focus pin, and edit
+reads as the session's user, with the private guilds they do not
+operate hidden from them, read when a generation starts and when an
+edit is viewed or answered. A note or file hidden from them is left out
+of every search, read, history, and pin even when a row puts it in
+reach: one homed in such a guild, and one whose rows name only such
+guilds and their agents
+([Access](access.md#access-lists-for-notes-collections-and-files)).
+
 | Tool | Behaviour |
 |---|---|
 | `studio_find_artifacts` | Searches notes only: the ones in reach |
@@ -874,6 +883,7 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/*-tools.ts` | The coach's tools, one file per sub-domain: prompt, task, memory, run, routine, guild, file, collection, access, and connection |
 | `apps/orchestrator/src/studio/arguments.ts`, `edit-arguments.ts` | A tool's arguments: the schema the model is offered and the decode of a call against it; the edit tools' parameters, which a recorded call is read by again |
 | `apps/orchestrator/src/studio/paging.ts`, `source-guild.ts` | What the tools share: paging and byte caps, and the source-guild agent a handle names |
+| `apps/orchestrator/src/studio/actor.ts` | The operator every tool, pin, and edit reads and writes as: the session's user with the private guilds hidden from them |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
 | `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |
