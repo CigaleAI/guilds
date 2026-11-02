@@ -160,7 +160,10 @@ reason)`, and `studio_edit_guild(about?, description?, reason)` each
 take the complete replacement text.
 
 The handler checks reach, the byte cap (and the guild field length
-limits), and that `base_version` matches the live version. It writes
+limits), and that `base_version` matches the live version. Reach is
+read as the operator, with the private guilds they do not operate
+hidden: a note or a file hidden from them, by its rows or by its home
+guild, is out of reach ([Prompt Studio](prompt-studio.md#tools-1)). It writes
 nothing. Its result is a `studio_edit_request` widget with
 `await_operator`, the target, base and proposed hashes, and line
 counts. The proposed text stays in the tool call arguments. The card
@@ -199,7 +202,8 @@ base_version, reason)` return the same widget with `kind: "note"` and
 `action` (`create` or `delete`).
 
 - `key` is a `.md` file name with no folders, and names one note
-  across the organisation. The new note starts with one row: the
+  across the organisation. The new note is homed in the source guild
+  ([Notes](notes.md#home-guild)) and starts with one row: the
   source guild at `write`, or, with `agent_id` (a live member of the
   source guild), that agent at `write` alone. A bad `agent_id` is 422
   `agent_id must name a live agent of the source guild`.

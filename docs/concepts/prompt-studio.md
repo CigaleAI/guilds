@@ -230,9 +230,11 @@ filter beside them, and in **List** a kind filter: **All**, **Notes**,
 
 **List** shows every note, table, script, and Memory in the guild's
 state: its agents' Memory and scripts, the tables its agents can be
-given, and the notes whose access list has a row for the guild, one of
-its agents, or the organisation. Only what the viewer can open is
-listed. For the window (24 h, 3 d, or 7 d), each row shows the item,
+given, and the notes the guild's **State › Notes** lists, those homed
+in the guild and those whose access list has a row for the guild, one
+of its agents, or the organisation ([Notes](notes.md#in-the-app)).
+Only what the viewer can open is listed: a note hidden from them, by
+its rows or by its home guild, is not. For the window (24 h, 3 d, or 7 d), each row shows the item,
 its size, its changes and reads, who changes it most and who reads it
 most with their share, and its last change. Filters narrow it by kind,
 by agent (the agent's own Memory and scripts, and the items it changes
@@ -567,7 +569,13 @@ guild's agents, Memory, and own collections, and the notes and files
 whose rows name only other guilds and their agents, are out of reach;
 another guild's about and description are not. One rule
 (`apps/orchestrator/src/studio/reach.ts`) decides reach for every tool
-that takes a display path, and for focus pins.
+that takes a display path, and for focus pins. A note's or a file's
+home guild never widens reach: a note homed in the source guild that
+no row for it, its agents, or the organisation reaches is out of
+reach. The tools read as the operator, with the private guilds they
+do not operate hidden, so a note or a file hidden from them, by its
+rows or by its home, is out of reach too
+([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 Reach comes from access rows alone. Every tool, focus pin, and edit
 reads as the session's user, with the private guilds they do not
@@ -737,7 +745,8 @@ actor, count, share }`), `writers`, `last_change` (`{ at, actor }`),
 and `flags` (`no_agent_read`, `writers`, `deletes_others_rows`,
 `untouched`). An actor is `{ kind: person | agent | other_guild, id,
 name }`. Items are read with the viewer's own permissions, so a
-private guild's or a hidden item never appears. A change counts on the
+private guild's item, or one hidden by its rows or its home guild,
+never appears. A change counts on the
 item whose artifact made it, and a record's change on the table whose
 collection holds the record, so a name or a table name another item
 held before brings none of its changes. Changes come from
@@ -849,8 +858,9 @@ The route reads the files with the viewing operator's own permissions:
 the notes whose access list has a row for the guild, one of its
 agents, or the organisation, the organisation's tables and the guild's
 own, and the notes and tables their embeds reach, followed as far as a
-run could inline them. The notes hidden from the operator, and the
-tables of a private guild they do not operate, are never listed
+run could inline them. The notes hidden from the operator, by their
+rows or by their home guild, and the tables of a private guild they
+do not operate, are never listed
 ([Access](access.md#access-lists-for-notes-collections-and-files)); an
 embed of one is a link that does not resolve. Each Task's walk, `hops`, `inlined_bytes`, and
 `unreachable_for` are read as that Task's agent, the way its run
@@ -890,5 +900,5 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |
 | `apps/orchestrator/src/studio/state-list.ts`, `state-data.ts` | The State list: items, their changes and reads, and an item's history |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
-| `apps/orchestrator/src/studio/reach.ts` | What a session reaches: the source guild, its members, the notes and files whose access list has a row for the source guild, one of its agents, or the organisation, and the collections its agents can be given |
+| `apps/orchestrator/src/studio/reach.ts` | What a session reaches: the source guild, its members, the notes and files whose access list has a row for the source guild, one of its agents, or the organisation, without those hidden from the operator, and the collections its agents can be given; never by an item's home guild |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |
