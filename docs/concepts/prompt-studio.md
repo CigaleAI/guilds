@@ -229,13 +229,14 @@ filter beside them, and in **List** a kind filter: **All**, **Notes**,
 **Tables**, **Scripts**, or **Memory**.
 
 **List** shows every note, table, script, and Memory in the guild's
-state: the guild's own, its agents', and the organisation's, each with
-its level. Only what the viewer can open is listed. For the window
-(24 h, 3 d, or 7 d), each row shows the item, its level and size, its
-changes and reads, who changes it most and who reads it most with
-their share, and its last change. Filters narrow it by kind, by agent
-(items the agent owns, changes, or reads), by **Needs a look**, and by
-search words. The list sorts by name, changes, reads, or last change.
+state: its agents' Memory and scripts, the tables its agents can be
+given, and the notes whose access list has a row for the guild, one of
+its agents, or the organisation. Only what the viewer can open is
+listed. For the window (24 h, 3 d, or 7 d), each row shows the item,
+its size, its changes and reads, who changes it most and who reads it
+most with their share, and its last change. Filters narrow it by kind,
+by agent (the agent's own Memory and scripts, and the items it changes
+or reads), by **Needs a look**, and by search words. The list sorts by name, changes, reads, or last change.
 
 A row carries a flag when the item deserves a look:
 
@@ -302,8 +303,8 @@ what embeds or names what:
   in State** selects the file in **List**. **Ask the coach** pins the
   file.
 
-With the agent filter, the map shows what that agent's runs meet, and
-its own notes that they do not. The map counts hops the way a run
+With the agent filter, the map shows what that agent's runs meet. The
+map counts hops the way a run
 inlines embeds ([Task](task.md#embeds)): a note met first deeper in the
 walk is inlined there once, so its own embeds can fall past the last
 inlined hop. Each Task's run is walked as its agent, so a file the
@@ -558,17 +559,19 @@ They do not appear in normal agent Access panes. The proposal tools
 and the connection tools are described in
 [Studio proposals](studio-proposals.md#reference).
 
-Reach is the immutable source guild and its members, the
-organisation's notes, and the collections the source guild's agents can
-be given: the guild's own and the organisation's. Another guild's
-agents, notes, Memory, and own collections are out of reach; its about
-and description are not. One rule
+Reach is the immutable source guild and its members, the notes and
+files whose access list has a row for the source guild, one of its
+agents, or the organisation, and the collections the source guild's
+agents can be given: the guild's own and the organisation's. Another
+guild's agents, Memory, and own collections, and the notes and files
+whose rows name only other guilds and their agents, are out of reach;
+another guild's about and description are not. One rule
 (`apps/orchestrator/src/studio/reach.ts`) decides reach for every tool
 that takes a display path, and for focus pins.
 
 | Tool | Behaviour |
 |---|---|
-| `studio_find_artifacts` | Searches notes only |
+| `studio_find_artifacts` | Searches notes only: the ones in reach |
 | `studio_get_artifact` | Reads one note or record by display path. A record is in reach when its collection is. A collection path is refused with a pointer to `studio_get_collection` |
 | `studio_get_script` | Reads one member script by name |
 | `studio_list_collections` | The source guild's own collections, then the organisation's. Each row has owner, purpose, record count, column names, the mode the source guild's agents get from the guild's and the organisation's rows (`guild_access`), and `studio_can`: `edit_or_delete` for the guild's own, `add_columns_and_access` for the organisation's |
@@ -592,7 +595,7 @@ every native tool's arguments go through
 - An optional argument sent as `null` counts as left out.
 - For a tool that takes `agent_id`, the agent is the first non-blank
   of `agent_id`, `agent`, and `agent_name`.
-- A value from a fixed list, such as an `action`, a `level`, a
+- A value from a fixed list, such as an `action`, a
   section of `studio_get_agent_context`, a column type, or an access
   setting or mode, is offered to the model as an enum and checked
   with the rest.
@@ -712,9 +715,10 @@ request's user is identified.
 
 `GET …/state?hours=&agent=&kind=` returns `{ since, until, items }`.
 `hours` follows the tools route. `kind` is `note`, `table`, `script`, or
-`memory` (another value is 422); `agent` keeps the items that agent
-owns, changes, or reads. Each item has `display_path`, `kind`, `level`,
-`owner_id`, `title`, `size` (bytes, or records for a table), `version`
+`memory` (another value is 422); `agent` keeps that agent's Memory and
+scripts and the items it changes or reads. Each item has
+`display_path`, `kind`, `agent_id` (the agent of a Memory or a script,
+else null), `title`, `size` (bytes, or records for a table), `version`
 (null for a table), `created_by`, `created_at`, `collection_id` (a
 table's id, else null), `note_id` (a note's id, else null), the
 window's `changes` and `reads`, `top_writer` and `top_reader` (`{
@@ -810,7 +814,7 @@ is the 64 KB embed budget and `depth` the 2 levels a run inlines.
 |---|---|
 | `id` | The display path, or the link as written when it does not resolve |
 | `kind` | `task`, `note`, `table`, or `unresolved` |
-| `label`, `level`, `agent_id`, `collection_id` | The agent's name for a Task, else the note's title or the table's name; the level; the agent of a Task or agent-level note; a table's id |
+| `label`, `agent_id`, `collection_id` | The agent's name for a Task, else the note's title or the table's name; the agent of a Task, else null; a table's id |
 | `in_state` | Part of the guild's state, rather than only reached from it |
 | `bytes` | The UTF-8 size of its text |
 | `inlined_bytes` | For a Task: the note text one run inlines, leaving out the files its agent cannot reach |
@@ -870,5 +874,5 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |
 | `apps/orchestrator/src/studio/state-list.ts`, `state-data.ts` | The State list: items, their changes and reads, and an item's history |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
-| `apps/orchestrator/src/studio/reach.ts` | What a session reaches: the source guild, its members, organisation notes, and the collections its agents can be given |
+| `apps/orchestrator/src/studio/reach.ts` | What a session reaches: the source guild, its members, the notes and files whose access list has a row for the source guild, one of its agents, or the organisation, and the collections its agents can be given |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |
