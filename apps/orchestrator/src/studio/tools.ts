@@ -5,7 +5,7 @@ import type { JsonObject } from "../lib/json.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import type { Queryable } from "../db/pg.js";
 import type { StudioSessionRow } from "../db/studio.js";
-import type { UserRow } from "../db/users.js";
+import type { StudioOperator } from "./actor.js";
 import type { Schedules } from "../schedules/service.js";
 import { studioEditAccess, studioGetAgentAccess, studioGetScript } from "./access-tools.js";
 import { studioEditCollection, studioGetCollection, studioListCollections } from "./collection-tools.js";
@@ -32,12 +32,12 @@ export type StudioToolDeps = {
   mcp?: StudioMcpClient | null;
 };
 
-/** A coach tool call: the session and operator it runs for, and its place in the transcript. */
-export type StudioToolCall = {
+/**
+ * A coach tool call: the session and the operator it runs for, with the private guilds hidden from
+ * them as the generation started, and its place in the transcript.
+ */
+export type StudioToolCall = StudioOperator & {
   session: StudioSessionRow;
-  user: UserRow;
-  orgId: string;
-  sourceGuildId: string;
   generation: number;
   /** The seq the call's result takes in the session's messages. */
   nextMessageSeq?: number;

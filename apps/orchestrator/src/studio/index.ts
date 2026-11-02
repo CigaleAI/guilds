@@ -55,7 +55,7 @@ import {
   type StudioEditView,
 } from "./edits.js";
 import type { RoutineChange } from "../schedules/operator.js";
-import { getGuild, type GuildRow } from "../db/guilds.js";
+import { getGuild, hiddenGuildsFor, type GuildRow } from "../db/guilds.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import {
@@ -85,7 +85,8 @@ import type { UserRow } from "../db/users.js";
 import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { CoachSessionConfig, StudioSourceGuild } from "../db/schema/index.js";
-import { operatorActor } from "../artifacts/actors.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import type { StudioOperator } from "./actor.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -466,10 +467,8 @@ export class StudioService {
   ): ReturnType<typeof memoryHistory> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = operatorActor({
+    const actor = await loadOperatorActor(this.deps.db, user, {
       orgId: session.org_id,
-      actorId: user.id,
-      actorName: user.name,
       guildId: session.source_guild_id,
       agentId,
     });
@@ -486,20 +485,19 @@ export class StudioService {
     if (!content.trim()) {
       throw new StudioUnprocessableError("content must not be empty");
     }
+    // The pin and every tool call of the generation read as the user, without the private guilds
+    // hidden from them as it starts.
+    const operator: StudioOperator = {
+      orgId: session.org_id,
+      sourceGuildId: session.source_guild_id,
+      user,
+      hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
+    };
     // Resolve the pin before taking the lock: it reads guild data only.
     const focus: ResolvedFocus | null =
       focusInput === undefined || focusInput === null
         ? null
-        : await resolveStudioFocus(
-            {
-              db: this.deps.db,
-              artifacts: this.deps.artifacts,
-              orgId: session.org_id,
-              sourceGuildId: session.source_guild_id,
-              user,
-            },
-            focusInput,
-          );
+        : await resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts, ...operator }, focusInput);
     const started = await withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot generate");
@@ -574,12 +572,7 @@ export class StudioService {
         generationContext,
         systemContent: started.systemContent,
       },
-      {
-        session: started.session,
-        user,
-        orgId: started.session.org_id,
-        sourceGuildId: session.source_guild_id,
-      },
+      { ...operator, session: started.session },
     );
     return this.viewSession(started.session);
   }
@@ -704,12 +697,13 @@ export class StudioService {
     return { db: this.deps.db, artifacts: this.deps.artifacts, schedules: this.deps.schedules };
   }
 
-  private editScope(session: LiveStudioSession, user: UserRow): EditScope {
+  private async editScope(session: LiveStudioSession, user: UserRow): Promise<EditScope> {
     return {
       orgId: session.org_id,
       sourceGuildId: session.source_guild_id,
       sessionId: session.id,
       user,
+      hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
     };
   }
 
@@ -723,7 +717,7 @@ export class StudioService {
       throw new StudioUnprocessableError("source guild is gone");
     }
     const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    const scope = this.editScope({ ...session, source_guild_id: sourceGuildId }, user);
+    const scope = await this.editScope({ ...session, source_guild_id: sourceGuildId }, user);
     return viewEdit(this.editDeps(), scope, record);
   }
 
@@ -737,7 +731,7 @@ export class StudioService {
   ): Promise<StudioEditView> {
     this.assertLive(session);
     const deps = this.editDeps();
-    const scope = this.editScope(session, user);
+    const scope = await this.editScope(session, user);
     const userId = user.id;
     const outcome = await withLockedSession(this.deps.db, session.id, async () => {
       const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);

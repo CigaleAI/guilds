@@ -25,9 +25,8 @@ import {
 } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
-import type { UserRow } from "../db/users.js";
 import { type ArtifactStore } from "../artifacts/store.js";
-import { operatorActor } from "../artifacts/actors.js";
+import { studioActor, type StudioOperator } from "./actor.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -61,12 +60,10 @@ export const StudioFocusRequestSchema = Type.Object({
 
 export type StudioFocusRequest = Static<typeof StudioFocusRequestSchema>;
 
-export type StudioFocusDeps = {
+/** The stores a focus pin is resolved through, and the operator whose session it pins to. */
+export type StudioFocusDeps = StudioOperator & {
   db: Queryable;
   artifacts: ArtifactStore;
-  orgId: string;
-  sourceGuildId: string;
-  user: UserRow;
 };
 
 function trimmedText(value: string | null | undefined): string {
@@ -266,13 +263,7 @@ async function resolveMemoryVersion(
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
-  const actor = operatorActor({
-    orgId: deps.orgId,
-    actorId: deps.user.id,
-    actorName: deps.user.name,
-    guildId: deps.sourceGuildId,
-    agentId: agent.id,
-  });
+  const actor = studioActor(deps, { agentId: agent.id });
   const { entries } = await memoryTimeline(deps.artifacts, actor, agent.id);
   const entry = findEntry(entries, input);
   if (!entry) {
@@ -385,12 +376,7 @@ async function loadFileForFocus(
   version: number | null;
   content: string;
 }> {
-  const actor = operatorActor({
-    orgId: deps.orgId,
-    actorId: deps.user.id,
-    actorName: deps.user.name,
-    guildId: deps.sourceGuildId,
-  });
+  const actor = studioActor(deps);
   try {
     const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind === "collection") {

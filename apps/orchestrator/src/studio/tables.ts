@@ -37,7 +37,7 @@ import type { EditAction } from "./actions.js";
 import type { EditCollectionArguments, TableAccessArguments } from "./edit-arguments.js";
 import { jsonHash, type CollectionTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
-import { editActor } from "./actor.js";
+import { studioActor } from "./actor.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
 import { getGuild } from "../db/guilds.js";
@@ -527,7 +527,7 @@ export async function applyTable(
   plan: CollectionStep,
 ): Promise<void> {
   try {
-    await applyCollectionStep(deps.artifacts, editActor(scope), plan);
+    await applyCollectionStep(deps.artifacts, studioActor(scope), plan);
   } catch (error) {
     throw tableRefusal(error);
   }

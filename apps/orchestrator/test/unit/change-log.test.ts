@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { NO_HIDDEN_GUILDS } from "../../src/artifacts/types.js";
 import { bindingChange } from "../../src/access/changes.js";
 import {
   collectionCleared,
@@ -11,7 +12,7 @@ import { runActor, userActor } from "../../src/lib/change-actor.js";
 import type { ScheduleRow } from "../../src/db/schedules.js";
 import { guildTextChange } from "../../src/guilds/service.js";
 import { routineChange, routineUpdateSummary } from "../../src/schedules/changes.js";
-import { editActor } from "../../src/studio/actor.js";
+import { studioActor } from "../../src/studio/actor.js";
 import type { EditScope } from "../../src/studio/edits.js";
 import { userRow } from "../helpers/users.js";
 
@@ -206,14 +207,15 @@ test("a Studio edit writes as the operator, linked to the coach message being ap
   const scope: EditScope = {
     orgId: "org_1",
     sourceGuildId: "g_1",
+    hidden: NO_HIDDEN_GUILDS,
     sessionId: "ss_1",
     user: userRow({ id: "user_ada", name: "ada" }),
   };
-  const reading = editActor(scope, { agentId: "a_1" });
+  const reading = studioActor(scope, { agentId: "a_1" });
   assert.equal(reading.studio, undefined);
   assert.equal(reading.guildId, "g_1");
   assert.equal(reading.agentId, "a_1");
-  const applying = editActor({ ...scope, origin: { sessionId: "ss_1", seq: 7 } });
+  const applying = studioActor({ ...scope, origin: { sessionId: "ss_1", seq: 7 } });
   assert.deepEqual(applying.studio, { sessionId: "ss_1", seq: 7 });
   assert.equal(applying.actorId, "user_ada");
 });

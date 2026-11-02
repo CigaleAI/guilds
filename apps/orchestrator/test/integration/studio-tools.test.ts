@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { NO_HIDDEN_GUILDS } from "../../src/artifacts/types.js";
 import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
 import { artifactStore } from "../../src/artifacts/store.js";
@@ -250,6 +251,7 @@ test("studio lists the guild's tools with who is offered each and how their call
       pool: database.pool,
       orgId: "org_home",
       sourceGuildId: "guild_tl",
+      hidden: NO_HIDDEN_GUILDS,
       user: userRow(),
     };
     const pinned = await resolveStudioFocus(deps, { kind: "tool", tool_name: "note_get" });

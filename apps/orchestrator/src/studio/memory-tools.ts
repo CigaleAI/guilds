@@ -2,7 +2,7 @@
 // proposed replacement.
 
 import { Type, type Static } from "typebox";
-import { operatorActor } from "../artifacts/actors.js";
+import { studioActor } from "./actor.js";
 import { memoryDiffText, memoryTimeline, type MemoryTimelineEntry } from "../artifacts/memory.js";
 import type { AgentRow } from "../db/agents.js";
 import { capBytes } from "../lib/bytes.js";
@@ -21,13 +21,7 @@ async function memoryTimelineFor(
   call: StudioToolCall,
   agent: Pick<AgentRow, "id">,
 ): Promise<MemoryTimelineEntry[]> {
-  const actor = operatorActor({
-    orgId: call.orgId,
-    actorId: call.user.id,
-    actorName: call.user.name ?? "operator",
-    guildId: call.sourceGuildId,
-    agentId: agent.id,
-  });
+  const actor = studioActor(call, { agentId: agent.id });
   return (await memoryTimeline(deps.artifacts, actor, agent.id)).entries;
 }
 
