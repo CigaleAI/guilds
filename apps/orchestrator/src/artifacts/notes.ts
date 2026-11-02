@@ -7,6 +7,13 @@ import {
   insertNote,
   listAgentsEmbedding,
   listArtifactsEverAt,
+  softDeleteArtifact,
+  updateNoteContent,
+  type ArtifactAddress,
+  type ArtifactOrTombstoneRow,
+  type ArtifactRow,
+} from "../db/artifacts.js";
+import {
   listArtifactsByKind,
   listGuildArtifacts,
   listGuildStateArtifacts,
@@ -14,12 +21,7 @@ import {
   listReachedArtifacts,
   listReadableNotes,
   searchArtifactsByKind,
-  softDeleteArtifact,
-  updateNoteContent,
-  type ArtifactAddress,
-  type ArtifactOrTombstoneRow,
-  type ArtifactRow,
-} from "../db/artifacts.js";
+} from "../db/artifact-lists.js";
 import { getRecordOrTombstone } from "../db/collections.js";
 import { recordFileChange, type ChangeTarget } from "../db/file-changes.js";
 import { isUniqueViolation, withTransaction } from "../db/pg.js";

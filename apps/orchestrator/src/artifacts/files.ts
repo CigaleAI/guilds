@@ -24,15 +24,17 @@ import { requireSubject, writeGrants } from "./grants.js";
 import {
   getLiveArtifact,
   insertFile,
+  softDeleteArtifact,
+  sumOrgFileBytes,
+  updateFileContent,
+} from "../db/artifacts.js";
+import {
   listArtifactsByKind,
   listGuildArtifacts,
   listOrgArtifacts,
   listReachedArtifacts,
   searchArtifactsByKind,
-  softDeleteArtifact,
-  sumOrgFileBytes,
-  updateFileContent,
-} from "../db/artifacts.js";
+} from "../db/artifact-lists.js";
 import { agentReader, loadParsed, type ReachingAgent } from "./notes.js";
 
 /** A file as tools and the API return it. */

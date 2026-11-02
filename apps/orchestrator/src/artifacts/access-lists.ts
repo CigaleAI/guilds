@@ -1,4 +1,5 @@
-import { getLiveArtifact, listReachedArtifacts } from "../db/artifacts.js";
+import { listReachedArtifacts } from "../db/artifact-lists.js";
+import { getLiveArtifact } from "../db/artifacts.js";
 import { recordConfigChange } from "../db/config-changes.js";
 import { listGuilds } from "../db/guilds.js";
 import { withTransaction } from "../db/pg.js";
