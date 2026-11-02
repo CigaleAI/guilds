@@ -9,7 +9,7 @@ import type { AccessGrant, ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
 import { accessRaises, type AccessRaise } from "../artifacts/access.js";
 import { raiseAccess } from "../artifacts/access-lists.js";
-import { isNoteKeyTaken, writeNote } from "../artifacts/notes.js";
+import { deleteNoteById, isNoteKeyTaken, writeNote } from "../artifacts/notes.js";
 import { deleteAgent } from "../db/agents.js";
 import { deleteGuild } from "../db/guilds.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
@@ -60,7 +60,7 @@ type Skeleton = {
   roleToAgent: Map<string, string>;
   /** The display path each recipe note was written at, by every name the recipe links it with. */
   noteHref: Map<string, string>;
-  created: { guild: boolean; agents: string[]; collections: string[] };
+  created: { guild: boolean; agents: string[]; collections: string[]; notes: string[] };
 };
 
 /** Refuses a preview the skeleton cannot be created from, naming what the operator still has to settle. */
@@ -167,6 +167,7 @@ async function writeRecipeNote(skeleton: Skeleton, note: RecipeNote): Promise<vo
     // No live note has version 0, so a note of that key written meanwhile is a conflict, not overwritten.
     expectedVersion: 0,
   });
+  skeleton.created.notes.push(written.row.id);
   rememberNoteHref(skeleton, note, written.href);
 }
 
@@ -370,6 +371,9 @@ async function rollBack(skeleton: Skeleton): Promise<void> {
   for (const collectionId of [...skeleton.created.collections].reverse()) {
     await deleteCollection(artifacts, skeleton.actor, collectionId).catch(() => undefined);
   }
+  // A note's rows may name no guild or agent the apply made, such as an `org` row alone, so its
+  // guild's and agents' deletion need not take it.
+  await Promise.allSettled(skeleton.created.notes.map((noteId) => deleteNoteById(artifacts, skeleton.actor, noteId)));
 }
 
 /** Creates everything the skeleton holds and records the apply with its plan and checklist. */
@@ -441,7 +445,7 @@ export async function createSkeleton(
     names: new Map(preview.names.map((item) => [item.role, item.name])),
     roleToAgent: new Map(),
     noteHref: new Map(),
-    created: { guild: false, agents: [], collections: [] },
+    created: { guild: false, agents: [], collections: [], notes: [] },
   };
   let applied: RecipeApplyRow;
   try {

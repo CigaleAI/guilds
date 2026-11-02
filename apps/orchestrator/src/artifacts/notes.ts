@@ -1,5 +1,6 @@
 import {
   getArtifactAt,
+  getLiveArtifact,
   getArtifactOrTombstoneAt,
   getLiveNote,
   getMemoryRevisionText,
@@ -202,6 +203,14 @@ export async function deleteByDisplayPath(store: ArtifactStore, actor: ArtifactA
     return;
   }
   await deleteNoteAt(store, actor, parsed);
+}
+
+/** Deletes the live note with this id as the actor; a note no longer live is left as it is. */
+export async function deleteNoteById(store: ArtifactStore, actor: ArtifactActor, noteId: string): Promise<void> {
+  const row = await getLiveArtifact(store.db, actor.orgId, { id: noteId, kind: "note" });
+  if (row) {
+    await deleteByDisplayPath(store, actor, rowDisplayPath(row));
+  }
 }
 
 /** Deletes the note or script a display path names, refusing a task, Memory, a file, or an embedded note. */

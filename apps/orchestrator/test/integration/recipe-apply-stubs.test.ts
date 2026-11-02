@@ -573,7 +573,18 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       payload: { content: "Taken.\n" },
     });
     assert.equal(taken.statusCode, 200, taken.body);
-    const thirdId = await importReady(repeat("fixture-desk-third", "third"));
+    const third = repeat("fixture-desk-third", "third");
+    // A note the organisation's row alone reaches, written before the one that fails.
+    third.notes.unshift({
+      id: "third-glossary",
+      key: "third-glossary.md",
+      body: "Only the organisation reads this.\n",
+      kind: "seed",
+      author: operatorAuthor(),
+      org: "read",
+      writers: [],
+    });
+    const thirdId = await importReady(third);
     const refused = await app.inject({
       method: "POST",
       url: `/api/recipes/${thirdId}/apply`,
@@ -588,6 +599,8 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       "the refused apply leaves no guild",
     );
     assert.equal((await getByDisplayPath(artifacts, noteReader, "org/org_home/fixture-desk-third-desk-rules.md")).row?.content_text, "Taken.\n");
+    const orgOnly = await getByDisplayPath(artifacts, noteReader, "org/org_home/third-glossary.md");
+    assert.equal(orgOnly.tombstone, true, "the refused apply deletes a note it wrote, whatever its rows");
     const mixedReaderBindings = await listBindingsCovering(db, {
       orgId: "org_home",
       guildId: mixedApply.guild_id,
