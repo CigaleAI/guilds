@@ -41,7 +41,9 @@ type NoteEmbed =
 /**
  * The note an embed names, as a list of embeddable notes tells it. In the operator's list, every
  * listed note is readable. In an agent's sections, a note is readable when a row reaches the
- * agent; the sections hold every note the agent reaches, so one missing from them is unreadable.
+ * agent, and one missing from them is unreadable. The sections are the agent's page as the
+ * operator sees it, so a note hidden from the operator is missing from them even when the agent
+ * reaches it, and shows to the operator as one the agent cannot read.
  */
 export function noteEmbed(path: string, notes: EmbeddableNotes): NoteEmbed {
   if (notes.kind === "sections") {
@@ -66,9 +68,10 @@ export type KnownEmbeds = {
 };
 
 /**
- * Whether an embed is not reachable. The server's check of the saved Task, made as the agent,
- * decides; embeds only in the draft are checked against the notes the Task can embed, as
- * `noteEmbed` reads them, and the tables the operator can see.
+ * Whether an embed shows as not reachable: the server's check of the saved Task, made as the
+ * agent, found it broken; or, for every embed, saved or only in the draft, the notes the Task can
+ * embed (as `noteEmbed` reads them) or the tables the operator can see do not hold it. While a
+ * list is not loaded, no embed it decides is called broken.
  */
 export function embedIsBroken(path: string, known: KnownEmbeds): boolean {
   if (known.serverBroken.includes(path)) return true;

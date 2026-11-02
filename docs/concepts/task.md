@@ -147,8 +147,11 @@ The agent's **Prompt** tab edits the Task.
   outlined chip with a link icon. A collection chip shows the
   collection's name. Clicking a chip opens a preview of the file.
 - An embed the agent cannot reach is marked, including one it
-  reached when it was inserted and lost since. A banner, **The Task
-  embeds files this agent can't reach**, names each one.
+  reached when it was inserted and lost since. An embed of a note
+  hidden from you is marked too, since the agent's page you see
+  does not list it. A banner, **The Task embeds files this agent
+  can't reach**, names each embed the server's check of the saved
+  Task finds broken.
 - The **Version** picker lists the live version and every earlier one,
   with when it was replaced and by whom. An earlier version shows as
   **Text** or **Compare with live**. **Restore v*N*** makes it the
