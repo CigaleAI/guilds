@@ -26,6 +26,7 @@ const systemOneDb = uniqueDbName("agent_platform_migrate_system_one");
 const browserConfigDb = uniqueDbName("agent_platform_migrate_browser_config");
 const listOnlyDb = uniqueDbName("agent_platform_migrate_list_only");
 const listOnlyPathsDb = uniqueDbName("agent_platform_migrate_list_only_paths");
+const homeGuildDb = uniqueDbName("agent_platform_migrate_home_guild");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -37,6 +38,7 @@ after(async () => {
   await dropIsolatedDatabase(browserConfigDb);
   await dropIsolatedDatabase(listOnlyDb);
   await dropIsolatedDatabase(listOnlyPathsDb);
+  await dropIsolatedDatabase(homeGuildDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -444,13 +446,6 @@ test("the list-only migration gives agent items their row, renames names several
     assert.equal(byId.get("art_data")?.agent_id, null);
     assert.equal(byId.get("art_mine")?.agent_id, null);
     assert.equal(byId.get("art_memory")?.agent_id, "a_1", "Memory stays its agent's");
-    const renames = await pool.query(
-      "SELECT artifact_id, old_display_path, new_display_path FROM public.artifact_renames ORDER BY artifact_id COLLATE \"C\"",
-    );
-    assert.deepEqual(renames.rows, [
-      { artifact_id: "art_agent_plan", old_display_path: "org/org_1/agents/a_1/plan.md", new_display_path: "org/org_1/scout-2-plan.md" },
-      { artifact_id: "art_guild_plan", old_display_path: "org/org_1/guilds/guild_a/plan.md", new_display_path: "org/org_1/desk-a-plan.md" },
-    ]);
 
     const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
     const agent = (await pool.query<{ task: string; task_hash: string }>("SELECT task, task_hash FROM public.agents WHERE id = 'a_1'")).rows[0];
@@ -609,6 +604,111 @@ test("the list-only migration rewrites each moved path once and only where it is
       (await pool.query("SELECT instruction, description FROM public.schedules WHERE id = 'sch_1'")).rows[0],
       { instruction: moved, description: moved },
     );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the home-guild migration homes notes and files by their access list, clears a home naming no guild, and drops artifact_renames", async () => {
+  const pool = await createPool(await createIsolatedDatabase(homeGuildDb), reportPoolError);
+  try {
+    const folder = chainBefore("0021_home_guild");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const at = new Date("2026-10-01T00:00:00.000Z").toISOString();
+    const by = "'user', 'user_1', 'operator'";
+    await pool.query(
+      "INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1), ('org_2', 'Other', 'other', $1, $1)",
+      [at],
+    );
+    await pool.query(
+      `INSERT INTO public.guilds (id, name, org_id, created_at, updated_at)
+       VALUES ('guild_a', 'a', 'org_1', $1, $1), ('guild_b', 'b', 'org_1', $1, $1), ('guild_c', 'c', 'org_1', $1, $1),
+              ('guild_x', 'x', 'org_2', $1, $1)`,
+      [at],
+    );
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [at],
+    );
+    await pool.query(
+      `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+       VALUES ('a_1', 'guild_a', 'one', $1, $2, $2, 'org_1', '', '', $2, 'mach_1', 0),
+              ('a_2', 'guild_a', 'two', $1, $2, $2, 'org_1', '', '', $2, 'mach_1', 1),
+              ('a_3', 'guild_b', 'three', $1, $2, $2, 'org_1', '', '', $2, 'mach_1', 2)`,
+      [JSON.stringify(agentConfig({ model: "openrouter/openai/gpt-5.6-luna" })), at],
+    );
+    const item = (id: string, kind: "note" | "file", home: string | null, deletedAt: string | null) =>
+      pool.query(
+        `INSERT INTO public.artifacts (id, org_id, origin_guild_id, kind, path, key, title, content_text, search_text, mime, bytes,
+                                       content_hash, created_by_type, created_by_id, created_by_name,
+                                       updated_by_type, updated_by_id, updated_by_name, created_at, updated_at, deleted_at)
+         VALUES ($1, 'org_1', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'h', ${by}, ${by}, $11, $11, $12)`,
+        [
+          id, home, kind, kind === "file" ? "files" : "", kind === "file" ? `${id}.csv` : `${id}.md`,
+          kind === "file" ? "A file" : null, kind === "file" ? null : "text", kind === "file" ? `${id}.csv A file` : `${id}.md`,
+          kind === "file" ? "text/csv" : null, kind === "file" ? 3 : null, at, deletedAt,
+        ],
+      );
+    const row = (target: string, kind: "note" | "file", subject: "org" | "guild" | "agent", subjectId: string, mode: string) =>
+      pool.query(
+        `INSERT INTO public.artifact_access (id, org_id, target_kind, target_id, subject_type, subject_id, mode,
+                                             created_by_type, created_by_id, created_by_name, created_at,
+                                             updated_by_type, updated_by_id, updated_by_name, updated_at)
+         VALUES ($1, 'org_1', $2, $3, $4, $5, $6, ${by}, $7, ${by}, $7)`,
+        [`aacc_${target}_${subjectId}`, kind, target, subject, subjectId, mode, at],
+      );
+    await item("guild_row", "note", null, null);
+    await row("guild_row", "note", "guild", "guild_a", "write");
+    await row("guild_row", "note", "agent", "a_3", "read");
+    await row("guild_row", "note", "org", "org_1", "read");
+    await item("two_guilds", "note", null, null);
+    await row("two_guilds", "note", "guild", "guild_a", "write");
+    await row("two_guilds", "note", "guild", "guild_b", "write");
+    await item("one_guilds_agents", "note", null, null);
+    await row("one_guilds_agents", "note", "agent", "a_1", "write");
+    await row("one_guilds_agents", "note", "agent", "a_2", "read");
+    await item("two_guilds_agents", "note", null, null);
+    await row("two_guilds_agents", "note", "agent", "a_1", "write");
+    await row("two_guilds_agents", "note", "agent", "a_3", "write");
+    await item("shut_out", "note", null, null);
+    await row("shut_out", "note", "org", "org_1", "write");
+    await row("shut_out", "note", "agent", "a_1", "none");
+    await item("org_only", "note", null, null);
+    await row("org_only", "note", "org", "org_1", "write");
+    await item("deleted_file", "file", null, at);
+    await row("deleted_file", "file", "agent", "a_3", "write");
+    await item("kept", "note", "guild_b", null);
+    await row("kept", "note", "guild", "guild_a", "write");
+    await item("dangling", "note", "guild_gone", null);
+    await row("dangling", "note", "agent", "a_3", "write");
+    await item("foreign", "file", "guild_x", null);
+
+    await applyMigrations(pool);
+
+    const homes = await pool.query<{ id: string; origin_guild_id: string | null }>("SELECT id, origin_guild_id FROM public.artifacts");
+    assert.deepEqual(Object.fromEntries(homes.rows.map((home) => [home.id, home.origin_guild_id])), {
+      guild_row: "guild_a",
+      two_guilds: null,
+      one_guilds_agents: "guild_a",
+      two_guilds_agents: null,
+      shut_out: null,
+      org_only: null,
+      deleted_file: "guild_b",
+      kept: "guild_b",
+      dangling: "guild_b",
+      foreign: null,
+    });
+
+    await assert.rejects(
+      pool.query("UPDATE public.artifacts SET origin_guild_id = 'guild_gone' WHERE id = 'org_only'"),
+      /artifacts_origin_guild_id_fkey/,
+    );
+    await pool.query("UPDATE public.artifacts SET origin_guild_id = 'guild_c' WHERE id = 'org_only'");
+    await pool.query("DELETE FROM public.guilds WHERE id = 'guild_c'");
+    const homeless = await pool.query<{ origin_guild_id: string | null }>("SELECT origin_guild_id FROM public.artifacts WHERE id = 'org_only'");
+    assert.equal(homeless.rows[0]?.origin_guild_id, null, "deleting a guild leaves the items it was home to without a home");
+    assert.equal((await pool.query("SELECT to_regclass('public.artifacts_by_origin_guild') AS name")).rows[0].name, "artifacts_by_origin_guild");
+    assert.equal((await pool.query("SELECT to_regclass('public.artifact_renames') AS name")).rows[0].name, null);
   } finally {
     await pool.end();
   }

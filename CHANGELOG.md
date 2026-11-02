@@ -47,10 +47,9 @@ beside `guild` and `writers`, use each key once, and are named in
 Tasks as `org/<key>`; apply writes a key the organisation already
 holds as `<guild name>-<key>`. The 10 000 live notes and files are
 counted per organisation. Updating gives each agent note and file a row for its
-agent, renames a name several owners held to `<owner>-<name>` and
-records it in `artifact_renames`, gives each note or file deleted
-before the update a row for the guild or agent that held it, so its
-tombstone stays hidden where it was, and rewrites every embed and mention
+agent, renames a name several owners held to `<owner>-<name>`, gives
+each note or file deleted before the update a row for the guild or
+agent that held it, so its tombstone stays hidden where it was, and rewrites every embed and mention
 of a moved item in Tasks and their revisions, notes, Memory, routine
 instructions and descriptions, agent focus and wake triggers, guild
 about and description, recipes, change history, and Studio drafts. A

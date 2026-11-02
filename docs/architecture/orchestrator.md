@@ -533,7 +533,6 @@ Core's tables:
 - artifacts
 - artifact_collections
 - artifact_access
-- artifact_renames
 - attachments
 - file_changes
 - config_changes

@@ -312,10 +312,6 @@ Code: `apps/orchestrator/src/db/config-changes.ts`.
   ([Memory](memory.md)).
 - Access lists of notes, collections, and files: `artifact_access` rows
   ([Access](access.md#access-lists)).
-- Renamed notes and files: `artifact_renames`, one row per note or
-  file whose name was changed to keep every name unique in its
-  organisation (`org_id`, `artifact_id`, `old_display_path`,
-  `new_display_path`, `renamed_at`). No route reads it.
 - The bytes of files: the blob store ([Files](files.md#storage)).
 - Run transcripts: run rows ([Runs](runs.md)).
 
