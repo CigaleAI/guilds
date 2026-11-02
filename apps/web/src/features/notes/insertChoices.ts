@@ -24,10 +24,11 @@ export type Choice = {
 type ChoiceGroup = { label: string; empty?: string; choices: Choice[] };
 
 /**
- * The choices the picker shows: as a list, which leaves out a group with no choice, or as an
- * agent's page's two sections, which keeps both whether or not they hold a choice.
+ * The choices the picker shows, laid out as the notes they come from are: as a list, which leaves
+ * out a group with no choice, or as an agent's page's two sections, which keeps both whether or
+ * not they hold a choice. Tables are a list.
  */
-export type ChoiceGroups = { layout: "list" | "sections"; groups: ChoiceGroup[] };
+export type ChoiceGroups = { layout: EmbeddableNotes["kind"]; groups: ChoiceGroup[] };
 
 /** What the picker lists: the notes the Task or note can embed, and the organisation's tables. */
 type ChoiceSources = {
@@ -77,22 +78,22 @@ function tableGroups(collections: readonly Collection[], orgId: string): ChoiceG
 
 /** The notes as the picker groups them; a section says what it holds, or that nothing matches the search. */
 function noteGroups(notes: EmbeddableNotes, searching: boolean): ChoiceGroups {
-  if (!("own" in notes)) {
-    return { layout: "list", groups: [{ label: "Notes", choices: notes.map(noteChoice) }] };
+  if (notes.kind === "list") {
+    return { layout: notes.kind, groups: [{ label: "Notes", choices: notes.notes.map(noteChoice) }] };
   }
   const copy = sectionCopy("note", "agent");
   return {
-    layout: "sections",
+    layout: notes.kind,
     groups: [
       {
         label: copy.ownLabel,
         empty: searching ? copy.noMatch : copy.ownEmpty,
-        choices: notes.own.map(ownNoteChoice),
+        choices: notes.sections.own.map(ownNoteChoice),
       },
       {
         label: copy.sharedLabel,
         empty: searching ? copy.noMatch : copy.sharedEmpty,
-        choices: notes.shared.map(sharedNoteChoice),
+        choices: notes.sections.shared.map(sharedNoteChoice),
       },
     ],
   };

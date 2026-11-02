@@ -12,7 +12,7 @@ import {
   useSaveNote,
 } from "../../api/queries/notes";
 import type { AccessRow, ItemSections, ReachSubject } from "../../api/types/access";
-import type { FileContent, NoteItem } from "../../api/types/notes";
+import type { EmbeddableNoteList, FileContent, NoteItem } from "../../api/types/notes";
 import { copyText } from "../../app/clipboard";
 import { useIdentity } from "../../app/identity";
 import { useMediaQuery, visiblePanes, wideScreen } from "../../app/media";
@@ -344,8 +344,12 @@ function NoteView({
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const otherNotes = useMemo(
-    () => notes.data?.filter((note) => note.display_path !== item.display_path),
+  const otherNotes = useMemo<EmbeddableNoteList | undefined>(
+    () =>
+      notes.data && {
+        kind: "list",
+        notes: notes.data.notes.filter((note) => note.display_path !== item.display_path),
+      },
     [notes.data, item.display_path],
   );
   const isBroken = (path: string) =>

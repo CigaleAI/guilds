@@ -53,11 +53,20 @@ export type ListedEmbeddableNote = EmbeddableNote &
     viewer_mode: AgentAccessMode;
   };
 
+/** The notes the operator can read and embed across the organisation, as one list (the server lists up to 500). */
+export type EmbeddableNoteList = { kind: "list"; notes: readonly EmbeddableNote[] };
+
 /**
- * The notes a Task or a note can embed: the operator's list across the organisation, or an agent's
- * page's two sections, where the agent reads only the notes it reaches.
+ * The notes an agent's Task can embed, in the agent's page's two sections, each with the agent's
+ * mode; the agent reads only the notes it reaches.
  */
-export type EmbeddableNotes = readonly EmbeddableNote[] | ItemSections<ListedEmbeddableNote>;
+export type EmbeddableNoteSections = {
+  kind: "sections";
+  sections: ItemSections<ListedEmbeddableNote>;
+};
+
+/** The notes a Task or a note can embed: the operator's list, or an agent's sections. */
+export type EmbeddableNotes = EmbeddableNoteList | EmbeddableNoteSections;
 
 /** One note as an embed reads it, by its display path: where it sits, its title, and its text. */
 export type EmbeddedNote = { display_path: string; title: string; content: string };

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ItemSections } from "../../api/types/access";
-import type { EmbeddableNote, ListedEmbeddableNote } from "../../api/types/notes";
+import type {
+  EmbeddableNote,
+  EmbeddableNoteList,
+  EmbeddableNoteSections,
+  ListedEmbeddableNote,
+} from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import { choiceGroups, holdsNoChoice, isInsertable, selectedChoice } from "./insertChoices";
 
@@ -26,9 +30,16 @@ function listed(
   return { ...note(key, `About ${key}`), id: `n_${key}`, home, viewer_mode: mode };
 }
 
-const sections: ItemSections<ListedEmbeddableNote> = {
-  own: [listed("process.md", "write"), listed("vault.md", "none")],
-  shared: [listed("sources.md", "read", { id: "g_ops", name: "ops" }), listed("org.md", "read")],
+function noteList(notes: EmbeddableNote[]): EmbeddableNoteList {
+  return { kind: "list", notes };
+}
+
+const sections: EmbeddableNoteSections = {
+  kind: "sections",
+  sections: {
+    own: [listed("process.md", "write"), listed("vault.md", "none")],
+    shared: [listed("sources.md", "read", { id: "g_ops", name: "ops" }), listed("org.md", "read")],
+  },
 };
 
 const noCollections = { collections: undefined, orgId: "org_a" };
@@ -39,7 +50,7 @@ const paths = (groups: ReturnType<typeof choiceGroups>) =>
 test("the operator's notes are one list of every note, without a mode", () => {
   const groups = choiceGroups(
     "note",
-    { notes: [note("a.md"), note("b.md")], ...noCollections },
+    { notes: noteList([note("a.md"), note("b.md")]), ...noCollections },
     "",
   );
   assert.equal(groups?.layout, "list");
@@ -77,13 +88,13 @@ test("a search keeps both sections, empty or not, and drops an empty group of a 
     ["Guild notes", []],
     ["Shared with this guild", ["sources.md"]],
   ]);
-  const none = choiceGroups("note", { notes: [note("a.md")], ...noCollections }, "zzz");
+  const none = choiceGroups("note", { notes: noteList([note("a.md")]), ...noCollections }, "zzz");
   assert.deepEqual(none?.groups, []);
   assert.ok(none && holdsNoChoice(none));
 });
 
 test("an empty section says what it lists, or that no note matches a typed search", () => {
-  const empty = { own: [], shared: [] };
+  const empty: EmbeddableNoteSections = { kind: "sections", sections: { own: [], shared: [] } };
   const listedEmpties = (query: string) =>
     choiceGroups("note", { notes: empty, ...noCollections }, query)?.groups.map((group) => group.empty);
   assert.deepEqual(listedEmpties(""), [

@@ -44,13 +44,13 @@ type NoteEmbed =
  * agent; the sections hold every note the agent reaches, so one missing from them is unreadable.
  */
 export function noteEmbed(path: string, notes: EmbeddableNotes): NoteEmbed {
-  if ("own" in notes) {
-    const note = listedItems(notes).find((item) => item.display_path === path);
+  if (notes.kind === "sections") {
+    const note = listedItems(notes.sections).find((item) => item.display_path === path);
     return note && !isUnreached(note) ? { state: "readable", note } : { state: "unreadable" };
   }
-  const note = notes.find((item) => item.display_path === path);
+  const note = notes.notes.find((item) => item.display_path === path);
   if (note) return { state: "readable", note };
-  return notes.length >= noteListLimit ? { state: "unknown" } : { state: "unreadable" };
+  return notes.notes.length >= noteListLimit ? { state: "unknown" } : { state: "unreadable" };
 }
 
 /**

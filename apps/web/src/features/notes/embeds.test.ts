@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ItemSections } from "../../api/types/access";
-import type { EmbeddableNote, ListedEmbeddableNote } from "../../api/types/notes";
+import type {
+  EmbeddableNote,
+  EmbeddableNoteList,
+  EmbeddableNoteSections,
+  ListedEmbeddableNote,
+} from "../../api/types/notes";
 import type { Collection } from "../../api/types/tables";
 import { embedIsBroken, insertMarkup, noteEmbed } from "./embeds";
 
@@ -19,7 +24,7 @@ function note(key: string): EmbeddableNote {
 }
 
 test("an embed is broken when the server says so or nothing visible matches it", () => {
-  const notes = [note("scoring.md")];
+  const notes: EmbeddableNoteList = { kind: "list", notes: [note("scoring.md")] };
   const collections = [
     { id: "c_1", name: "orders", purpose: "" } satisfies Pick<
       Collection,
@@ -42,10 +47,12 @@ test("an embed is broken when the server says so or nothing visible matches it",
 });
 
 test("past the operator's list cap, a note missing from it is not called broken", () => {
-  const notes = Array.from({ length: 500 }, (_, index) => note(`n${index}.md`));
+  const capped = Array.from({ length: 500 }, (_, index) => note(`n${index}.md`));
+  const notes: EmbeddableNoteList = { kind: "list", notes: capped };
   const known = { serverBroken: [], notes, collections: [], orgId: "org_a" };
   assert.equal(embedIsBroken("org/org_a/gone.md", known), false);
-  assert.equal(embedIsBroken("org/org_a/gone.md", { ...known, notes: notes.slice(1) }), true);
+  const short: EmbeddableNoteList = { kind: "list", notes: capped.slice(1) };
+  assert.equal(embedIsBroken("org/org_a/gone.md", { ...known, notes: short }), true);
   assert.deepEqual(noteEmbed("org/org_a/gone.md", notes), { state: "unknown" });
 });
 
@@ -54,10 +61,11 @@ function listed(key: string, mode: ListedEmbeddableNote["viewer_mode"]): ListedE
 }
 
 test("with an agent's sections, an embed is broken unless a row reaches the agent", () => {
-  const notes: ItemSections<ListedEmbeddableNote> = {
+  const sections: ItemSections<ListedEmbeddableNote> = {
     own: [listed("process.md", "write"), listed("vault.md", "none")],
     shared: [listed("sources.md", "read")],
   };
+  const notes: EmbeddableNoteSections = { kind: "sections", sections };
   const known = { serverBroken: [], notes, collections: [], orgId: "org_a" };
   assert.equal(embedIsBroken("org/org_a/process.md", known), false);
   assert.equal(embedIsBroken("org/org_a/sources.md", known), false);

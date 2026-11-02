@@ -4,6 +4,8 @@ import { guildPath } from "./guilds";
 import type { ItemSections, ReachSubject } from "../types/access";
 import type {
   EmbeddableNote,
+  EmbeddableNoteList,
+  EmbeddableNoteSections,
   EmbeddedNote,
   ListedEmbeddableNote,
   EmbedStatus,
@@ -122,11 +124,22 @@ export function useSaveMemory(agentId: string) {
   });
 }
 
+function embeddableNoteList(notes: EmbeddableNote[]): EmbeddableNoteList {
+  return { kind: "list", notes };
+}
+
+function embeddableNoteSections(
+  sections: ItemSections<ListedEmbeddableNote>,
+): EmbeddableNoteSections {
+  return { kind: "sections", sections };
+}
+
 /** Notes the operator can read and embed, across the organisation (the server lists up to 500). */
 export function useEmbeddableNotes() {
   return useQuery({
     queryKey: noteKeys.embeddableNotes,
     queryFn: () => api<EmbeddableNote[]>("/api/org/embeddable-notes"),
+    select: embeddableNoteList,
   });
 }
 
@@ -141,6 +154,7 @@ export function useAgentEmbeddableNotes(agentId: string) {
       api<ItemSections<ListedEmbeddableNote>>(
         `/api/org/embeddable-notes?agent_id=${encodeURIComponent(agentId)}`,
       ),
+    select: embeddableNoteSections,
   });
 }
 
