@@ -937,6 +937,9 @@ describe("generation", { concurrency: 1 }, () => {
         const href = `org/${actor.orgId}/agents/${actor.agentId}/${args.key}`;
         return { href, row: noteRowAt(href, args.content) };
       },
+      async guildsToAnnounce() {
+        return [];
+      },
     };
     const loop = makeLoop(db, notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
       artifacts: artifacts as never,

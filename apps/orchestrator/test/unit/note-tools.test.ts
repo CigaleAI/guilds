@@ -130,6 +130,11 @@ class FakeStore {
     return { record, warnings: args.body.status === "won" ? ['column "score": expected number; got "n/a"'] : [] };
   }
 
+  /** The guilds a note's change is told to: none, as no group chat listens to these tools. */
+  async guildsToAnnounce(): Promise<string[]> {
+    return [];
+  }
+
   async removeRecord(_actor: ArtifactActor, args: { collection: string; id: unknown }) {
     this.calls.push({ method: "removeRecord", args });
     this.collection(args.collection);
