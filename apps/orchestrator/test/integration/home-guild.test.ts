@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import type { ItemAccessChange } from "../../src/artifacts/access-lists.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
+import { upsertNote } from "../../src/artifacts/notes.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
@@ -161,6 +163,45 @@ test("an agent row at none beside an organisation or a guild row tags the guilds
   assert.deepEqual(modesOf((await list(`/api/guilds/${openId}/notes`, OWNER)).own, [orgShut]), [[orgShut, "all_read"]], "no agent of the open guild is shut out");
   const orgList = (await app.inject({ method: "GET", url: "/api/org/notes", headers: OWNER })).json() as Listed[];
   assert.deepEqual(modesOf(orgList, [orgShut, guildShut]), [[guildShut, "some"], [orgShut, "some"]]);
+});
+
+test("a blank home on a write or an upload homes the item in the organisation", async () => {
+  for (const home of ["", "  "]) {
+    const key = `blank-home-${home.length}.md`;
+    const note = await app.inject({
+      method: "PUT",
+      url: `/api/org/notes/${key}`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: "x", home_guild_id: home },
+    });
+    assert.equal(note.statusCode, 200, note.body);
+    const file = await app.inject({
+      method: "POST",
+      url: "/api/org/files",
+      headers: { ...OWNER, ...BYTES, "x-filename": `blank-home-${home.length}.txt`, "x-description": "d", "x-home-guild": home },
+      payload: Buffer.from("x"),
+    });
+    assert.equal(file.statusCode, 201, file.body);
+    const homes = await database.pool.query<{ origin_guild_id: string | null }>(
+      `SELECT origin_guild_id FROM artifacts WHERE id = ANY($1::text[])`,
+      [[String(note.json().id), String(file.json().id)]],
+    );
+    assert.deepEqual(homes.rows.map((row) => row.origin_guild_id), [null, null]);
+  }
+});
+
+test("a note or a file whose home guild is gone by its insert is 404 unknown guild", async () => {
+  const store = artifactStore(database.pool, templatesRoot());
+  const files = new ArtifactFiles(store, new MemoryBlobStore());
+  const actor = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator", guildId: "guild_gone_meanwhile" });
+  await assert.rejects(
+    upsertNote(store, actor, { key: "gone-home.md", title: null, contentText: "x", searchText: null, startingAccess: [] }),
+    { message: "unknown guild", status: 404 },
+  );
+  await assert.rejects(
+    files.putFile(actor, { name: "gone-home.txt", description: "d", mime: "", bytes: Buffer.from("x") }),
+    { message: "unknown guild", status: 404 },
+  );
 });
 
 test("a write or an upload whose home names an unknown or hidden guild is 404, and a home is never taken from an update", async () => {

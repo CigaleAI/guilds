@@ -397,11 +397,13 @@ it. An `access` with a bad type, id, or mode is 422 with the message
 the access routes give, prefixed `access: `; a subject that does not
 exist or is hidden from the caller is 422 `unknown org`,
 `unknown guild`, or `unknown agent`. `home_guild_id` is the guild a
-created note is homed in; without it the note is the organisation's.
-The New note dialog sends the page's guild. An update keeps the
-note's home, whatever `home_guild_id` names. A `home_guild_id` naming a guild that
-does not exist, is outside the organisation, or is a private guild the
-caller does not operate is 404 `unknown guild`. A note that exists and
+created note is homed in; without it, or empty, the note is the
+organisation's. The New note dialog sends the page's guild. An update
+keeps the note's home, whatever `home_guild_id` names. A
+`home_guild_id` naming a guild that does not exist, is outside the
+organisation, or is a private guild the caller does not operate is
+404 `unknown guild`, and so is a guild deleted between that check and
+the note's insert. A note that exists and
 is hidden from the caller is 422 `write not allowed`.
 
 A note write or delete publishes `guild.artifacts.changed` on the

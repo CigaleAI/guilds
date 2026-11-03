@@ -36,6 +36,7 @@ import { requireSubject, writeGrants } from "./grants.js";
 import {
   getLiveArtifact,
   insertFile,
+  isMissingHomeGuild,
   softDeleteArtifact,
   sumOrgFileBytes,
   updateFileContent,
@@ -365,6 +366,9 @@ export class ArtifactFiles {
       await this.blobs.delete(key);
       if (isUniqueViolation(error)) {
         throw new ArtifactError("artifact already exists", 409);
+      }
+      if (isMissingHomeGuild(error)) {
+        throw new ArtifactError("unknown guild", 404);
       }
       throw error;
     }

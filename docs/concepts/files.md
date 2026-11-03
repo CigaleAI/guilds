@@ -258,11 +258,12 @@ organisation writes it. Some of the three without the others is 422
 `X-Access-Type, X-Access-Id, and X-Access-Mode go together`, and a bad
 row is 422 with the message the access routes give, prefixed
 `access: `. A new file is homed in the guild `X-Home-Guild` names;
-without it the file is the organisation's. The upload dialog sends
-the page's guild. A replaced file keeps its home, whatever
-`X-Home-Guild` names. An `X-Home-Guild` naming a guild that does not exist, is outside
-the organisation, or is a private guild the caller does not operate is
-404 `unknown guild`. An upload without `X-Filename` or `X-Description` is 422
+without it, or empty, the file is the organisation's. The upload
+dialog sends the page's guild. A replaced file keeps its home,
+whatever `X-Home-Guild` names. An `X-Home-Guild` naming a guild that
+does not exist, is outside the organisation, or is a private guild
+the caller does not operate is 404 `unknown guild`, and so is a guild
+deleted between that check and the file's insert. An upload without `X-Filename` or `X-Description` is 422
 `X-Filename and X-Description are required`. An upload over 10 MiB is
 422 `file exceeds 10 MiB`, and an empty one 422 `file is empty`. The
 guild and agent routes need a guild the caller can see; the

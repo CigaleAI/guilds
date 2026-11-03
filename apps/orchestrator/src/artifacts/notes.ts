@@ -5,6 +5,7 @@ import {
   getLiveNote,
   getMemoryRevisionText,
   insertNote,
+  isMissingHomeGuild,
   listAgentsEmbedding,
   listArtifactsEverAt,
   softDeleteArtifact,
@@ -27,7 +28,7 @@ import {
 } from "../db/artifact-lists.js";
 import { getRecordOrTombstone } from "../db/collections.js";
 import { recordFileChange, type ChangeTarget } from "../db/file-changes.js";
-import { isUniqueViolation, withTransaction } from "../db/pg.js";
+import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import { creatorGrant } from "./access.js";
 import { deleteCollection, describeCollection, loadCollectionByName, requireReadable } from "./collections.js";
 import { ArtifactError } from "./errors.js";
@@ -142,28 +143,7 @@ export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, not
     for (const grant of note.startingAccess) {
       await requireSubject(client, actor, grant);
     }
-    let row: ArtifactRow;
-    try {
-      row = await insertNote(
-        client,
-        {
-          org_id: actor.orgId,
-          key: note.key,
-          origin_guild_id: actor.guildId,
-          title: note.title,
-          content_text: note.contentText,
-          search_text: note.searchText,
-          content_hash: hash,
-        },
-        actor,
-        new Date(),
-      );
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new ArtifactError("artifact already exists", 409);
-      }
-      throw error;
-    }
+    const row = await insertHomedNote(client, actor, note, hash);
     await writeGrants(client, actor, { kind: "note", id: row.id }, note.startingAccess);
     await recordFileChange(client, actor, {
       orgId: row.org_id,
@@ -174,6 +154,37 @@ export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, not
     });
     return { ...row, access: "write" as const };
   });
+}
+
+/**
+ * Inserts the row of a new note as `actor`, homed in the actor's guild, with the text whose hash is
+ * `hash`. ArtifactError 409 when a live note holds its key, 404 when its home guild is gone.
+ */
+async function insertHomedNote(client: Queryable, actor: ArtifactActor, note: NoteUpsert, hash: string): Promise<ArtifactRow> {
+  try {
+    return await insertNote(
+      client,
+      {
+        org_id: actor.orgId,
+        key: note.key,
+        origin_guild_id: actor.guildId,
+        title: note.title,
+        content_text: note.contentText,
+        search_text: note.searchText,
+        content_hash: hash,
+      },
+      actor,
+      new Date(),
+    );
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ArtifactError("artifact already exists", 409);
+    }
+    if (isMissingHomeGuild(error)) {
+      throw new ArtifactError("unknown guild", 404);
+    }
+    throw error;
+  }
 }
 
 /** Whether the organisation has a live note with this key. */

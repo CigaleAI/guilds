@@ -85,12 +85,6 @@ function uploadExpectedVersion(headers: UploadHeaders): number | undefined {
   return Number(raw);
 }
 
-/** The guild an upload is homed in, from its header; none when it names none. */
-function uploadHome(headers: UploadHeaders): string | undefined {
-  const guildId = (headers["x-home-guild"] ?? "").trim();
-  return guildId || undefined;
-}
-
 /** The uploaded file: its name, description, media type, expected version, starting row, and home from the headers, its bytes the body. */
 function fileUpload(request: UploadRequest): SharedFileUpload {
   const { headers, body } = request;
@@ -109,7 +103,7 @@ function fileUpload(request: UploadRequest): SharedFileUpload {
     bytes: body,
     expectedVersion: uploadExpectedVersion(headers),
     access: uploadAccess(headers),
-    homeGuildId: uploadHome(headers),
+    homeGuildId: headers["x-home-guild"],
   };
 }
 

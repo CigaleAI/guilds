@@ -1,9 +1,10 @@
 import type { InferSelectModel } from "drizzle-orm";
+import type pg from "pg";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
 import { RowMissing } from "./errors.js";
-import { type Queryable, stamp } from "./pg.js";
+import { isForeignKeyViolation, type Queryable, stamp } from "./pg.js";
 import type { artifactCollections, artifacts, memoryRevisions } from "./schema/index.js";
 
 type Artifact = InferSelectModel<typeof artifacts>;
@@ -372,6 +373,11 @@ export async function updateNoteContent(
     throw new RowMissing("note row vanished during its write");
   }
   return row;
+}
+
+/** Whether `error` is the database refusing a new note or file whose home guild no longer exists. */
+export function isMissingHomeGuild(error: unknown): error is pg.DatabaseError {
+  return isForeignKeyViolation(error, "artifacts_origin_guild_id_fkey");
 }
 
 export async function insertNote(
