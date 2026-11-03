@@ -388,7 +388,7 @@ POST   /api/recipes/registry/import   { name, version? }
 
 | Route | Answer |
 |---|---|
-| `GET /api/recipes` | The organisation's recipes, most recently updated first, at most 100, but those captured from a private guild the caller does not operate |
+| `GET /api/recipes` | The organisation's recipes the caller may read, most recently updated first, at most 100: those captured from a private guild the caller does not operate are left out before the 100 are counted |
 | `POST /api/guilds/:guild_id/recipes` | 201 with the captured draft |
 | `GET /api/recipes/:id` | The recipe; 404 outside the organisation, and for one captured from a private guild the caller does not operate |
 | `PUT /api/recipes/:id` | Writes `{ recipe?, name?, description?, expected_body_version }`; returns the recipe as a draft with `body_version` + 1; 409 with the current `body_version` on a stale head |

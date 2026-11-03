@@ -214,3 +214,24 @@ test("a recipe is not previewed into a private guild the user does not operate",
   assert.equal(seen.statusCode, 200, seen.body);
   assert.equal(seen.json().guild_id, cellarId);
 });
+
+test("the recipes a member lists are the hundred newest they may read, those captured from a private guild hidden from them left out first", async () => {
+  await pool.query(
+    `INSERT INTO recipes (id, org_id, name, body, source_kind, source_guild_id, created_at, updated_at)
+     VALUES ('rcp_open_older', 'org_home', 'open older', '{}'::jsonb, 'file', NULL, now(), now())`,
+  );
+  await pool.query(
+    `INSERT INTO recipes (id, org_id, name, body, source_kind, source_guild_id, created_at, updated_at)
+     SELECT 'rcp_vault_' || n, 'org_home', 'vault ' || n, '{}'::jsonb, 'guild', $1, now(), now() + interval '1 minute'
+       FROM generate_series(1, 100) AS n`,
+    [vaultId],
+  );
+  const listed = async (headers: Record<string, string>) =>
+    (await app.inject({ method: "GET", url: "/api/recipes", headers })).json() as Array<{ id: string }>;
+  const member = await listed(TEAMMATE);
+  assert.ok(member.some((row) => row.id === "rcp_open_older"), "the hidden recipes take no place in the member's hundred");
+  assert.ok(!member.some((row) => row.id.startsWith("rcp_vault_")));
+  const owner = await listed(OWNER);
+  assert.equal(owner.length, 100);
+  assert.ok(!owner.some((row) => row.id === "rcp_open_older"), "the guild's operator sees the hundred newer ones");
+});

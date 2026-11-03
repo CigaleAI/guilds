@@ -91,10 +91,12 @@ function isCapturedFrom(row: RecipeRow, guildIds: readonly string[]): boolean {
   return row.source_guild_id !== null && guildIds.includes(row.source_guild_id);
 }
 
-/** The organisation's recipes the user may read: every one but those captured from a private guild they do not operate. */
+/**
+ * The organisation's hundred most recently updated recipes the user may read: every one but those
+ * captured from a private guild they do not operate.
+ */
 export async function orgRecipes(db: Queryable, orgId: string, userId: string): Promise<RecipeRow[]> {
-  const hidden = await hiddenGuildsFor(db, orgId, userId);
-  return (await listRecipes(db, orgId)).filter((row) => !isCapturedFrom(row, hidden.guildIds));
+  return listRecipes(db, orgId, (await hiddenGuildsFor(db, orgId, userId)).guildIds);
 }
 
 /**
