@@ -710,7 +710,8 @@ test("the home-guild migration homes notes and files by their access list, clear
     await pool.query("DELETE FROM public.guilds WHERE id = 'guild_c'");
     const homeless = await pool.query<{ origin_guild_id: string | null }>("SELECT origin_guild_id FROM public.artifacts WHERE id = 'org_only'");
     assert.equal(homeless.rows[0]?.origin_guild_id, null, "deleting a guild leaves the items it was home to without a home");
-    assert.equal((await pool.query("SELECT to_regclass('public.artifacts_by_origin_guild') AS name")).rows[0].name, "artifacts_by_origin_guild");
+    const index = await pool.query<{ indexdef: string }>("SELECT indexdef FROM pg_indexes WHERE indexname = 'artifacts_by_origin_guild'");
+    assert.match(index.rows[0]?.indexdef ?? "", /\(origin_guild_id, org_id\)/, "the index leads with the home, for the foreign key and the page lists");
     assert.equal((await pool.query("SELECT to_regclass('public.artifact_renames') AS name")).rows[0].name, null);
   } finally {
     await pool.end();

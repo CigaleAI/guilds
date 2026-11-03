@@ -195,8 +195,9 @@ or hides them by it; a record is listed with its collection.
 (`artifacts_origin_guild_id_fkey`, `ON DELETE SET NULL`), so an item
 a deleted guild leaves becomes the organisation's; a private guild's
 notes and files are removed before its row goes. The index
-`artifacts_by_origin_guild` on (`org_id`, `origin_guild_id`) serves
-the page lists.
+`artifacts_by_origin_guild` on (`origin_guild_id`, `org_id`) serves
+the page lists, which select by home, and the foreign key's action
+when a guild goes.
 
 A collection itself is an `artifact_collections` row, not an
 artifact kind. The live Task is `agents.task`.

@@ -35,6 +35,6 @@ UPDATE public.artifacts a
 --> statement-breakpoint
 ALTER TABLE public.artifacts ADD CONSTRAINT artifacts_origin_guild_id_fkey FOREIGN KEY (origin_guild_id) REFERENCES public.guilds(id) ON DELETE SET NULL;
 --> statement-breakpoint
-CREATE INDEX artifacts_by_origin_guild ON public.artifacts USING btree (org_id, origin_guild_id);
+CREATE INDEX artifacts_by_origin_guild ON public.artifacts USING btree (origin_guild_id, org_id);
 --> statement-breakpoint
 DROP TABLE public.artifact_renames;

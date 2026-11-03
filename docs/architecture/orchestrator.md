@@ -555,7 +555,8 @@ agent's `agent_id`, unique per agent.
 the organisation, written at insert and never changed. It references
 `guilds(id)` with `ON DELETE SET NULL`
 (`artifacts_origin_guild_id_fkey`), and `artifacts_by_origin_guild`
-indexes (`org_id`, `origin_guild_id`). On a note or a file it is the
+indexes (`origin_guild_id`, `org_id`), led by the home so the page
+lists and the foreign key's action both use it. On a note or a file it is the
 home guild: the guild and agent pages list the items homed in their
 guild apart from those shared with it, and an operator never reaches
 an item homed in a guild hidden from them. No agent's mode reads it

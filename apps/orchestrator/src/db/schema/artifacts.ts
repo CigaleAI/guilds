@@ -174,7 +174,7 @@ export const artifacts = pgTable(
       foreignColumns: [guilds.id],
       name: "artifacts_origin_guild_id_fkey",
     }).onDelete("set null"),
-    index("artifacts_by_origin_guild").on(table.org_id, table.origin_guild_id),
+    index("artifacts_by_origin_guild").on(table.origin_guild_id, table.org_id),
     index("artifacts_search_document").using("gin", table.search_document),
     uniqueIndex("artifacts_record_identity")
       .on(table.collection_id, table.identity)
