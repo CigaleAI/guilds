@@ -1,6 +1,8 @@
 import { useDatabase } from "../../../api/queries/tables";
+import type { ReachSubject } from "../../../api/types/access";
 import { Banner, SkeletonRows } from "@guildsrun/ui";
 import { RecordsPanel } from "../../tables/RecordsPanel";
+import { itemBrowserKey } from "../../access/listedItems";
 import { NotesBrowser } from "../../notes/NotesBrowser";
 import { useStudio } from "../StudioContext";
 
@@ -13,12 +15,13 @@ type NoteEditorProps = { path: string };
 export function NoteEditor({ path }: NoteEditorProps) {
   const { session, openStep, ask } = useStudio();
   const guildId = session.source_guild_id;
+  const page: ReachSubject = { type: "guild", id: guildId };
   return (
     <div className="flex min-h-[32rem] flex-col rounded-lg border border-line">
       <NotesBrowser
-        key={path}
+        key={itemBrowserKey(page, path)}
         guildId={guildId}
-        page={{ type: "guild", id: guildId }}
+        page={page}
         initialPath={path}
         onAsk={(item) =>
           ask({

@@ -1,4 +1,4 @@
-import type { ItemSections, ListedItem } from "../../api/types/access";
+import type { ItemSections, ListedItem, ReachSubject } from "../../api/types/access";
 
 /**
  * Whether no row reaches the item for the page's guild or agent: its row is greyed, and a click
@@ -6,6 +6,15 @@ import type { ItemSections, ListedItem } from "../../api/types/access";
  */
 export function isUnreached(item: ListedItem): boolean {
   return item.viewer_mode === "none";
+}
+
+/**
+ * The identity of a page's browser of notes or files: the page's guild or agent and the path a link
+ * opens first. A browser starts afresh when either changes, so nothing one page opened or typed
+ * carries to another.
+ */
+export function itemBrowserKey(page: ReachSubject, initialPath: string | undefined): string {
+  return JSON.stringify([page.type, page.id, initialPath ?? null]);
 }
 
 /** Where an item is homed, as a row of the shared section names it: its guild, or the organisation. */

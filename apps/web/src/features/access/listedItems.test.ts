@@ -6,6 +6,7 @@ import {
   findOpenItem,
   homeLabel,
   isUnreached,
+  itemBrowserKey,
   listedItems,
   type OpenItem,
 } from "./listedItems";
@@ -71,4 +72,13 @@ test("a chosen path the page does not list opens no other item", () => {
     state: "unlisted",
     path: "org/o/gone.md",
   });
+});
+
+test("a browser's key changes with the page's guild or agent and with the path opened first", () => {
+  const guildA = itemBrowserKey({ type: "guild", id: "a" }, "org/o/plan.md");
+  assert.equal(guildA, itemBrowserKey({ type: "guild", id: "a" }, "org/o/plan.md"));
+  assert.notEqual(guildA, itemBrowserKey({ type: "guild", id: "b" }, "org/o/plan.md"));
+  assert.notEqual(guildA, itemBrowserKey({ type: "agent", id: "a" }, "org/o/plan.md"));
+  assert.notEqual(guildA, itemBrowserKey({ type: "guild", id: "a" }, "org/o/brand.md"));
+  assert.notEqual(guildA, itemBrowserKey({ type: "guild", id: "a" }, undefined));
 });
