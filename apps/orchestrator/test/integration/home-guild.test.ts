@@ -4,7 +4,7 @@ import { buildApp } from "../../src/app.js";
 import type { ItemAccessChange } from "../../src/artifacts/access-lists.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
-import { upsertNote } from "../../src/artifacts/notes.js";
+import { listStateArtifacts, readStateNotes, upsertNote } from "../../src/artifacts/notes.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
@@ -202,6 +202,28 @@ test("a note or a file whose home guild is gone by its insert is 404 unknown gui
     files.putFile(actor, { name: "gone-home.txt", description: "d", mime: "", bytes: Buffer.from("x") }),
     { message: "unknown guild", status: 404 },
   );
+});
+
+test("a guild's state lists what its page lists, homed or reached by rows, and reads the notes its rows reach", async () => {
+  const store = artifactStore(database.pool, templatesRoot());
+  const owner = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
+  const write = async (key: string, home: string, access: { type: string; id: string; mode: string }) => {
+    const created = await app.inject({
+      method: "PUT",
+      url: `/api/org/notes/${key}`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: key, home_guild_id: home, access },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    return String(created.json().display_path);
+  };
+  const homedUnreached = await write("state-homed.md", openId, { type: "agent", id: keeperId, mode: "read" });
+  const sharedIn = await write("state-shared.md", vaultId, { type: "guild", id: openId, mode: "read" });
+  const elsewhere = await write("state-elsewhere.md", vaultId, { type: "guild", id: vaultId, mode: "read" });
+  const listed = (await listStateArtifacts(store, owner, openId)).map((item) => item.display_path);
+  assert.deepEqual([homedUnreached, sharedIn, elsewhere].map((path) => listed.includes(path)), [true, true, false]);
+  const read = (await readStateNotes(store, owner, openId)).map((note) => note.href);
+  assert.deepEqual([homedUnreached, sharedIn].map((path) => read.includes(path)), [false, true], "reading stays by rows");
 });
 
 test("a write or an upload whose home names an unknown or hidden guild is 404, and a home is never taken from an update", async () => {

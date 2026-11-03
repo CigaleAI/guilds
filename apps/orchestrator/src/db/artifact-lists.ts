@@ -183,7 +183,7 @@ export async function listGuildArtifacts(
 
 /**
  * What one guild's state holds that the reader may read: its agents' Memory and scripts, and the
- * notes and files in its scope (`guildScopeSql`).
+ * notes and files the guild's page lists (`onGuildPage`).
  */
 export async function listGuildStateArtifacts(
   db: Queryable,
@@ -197,7 +197,7 @@ export async function listGuildStateArtifacts(
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
       WHERE a.org_id = $1 AND a.deleted_at IS NULL
         AND ((a.kind IN ('memory', 'script') AND a.agent_id IN (SELECT ag.id FROM agents ag WHERE ag.guild_id = $2))
-             OR (a.kind IN ('note', 'file') AND ${guildScopeSql("$2")}))
+             OR (a.kind IN ('note', 'file') AND ${onGuildPage("$2")}))
         AND (${readScope(reader, values)})
       ORDER BY a.kind, a.agent_id NULLS FIRST, a.key`,
     values,

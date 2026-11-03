@@ -449,7 +449,8 @@ export async function listAgentEmbeddableNotes(
 
 /**
  * What one guild's state holds that the actor can read: its agents' Memory and scripts, and the
- * notes and files whose access list has a row for the guild, one of its agents, or the organisation.
+ * notes and files the guild's page lists, those homed in the guild and those whose access list has
+ * a row for the guild, one of its agents, or the organisation.
  */
 export async function listStateArtifacts(
   store: ArtifactStore,
