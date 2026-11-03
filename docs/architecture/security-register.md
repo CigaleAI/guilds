@@ -135,6 +135,10 @@ guild's scope, Studio's reach, or a starting row.
   tab and transcript show them to every operator who sees the
   agent's guild, a private guild's note an organisation row lets the
   agent read included.
+- A name is one live note or one live file across the organisation.
+  An operator's write or upload at a name a hidden item holds is 422
+  (`write not allowed`), so it tells them the name is taken, though
+  not what holds it.
 - A note or a file an operator created before migration 0021 has no
   recorded home when its access list has an organisation row or names
   more than one guild. It stays the organisation's, and an
