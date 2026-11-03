@@ -20,10 +20,11 @@ function joinedReadScope(reader: ArtifactReader, values: unknown[]): string {
 export type ListedKind = Extract<Artifact["kind"], "note" | "file">;
 
 /**
- * The mode an organisation's or a guild's list shows for an item: `all_write` or `all_read` when an
- * organisation row, or the guild's own row, reaches every agent, the better mode when both do, and
- * no agent row at `none` shuts one of them out; `some` when such a row shuts one out, or only rows
- * of single agents reach some of them; `none` when no row reaches any.
+ * The mode an organisation's or a guild's list shows for an item, over its agents: `all_write` when
+ * an organisation row, or the guild's own row, gives `write` and no row of one of its agents gives
+ * less; `all_read` when such a row reaches every agent and no row of one of its agents shuts it out
+ * at `none`, so every agent reads at least; `some` when such a row shuts one out, or only rows of
+ * single agents reach some of them; `none` when no row reaches any.
  */
 export type GuildViewerMode = "all_write" | "all_read" | "some" | "none";
 
@@ -49,14 +50,17 @@ const HOME_JOIN = `LEFT JOIN guilds hg ON hg.id = a.origin_guild_id`;
  * A join giving each artifact `a` a viewer's mode on it (`GuildViewerMode`), as `v.viewer_mode`,
  * from one pass over the item's rows. Over a row `x`, the SQL predicate `allRow` picks a row that
  * reaches every agent of the viewer, `someRow` one that reaches some of them, and `ownAgentRow` the
- * row of one of them, which shuts that agent out at `none`.
+ * row of one of them, which gives that agent its mode in place of `allRow`'s.
  */
 function viewerJoin(allRow: string, someRow: string, ownAgentRow: string): string {
   return `CROSS JOIN LATERAL (
     SELECT CASE
+             WHEN max(x.mode) FILTER (WHERE ${allRow}) = 'write'
+                  AND NOT bool_or(x.mode <> 'write' AND ${ownAgentRow})
+               THEN 'all_write'
              WHEN max(x.mode) FILTER (WHERE ${allRow}) IS NOT NULL
                   AND NOT bool_or(x.mode = 'none' AND ${ownAgentRow})
-               THEN CASE max(x.mode) FILTER (WHERE ${allRow}) WHEN 'write' THEN 'all_write' ELSE 'all_read' END
+               THEN 'all_read'
              WHEN bool_or(x.mode <> 'none' AND ${someRow}) THEN 'some'
              ELSE 'none'
            END AS viewer_mode

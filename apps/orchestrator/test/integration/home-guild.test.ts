@@ -198,6 +198,43 @@ test("an agent row at none beside an organisation or a guild row tags the guilds
   assert.deepEqual(modesOf(orgList, [orgShut, guildShut]), [[guildShut, "some"], [orgShut, "some"]]);
 });
 
+test("an agent row at read beside an organisation or a guild row at write tags the guilds of that agent all agents at read", async () => {
+  const write = async (key: string, subjects: Array<{ type: string; id: string; mode: string }>) => {
+    const created = await app.inject({
+      method: "PUT",
+      url: `/api/org/notes/${key}`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: key, home_guild_id: vaultId },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    const id = String(created.json().id);
+    const listed = await app.inject({ method: "PUT", url: `/api/notes/${id}/access`, headers: { ...OWNER, ...JSON_BODY }, payload: { subjects } });
+    assert.equal(listed.statusCode, 200, listed.body);
+    return id;
+  };
+  const orgHeld = await write("org-held.md", [
+    { type: "org", id: "org_home", mode: "write" },
+    { type: "agent", id: keeperId, mode: "read" },
+  ]);
+  const guildHeld = await write("guild-held.md", [
+    { type: "guild", id: vaultId, mode: "write" },
+    { type: "agent", id: keeperId, mode: "read" },
+  ]);
+  const guildRaised = await write("guild-raised.md", [
+    { type: "guild", id: vaultId, mode: "read" },
+    { type: "agent", id: keeperId, mode: "write" },
+  ]);
+  const vaultPage = await list(`/api/guilds/${vaultId}/notes`, OWNER);
+  assert.deepEqual(modesOf(vaultPage.own, [orgHeld, guildHeld, guildRaised]), [
+    [guildHeld, "all_read"],
+    [guildRaised, "all_read"],
+    [orgHeld, "all_read"],
+  ]);
+  assert.deepEqual(modesOf((await list(`/api/guilds/${openId}/notes`, OWNER)).shared, [orgHeld]), [[orgHeld, "all_write"]], "no agent of the open guild is held below write");
+  const orgList = (await app.inject({ method: "GET", url: "/api/org/notes", headers: OWNER })).json() as Listed[];
+  assert.deepEqual(modesOf(orgList, [orgHeld]), [[orgHeld, "all_read"]]);
+});
+
 test("a blank home on a write or an upload homes the item in the organisation", async () => {
   for (const home of ["", "  "]) {
     const key = `blank-home-${home.length}.md`;

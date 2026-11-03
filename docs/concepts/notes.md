@@ -163,7 +163,7 @@ Each note carries a tag that says how the page reaches it:
 
 | Page | Tag |
 |---|---|
-| A guild's | **All agents · read & write** or **All agents · read** when an organisation row or the guild's own row reaches every agent of the guild, the better of the two; **Some agents** when only rows for some of its agents do; **No access** when no row reaches any |
+| A guild's | **All agents · read & write** when an organisation row or the guild's own row gives write and no row for one of the guild's agents gives less; **All agents · read** when such a row reaches every agent and no row for one of them is at none, so every agent reads at least; **Some agents** when a row at none shuts one of its agents out, or only rows for some of its agents reach them; **No access** when no row reaches any |
 | An agent's | **Read & write** or **Read**, the agent's own mode; **No access** when no row reaches the agent |
 
 A note tagged **No access** is greyed. Clicking it opens its access
@@ -372,8 +372,8 @@ by key.
 
 | List | `viewer_mode` |
 |---|---|
-| The organisation's | `all_write` or `all_read` from an organisation row with no agent row at `none`; `some` when an agent row at `none` shuts an agent out of the organisation row, or only guild or agent rows reach agents; `none` when no row reaches one |
-| A guild's | `all_write` or `all_read` from an organisation row or the guild's own row, the better of the two, with no row at `none` for one of the guild's agents; `some` when such a row shuts one of them out, or only rows of the guild's agents reach them; `none` when no row reaches one |
+| The organisation's | `all_write` from an organisation row at `write` with no agent row at `read` or `none`; `all_read` from an organisation row with no agent row at `none`; `some` when an agent row at `none` shuts an agent out of the organisation row, or only guild or agent rows reach agents; `none` when no row reaches one |
+| A guild's | `all_write` from an organisation row or the guild's own row at `write`, with no row at `read` or `none` for one of the guild's agents; `all_read` from either row with no row at `none` for one of the guild's agents; `some` when such a row shuts one of them out, or only rows of the guild's agents reach them; `none` when no row reaches one |
 | An agent's | the agent's mode: `write`, `read`, or `none` when no row reaches it |
 
 Each listing reads every note's `viewer_mode` and home in the same
