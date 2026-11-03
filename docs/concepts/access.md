@@ -209,14 +209,16 @@ Some things sit outside the access lists:
   [scripts](scripts.md) belong to that agent and have no access list.
   The agent always reads and writes them.
 - An operator reads and writes every note and file, except one that
-  is hidden from them. Two rules hide an item, and either is enough:
-  - **by home**: it is homed in a private guild they do not operate,
-    whatever its rows say, an organisation row included;
-  - **by rows**: its access list is not empty, and every row on it
-    names a private guild they do not operate or an agent of such a
-    guild.
+  is hidden from them. The home decides first:
+  - **by home**: an item homed in a private guild they do not operate
+    is hidden, whatever its rows say, an organisation row included;
+    an item homed in a guild they can see is never hidden, whatever
+    its rows say;
+  - **by rows**: an item with no home is hidden when its access list
+    is not empty and every row on it names a private guild they do
+    not operate or an agent of such a guild.
 
-  A note or a file with no row and no such home is hidden from no
+  A note or a file with no home and no row is hidden from no
   operator. A hidden item is left out of every list and search, and
   refused by every read and write, its change history included.
   Hiding never changes what an agent reaches: an agent of another
@@ -377,7 +379,7 @@ Each item opens where its access is changed:
 | Starting rows of a note or a file | One row: the creating agent at `write`, or the subject the operator names (the organisation at `write` by default) |
 | Starting rows of a collection | Placed in a guild: the guild at `write`. Placed at the organisation: the organisation at `read` |
 | Always reached by an agent | Its own Memory, Task, and scripts |
-| Hidden from an operator | A note or a file homed in a private guild they do not operate, whatever its rows; or one whose rows all name private guilds they do not operate or those guilds' agents. Never one with no row and no such home |
+| Hidden from an operator | A note or a file homed in a private guild they do not operate, whatever its rows; or one with no home whose rows all name private guilds they do not operate or those guilds' agents. Never one homed in a guild they can see, nor one with no home and no row |
 | Who changes an access list | Any member of the organisation, on items they can see; never an agent |
 
 What an operator relies on about secrets, machines, and redaction is
@@ -561,8 +563,10 @@ and writes every note and file except the hidden ones
 (`hiddenScope` in `apps/orchestrator/src/db/artifacts.ts`, and
 `isHiddenItem` in `apps/orchestrator/src/artifacts/store.ts` for one
 item): an item whose `origin_guild_id` is a guild in the operator's
-hidden set, and an item whose list is not empty and whose every row
-names a guild in that set or an agent of one. The home rule is part
+hidden set, and an item whose `origin_guild_id` is null and whose
+list is not empty and names only guilds in that set or agents of
+them. An item whose `origin_guild_id` is a guild outside the set is
+never hidden. The home rule is part
 of the hiding predicate only; `agentModeSql`, `artifactModeSql`, the
 guild's scope (`guildScopeSql`), Studio's reach, and the starting
 rows never read the home. The same rule over an item's listed rows

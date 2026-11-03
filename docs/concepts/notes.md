@@ -51,7 +51,8 @@ It does two things. It groups the lists in the app: a guild's page
 lists the notes homed in it apart from the notes shared with it
 ([In the app](#in-the-app)). And it hides: an operator who cannot see
 a private guild sees none of the notes homed in it, whatever their
-rows say. The home decides nothing about which agent reaches a note;
+rows say, and a note homed in a guild they can see is never hidden
+from them by its rows. The home decides nothing about which agent reaches a note;
 that is the access list alone.
 
 ### How far an agent reaches
@@ -93,8 +94,9 @@ An agent writes a note in one of two ways:
 The agent never names an organisation, guild, or agent id.
 
 An operator writes every note that is not hidden from them: a note
-homed in a private guild they do not operate, or one whose rows all
-name such guilds or their agents, is hidden
+homed in a private guild they do not operate, or one with no home
+whose rows all name such guilds or their agents, is hidden; a note
+homed in a guild they can see never is
 ([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 ### Finding and linking

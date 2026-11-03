@@ -132,8 +132,10 @@ operator's write, and read by nothing.
 **Fix:** a note's or a file's `origin_guild_id` is its home guild
 ([Artifact store](../concepts/artifacts.md#kinds)). An item homed in a
 guild of the operator's hidden set, a private guild they do not
-operate, is hidden from them whatever its rows say: `hiddenScope` and
-`isHiddenItem` test the home before the rows. An operator's write
+operate, is hidden from them whatever its rows say, and an item
+homed in a guild they can see is visible to them whatever its rows
+say: `hiddenScope` and `isHiddenItem` decide by the home when there
+is one, and by the rows only for an item with no home. An operator's write
 names the home: the app sends the page's guild, as `home_guild_id`
 on a note and `X-Home-Guild` on an upload, and a home naming an
 unknown guild, or one hidden from the writer, is 404 `unknown guild`.

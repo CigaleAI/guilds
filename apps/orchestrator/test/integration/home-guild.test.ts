@@ -122,6 +122,39 @@ test("a note written with a home lists in its home guild's own section and in ot
   assert.equal((await app.inject({ method: "GET", url: `/api/notes/${noteId}/access`, headers: TEAMMATE })).statusCode, 404);
 });
 
+test("a note homed in a guild the operator sees is visible whatever its rows; one with no home is hidden when its rows name only hidden guilds and agents", async () => {
+  const write = async (key: string, home: string, access: { type: string; id: string; mode: string }) => {
+    const created = await app.inject({
+      method: "PUT",
+      url: `/api/org/notes/${key}`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: key, home_guild_id: home, access },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    return String(created.json().id);
+  };
+  const homedOpen = await write("open-for-vault.md", openId, { type: "guild", id: vaultId, mode: "read" });
+  const homedOpenAgent = await write("open-for-keeper.md", openId, { type: "agent", id: keeperId, mode: "read" });
+  const homeless = await write("homeless-vault.md", "", { type: "guild", id: vaultId, mode: "read" });
+  const homelessAgent = await write("homeless-keeper.md", "", { type: "agent", id: keeperId, mode: "read" });
+  const homelessOrg = await write("homeless-org.md", "", { type: "org", id: "org_home", mode: "read" });
+
+  const memberOrg = (await app.inject({ method: "GET", url: "/api/org/notes", headers: TEAMMATE })).json() as Listed[];
+  const listedIds = new Set(memberOrg.map((item) => item.id));
+  assert.deepEqual(
+    [homedOpen, homedOpenAgent, homeless, homelessAgent, homelessOrg].map((id) => listedIds.has(id)),
+    [true, true, false, false, true],
+  );
+  assert.deepEqual(modesOf((await list(`/api/guilds/${openId}/notes`, TEAMMATE)).own, [homedOpen, homedOpenAgent]), [
+    [homedOpenAgent, "none"],
+    [homedOpen, "none"],
+  ]);
+  assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/open-for-vault.md", headers: TEAMMATE })).statusCode, 200);
+  assert.equal((await app.inject({ method: "GET", url: `/api/notes/${homedOpen}/access`, headers: TEAMMATE })).statusCode, 200);
+  assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/homeless-vault.md", headers: TEAMMATE })).statusCode, 404);
+  assert.equal((await app.inject({ method: "GET", url: `/api/notes/${homelessAgent}/access`, headers: TEAMMATE })).statusCode, 404);
+});
+
 test("a note homed in a guild that no row reaches is listed greyed in its own section", async () => {
   const greyed = await app.inject({
     method: "PUT",

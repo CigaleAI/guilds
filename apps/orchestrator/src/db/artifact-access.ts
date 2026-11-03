@@ -80,8 +80,8 @@ export async function readAgentMode(
 }
 
 /**
- * Whether an item is hidden from a reader that does not reach `hidden`'s guilds and agents: its
- * access list is not empty and every row names one of them. An item with no row is hidden from no one.
+ * Whether an item's access list hides it from a reader that does not reach `hidden`'s guilds and
+ * agents: the list is not empty and every row names one of them. An empty list hides nothing.
  */
 export async function isHiddenByList(
   db: Queryable,

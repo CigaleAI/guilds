@@ -55,7 +55,8 @@ guild of the page it is uploaded on; over HTTP, in the guild
 `X-Home-Guild` names, or in none. Replacing a file keeps its home,
 and no write changes it. The home groups the lists in the app and
 hides the file from every operator who cannot see that guild,
-whatever its rows say. It decides nothing about which agent reaches
+whatever its rows say; a file homed in a guild an operator can see is
+never hidden from them by its rows. It decides nothing about which agent reaches
 the file.
 
 ### Between the home and the store

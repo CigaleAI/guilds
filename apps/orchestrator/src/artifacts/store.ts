@@ -189,7 +189,8 @@ export async function homedActor(
 
 /**
  * Whether a note or a file is hidden from an operator actor: it is homed in a guild hidden from them,
- * or its list names only guilds and agents it does not reach.
+ * or it has no home and its list names only guilds and agents it does not reach. An item homed in a
+ * guild the actor sees is not hidden, whatever its rows.
  */
 export async function isHiddenItem(
   store: ArtifactStore,
@@ -199,8 +200,8 @@ export async function isHiddenItem(
   if (row.kind !== "note" && row.kind !== "file") {
     return false;
   }
-  if (row.origin_guild_id !== null && actor.hidden.guildIds.includes(row.origin_guild_id)) {
-    return true;
+  if (row.origin_guild_id !== null) {
+    return actor.hidden.guildIds.includes(row.origin_guild_id);
   }
   return isHiddenByList(store.db, { kind: row.kind, id: row.id }, actor.hidden);
 }
