@@ -53,7 +53,9 @@ when it is the organisation's. A file an agent shares is homed in the
 agent's guild. A file an operator uploads in the app is homed in the
 guild of the page it is uploaded on; over HTTP, in the guild
 `X-Home-Guild` names, or in none. Replacing a file keeps its home,
-and no write changes it. The home groups the lists in the app and
+and no write changes it; deleting an agent of a private guild homes
+in that guild every file with no home whose rows named only that
+agent, as for a note. The home groups the lists in the app and
 hides the file from every operator who cannot see that guild,
 whatever its rows say; a file homed in a guild an operator can see is
 never hidden from them by its rows. It decides nothing about which agent reaches
@@ -172,7 +174,7 @@ whatever the file's media type.
 | Description | required, at most 400 characters |
 | Media type | from the uploader, else from the name's extension, else `application/octet-stream` |
 | Starting access | one row: the sharing agent at `write`, or the subject the upload names (the organisation at `write` by default) |
-| Home guild | the guild the file is made in, or none; set once; groups the lists and hides the file from operators who cannot see that guild; never decides an agent's reach |
+| Home guild | the guild the file is made in, or none; no write changes it; groups the lists and hides the file from operators who cannot see that guild; never decides an agent's reach |
 | Download | `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store` |
 
 ## Reference
@@ -297,10 +299,13 @@ The name is unique among the organisation's live files. Its search
 document is the name and description. Deletion sets `deleted_at` and
 removes the bytes; the tombstone keeps its access rows and its home,
 so a file hidden from an operator stays hidden once deleted.
-Deleting a private guild removes every file homed in it, live or
-deleted, with its change history; deleting another guild leaves its
-files to the organisation, and deleting an agent removes only its
-rows ([Access](access.md#access-lists)). A live file removed with its
+Deleting a private guild removes, live or deleted, with its change
+history, every file homed in it and every file with no home whose
+rows named only the guild or its agents; deleting another guild
+leaves its files to the organisation. Deleting an agent removes only
+its rows, after an agent of a private guild has homed in that guild
+the files with no home that only its rows reached
+([Access](access.md#access-lists)). A live file removed with its
 guild keeps its bytes in the blob store
 ([SEC-46](../architecture/security-register.md#sec-46--deleting-an-agent-a-guild-or-an-organisation-leaves-its-files-bytes-in-the-blob-store)).
 

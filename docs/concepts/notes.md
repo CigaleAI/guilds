@@ -46,8 +46,11 @@ it is the organisation's.
 | a recipe | the guild the recipe is applied to |
 | a Prompt Studio proposal | the session's guild |
 
-The home is set once and never changes; rewriting a note keeps it.
-It does two things. It groups the lists in the app: a guild's page
+The home is set when the note is made, and no write changes it;
+rewriting a note keeps it. One deletion gives a note with no home a
+home: deleting an agent of a private guild homes in that guild every
+note with no home whose rows named only that agent
+([Access](access.md#access-lists)). It does two things. It groups the lists in the app: a guild's page
 lists the notes homed in it apart from the notes shared with it
 ([In the app](#in-the-app)). And it hides: an operator who cannot see
 a private guild sees none of the notes homed in it, whatever their
@@ -241,7 +244,7 @@ or a note's deletion. The operator applies or declines each one
 | Live notes and files per organisation | 10 000 together |
 | `note_find` results | 20 by default, 100 at most |
 | Who reaches a note | the subjects on its access list, and every operator it is not hidden from |
-| Home guild | the guild the note is made in, or none; set once; groups the lists and hides the note from operators who cannot see that guild; never decides an agent's reach |
+| Home guild | the guild the note is made in, or none; no write changes it; groups the lists and hides the note from operators who cannot see that guild; never decides an agent's reach |
 | Starting access | one row: the creating agent at `write`, or the subject the operator names (the organisation at `write` by default) |
 | Changing a note's access list | operators only |
 | Deleting a note a live Task embeds | refused (409) |
@@ -449,9 +452,12 @@ unique among the organisation's live notes. Its search document is
 the content; its search text is the title and key. Deletion sets
 `deleted_at`; the tombstone keeps its access rows and its home, so a
 note hidden from an operator stays hidden once deleted. Deleting a
-private guild removes every note homed in it, live or deleted, with
-its change history; deleting another guild leaves its notes to the
-organisation, and deleting an agent removes only its rows
+private guild removes, live or deleted, with its change history,
+every note homed in it and every note with no home whose rows named
+only the guild or its agents; deleting another guild leaves its notes
+to the organisation. Deleting an agent removes only its rows, after
+an agent of a private guild has homed in that guild the notes with no
+home that only its rows reached
 ([Access](access.md#access-lists)).
 
 Code: `apps/orchestrator/src/artifacts/notes.ts`,

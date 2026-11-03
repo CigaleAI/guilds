@@ -232,7 +232,7 @@ test("organisation-wide note, table, and change routes keep a private guild to i
   }
 });
 
-test("deleting an agent or a guild removes the rows naming it; only a private guild takes the notes homed in it, live or deleted, with every change to them", { timeout: 60_000 }, async () => {
+test("deleting an agent or a guild removes the rows naming it; a private guild takes the notes only its operators saw, live or deleted, with every change to them, and its agent leaves the notes only it reached homed in the guild", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(deletionDbName));
   const notes = new NotesStore(tempDir("guilds-private-deletion-notes-"), templatesRoot());
@@ -319,6 +319,20 @@ test("deleting an agent or a guild removes the rows naming it; only a private gu
     const clerkLog = await write("clerk-log.md", hallId, [{ type: "agent", id: clerkId, mode: "write" }]);
     await remove(clerkLog.key);
     const forGallery = await write("hall-for-gallery.md", hallId, [{ type: "guild", id: galleryId, mode: "read" }]);
+    const atticHomeless = await write("attic-homeless.md", "", [
+      { type: "guild", id: atticId, mode: "write" },
+      { type: "agent", id: porterId, mode: "read" },
+    ]);
+    const atticHomelessOld = await write("attic-homeless-old.md", "", [{ type: "guild", id: atticId, mode: "read" }]);
+    await remove(atticHomelessOld.key);
+    const atticAndOrg = await write("attic-and-org.md", "", [
+      { type: "guild", id: atticId, mode: "write" },
+      { type: "org", id: "org_home", mode: "read" },
+    ]);
+    const porterOnly = await write("porter-only.md", "", [{ type: "agent", id: porterId, mode: "write" }]);
+    const porterOld = await write("porter-old.md", "", [{ type: "agent", id: porterId, mode: "read" }]);
+    await remove(porterOld.key);
+    const clerkHomeless = await write("clerk-homeless.md", "", [{ type: "agent", id: clerkId, mode: "write" }]);
     const quarryOpen = await write("quarry-open.md", quarryId, [
       { type: "guild", id: quarryId, mode: "write" },
       { type: "org", id: "org_home", mode: "read" },
@@ -331,6 +345,21 @@ test("deleting an agent or a guild removes the rows naming it; only a private gu
     assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/clerk-shut.md", headers: OWNER })).statusCode, 200, "a note the agent was shut out of stays");
     assert.deepEqual((await pageOf(hallId)).own.filter((item) => item.id === clerkShut.id).map((item) => item.viewer_mode), ["none"], "greyed under its home");
     assert.deepEqual(await history(clerkLog.path, OWNER), ["delete", "create"], "a deleted note only the agent reached keeps its history");
+    assert.equal(await homeOf(clerkHomeless.id), null, "a public guild's agent leaves the notes only it reached without a home");
+    assert.deepEqual(await subjects(clerkHomeless.id), []);
+
+    assert.deepEqual(await history(porterOld.path, TEAMMATE), [], "a deleted note only a private guild's agent reached is hidden by its rows");
+    await deleteAgent(db, porterId);
+    for (const note of [porterOnly, porterOld]) {
+      assert.equal(await homeOf(note.id), atticId, "a private guild's agent leaves the notes only it reached homed in the guild");
+      assert.deepEqual(await subjects(note.id), []);
+    }
+    assert.deepEqual(await subjects(atticHomeless.id), [`guild ${atticId}`], "a note its guild reaches keeps its other rows and no home");
+    assert.equal(await homeOf(atticHomeless.id), null);
+    assert.deepEqual((await pageOf(atticId)).own.filter((item) => item.id === porterOnly.id).map((item) => item.viewer_mode), ["none"], "listed greyed under its new home");
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/porter-only.md", headers: TEAMMATE })).statusCode, 404);
+    assert.deepEqual(await history(porterOld.path, TEAMMATE), [], "and its history stays hidden");
+    assert.deepEqual(await history(porterOld.path, OWNER), ["delete", "create"]);
 
     await deleteGuild(db, galleryId);
     assert.deepEqual(await subjects(forGallery.id), [], "the guild's row goes");
@@ -351,7 +380,10 @@ test("deleting an agent or a guild removes the rows naming it; only a private gu
     assert.deepEqual(orgNotes.filter((item) => item.id === quarryOpen.id).map((item) => item.home), [null]);
 
     await deleteGuild(db, atticId);
-    const gone = [atticShared, atticBare, atticPlans, atticOld];
+    assert.equal(await homeOf(atticAndOrg.id), null, "a note with no home and a row outside the guild stays");
+    assert.deepEqual(await subjects(atticAndOrg.id), ["org org_home"]);
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/attic-and-org.md", headers: TEAMMATE })).statusCode, 200);
+    const gone = [atticShared, atticBare, atticPlans, atticOld, atticHomeless, atticHomelessOld, porterOnly, porterOld];
     for (const headers of [OWNER, TEAMMATE]) {
       for (const note of gone) {
         assert.deepEqual(await history(note.path, headers), []);

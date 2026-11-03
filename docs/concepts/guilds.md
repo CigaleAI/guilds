@@ -117,12 +117,13 @@ the guild is generating or while the group chat is delivering. The
 guild takes with it its agents and everything they own, its group
 chat, operators, issues, own collections, repositories, the
 access-list rows that name it or its agents, and the secrets that
-only it or its agents held. A private guild takes every note and file
-homed in it, live or deleted, with its change history, whatever rows
-it had. A guild open to the organisation takes none: the notes and
-files homed in it stay and are the organisation's from then on. Every
-note and file homed elsewhere stays under its home, without the rows
-that went.
+only it or its agents held. A private guild takes, live or deleted,
+with its change history, every note and file homed in it, whatever
+rows it had, and every note and file with no home whose rows named
+only the guild or its agents. A guild open to the organisation takes
+none: the notes and files homed in it stay and are the
+organisation's from then on. Every other note and file stays under
+its home, without the rows that went.
 Organisation collections and secrets granted elsewhere stay, and so
 do the machines
 ([Delete](#delete) has the full list).
@@ -366,13 +367,14 @@ It holds every agent of the guild while it runs. It then:
 - soft-deletes the guild's own collections with their records
 - deletes the access-list rows that name the guild or its agents,
   and the rows on its own collections
-- for a private guild, removes every note and file homed in it, live
-  or deleted, with its access list, its change history, and the log
-  of its access list, whatever rows it had; a guild that is not
-  private leaves its notes and files, which become the
-  organisation's
-- leaves every note and file homed elsewhere under its home, one that
-  no row reaches any more included
+- for a private guild, removes, before those rows go, every note and
+  file, live or deleted, homed in it whatever rows it had, and every
+  one with no home whose access list is not empty and names only the
+  guild or its agents, each with its access list, its change history,
+  and the log of its access list; a guild that is not private leaves
+  its notes and files, which become the organisation's
+- leaves every other note and file under its home, one that no row
+  reaches any more included
 - deletes every secret, not organisation-wide, whose grants all name
   the guild or its agents
 - deletes the guild row

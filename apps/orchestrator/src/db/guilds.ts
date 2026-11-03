@@ -243,8 +243,9 @@ export async function insertGuild(pool: Queryable, guild: NewGuild, now: Date): 
 
 /**
  * Deletes a guild with its own collections and the access rows naming it or one of its agents. A
- * private guild's notes and files, live or deleted, go with it, with their history
- * (`purgePrivateGuildNotesAndFiles`); those of a guild that is not private stay, without a home. A
+ * private guild's notes and files, live or deleted, go with it, with their history: those homed in
+ * it, and those with no home that only its rows and its agents' rows reached
+ * (`purgePrivateGuildNotesAndFiles`). Those of a guild that is not private stay, without a home. A
  * note or a file homed elsewhere keeps its home, whatever rows its list is left with.
  */
 export async function deleteGuild(pool: Queryable, guildId: string): Promise<void> {
@@ -261,6 +262,7 @@ export async function deleteGuild(pool: Queryable, guildId: string): Promise<voi
       `UPDATE artifact_collections SET deleted_at = $2, updated_at = $2 WHERE guild_id = $1 AND deleted_at IS NULL`,
       [guildId, now],
     );
+    await purgePrivateGuildNotesAndFiles(client, guildId);
     await client.query(
       `DELETE FROM artifact_access
         WHERE (subject_type = 'guild' AND subject_id = $1)
@@ -268,7 +270,6 @@ export async function deleteGuild(pool: Queryable, guildId: string): Promise<voi
            OR (target_kind = 'collection' AND target_id IN (SELECT id FROM artifact_collections WHERE guild_id = $1))`,
       [guildId],
     );
-    await purgePrivateGuildNotesAndFiles(client, guildId);
     // A secret whose every grant goes with the guild goes with it.
     await client.query(
       `DELETE FROM secrets s

@@ -552,7 +552,12 @@ among its live files. Memory and scripts are `artifacts` with the
 agent's `agent_id`, unique per agent.
 
 `artifacts.origin_guild_id` is the guild an item was made in, null for
-the organisation, written at insert and never changed. It references
+the organisation, written at insert and changed by no write. Deleting
+an agent of a private guild sets it to that guild on each note and
+file with no home whose access list names only the agent, before the
+agent's rows go; deleting a private guild removes the notes and files
+homed in it and those with no home whose list names only the guild
+and its agents, before its rows go (`src/db/artifact-access.ts`). It references
 `guilds(id)` with `ON DELETE SET NULL`
 (`artifacts_origin_guild_id_fkey`), and `artifacts_by_origin_guild`
 indexes (`origin_guild_id`, `org_id`), led by the home so the page

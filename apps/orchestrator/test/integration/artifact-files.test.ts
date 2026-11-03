@@ -345,6 +345,16 @@ describe("shared files", { concurrency: 1 }, () => {
       startingAccess: [{ type: "org", id: "org_home", mode: "read" }],
     });
     const sealedOld = await files.putFile(sealed, { name: "sealed-old.txt", ...upload });
+    const sealedHomeless = await files.putFile(operator, {
+      name: "sealed-homeless.txt",
+      ...upload,
+      startingAccess: [{ type: "guild", id: "guild_sealed", mode: "read" }],
+    });
+    const sealedAgentOnly = await files.putFile(operator, {
+      name: "sealed-agent-only.txt",
+      ...upload,
+      startingAccess: [{ type: "agent", id: "a_sealed", mode: "read" }],
+    });
     await deleteSharedFile({ artifacts: store, files }, operator, sealedOld.id);
     await grantAccess(store, operator, { kind: "file", id: guildOnly.id }, { type: "agent", id: "a_gone_two", mode: "read" });
     for (const file of [agentFile, guildFile]) {
@@ -382,10 +392,17 @@ describe("shared files", { concurrency: 1 }, () => {
       assert.equal(await homeOf(file.id), null, "a public guild's file becomes the organisation's");
     }
     assert.notEqual(await remains(sealedOpen.id), 0);
+    assert.equal(await homeOf(sealedAgentOnly.id), null);
+    await deleteAgent(db, "a_sealed");
+    assert.equal(await homeOf(sealedAgentOnly.id), "guild_sealed", "a file only a private guild's agent reached is homed in the guild");
+    assert.deepEqual(await subjects(sealedAgentOnly.id), []);
+    assert.equal(await homeOf(sealedHomeless.id), null, "a file its guild's row reaches keeps no home");
     await deleteGuild(db, "guild_sealed");
     await assert.rejects(() => files.loadFileById(operator, sealedOpen.id), /artifact not found/, "a private guild's file goes, whatever its rows");
     assert.equal(await remains(sealedOpen.id), 0, "nothing of it remains");
     assert.equal(await remains(sealedOld.id), 0, "nor of a file it deleted");
+    assert.equal(await remains(sealedHomeless.id), 0, "a file with no home only the guild reached goes too");
+    assert.equal(await remains(sealedAgentOnly.id), 0, "and one its agent's deletion homed in it");
   });
 
   test("a find returns at least one file and at most the cap, whatever limit it asks", async () => {

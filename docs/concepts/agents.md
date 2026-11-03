@@ -122,7 +122,9 @@ flowchart LR
 - **Delete.** The agent, its runs, its routines, its Memory, and its
   home go, with the access rows naming it. Every note and file stays
   under its home, greyed on the pages where no row reaches it any
-  more. Its posts in the group chat stay, under the name it had.
+  more. An agent of a private guild leaves the notes and files with
+  no home that only its rows reached homed in that guild, so they
+  stay hidden from the operators outside it. Its posts in the group chat stay, under the name it had.
 
 ## In the app
 
@@ -474,6 +476,11 @@ already generating`). It then:
 - stops the agent's Chrome and terminal on its machine, and removes
   its home and its `/run/guilds/<agent id>/` files; the machine's
   container stays up for the other agents on it;
+- for an agent of a private guild, first homes in that guild every
+  note and file, live or deleted, with no home whose access list is
+  not empty and names only the agent, so it stays hidden from the
+  operators outside the guild and is listed greyed in the guild's own
+  section;
 - deletes the access-list rows that name the agent
   (`artifact_access`) and nothing else of a note or a file: every one
   stays, live or deleted, under its home, the one the agent created

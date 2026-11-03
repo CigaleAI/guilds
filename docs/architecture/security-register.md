@@ -203,26 +203,26 @@ hidden from no one, so every operator of the organisation read its
 change history: its display path, who wrote it and when, the runs
 that did, and the access-list changes logged against it.
 
-**Fix:** deleting a private guild removes every note and file homed
-in it, live or deleted, whatever its rows, with its remaining access
-rows, its `file_changes` rows, and the `config_changes` rows of its
-access list, before the guild row goes
+**Fix:** deleting a private guild removes, before its access rows
+go, every note and file, live or deleted, homed in it whatever its
+rows, and every one with no home whose access list is not empty and
+names only the guild or its agents, each with its access list, its
+`file_changes` rows, and the `config_changes` rows of its access list
 (`purgePrivateGuildNotesAndFiles` in
-`apps/orchestrator/src/db/artifact-access.ts`). Deleting a guild that
-is not private, or an agent, removes only the access rows naming it:
-the guild's items hid nothing by home, and stay as the
+`apps/orchestrator/src/db/artifact-access.ts`). Deleting an agent of
+a private guild first homes in that guild every note and file, live
+or deleted, with no home whose access list is not empty and names
+only the agent (`homeAgentOnlyNotesAndFiles`), so it stays hidden by
+its home once the agent's rows go. A note or a file homed in a guild
+an operator can see is never hidden from them by its rows, so the
+rows a deletion removes from it hide nothing. Deleting a guild that
+is not private, or an agent of one, removes only the access rows
+naming it: its items hid nothing, and a guild's stay as the
 organisation's. `test/integration/private-guild-artifacts.test.ts`
 and `test/integration/artifact-files.test.ts` pin it.
 
-**Residual risk:**
-
-- A note or a file homed outside a private guild, or in none, whose
-  every row names that guild or its agents is hidden by its rows
-  alone. Deleting the guild, or the last such agent, removes those
-  rows, and the item, with its change history, then shows to every
-  operator of the organisation under its home.
-- A live file removed with its guild keeps its bytes in the blob
-  store, no longer named by any row (SEC-46).
+**Residual risk:** a live file removed with its guild keeps its bytes
+in the blob store, no longer named by any row (SEC-46).
 
 ## SEC-55 — A note's or a file's reach came from its owner as well as its access list
 

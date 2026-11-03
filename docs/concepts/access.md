@@ -597,15 +597,30 @@ A deleted note or file keeps its rows on its tombstone, so the hiding
 rule still covers it and its change history. History is read by item,
 so a name a hidden deleted item held does not show that item's
 changes once another item holds it
-([Artifact store](artifacts.md#file-provenance)). Deleting an agent
-removes the rows naming it and nothing else: every note and file
-stays under its home. Deleting a guild removes the rows naming it or
-one of its agents. A private guild's notes and files, live or
-deleted, go with it, whatever their rows, with their change history
-and the log of their access lists, so no operator reads what they
-were. A guild that is not private hid none of its items by home, so
-they stay and become the organisation's. A note or a file homed
-elsewhere stays under its home, without the removed rows.
+([Artifact store](artifacts.md#file-provenance)). A deletion leaves
+nothing a private guild hid visible to the operators outside it:
+
+- Deleting an agent of a private guild first homes in that guild
+  every note and file, live or deleted, with no home whose list is
+  not empty and names only the agent
+  (`homeAgentOnlyNotesAndFiles` in
+  `apps/orchestrator/src/db/artifact-access.ts`), so it stays hidden
+  by its home and is listed greyed in the guild's own section. It
+  then removes the rows naming the agent.
+- Deleting an agent of a guild that is not private removes the rows
+  naming it and nothing else.
+- Deleting a private guild first removes every note and file, live
+  or deleted, homed in it whatever its rows, and every one with no
+  home whose list is not empty and names only the guild or its
+  agents, with its change history and the log of its access list
+  (`purgePrivateGuildNotesAndFiles`), so no operator reads what they
+  were. It then removes the rows naming the guild or one of its
+  agents.
+- Deleting a guild that is not private removes those rows; its items
+  hid nothing by home, so they stay and become the organisation's.
+
+Every other note and file stays under its home, without the removed
+rows.
 
 ```text
 GET  /api/notes/:note_id/access                { subjects }
