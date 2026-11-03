@@ -9,14 +9,17 @@ import { ListGroupLabel } from "./ListGroupLabel";
 export type SectionListProps = Omit<ComponentProps<"section">, "children"> & {
   /** Section name; shown in mono caps. */
   label: string;
-  /** Items in the section. */
+  /**
+   * How many items the section holds, shown beside the label. It alone decides whether the section
+   * is empty: at 0, `empty` shows in place of `children`.
+   */
   count: number;
-  /** Shown in place of the items when the section holds none. */
+  /** Shown in place of the items when `count` is 0. */
   empty?: ReactNode;
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
-  /** The section's items, as Rows. */
+  /** The section's items, as Rows: exactly `count` of them. */
   children?: ReactNode;
 };
 

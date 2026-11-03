@@ -25,6 +25,14 @@ test("an empty section shows its empty-state message", () => {
   assert.match(markup, />None yet\.</);
 });
 
+test("a count of 0 shows the empty-state message in place of the children", () => {
+  const markup = renderToStaticMarkup(
+    createElement(SectionList, { label: "Guild notes", count: 0, empty: "None yet." }, item),
+  );
+  assert.match(markup, />None yet\.</);
+  assert.doesNotMatch(markup, /playbook\.md/);
+});
+
 test("an empty section without a message shows nothing under its label", () => {
   const markup = renderToStaticMarkup(
     createElement(SectionList, { label: "Shared with this guild", count: 0 }),
