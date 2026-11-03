@@ -136,7 +136,7 @@ One directory per area. The screens are in the
 | `agent/runs/` | How a run's rows read: grouped into generations, steps, and tool calls (`runFlowModel.ts`), each call's kind (`toolKinds.ts`), and its arguments and result as text (`toolFormat.ts`) |
 | `notes/` | The notes browser, the provenance strip (`LatestChange.tsx`, `changeActor.ts`), and the notes and tables a Task or a note embeds (`embeds.ts`, `InsertPicker.tsx`, `EmbedPreview.tsx`) |
 | `files/` | The files browser: its two sections, upload, download, access, and delete of shared files |
-| `access/` | One scope's tools, logins, and secrets, access lists and reach, the access dialog a note or a file opens (`AccessListDialog.tsx`), the sections, greyed rows and home labels the notes and files browsers share (`listedItems.ts`), the home a new item gets (`HomeGuildField.tsx`), and the repositories a GitHub login serves (`GithubRepositories.tsx`) |
+| `access/` | One scope's tools, logins, and secrets, access lists and reach, the access dialog a note or a file opens (`AccessListDialog.tsx`), the sections, greyed rows and home labels the notes and files browsers share (`listedItems.ts`), their words (`sectionCopy.ts`), the item they open (`useOpenItem.ts`) and the pane for a path they do not list (`UnlistedItem.tsx`), the home a new item gets (`HomeGuildField.tsx`), and the repositories a GitHub login serves (`GithubRepositories.tsx`) |
 | `tables/` | The Tables page and the State › Tables sub-tabs |
 | `studio/` | Prompt Studio: the workspace and its sections, with `activity/`, `state/`, `tabs/`, and `tools/` |
 | `builder/` | The guild builder |
