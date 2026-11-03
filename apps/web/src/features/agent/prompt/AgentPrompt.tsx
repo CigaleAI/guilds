@@ -31,7 +31,7 @@ import type { InsertKind } from "@guildsrun/ui";
 import { EmbedPreview } from "../../notes/EmbedPreview";
 import { embedIsBroken } from "../../notes/embeds";
 import { InsertPicker } from "../../notes/InsertPicker";
-import { taskEdit, type TaskDraft } from "./taskContext";
+import { taskDraftAfterSave, taskEdit, type TaskDraft } from "./taskContext";
 import { LatestChange } from "../../notes/LatestChange";
 
 const currentVersion = "current";
@@ -359,7 +359,7 @@ export function AgentPrompt() {
     if (!task.data) return;
     void saveTask(value, draft?.base ?? task.data.version).then((next) => {
       if (!next) return;
-      setDraft(null);
+      setDraft((current) => taskDraftAfterSave(current, value, next));
       toast({
         kind: "success",
         title: next.version ? `Task saved as v${next.version}` : "Task saved",

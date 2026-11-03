@@ -1,8 +1,9 @@
 import { useBlocker, useParams } from "@tanstack/react-router";
 import { Brain } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useAgentMemory, useLiveMemory, useSaveMemory } from "../../../api/queries/notes";
 import type { MemoryVersion } from "../../../api/types/notes";
+import { draftAfterSave } from "../../../app/drafts";
 import { relativeTime } from "../../../app/format";
 import {
   Button,
@@ -155,7 +156,8 @@ type LiveMemoryProps = {
   /** The live version in the timeline. */
   entry: MemoryVersion | undefined;
   draft: string | null;
-  onDraft: (text: string | null) => void;
+  /** Sets the draft, or clears it with `null`; an update reads the draft as it stands. */
+  onDraft: Dispatch<SetStateAction<string | null>>;
 };
 
 /** The live memory in an editor, with who changed it last and the run step that did it. */
@@ -188,8 +190,8 @@ function LiveMemory({ agentId, guildId, displayPath, entry, draft, onDraft }: Li
           onDiscard={() => onDraft(null)}
           onSave={() =>
             save.mutate(value, {
-              onSuccess: () => {
-                onDraft(null);
+              onSuccess: (_file, content) => {
+                onDraft((current) => draftAfterSave(current, content));
                 toast({ kind: "success", title: "Memory saved" });
               },
               onError: (error) =>

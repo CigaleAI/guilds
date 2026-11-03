@@ -14,6 +14,7 @@ import {
 import type { AccessRow, ItemSections, ReachSubject } from "../../api/types/access";
 import type { EmbeddableNoteList, FileContent, NoteItem } from "../../api/types/notes";
 import { copyText } from "../../app/clipboard";
+import { draftAfterSave } from "../../app/drafts";
 import { useIdentity } from "../../app/identity";
 import { useMediaQuery, visiblePanes, wideScreen } from "../../app/media";
 import {
@@ -100,8 +101,9 @@ export function NotesBrowser({ page, guildId, onOpenStep, initialPath, onAsk }: 
     choose(path);
     setListOpen(false);
   };
-  const keepDraft = (path: string, text: string | null) =>
+  const keepDraft = (path: string, draftOf: (current: string | null) => string | null) =>
     setDrafts((current) => {
+      const text = draftOf(current[path] ?? null);
       const next = { ...current };
       if (text === null) delete next[path];
       else next[path] = text;
@@ -155,7 +157,8 @@ export function NotesBrowser({ page, guildId, onOpenStep, initialPath, onAsk }: 
             onAccess={() => setAccessItem(open)}
             onBack={showList}
             draft={drafts[open.display_path]}
-            onDraft={(text) => keepDraft(open.display_path, text)}
+            onDraft={(text) => keepDraft(open.display_path, () => text)}
+            onSaved={(text) => keepDraft(open.display_path, (current) => draftAfterSave(current, text))}
             onDeleted={() => {
               choose(undefined);
               setListOpen(true);
@@ -335,6 +338,8 @@ type NoteViewProps = {
   onBack?: (() => void) | undefined;
   draft: string | undefined;
   onDraft: (text: string | null) => void;
+  /** Settles the draft once this text from it is saved, keeping what was typed during the save. */
+  onSaved: (text: string) => void;
   onDeleted: () => void;
 };
 
@@ -348,6 +353,7 @@ function NoteView({
   onBack,
   draft,
   onDraft,
+  onSaved,
   onDeleted,
 }: NoteViewProps) {
   const { org } = useIdentity();
@@ -450,8 +456,8 @@ function NoteView({
                 ...(file.data?.version !== undefined ? { expected_version: file.data.version } : {}),
               },
               {
-                onSuccess: () => {
-                  onDraft(null);
+                onSuccess: (_file, { content }) => {
+                  onSaved(content);
                   toast({ kind: "success", title: `${item.path} saved` });
                 },
                 onError: (error) => {
@@ -593,6 +599,7 @@ function NewNoteDialog({ open, onOpenChange, page, guildId, onCreated }: NewNote
               label="Name"
               mono
               autoFocus
+              disabled={save.isPending}
               value={name}
               onChange={(event) => setName(event.currentTarget.value)}
               onFocus={(event) => event.currentTarget.select()}

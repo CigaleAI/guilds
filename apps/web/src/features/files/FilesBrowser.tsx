@@ -442,6 +442,7 @@ function UploadDialog({ open, onOpenChange, page, guildId, listed, onUploaded }:
                 <input
                   type="file"
                   className="text-sm"
+                  disabled={upload.isPending}
                   onChange={(event) => setFile(event.currentTarget.files?.[0] ?? null)}
                 />
               </label>
@@ -451,6 +452,7 @@ function UploadDialog({ open, onOpenChange, page, guildId, listed, onUploaded }:
                 placeholder="What the file is, in a sentence"
                 value={description}
                 maxLength={400}
+                disabled={upload.isPending}
                 onChange={(event) => setDescription(event.currentTarget.value)}
                 {...(touched && problem ? { error: problem } : {})}
               />

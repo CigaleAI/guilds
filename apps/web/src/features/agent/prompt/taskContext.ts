@@ -1,4 +1,5 @@
 import type { TaskFile } from "../../../api/types/notes";
+import { draftAfterSave } from "../../../app/drafts";
 
 /** What the operator is writing in the Task, and the version it started from. */
 export type TaskDraft = { text: string; base: number | undefined };
@@ -20,4 +21,17 @@ export function taskEdit(draft: TaskDraft | null, task: TaskFile | undefined): T
     task?.version !== undefined &&
     draft.base !== task.version;
   return { saved, value, dirty, conflict };
+}
+
+/**
+ * The Task's draft once `savedText` from it is stored as `saved`: none when the draft still holds
+ * that text; otherwise the text typed while the save ran, started from the version just saved.
+ */
+export function taskDraftAfterSave(
+  draft: TaskDraft | null,
+  savedText: string,
+  saved: TaskFile,
+): TaskDraft | null {
+  const text = draftAfterSave(draft?.text ?? null, savedText);
+  return text === null ? null : { text, base: saved.version };
 }
