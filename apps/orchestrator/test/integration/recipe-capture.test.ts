@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
+import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
@@ -22,6 +23,7 @@ const JSON_BODY = { "content-type": "application/json" };
 const dbName = uniqueDbName("agent_platform_recipe_capture");
 
 let app: FastifyInstance;
+let pool: Database["pool"];
 let closeDatabase: () => Promise<void>;
 let deskId = "";
 let vaultId = "";
@@ -70,6 +72,7 @@ before(async () => {
   const notes = new NotesStore(tempDir("guilds-recipe-capture-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const db = database.pool;
+  pool = db;
   await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = artifactStore(db, templatesRoot());
   const scripts = agentScripts(db);
@@ -153,6 +156,44 @@ test("a recipe captured from a private guild is read, exported, and deleted only
   }
   assert.equal((await app.inject({ method: "DELETE", url: `/api/recipes/${recipeId}`, headers: TEAMMATE })).statusCode, 404);
   assert.equal((await app.inject({ method: "GET", url: `/api/recipes/${recipeId}`, headers: OWNER })).statusCode, 200, "the refused delete left it");
+});
+
+test("an apply into a private guild is read and driven only by a user who can see that guild", async () => {
+  const captured = await app.inject({ method: "POST", url: `/api/guilds/${deskId}/recipes`, headers: { ...OWNER, ...JSON_BODY }, payload: {} });
+  assert.equal(captured.statusCode, 201, captured.body);
+  const atticId = await createGuild("attic", "private");
+  const insertApply = async (applyId: string, guildId: string | null) => {
+    await pool.query(
+      `INSERT INTO recipe_applies (id, org_id, recipe_id, created_by_user_id, guild_id, status, recipe_body_version, preview, created_at, updated_at)
+       VALUES ($1, 'org_home', $2, $3, $4, 'checklist', 1, '{}'::jsonb, now(), now())`,
+      [applyId, String(captured.json().id), OWNER["X-Guilds-User"], guildId],
+    );
+    return applyId;
+  };
+  const privateApply = await insertApply("apply_attic", atticId);
+  const routes: Array<{ method: "GET" | "POST"; url: string; payload?: object }> = [
+    { method: "GET", url: `/api/applies/${privateApply}` },
+    { method: "POST", url: `/api/applies/${privateApply}/overlays`, payload: {} },
+    { method: "POST", url: `/api/applies/${privateApply}/steps/any/verify` },
+    { method: "POST", url: `/api/applies/${privateApply}/steps/any/confirm`, payload: {} },
+    { method: "POST", url: `/api/applies/${privateApply}/activate` },
+    { method: "POST", url: `/api/applies/${privateApply}/abort` },
+  ];
+  for (const route of routes) {
+    const headers = route.payload ? { ...TEAMMATE, ...JSON_BODY } : TEAMMATE;
+    const refused = await app.inject({ ...route, headers });
+    assert.equal(refused.statusCode, 404, `${route.method} ${route.url}: ${refused.body}`);
+    assert.match(refused.body, /apply not found/);
+  }
+  const read = await app.inject({ method: "GET", url: `/api/applies/${privateApply}`, headers: OWNER });
+  assert.equal(read.statusCode, 200, read.body);
+  assert.deepEqual([read.json().guild_id, read.json().status], [atticId, "checklist"], "the refused calls left it");
+
+  for (const guildId of [deskId, null]) {
+    const open = await insertApply(`apply_open_${guildId ?? "none"}`, guildId);
+    const seen = await app.inject({ method: "GET", url: `/api/applies/${open}`, headers: TEAMMATE });
+    assert.equal(seen.statusCode, 200, `an apply into ${guildId ?? "no guild"} is the organisation's: ${seen.body}`);
+  }
 });
 
 test("a recipe is not previewed into a private guild the user does not operate", async () => {

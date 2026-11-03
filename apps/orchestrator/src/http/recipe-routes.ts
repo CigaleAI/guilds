@@ -47,8 +47,8 @@ async function ownedRecipe(deps: AppDeps, recipeId: string, org: OrgMembershipRo
   return row;
 }
 
-async function ownedApply(deps: AppDeps, applyId: string, org: OrgMembershipRow) {
-  const row = await orgApply(applyOf(deps), org.id, applyId);
+async function ownedApply(deps: AppDeps, applyId: string, org: OrgMembershipRow, user: UserRow) {
+  const row = await orgApply(applyOf(deps), org.id, user.id, applyId);
   if (!row) {
     throw new HttpError(404, "apply not found");
   }
@@ -279,7 +279,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
   app.get("/api/applies/:apply_id", { schema: { params: ApplyParams } }, async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    return ownedApply(deps, request.params.apply_id, org);
+    return ownedApply(deps, request.params.apply_id, org, user);
   });
 
   app.get("/api/guilds/:guild_id/apply", { schema: { params: GuildParams } }, async (request) => {
@@ -294,7 +294,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedApply(deps, request.params.apply_id, org);
+      const row = await ownedApply(deps, request.params.apply_id, org, user);
       const login = {
         server: request.body.server ?? "",
         connectionId: request.body.connection_id ?? "",
@@ -310,7 +310,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedApply(deps, request.params.apply_id, org);
+      const row = await ownedApply(deps, request.params.apply_id, org, user);
       return await verifyStep(applyOf(deps), row, request.params.step_id, userActor(user));
     },
   );
@@ -321,7 +321,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedApply(deps, request.params.apply_id, org);
+      const row = await ownedApply(deps, request.params.apply_id, org, user);
       const { skip, later } = request.body;
       if (skip === true) {
         return await skipStep(applyOf(deps), row, request.params.step_id);
@@ -337,7 +337,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedApply(deps, request.params.apply_id, org);
+      const row = await ownedApply(deps, request.params.apply_id, org, user);
       return await activateApply(applyOf(deps), row, userActor(user));
     },
   );
@@ -348,7 +348,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedApply(deps, request.params.apply_id, org);
+      const row = await ownedApply(deps, request.params.apply_id, org, user);
       return await abortApply(applyOf(deps), row, userActor(user));
     },
   );

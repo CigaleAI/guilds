@@ -78,7 +78,9 @@ risk is kept by design), or **Fixed** with its date.
 `apps/orchestrator/src/recipes/library.ts`, which every recipe route
 reads a recipe through; `destinationGuild` in
 `apps/orchestrator/src/recipes/plan.ts`, which a preview and an apply
-check their destination with.
+check their destination with; `orgApply` in
+`apps/orchestrator/src/recipes/lifecycle.ts`, which every route under
+`/api/applies/:id` reads an apply through.
 
 **Exposure:** a capture reads a guild only for a user who can see it,
 but the draft it stores was listed, read, exported, edited, applied,
@@ -88,20 +90,26 @@ setup, and the notes the capture included, so a member outside the
 guild read them in its document. A preview or an apply named its
 destination by `guild_id` and checked only that the guild was of the
 organisation and empty, so a member could fill a private guild they
-do not operate with agents.
+do not operate with agents. An apply into a private guild was read by
+every member with its plan and checklist, and its overlays, step
+checks, activation, and abort were run by every member.
 
 **Fix:** a recipe whose `source_guild_id` names a private guild the
 user does not operate is left out of `GET /api/recipes` and is 404 on
 every route that names it. A destination guild hidden from the user
 is 404 `destination guild not found`, as an unknown one is, and the
-apply creates its skeleton in the guild the preview checked.
+apply creates its skeleton in the guild the preview checked. An apply
+whose guild is a private guild the user does not operate is 404
+`apply not found` on `GET /api/applies/:id` and on its overlays, step
+verify and confirm, activate, and abort routes.
 `test/integration/recipe-capture.test.ts` pins it.
 
 **Residual risk:** a recipe keeps what it captured after its source
 guild is deleted or made visible: its `source_guild_id` is then null
 or names a guild every member sees, and every member reads it. A
 recipe drafted by the Builder or imported from a file names no source
-guild and is open to every member.
+guild and is open to every member. An apply whose guild is deleted
+names no guild, and every member reads it.
 
 ## SEC-57 — An operator could see a private guild's notes and files through an organisation row
 

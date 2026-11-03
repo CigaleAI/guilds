@@ -553,13 +553,18 @@ POST   /api/applies/:id/abort
 |---|---|
 | `POST /api/recipes/:id/preview` | The preview; 404 for an unknown destination guild, one hidden from the caller, or an unknown machine; 422 for a guild that is not empty or a bad choice |
 | `POST /api/recipes/:id/apply` | 201 with the apply. 422 when the recipe is not approved, has blocking errors, has no machine, or lacks a model or harness. 409 for a name collision, a limit reached, a full guild, or a collection that appeared since preview |
-| `GET /api/applies/:id` | The apply; 404 outside the organisation |
+| `GET /api/applies/:id` | The apply; 404 outside the organisation, and for an apply into a private guild the caller does not operate |
 | `GET /api/guilds/:guild_id/apply` | `{ apply, browser_logins }` |
 | `POST /api/applies/:id/overlays` | `{ ok: true }` |
 | `POST …/steps/:step_id/verify` | The apply with the step closed; 422 with the reason |
 | `POST …/steps/:step_id/confirm` | The apply with the step closed or skipped |
 | `POST /api/applies/:id/activate` | The apply at `ready`; 422 while a step is open |
 | `POST /api/applies/:id/abort` | The apply at `aborted`; 422 once ready |
+
+Every route under `/api/applies/:id` is 404 `apply not found` for an
+apply of another organisation, and for an apply into a private guild
+the caller does not operate, as a destination guild is in a preview.
+An apply whose guild is gone names none, and every member reads it.
 
 In `GET /api/guilds/:guild_id/apply`, `apply` is the open checklist,
 or null once it is done or aborted.
