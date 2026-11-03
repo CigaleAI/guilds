@@ -659,7 +659,14 @@ test("the home-guild migration homes notes and files by their access list, clear
       );
     await item("guild_row", "note", null, null);
     await row("guild_row", "note", "guild", "guild_a", "write");
-    await row("guild_row", "note", "agent", "a_3", "read");
+    await row("guild_row", "note", "agent", "a_1", "read");
+    await row("guild_row", "note", "agent", "a_3", "none");
+    await item("guild_and_other_agent", "note", null, null);
+    await row("guild_and_other_agent", "note", "guild", "guild_a", "write");
+    await row("guild_and_other_agent", "note", "agent", "a_3", "read");
+    await item("gone_agent", "note", null, null);
+    await row("gone_agent", "note", "guild", "guild_a", "write");
+    await row("gone_agent", "note", "agent", "a_gone", "read");
     await item("org_and_guild", "note", null, null);
     await row("org_and_guild", "note", "guild", "guild_a", "write");
     await row("org_and_guild", "note", "org", "org_1", "read");
@@ -690,6 +697,8 @@ test("the home-guild migration homes notes and files by their access list, clear
     const homes = await pool.query<{ id: string; origin_guild_id: string | null }>("SELECT id, origin_guild_id FROM public.artifacts");
     assert.deepEqual(Object.fromEntries(homes.rows.map((home) => [home.id, home.origin_guild_id])), {
       guild_row: "guild_a",
+      guild_and_other_agent: null,
+      gone_agent: null,
       org_and_guild: null,
       two_guilds: null,
       one_guilds_agents: "guild_a",

@@ -147,9 +147,9 @@ takes the unreachable marker (`embedSourceShownTo` in
 pins it. Migration
 `0021_home_guild.sql` nulls every `origin_guild_id` that names no
 guild of the item's organisation; gives a live or deleted note or
-file with no home the one guild its access list names, through its
-guild rows or through agent rows all of one guild, when the list has
-no organisation row; and adds the foreign key
+file with no home the one guild its access list names, when the list
+has no organisation row and its guild rows and the guilds of its
+agent rows all name that guild; and adds the foreign key
 `artifacts_origin_guild_id_fkey` (`ON DELETE SET NULL`) and the index
 `artifacts_by_origin_guild`. The home never enters an agent's mode, a
 guild's scope, Studio's reach, or a starting row.

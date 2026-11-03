@@ -88,8 +88,9 @@ it now, and an item homed in a private guild is announced to that
 guild alone. Deleting a guild that is not private leaves the items homed
 in it without a home. Updating clears every home that names no guild of the
 item's organisation, gives each note and file without one the one
-guild its access list names when the list has no organisation row,
-and drops the `artifact_renames` table.
+guild its access list names when the list has no organisation row and
+every guild row and every agent row's guild names that guild, and
+drops the `artifact_renames` table.
 
 A recipe captured from a private guild is left out of the recipes of a
 member who does not operate that guild, and is 404 to them on every
