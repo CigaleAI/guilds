@@ -505,7 +505,7 @@ export class StudioService {
     const focus: ResolvedFocus | null =
       focusInput === undefined || focusInput === null
         ? null
-        : await resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts, ...operator }, focusInput);
+        : await resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts }, operator, focusInput);
     const started = await withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot generate");

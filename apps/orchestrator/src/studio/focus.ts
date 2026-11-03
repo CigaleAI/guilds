@@ -12,7 +12,7 @@ import { capBytes } from "../lib/bytes.js";
 import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
 import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
-import { studioChangeTarget, studioReachesParsed } from "./reach.js";
+import { studioChangeTarget, studioReachesParsed, type StudioReachDeps } from "./reach.js";
 import { getAgent, getAgentTask, type AgentRow } from "../db/agents.js";
 import { getRun, listMessages, type MessageRow } from "../db/runs.js";
 import { getSchedule } from "../db/schedules.js";
@@ -23,9 +23,7 @@ import {
   type GuildToolCallRow,
   type GuildToolCallStatRow,
 } from "../db/activity.js";
-import type { Queryable } from "../db/pg.js";
 import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
-import { type ArtifactStore } from "../artifacts/store.js";
 import { studioActor, type StudioOperator } from "./actor.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
@@ -59,12 +57,6 @@ export const StudioFocusRequestSchema = Type.Object({
 });
 
 export type StudioFocusRequest = Static<typeof StudioFocusRequestSchema>;
-
-/** The stores a focus pin is resolved through, and the operator whose session it pins to. */
-export type StudioFocusDeps = StudioOperator & {
-  db: Queryable;
-  artifacts: ArtifactStore;
-};
 
 function trimmedText(value: string | null | undefined): string {
   return (value ?? "").trim();
@@ -109,14 +101,15 @@ function emptyFocus(kind: StudioFocusKind, agent: Pick<AgentRow, "id" | "name">)
 }
 
 async function guildAgent(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   agentId: string,
 ): Promise<AgentRow> {
   const agent = agentId ? await getAgent(deps.db, agentId) : null;
   if (
     !agent ||
-    agent.guild_id !== deps.sourceGuildId ||
-    agent.org_id !== deps.orgId
+    agent.guild_id !== operator.sourceGuildId ||
+    agent.org_id !== operator.orgId
   ) {
     throw new StudioUnprocessableError("focus agent is not in the source guild");
   }
@@ -171,7 +164,8 @@ function focusedMessages(rows: MessageRow[], at: RunPoint): FocusedMessages {
 }
 
 async function resolveRun(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
   const runId = trimmedText(input.run_id);
@@ -179,7 +173,7 @@ async function resolveRun(
   if (!run) {
     throw new StudioUnprocessableError("focus run not found");
   }
-  const agent = await guildAgent(deps, run.agent_id);
+  const agent = await guildAgent(deps, operator, run.agent_id);
   const errorList = run.errors;
   const kind = run.kind;
   const createdAt = isoOrNull(run.created_at);
@@ -259,11 +253,12 @@ function findEntry(
 }
 
 async function resolveMemoryVersion(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
-  const agent = await guildAgent(deps, trimmedText(input.agent_id));
-  const actor = studioActor(deps, { agentId: agent.id });
+  const agent = await guildAgent(deps, operator, trimmedText(input.agent_id));
+  const actor = studioActor(operator, { agentId: agent.id });
   const { entries } = await memoryTimeline(deps.artifacts, actor, agent.id);
   const entry = findEntry(entries, input);
   if (!entry) {
@@ -325,10 +320,11 @@ async function resolveMemoryVersion(
 }
 
 async function resolveRoutine(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
-  const agent = await guildAgent(deps, trimmedText(input.agent_id));
+  const agent = await guildAgent(deps, operator, trimmedText(input.agent_id));
   const scheduleId = trimmedText(input.schedule_id);
   const row = scheduleId ? await getSchedule(deps.db, agent.id, scheduleId) : null;
   if (!row) {
@@ -368,7 +364,8 @@ async function resolveRoutine(
 }
 
 async function loadFileForFocus(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   displayPath: string,
 ): Promise<{
   agent: AgentRow | null;
@@ -376,7 +373,7 @@ async function loadFileForFocus(
   version: number | null;
   content: string;
 }> {
-  const actor = studioActor(deps);
+  const actor = studioActor(operator);
   try {
     const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind === "collection") {
@@ -385,8 +382,8 @@ async function loadFileForFocus(
     let agent: AgentRow | null = null;
     const agentId = parsed.kind === "revision" || parsed.kind === "artifact" ? parsed.agentId : null;
     if (agentId !== null) {
-      agent = await guildAgent(deps, agentId);
-    } else if (!(await studioReachesParsed(deps, deps, parsed))) {
+      agent = await guildAgent(deps, operator, agentId);
+    } else if (!(await studioReachesParsed(deps, operator, parsed))) {
       throw new StudioUnprocessableError("focus file is not in the source guild's reach");
     }
     if (
@@ -395,7 +392,7 @@ async function loadFileForFocus(
       parsed.key === "task.md" &&
       agent
     ) {
-      const task = await getAgentTask(deps.db, deps.orgId, agent.id);
+      const task = await getAgentTask(deps.db, operator.orgId, agent.id);
       return {
         agent,
         kind: "task",
@@ -435,17 +432,18 @@ function changeSummary(change: FileChangeView): string {
 }
 
 async function resolveFile(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
   const displayPath = trimmedText(input.display_path);
   if (!displayPath) {
     throw new StudioUnprocessableError("focus file needs a display_path");
   }
-  const file = await loadFileForFocus(deps, displayPath);
+  const file = await loadFileForFocus(deps, operator, displayPath);
   const agent =
-    file.agent ?? (await guildAgent(deps, trimmedText(input.agent_id)).catch(() => null));
-  const changes = await listFileChanges(deps.db, deps.orgId, await studioChangeTarget(deps, deps, parseDisplayPath(displayPath)));
+    file.agent ?? (await guildAgent(deps, operator, trimmedText(input.agent_id)).catch(() => null));
+  const changes = await listFileChanges(deps.db, operator.orgId, await studioChangeTarget(deps, operator, parseDisplayPath(displayPath)));
   const changeId = trimmedText(input.change_id);
   const change = changeId ? changes.find((row) => row.id === changeId) : changes[0];
   if (changeId && !change) {
@@ -503,16 +501,17 @@ async function resolveFile(
 }
 
 async function resolveIssue(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
   const issueId = trimmedText(input.issue_id);
-  const row = issueId ? await getIssue(deps.db, deps.sourceGuildId, issueId) : null;
+  const row = issueId ? await getIssue(deps.db, operator.sourceGuildId, issueId) : null;
   if (!row) {
     throw new StudioUnprocessableError("focus issue not found");
   }
   const issue = issueItem(row);
-  const agent = issue.agent_id ? await guildAgent(deps, issue.agent_id).catch(() => null) : null;
+  const agent = issue.agent_id ? await guildAgent(deps, operator, issue.agent_id).catch(() => null) : null;
   const runId = issue.run_id || null;
   const focus: StudioFocus = {
     ...emptyFocus("issue", agent ?? { id: "", name: issue.agent_name }),
@@ -574,7 +573,8 @@ function toolFailureLines(rows: GuildToolCallRow[]): string[] {
 // A tool pin: how each agent called the tool over the longest activity window,
 // and its latest failures, with where to read further.
 async function resolveTool(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
   const name = trimmedText(input.tool_name).trim();
@@ -583,10 +583,10 @@ async function resolveTool(
   }
   const until = new Date();
   const since = new Date(until.getTime() - ACTIVITY_MAX_HOURS * 3_600_000);
-  const stats = (await listGuildToolCallStats(deps.db, deps.sourceGuildId, since, until)).filter(
+  const stats = (await listGuildToolCallStats(deps.db, operator.sourceGuildId, since, until)).filter(
     (stat) => stat.tool_name === name,
   );
-  const failures = await listGuildToolCalls(deps.db, deps.sourceGuildId, name, {
+  const failures = await listGuildToolCalls(deps.db, operator.sourceGuildId, name, {
     since,
     until,
     errorsOnly: true,
@@ -614,23 +614,25 @@ async function resolveTool(
   };
 }
 
+/** What a focus pin names, read through `deps` as the session's operator, ready to quote to the coach. */
 export async function resolveStudioFocus(
-  deps: StudioFocusDeps,
+  deps: StudioReachDeps,
+  operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<ResolvedFocus> {
   switch (input.kind.trim()) {
     case "run":
-      return resolveRun(deps, input);
+      return resolveRun(deps, operator, input);
     case "memory_version":
-      return resolveMemoryVersion(deps, input);
+      return resolveMemoryVersion(deps, operator, input);
     case "routine":
-      return resolveRoutine(deps, input);
+      return resolveRoutine(deps, operator, input);
     case "file":
-      return resolveFile(deps, input);
+      return resolveFile(deps, operator, input);
     case "issue":
-      return resolveIssue(deps, input);
+      return resolveIssue(deps, operator, input);
     case "tool":
-      return resolveTool(deps, input);
+      return resolveTool(deps, operator, input);
     default:
       throw new StudioUnprocessableError(
         "focus kind must be run, memory_version, routine, file, issue, or tool",

@@ -59,7 +59,7 @@ import {
 import { listConfigChanges } from "../../src/db/config-changes.js";
 import { userActor } from "../../src/lib/change-actor.js";
 import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js";
-import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";
+import { getGuild, hiddenGuildsFor, insertGuild, updateGuild } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { getAgentTask } from "../../src/db/agents.js";
@@ -1557,7 +1557,7 @@ test("studio proposes tables to create, change, and delete that the operator app
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_tb",
-      hidden: NO_HIDDEN_GUILDS,
+      hidden: await hiddenGuildsFor(db, "org_home", "user_operator"),
       generation: 1,
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {

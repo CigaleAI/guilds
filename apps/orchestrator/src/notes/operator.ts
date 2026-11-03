@@ -137,8 +137,9 @@ export async function listAgentPageNotes(
 }
 
 /**
- * The embeddable notes an operator asks for: one note by its display path, the notes an agent's Task
- * may embed, or every note they may embed. Either field empty asks for neither.
+ * The embeddable notes an operator asks for: with a display path, one note by that path; with an
+ * agent and no display path, the notes the agent's Task may embed; with both empty, every note they
+ * may embed.
  */
 export type EmbeddableNotesQuery = { displayPath: string; agentId: string };
 
