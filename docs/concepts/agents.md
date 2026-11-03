@@ -196,10 +196,9 @@ A **Browser login needed** strip can show after a recipe apply
 ([Browser](browser.md)).
 
 The menu deletes the agent after the operator types its name. The
-confirm reads: "Its sessions, routines, Memory, home, usage row, the
-access rows naming it and the notes and files only it reached are
-removed; other notes and files stay, and its posts stay in the group
-chat. This can't be undone."
+confirm reads: "Its sessions, routines, Memory, home, usage row and
+the access rows naming it are removed; every note and file stays, and
+its posts stay in the group chat. This can't be undone."
 
 The tabs, one route each, with an icon each. The tab strip scrolls
 sideways when they do not fit.

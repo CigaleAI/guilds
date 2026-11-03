@@ -513,13 +513,19 @@ function DangerZone({ guild }: DangerZoneProps) {
   const navigate = useNavigate();
   const remove = useDeleteGuild();
   const [confirming, setConfirming] = useState(false);
+  const isPrivate = guild.visibility === "private";
+  const deletedNotesAndFiles = isPrivate
+    ? "Every note and file homed in the guild is deleted too, with its history; the others stay, without the access rows that named the guild or its agents."
+    : "Every note and file stays, without the access rows that named the guild or its agents; those homed in the guild move to the organisation.";
+  const confirmedNotesAndFiles = isPrivate
+    ? "Every note and file homed in it goes too, with its history. Other notes and files stay."
+    : "Every note and file stays; those homed in it move to the organisation.";
   return (
     <Group title="Delete">
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-t-plum p-4">
         <p className="min-w-60 flex-1 text-sm text-plum-t">
           Deleting the guild removes its group chat, and its agents with their sessions, Memory and
-          homes. Their machines stay. Notes and files only the guild or its agents reached are
-          deleted too; the others stay, without the access rows that named them.
+          homes. Their machines stay. {deletedNotesAndFiles}
         </p>
         <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
           <Icon icon={Trash2} size={14} />
@@ -531,7 +537,7 @@ function DangerZone({ guild }: DangerZoneProps) {
         open={confirming}
         onOpenChange={setConfirming}
         title={`Delete ${guild.name}?`}
-        description="Its group chat, agents, their Memory and agent homes are removed, with the access rows naming the guild or its agents and the notes and files only they reached. Other notes and files stay. This can't be undone."
+        description={`Its group chat, agents, their Memory and agent homes are removed, with the access rows naming the guild or its agents. ${confirmedNotesAndFiles} This can't be undone.`}
         confirmLabel="Delete guild"
         confirmText={guild.name}
         onConfirm={() =>
