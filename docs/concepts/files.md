@@ -277,9 +277,11 @@ An upload or a delete publishes the file's change to each guild whose
 page lists the file: its home guild, and each guild in its scope,
 which is every guild of the organisation when its access list has an
 organisation row, otherwise each guild a row names, through a row for
-the guild or for one of its agents. A replaced access list publishes
-it the same way, to the guilds whose page listed the file before the
-change and those that list it after.
+the guild or for one of its agents. A file homed in a private guild
+is announced to that guild alone. The guilds come from every row of
+the list, those of guilds hidden from the uploader included. A
+replaced access list publishes it the same way, to the guilds named
+before the change and those named after.
 
 ### Storage
 

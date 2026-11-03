@@ -8,7 +8,7 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { AgentParams, GuildParams } from "./params.js";
-import { accessList, reachOf, replaceItemAccess, type ItemAccessWriteDeps } from "../artifacts/access-lists.js";
+import { accessList, reachOf, replaceAndAnnounceItemAccess, type ItemAccessWriteDeps } from "../artifacts/access-lists.js";
 
 /** The path of one item whose access list a route reads or replaces. */
 const ItemParams = Type.Object({ item_id: Type.String() });
@@ -46,7 +46,7 @@ export async function registerArtifactAccessRoutes(app: RouteApp, deps: RouteDep
       async (request) => {
         const actor = await orgActor(request);
         const item = { kind: target.kind, id: request.params.item_id };
-        return replaceItemAccess(accessWrites, actor, item, request.body.subjects);
+        return replaceAndAnnounceItemAccess(accessWrites, actor, item, request.body.subjects);
       },
     );
   }

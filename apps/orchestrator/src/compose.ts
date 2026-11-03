@@ -214,7 +214,7 @@ export async function createServer(
         });
       },
       // A note's or a file's access list an operator replaces is published on the group chat of
-      // each guild whose page lists it, as a write of that item is.
+      // each guild `guildsToAnnounce` names, as a write of that item is.
       publishItemAccessChanged: async (guildId, change) => {
         const payload = change.kind === "file" ? { scope: "files" as const, path: change.displayPath } : { path: change.displayPath };
         await generation.groupChat.publish(guildId, "guild.artifacts.changed", payload);

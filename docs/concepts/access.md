@@ -665,7 +665,10 @@ A `PUT` on a note's or a file's list publishes
 `guild.artifacts.changed`, as a write of the item does, on the stream
 of each guild whose page listed the item before the change or lists it
 after: its home guild, and the guilds in its scope, every guild of the
-organisation when the list has an organisation row
+organisation when the list has an organisation row. An item homed in
+a private guild is announced on that guild's stream alone. The guilds
+are read from every row of the list, those of guilds hidden from the
+operator who replaces it included
 ([Notes](notes.md#http), [Files](files.md#http)). A `PUT` on a
 collection's list publishes nothing.
 

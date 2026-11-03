@@ -1,7 +1,7 @@
 import { requireVisibleAgent } from "../agents/access.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { creatorGrant, parseGrant, type SubjectEntry } from "../artifacts/access.js";
-import { guildsShowing } from "../artifacts/access-lists.js";
+import { guildsToAnnounce } from "../artifacts/access-lists.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import {
   homedActor,
@@ -93,7 +93,7 @@ async function announceNote(services: OperatorNotesServices, guildIds: string[],
 /** The guilds whose pages list the organisation's note at `key`; none when there is no such note. */
 async function noteGuilds(services: OperatorNotesServices, actor: ArtifactActor, key: string): Promise<string[]> {
   const live = await getLiveNote(services.db, actor.orgId, key);
-  return live ? guildsShowing(services.artifacts, actor, { kind: "note", id: live.id }) : [];
+  return live ? guildsToAnnounce(services.artifacts, actor.orgId, { kind: "note", id: live.id }) : [];
 }
 
 /** A request's `expected_version`: a version, or undefined when it names none. */
@@ -193,7 +193,7 @@ export async function writeOrgNote(
   const hostWrite = { path: write.path, content: write.content, expectedVersion: write.expectedVersion, startingAccess };
   const written = await writeHostNote(hostServices, actor, hostWrite);
   if (written.id) {
-    const guilds = await guildsShowing(services.artifacts, actor, { kind: "note", id: written.id });
+    const guilds = await guildsToAnnounce(services.artifacts, actor.orgId, { kind: "note", id: written.id });
     await announceNote(services, guilds, written.display_path);
   }
   return written;

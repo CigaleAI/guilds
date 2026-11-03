@@ -1,5 +1,5 @@
 import { creatorGrant, parseGrant, type SubjectEntry } from "./access.js";
-import { guildsShowing } from "./access-lists.js";
+import { guildsToAnnounce } from "./access-lists.js";
 import { loadOperatorActor } from "./actors.js";
 import type { ArtifactFiles, FileView, PageFileView } from "./files.js";
 import { homedActor, type ArtifactStore, type PageSections } from "./store.js";
@@ -108,14 +108,14 @@ export async function uploadSharedFile(
     ...(expectedVersion !== undefined ? { expectedVersion } : {}),
   });
   const view = deps.files.view(row);
-  await announceFile(deps, await guildsShowing(deps.artifacts, actor, { kind: "file", id: row.id }), view.display_path);
+  await announceFile(deps, await guildsToAnnounce(deps.artifacts, actor.orgId, { kind: "file", id: row.id }), view.display_path);
   return view;
 }
 
 /** Deletes the file with this id as `actor`, and announces it to each guild whose page listed it. */
 export async function deleteSharedFile(deps: SharedFileWriteDeps, actor: ArtifactActor, fileId: string): Promise<void> {
   const row = await deps.files.loadFileById(actor, fileId);
-  const guilds = await guildsShowing(deps.artifacts, actor, { kind: "file", id: row.id });
+  const guilds = await guildsToAnnounce(deps.artifacts, actor.orgId, { kind: "file", id: row.id });
   await deps.files.deleteFile(actor, row);
   await announceFile(deps, guilds, deps.files.view(row).display_path);
 }

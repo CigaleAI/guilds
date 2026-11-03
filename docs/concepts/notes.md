@@ -408,9 +408,12 @@ A note write or delete publishes `guild.artifacts.changed` on the
 stream of each guild whose page lists the note: its home guild, and
 each guild in its scope, which is every guild of the organisation when
 its access list has an organisation row, otherwise each guild a row
-names, through a row for the guild or for one of its agents. A
-replaced access list publishes it the same way, to the guilds whose
-page listed the note before the change and those that list it after
+names, through a row for the guild or for one of its agents. A note
+homed in a private guild is announced on that guild's stream alone,
+so its name reaches no other guild's listeners. The guilds come from
+every row of the list, those of guilds hidden from the writer
+included. A replaced access list publishes it the same way, to the
+guilds named before the change and those named after
 ([Access](access.md#access-lists)). A Task or Memory write publishes
 it on the agent's guild.
 

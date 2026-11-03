@@ -84,7 +84,8 @@ guild that is unknown or hidden from the caller;
 `GET /api/org/embeddable-notes?agent_id=…` answers the agent's sections;
 replacing a note's or a file's access list announces
 `guild.artifacts.changed` to each guild that listed the item or lists
-it now. Deleting a guild that is not private leaves the items homed
+it now, and an item homed in a private guild is announced to that
+guild alone. Deleting a guild that is not private leaves the items homed
 in it without a home. Updating clears every home that names no guild of the
 item's organisation, gives each note and file without one the one
 guild its access list names when the list has no organisation row,

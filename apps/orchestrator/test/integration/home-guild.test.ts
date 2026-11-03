@@ -231,7 +231,7 @@ test("an agent's embeddable notes are its page's two sections, each note with it
   assert.ok(Array.isArray(flat.json()), "without an agent the list stays flat");
 });
 
-test("replacing a note's or a file's access list tells the guilds that listed it, the guilds that list it now, and its home guild", async () => {
+test("replacing a note's or a file's access list tells the guilds that listed it, the guilds that list it now, and its home guild; a private home alone", async () => {
   const thirdId = await createGuild("third", "org");
   const note = await app.inject({
     method: "PUT",
@@ -245,11 +245,38 @@ test("replacing a note's or a file's access list tells the guilds that listed it
     method: "PUT",
     url: `/api/notes/${String(note.json().id)}/access`,
     headers: { ...OWNER, ...JSON_BODY },
-    payload: { subjects: [{ type: "guild", id: thirdId, mode: "write" }] },
+    payload: { subjects: [{ type: "guild", id: thirdId, mode: "write" }, { type: "org", id: "org_home", mode: "read" }] },
   });
   assert.equal(replaced.statusCode, 200, replaced.body);
   const change = { kind: "note", displayPath: "org/org_home/moving.md" };
-  assert.deepEqual(accessChanges, [[vaultId, change], [openId, change], [thirdId, change]]);
+  assert.deepEqual(accessChanges, [[vaultId, change]], "a note homed in a private guild is told to that guild alone, an organisation row or not");
+
+  // A member outside the private guild replaces a list whose hidden row stays: the private guild is told too.
+  const shared = await app.inject({
+    method: "PUT",
+    url: "/api/org/notes/shared-out.md",
+    headers: { ...OWNER, ...JSON_BODY },
+    payload: { content: "shared with the vault", home_guild_id: openId, access: { type: "guild", id: openId, mode: "write" } },
+  });
+  assert.equal(shared.statusCode, 200, shared.body);
+  const sharedId = String(shared.json().id);
+  const withVault = await app.inject({
+    method: "PUT",
+    url: `/api/notes/${sharedId}/access`,
+    headers: { ...OWNER, ...JSON_BODY },
+    payload: { subjects: [{ type: "guild", id: openId, mode: "write" }, { type: "guild", id: vaultId, mode: "read" }] },
+  });
+  assert.equal(withVault.statusCode, 200, withVault.body);
+  accessChanges.length = 0;
+  const memberReplaced = await app.inject({
+    method: "PUT",
+    url: `/api/notes/${sharedId}/access`,
+    headers: { ...TEAMMATE, ...JSON_BODY },
+    payload: { subjects: [{ type: "guild", id: openId, mode: "write" }, { type: "guild", id: thirdId, mode: "read" }] },
+  });
+  assert.equal(memberReplaced.statusCode, 200, memberReplaced.body);
+  const sharedChange = { kind: "note", displayPath: "org/org_home/shared-out.md" };
+  assert.deepEqual(accessChanges, [[openId, sharedChange], [vaultId, sharedChange], [thirdId, sharedChange]]);
 
   const file = await app.inject({
     method: "POST",
