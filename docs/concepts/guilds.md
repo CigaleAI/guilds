@@ -237,19 +237,22 @@ visibility, and commit author email together.
 **Delete guild** explains: "Deleting the guild removes its group
 chat, and its agents with their sessions, Memory and homes. Their
 machines stay." For a private guild it goes on: "Every note and file
-homed in the guild is deleted too, with its history; the others stay,
-without the access rows that named the guild or its agents." For a
-guild open to the organisation: "Every note and file stays, without
-the access rows that named the guild or its agents; those homed in
-the guild move to the organisation."
+homed in the guild is deleted too, with its history, and so is every
+one with no home whose access rows all named the guild or its agents;
+the others stay, without the access rows that named the guild or its
+agents." For a guild open to the organisation: "Every note and file
+stays, without the access rows that named the guild or its agents;
+those homed in the guild move to the organisation."
 
 The confirm reads: "Its group chat, agents, their Memory and agent
 homes are removed, with the access rows naming the guild or its
 agents." For a private guild it goes on: "Every note and file homed in
-it goes too, with its history. Other notes and files stay." For a
-guild open to the organisation: "Every note and file stays; those
-homed in it move to the organisation." It ends: "This can't be undone." It asks for the
-guild's name to be typed. The app then returns to `/`.
+it goes too, with its history, and so does every one with no home
+whose access rows all named it or its agents. Other notes and files
+stay." For a guild open to the organisation: "Every note and file
+stays; those homed in it move to the organisation." It ends: "This
+can't be undone." It asks for the guild's name to be typed. The app
+then returns to `/`.
 
 ## Rules and limits
 

@@ -515,10 +515,10 @@ function DangerZone({ guild }: DangerZoneProps) {
   const [confirming, setConfirming] = useState(false);
   const isPrivate = guild.visibility === "private";
   const deletedNotesAndFiles = isPrivate
-    ? "Every note and file homed in the guild is deleted too, with its history; the others stay, without the access rows that named the guild or its agents."
+    ? "Every note and file homed in the guild is deleted too, with its history, and so is every one with no home whose access rows all named the guild or its agents; the others stay, without the access rows that named the guild or its agents."
     : "Every note and file stays, without the access rows that named the guild or its agents; those homed in the guild move to the organisation.";
   const confirmedNotesAndFiles = isPrivate
-    ? "Every note and file homed in it goes too, with its history. Other notes and files stay."
+    ? "Every note and file homed in it goes too, with its history, and so does every one with no home whose access rows all named it or its agents. Other notes and files stay."
     : "Every note and file stays; those homed in it move to the organisation.";
   return (
     <Group title="Delete">
