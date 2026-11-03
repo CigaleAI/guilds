@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import type { ItemAccessChange } from "../../src/artifacts/access-lists.js";
-import { operatorActor } from "../../src/artifacts/actors.js";
+import { writeFileSync } from "node:fs";
+import path from "node:path";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
 import { listStateArtifacts, readStateNotes, upsertNote } from "../../src/artifacts/notes.js";
 import { artifactStore } from "../../src/artifacts/store.js";
@@ -12,6 +14,10 @@ import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
+import { noteDelete, noteWrite, toolArtifacts } from "../../src/toolbox/artifacts.js";
+import { fileDelete, filePut } from "../../src/toolbox/file.js";
+import type { JsonObject } from "../../src/lib/json.js";
+import { toolFixture, toolInvocation } from "../helpers/toolbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
@@ -463,4 +469,78 @@ test("replacing a note's or a file's access list tells the guilds that listed it
     [openId, vaultId, thirdId].sort(),
   );
   assert.ok(accessChanges.every(([, item]) => JSON.stringify(item) === JSON.stringify(fileChange)));
+});
+
+test("an agent's note or file write or delete is told to the guilds an operator's change is told to: a private home alone", async () => {
+  const clerk = await app.inject({
+    method: "POST",
+    url: `/api/guilds/${openId}/agents`,
+    headers: { ...OWNER, ...JSON_BODY },
+    payload: { name: "clerk", config: { model: TEST_MODEL, browser: false } },
+  });
+  assert.equal(clerk.statusCode, 201, clerk.body);
+  const clerkId = String(clerk.json().id);
+  const note = await app.inject({
+    method: "PUT",
+    url: "/api/org/notes/vault-open-ledger.md",
+    headers: { ...OWNER, ...JSON_BODY },
+    payload: { content: "first", home_guild_id: vaultId, access: { type: "org", id: "org_home", mode: "write" } },
+  });
+  assert.equal(note.statusCode, 200, note.body);
+  const file = await app.inject({
+    method: "POST",
+    url: "/api/org/files",
+    headers: {
+      ...OWNER,
+      ...BYTES,
+      "x-filename": "vault-open.txt",
+      "x-description": "d",
+      "x-home-guild": vaultId,
+      "x-access-type": "org",
+      "x-access-id": "org_home",
+      "x-access-mode": "write",
+    },
+    payload: Buffer.from("first"),
+  });
+  assert.equal(file.statusCode, 201, file.body);
+
+  const store = artifactStore(database.pool, templatesRoot());
+  const workspace = tempDir("guilds-home-guild-clerk-");
+  writeFileSync(path.join(workspace, "vault-open.txt"), "second");
+  writeFileSync(path.join(workspace, "clerk-own.txt"), "own");
+  const published: Array<[string, JsonObject]> = [];
+  const { services, run, hooks } = toolFixture({
+    run_id: "r_clerk",
+    agent_id: clerkId,
+    guild_id: openId,
+    sandbox: null,
+    secrets: {},
+    workspace_dir: workspace,
+    artifacts: toolArtifacts(store),
+    files: new ArtifactFiles(store, new MemoryBlobStore()),
+    artifact_actor: agentActor({ orgId: "org_home", guildId: openId, agentId: clerkId, agentName: "clerk" }),
+    group_chat: {
+      publish: async (guildId: string, event: string, data: JsonObject) => {
+        assert.equal(event, "guild.artifacts.changed");
+        published.push([guildId, data]);
+      },
+    },
+  });
+  const told = async (work: Promise<unknown>) => {
+    published.length = 0;
+    await work;
+    return published.map(([guildId, data]) => [guildId, data.path]);
+  };
+  const notePath = "org/org_home/vault-open-ledger.md";
+  const filePath = "org/org_home/files/vault-open.txt";
+  assert.deepEqual(await told(noteWrite.handler(services, run, hooks, toolInvocation("note_write", { path: notePath, content: "second" }))), [[vaultId, notePath]]);
+  assert.deepEqual(await told(filePut.handler(services, run, hooks, toolInvocation("file_put", { home_path: "vault-open.txt", description: "d" }))), [[vaultId, filePath]]);
+  assert.deepEqual(await told(noteDelete.handler(services, run, hooks, toolInvocation("note_delete", { path: notePath }))), [[vaultId, notePath]]);
+  assert.deepEqual(await told(fileDelete.handler(services, run, hooks, toolInvocation("file_delete", { path: filePath }))), [[vaultId, filePath]]);
+  const ownPath = "org/org_home/files/clerk-own.txt";
+  assert.deepEqual(
+    await told(filePut.handler(services, run, hooks, toolInvocation("file_put", { home_path: "clerk-own.txt", description: "d" }))),
+    [[openId, ownPath]],
+    "a file the agent creates is homed in its own guild and told to it",
+  );
 });

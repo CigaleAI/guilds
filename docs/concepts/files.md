@@ -204,7 +204,10 @@ Crossing tool families fails with a 422 that names the right tool:
 `note_get` on a file is `use file_fetch for files`, and `note_delete`
 on a file is `use file_delete for files`.
 
-A successful put or delete publishes `guild.artifacts.changed`.
+A successful put or delete publishes `guild.artifacts.changed` to
+the guilds an operator's upload or delete of that file is published
+to (below): the file's private home alone, otherwise its home and the
+guilds in its scope.
 
 ### Access list
 

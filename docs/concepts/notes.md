@@ -283,7 +283,10 @@ note_delete  { path }                returns the display path
   is then ignored.
 - `note_delete` soft-deletes the note. It needs `write`. `task.md` and
   `memory.md` cannot be deleted.
-- A successful write or delete publishes `guild.artifacts.changed`.
+- A successful write or delete publishes `guild.artifacts.changed`
+  to the guilds an operator's write of that note is published to
+  ([HTTP](#http)): the note's private home alone, otherwise its home
+  and the guilds in its scope.
 
 Crossing tool families fails with a 422 that names the right tool:
 
