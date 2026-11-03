@@ -508,7 +508,7 @@ function Operators({ guild, admin }: OperatorsProps) {
 
 type DangerZoneProps = { guild: Guild };
 
-/** Deleting the guild, with everything in it. */
+/** Deleting the guild, with what its deletion takes for its visibility stated before and in the confirm. */
 function DangerZone({ guild }: DangerZoneProps) {
   const navigate = useNavigate();
   const remove = useDeleteGuild();

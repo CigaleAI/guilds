@@ -117,11 +117,12 @@ the guild is generating or while the group chat is delivering. The
 guild takes with it its agents and everything they own, its group
 chat, operators, issues, own collections, repositories, the
 access-list rows that name it or its agents, and the secrets that
-only it or its agents held. A note or a file that only those rows
-reached is removed with it, with its change history; any other stays,
-without those rows. A note or a file homed in the guild that stays is
-the organisation's from then on, and shows to the operators its rows
-allow.
+only it or its agents held. A private guild takes every note and file
+homed in it, live or deleted, with its change history, whatever rows
+it had. A guild open to the organisation takes none: the notes and
+files homed in it stay and are the organisation's from then on. Every
+note and file homed elsewhere stays under its home, without the rows
+that went.
 Organisation collections and secrets granted elsewhere stay, and so
 do the machines
 ([Delete](#delete) has the full list).

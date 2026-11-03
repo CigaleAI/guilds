@@ -124,8 +124,8 @@ export function useRemoveOperator(guildId: string) {
 }
 
 /**
- * Deletes the guild with its chat, agents and agent homes, the access rows naming it or its agents,
- * and the notes and files only they reached. Admins only.
+ * Deletes the guild with its chat, agents and agent homes and the access rows naming it or its agents;
+ * a private guild also takes every note and file homed in it, with its history. Admins only.
  */
 export function useDeleteGuild() {
   const client = useQueryClient();

@@ -581,10 +581,11 @@ row: the creating agent at `write`, or the subject the operator names,
 the organisation at `write` by default. A new guild collection starts
 with its guild at `write`, a new organisation collection with the
 organisation at `read`. A deleted note or file keeps its rows on its
-tombstone. Rows go with the guild or agent they name, and a note or a
-file, live or deleted, that only those rows reached is removed with
-them, with its `file_changes` and the `config_changes` of its access
-list ([Access](../concepts/access.md#access-lists)).
+tombstone. Rows go with the guild or agent they name. A private guild
+takes every note and file homed in it, live or deleted, with its
+`file_changes`, its rows and the `config_changes` of its access list;
+a guild open to the organisation and an agent take no note or file
+([Access](../concepts/access.md#access-lists)).
 
 The standing task lives on `agents.task`. Agent names are globally
 unique.
