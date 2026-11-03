@@ -11,14 +11,21 @@ import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
+import { deleteAgent } from "../../src/db/agents.js";
+import { listConfigChanges } from "../../src/db/config-changes.js";
+import { listFileChanges } from "../../src/db/file-changes.js";
+import { deleteGuild } from "../../src/db/guilds.js";
+import { listWindowConfigChanges, listWindowFileChanges } from "../../src/db/state.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_BODY = { "content-type": "application/json" };
 
 const dbName = uniqueDbName("agent_platform_private_guild_artifacts");
+const deletionDbName = uniqueDbName("agent_platform_private_guild_deletion");
 
 after(async () => {
   await dropIsolatedDatabase(dbName);
+  await dropIsolatedDatabase(deletionDbName);
 });
 
 test("organisation-wide note, table, and change routes keep a private guild to its operators", { timeout: 60_000 }, async () => {
@@ -219,6 +226,190 @@ test("organisation-wide note, table, and change routes keep a private guild to i
 
     const ownerTable = await app.inject({ method: "GET", url: `/api/collections/${tableId}`, headers: OWNER });
     assert.equal(ownerTable.statusCode, 200);
+  } finally {
+    await app.close();
+    await database.close();
+  }
+});
+
+test("deleting an agent or a guild removes the rows naming it; a private guild takes the notes only its operators saw, live or deleted, with every change to them, and its agent leaves the notes only it reached homed in the guild", { timeout: 60_000 }, async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const database = await connect(await createIsolatedDatabase(deletionDbName));
+  const notes = new NotesStore(tempDir("guilds-private-deletion-notes-"), templatesRoot());
+  await notes.ensureSystemPrompt();
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const app = await buildApp(database, { db, notes, scripts: agentScripts(db), schedules: agentSchedules(db) });
+  const teammate = await insertUser(db, { userId: "user_teammate_attic", name: "teammate-attic", image: null, email: "attic@example.com" }, new Date());
+  await insertMember(db, { org_id: "org_home", user_id: String(teammate.id), role: "member" }, new Date());
+  const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
+  const opened = new Date(0);
+
+  try {
+    const createGuild = async (name: string, visibility: string) => {
+      const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: { ...OWNER, ...JSON_BODY }, payload: { name, visibility } });
+      assert.equal(guild.statusCode, 201, guild.body);
+      return String(guild.json().id);
+    };
+    const createAgent = async (guildId: string, name: string) => {
+      const agent = await app.inject({
+        method: "POST",
+        url: `/api/guilds/${guildId}/agents`,
+        headers: { ...OWNER, ...JSON_BODY },
+        payload: { name, config: { model: TEST_MODEL, browser: false } },
+      });
+      assert.equal(agent.statusCode, 201, agent.body);
+      return String(agent.json().id);
+    };
+    const atticId = await createGuild("attic", "private");
+    const porterId = await createAgent(atticId, "porter");
+    const hallId = await createGuild("hall", "org");
+    const clerkId = await createAgent(hallId, "clerk");
+    const galleryId = await createGuild("gallery", "org");
+    const quarryId = await createGuild("quarry", "org");
+
+    /** Writes a note homed in `home` as the owner, then replaces its list with `subjects`. */
+    const write = async (key: string, home: string, subjects: Array<{ type: string; id: string; mode: string }>) => {
+      const created = await app.inject({
+        method: "PUT",
+        url: `/api/org/notes/${key}`,
+        headers: { ...OWNER, ...JSON_BODY },
+        payload: { content: `# ${key}`, home_guild_id: home },
+      });
+      assert.equal(created.statusCode, 200, created.body);
+      const id = String(created.json().id);
+      const listed = await app.inject({ method: "PUT", url: `/api/notes/${id}/access`, headers: { ...OWNER, ...JSON_BODY }, payload: { subjects } });
+      assert.equal(listed.statusCode, 200, listed.body);
+      return { id, key, path: String(created.json().display_path) };
+    };
+    const remove = async (key: string) =>
+      assert.equal((await app.inject({ method: "DELETE", url: `/api/org/notes/${key}`, headers: OWNER })).statusCode, 204);
+    const history = async (path: string, headers: Record<string, string>) =>
+      ((await app.inject({ method: "GET", url: `/api/file-changes?display_path=${encodeURIComponent(path)}`, headers })).json() as Array<{
+        operation: string;
+      }>).map((change) => change.operation);
+    const subjects = async (noteId: string) =>
+      (await db.query<{ subject: string }>(
+        `SELECT subject_type || ' ' || subject_id AS subject FROM artifact_access
+          WHERE target_kind = 'note' AND target_id = $1 ORDER BY subject`,
+        [noteId],
+      )).rows.map((row) => row.subject);
+    const homeOf = async (noteId: string) =>
+      (await db.query<{ origin_guild_id: string | null }>(`SELECT origin_guild_id FROM artifacts WHERE id = $1`, [noteId])).rows[0]
+        ?.origin_guild_id;
+    const pageOf = async (guildId: string) =>
+      (await app.inject({ method: "GET", url: `/api/guilds/${guildId}/notes`, headers: OWNER })).json() as {
+        own: Array<{ id: string; viewer_mode: string }>;
+        shared: Array<{ id: string; viewer_mode: string }>;
+      };
+
+    const atticShared = await write("attic-shared.md", atticId, [
+      { type: "guild", id: atticId, mode: "write" },
+      { type: "org", id: "org_home", mode: "read" },
+    ]);
+    const atticBare = await write("attic-bare.md", atticId, []);
+    const atticPlans = await write("attic-plans.md", atticId, [
+      { type: "guild", id: atticId, mode: "write" },
+      { type: "agent", id: porterId, mode: "read" },
+    ]);
+    await remove(atticPlans.key);
+    const atticOld = await write("attic-old.md", atticId, [{ type: "org", id: "org_home", mode: "read" }]);
+    await remove(atticOld.key);
+    const clerkShut = await write("clerk-shut.md", hallId, [{ type: "agent", id: clerkId, mode: "none" }]);
+    const clerkLog = await write("clerk-log.md", hallId, [{ type: "agent", id: clerkId, mode: "write" }]);
+    await remove(clerkLog.key);
+    const forGallery = await write("hall-for-gallery.md", hallId, [{ type: "guild", id: galleryId, mode: "read" }]);
+    const atticHomeless = await write("attic-homeless.md", "", [
+      { type: "guild", id: atticId, mode: "write" },
+      { type: "agent", id: porterId, mode: "read" },
+    ]);
+    const atticHomelessOld = await write("attic-homeless-old.md", "", [{ type: "guild", id: atticId, mode: "read" }]);
+    await remove(atticHomelessOld.key);
+    const atticAndOrg = await write("attic-and-org.md", "", [
+      { type: "guild", id: atticId, mode: "write" },
+      { type: "org", id: "org_home", mode: "read" },
+    ]);
+    const porterOnly = await write("porter-only.md", "", [{ type: "agent", id: porterId, mode: "write" }]);
+    const porterOld = await write("porter-old.md", "", [{ type: "agent", id: porterId, mode: "read" }]);
+    await remove(porterOld.key);
+    const clerkHomeless = await write("clerk-homeless.md", "", [{ type: "agent", id: clerkId, mode: "write" }]);
+    const quarryOpen = await write("quarry-open.md", quarryId, [
+      { type: "guild", id: quarryId, mode: "write" },
+      { type: "org", id: "org_home", mode: "read" },
+    ]);
+    assert.deepEqual(await history(atticPlans.path, OWNER), ["delete", "create"]);
+    assert.deepEqual(await history(atticPlans.path, TEAMMATE), [], "a private guild's deleted note is hidden while the guild lives");
+
+    await deleteAgent(db, clerkId);
+    assert.deepEqual(await subjects(clerkShut.id), [], "the agent's row goes");
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/clerk-shut.md", headers: OWNER })).statusCode, 200, "a note the agent was shut out of stays");
+    assert.deepEqual((await pageOf(hallId)).own.filter((item) => item.id === clerkShut.id).map((item) => item.viewer_mode), ["none"], "greyed under its home");
+    assert.deepEqual(await history(clerkLog.path, OWNER), ["delete", "create"], "a deleted note only the agent reached keeps its history");
+    assert.equal(await homeOf(clerkHomeless.id), null, "a public guild's agent leaves the notes only it reached without a home");
+    assert.deepEqual(await subjects(clerkHomeless.id), []);
+
+    assert.deepEqual(await history(porterOld.path, TEAMMATE), [], "a deleted note only a private guild's agent reached is hidden by its rows");
+    await deleteAgent(db, porterId);
+    for (const note of [porterOnly, porterOld]) {
+      assert.equal(await homeOf(note.id), atticId, "a private guild's agent leaves the notes only it reached homed in the guild");
+      assert.deepEqual(await subjects(note.id), []);
+    }
+    assert.deepEqual(await subjects(atticHomeless.id), [`guild ${atticId}`], "a note its guild reaches keeps its other rows and no home");
+    assert.equal(await homeOf(atticHomeless.id), null);
+    assert.deepEqual((await pageOf(atticId)).own.filter((item) => item.id === porterOnly.id).map((item) => item.viewer_mode), ["none"], "listed greyed under its new home");
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/porter-only.md", headers: TEAMMATE })).statusCode, 404);
+    assert.deepEqual(await history(porterOld.path, TEAMMATE), [], "and its history stays hidden");
+    assert.deepEqual(await history(porterOld.path, OWNER), ["delete", "create"]);
+
+    await deleteGuild(db, galleryId);
+    assert.deepEqual(await subjects(forGallery.id), [], "the guild's row goes");
+    assert.equal(await homeOf(forGallery.id), hallId, "a note homed elsewhere keeps its home");
+    assert.deepEqual(
+      (await pageOf(hallId)).own.filter((item) => item.id === forGallery.id).map((item) => item.viewer_mode),
+      ["none"],
+      "a note shared only with the deleted guild stays on its home's page, greyed",
+    );
+
+    await deleteGuild(db, quarryId);
+    assert.equal(await homeOf(quarryOpen.id), null, "a public guild's note becomes the organisation's");
+    assert.deepEqual(await subjects(quarryOpen.id), ["org org_home"]);
+    const orgNotes = (await app.inject({ method: "GET", url: "/api/org/notes", headers: TEAMMATE })).json() as Array<{
+      id: string;
+      home: unknown;
+    }>;
+    assert.deepEqual(orgNotes.filter((item) => item.id === quarryOpen.id).map((item) => item.home), [null]);
+
+    await deleteGuild(db, atticId);
+    assert.equal(await homeOf(atticAndOrg.id), null, "a note with no home and a row outside the guild stays");
+    assert.deepEqual(await subjects(atticAndOrg.id), ["org org_home"]);
+    assert.equal((await app.inject({ method: "GET", url: "/api/org/notes/attic-and-org.md", headers: TEAMMATE })).statusCode, 200);
+    const gone = [atticShared, atticBare, atticPlans, atticOld, atticHomeless, atticHomelessOld, porterOnly, porterOld];
+    for (const headers of [OWNER, TEAMMATE]) {
+      for (const note of gone) {
+        assert.deepEqual(await history(note.path, headers), []);
+        assert.equal((await app.inject({ method: "GET", url: `/api/notes/${note.id}/access`, headers })).statusCode, 404);
+        assert.equal((await app.inject({ method: "GET", url: `/api/org/notes/${note.key}`, headers })).statusCode, 404);
+      }
+      const latest = await app.inject({
+        method: "POST",
+        url: "/api/file-changes/latest",
+        headers: { ...headers, ...JSON_BODY },
+        payload: { display_paths: gone.map((note) => note.path) },
+      });
+      assert.deepEqual(latest.json(), {});
+    }
+    const removed = gone.map((note) => note.id);
+    for (const id of removed) {
+      assert.equal(await homeOf(id), undefined, "the note's row is gone");
+      assert.deepEqual(await subjects(id), [], "no row of its list is left");
+      assert.deepEqual(await listFileChanges(db, "org_home", { artifactIds: [id], taskAgentId: null }), [], "no history is read by the note's id");
+      assert.deepEqual(await listConfigChanges(db, "org_home", { kind: "note", id }), [], "no access change is read by the note's id");
+    }
+    const window = { since: opened, until: new Date() };
+    const fileChanges = await listWindowFileChanges(db, "org_home", window);
+    assert.deepEqual(fileChanges.filter((change) => removed.includes(change.artifact_id ?? "")), [], "no file change lists a removed note");
+    const configChanges = await listWindowConfigChanges(db, "org_home", window);
+    assert.deepEqual(configChanges.filter((change) => removed.includes(change.target_id)), [], "no access change lists a removed note");
   } finally {
     await app.close();
     await database.close();

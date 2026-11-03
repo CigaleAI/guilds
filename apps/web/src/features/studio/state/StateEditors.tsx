@@ -1,29 +1,27 @@
 import { useDatabase } from "../../../api/queries/tables";
+import type { ReachSubject } from "../../../api/types/access";
 import { Banner, SkeletonRows } from "@guildsrun/ui";
-import { useIdentity } from "../../../app/identity";
 import { RecordsPanel } from "../../tables/RecordsPanel";
+import { itemBrowserKey } from "../../access/listedItems";
 import { NotesBrowser } from "../../notes/NotesBrowser";
 import { useStudio } from "../StudioContext";
 
 type NoteEditorProps = { path: string };
 
 /**
- * The notes browser opened at one note: the notes open to the session's guild, its agents or the organisation, and
- * every note, with changes opened in Studio.
+ * The notes browser of the session's guild opened at one note: the guild's own notes and those
+ * shared with it, with changes opened in Studio.
  */
 export function NoteEditor({ path }: NoteEditorProps) {
-  const { org } = useIdentity();
   const { session, openStep, ask } = useStudio();
   const guildId = session.source_guild_id;
+  const page: ReachSubject = { type: "guild", id: guildId };
   return (
     <div className="flex min-h-[32rem] flex-col rounded-lg border border-line">
       <NotesBrowser
-        key={path}
+        key={itemBrowserKey(page, path)}
         guildId={guildId}
-        scopes={[
-          { title: "Guild", page: { type: "guild", id: guildId } },
-          { title: "Org", page: { type: "org", id: org.id } },
-        ]}
+        page={page}
         initialPath={path}
         onAsk={(item) =>
           ask({

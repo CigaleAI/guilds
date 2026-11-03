@@ -8,8 +8,10 @@ organisation has one store. Agents read and write it with tools, and
 operators read and edit it in the app.
 
 Each item has a display path, a text address that names it exactly.
-Notes and files belong to the organisation and have an access list
-and nothing else. Collections carry an access list too, beside the
+Notes and files belong to the organisation. Each has an access list
+and a home guild, the guild it was made in, which groups it in the
+app and hides it from operators who cannot see that guild.
+Collections carry an access list too, beside the
 guild or organisation that owns them. The access list decides which
 agents read and write the item
 ([Access](access.md#access-lists-for-notes-collections-and-files)).
@@ -44,10 +46,12 @@ exact transcript stays in the run or group history.
 
 - **Notes** belong to the organisation, one set side by side, one
   name per note. Each note's access list alone decides who reaches it
-  ([Notes](notes.md#how-far-an-agent-reaches)).
+  ([Notes](notes.md#how-far-an-agent-reaches)). Its home guild
+  decides where the app lists it ([Notes](notes.md#home-guild)).
 - **Files** belong to the organisation the same way. Each file's
   access list alone decides who reaches it
-  ([Files](files.md#how-far-an-agent-reaches)).
+  ([Files](files.md#how-far-an-agent-reaches)), and its home guild
+  where the app lists it.
 - **Collections** live at the organisation. Some belong to one guild,
   which sets the collection's display path and where it is listed.
   Each collection's access list decides who reaches it ([Collections](collections.md#who-reaches-a-collection)).
@@ -163,8 +167,42 @@ One PostgreSQL table, `artifacts`, holds every item. Its `kind` is:
 is unique by (`org_id`, `agent_id`, `collection_id`, `path`, `key`),
 with nulls counted equal: a note's or a file's name is unique in its
 organisation, and Memory and scripts are unique per agent.
-`origin_guild_id` records the guild its creator wrote from; it
-decides no access and no listing.
+`origin_guild_id` is the guild the item was made in, or null for the
+organisation, written at insert and changed by no write:
+
+| Item | `origin_guild_id` |
+|---|---|
+| A note or a file an agent writes | the agent's guild |
+| A note or a file an operator creates | the guild the write names (`home_guild_id` on a note, `X-Home-Guild` on an upload); null when it names none |
+| A recipe's note | the guild the recipe is applied to |
+| A note a Studio proposal creates | the session's source guild |
+| Memory and scripts | the agent's guild |
+| A record | the guild of the actor that inserted it |
+
+On a note or a file it is the item's home guild. It decides two
+things. The guild and agent pages list the notes and files homed in
+their guild apart from those shared with it
+([Notes](notes.md#http)). And an operator never reaches a note or a
+file homed in a guild hidden from them, a private guild they do not
+operate, whatever its rows say, and a note or a file homed in a guild
+they can see is never hidden from them by its rows
+([Access](access.md#access-lists-for-notes-collections-and-files)).
+It never enters an agent's reach: the mode of an agent, Studio's
+reach, and the starting rows of a new item come from the access list
+alone. Memory, scripts and records keep the guild recorded at insert
+while that guild exists and belongs to the organisation; nothing
+groups by it. A record is listed with its collection.
+
+`origin_guild_id` references `guilds(id)`
+(`artifacts_origin_guild_id_fkey`, `ON DELETE SET NULL`), so an item
+a deleted guild leaves becomes the organisation's; a private guild's
+notes and files are removed before its row goes. Deleting an agent of
+a private guild sets the home of each note and file with no home that
+only the agent's rows reached to that guild
+([Access](access.md#access-lists)). The index
+`artifacts_by_origin_guild` on (`origin_guild_id`, `org_id`) serves
+the page lists, which select by home, and the foreign key's action
+when a guild goes.
 
 A collection itself is an `artifact_collections` row, not an
 artifact kind. The live Task is `agents.task`.
@@ -312,10 +350,6 @@ Code: `apps/orchestrator/src/db/config-changes.ts`.
   ([Memory](memory.md)).
 - Access lists of notes, collections, and files: `artifact_access` rows
   ([Access](access.md#access-lists)).
-- Renamed notes and files: `artifact_renames`, one row per note or
-  file whose name was changed to keep every name unique in its
-  organisation (`org_id`, `artifact_id`, `old_display_path`,
-  `new_display_path`, `renamed_at`). No route reads it.
 - The bytes of files: the blob store ([Files](files.md#storage)).
 - Run transcripts: run rows ([Runs](runs.md)).
 

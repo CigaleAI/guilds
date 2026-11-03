@@ -292,9 +292,11 @@ collection whose columns accept the recipe's; see
   neither `org` nor `guild`, is reached by that role's agent alone.
 - As for collections, a recipe carries no rows for other guilds or
   their agents, and no agent row of `read` or `none`.
-- Apply creates each note under its key. When the organisation
-  already holds a live note of that key, apply writes the note as
-  `<guild name>-<key>` instead, and every link to it points there.
+- Apply creates each note under its key, homed in the guild the
+  recipe is applied to ([Notes](notes.md#home-guild)). A recipe
+  states no home. When the organisation already holds a live note of
+  that key, apply writes the note as `<guild name>-<key>` instead, and
+  every link to it points there.
 
 ### Embeds and tags
 

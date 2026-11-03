@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { OPERATOR_ACTOR } from "../helpers/agents.js";
 import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
 import { existsSync, mkdirSync, readFileSync as _readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -661,7 +660,7 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     sandboxes.running.add("mach_1");
     const loop = makeLoop(db, notes, tmp, sandboxes);
-    await loop.deleteAgent("a_1", OPERATOR_ACTOR);
+    await loop.deleteAgent("a_1");
     assert.deepEqual(sandboxes.destroyed, []);
     assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "purge" }]);
     assert.deepEqual(deleted, [["acme", "research", "researcher"]]);
@@ -678,7 +677,7 @@ describe("generation", { concurrency: 1 }, () => {
     };
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
     await loop.beginGeneration("r_1", "a_1");
-    await assert.rejects(() => loop.deleteAgent("a_1", OPERATOR_ACTOR), (error: unknown) => {
+    await assert.rejects(() => loop.deleteAgent("a_1"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /already generating/);
       assert.equal(error.status, 409);
@@ -698,7 +697,7 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     sandboxes.running.add("mach_1");
     const loop = makeLoop(db, notes, tmp, sandboxes);
-    await loop.deleteGuild("guild_1", OPERATOR_ACTOR);
+    await loop.deleteGuild("guild_1");
     assert.deepEqual(sandboxes.destroyed, []);
     assert.deepEqual(
       sandboxes.stopped.map((item) => item.agentId),
@@ -715,14 +714,14 @@ describe("generation", { concurrency: 1 }, () => {
     const db = guildDb(["a_1"]);
     const notes = guildNotes();
     const loop = makeLoop(db, notes, tempDir("guilds-gen-"), new FakeSandboxes());
-    await loop.deleteGuild("guild_1", OPERATOR_ACTOR);
-    await loop.deleteGuild("guild_1", OPERATOR_ACTOR);
+    await loop.deleteGuild("guild_1");
+    await loop.deleteGuild("guild_1");
     assert.deepEqual(db.purged, ["guild_1", "guild_1"]);
   });
 
   test("delete_guild_missing_is_not_found", async () => {
     const loop = makeLoop(guildDb([]), guildNotes(), tempDir("guilds-gen-"), new FakeSandboxes());
-    await assert.rejects(() => loop.deleteGuild("guild_missing", OPERATOR_ACTOR), (error: unknown) => {
+    await assert.rejects(() => loop.deleteGuild("guild_missing"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /not found/);
       assert.equal(error.status, 404);
@@ -733,7 +732,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("delete_guild_conflicts_while_member_generating", async () => {
     const loop = makeLoop(guildDb(["a_1", "a_2"]), guildNotes(), tempDir("guilds-gen-"), new FakeSandboxes());
     await loop.beginGeneration("r_1", "a_2");
-    await assert.rejects(() => loop.deleteGuild("guild_1", OPERATOR_ACTOR), (error: unknown) => {
+    await assert.rejects(() => loop.deleteGuild("guild_1"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /already generating/);
       assert.equal(error.status, 409);
@@ -744,7 +743,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("delete_guild_conflicts_while_dispatching", async () => {
     const loop = makeLoop(guildDb(["a_1"]), guildNotes(), tempDir("guilds-gen-"), new FakeSandboxes());
     loop.groupChat._dispatch_tasks.set("guild_1", { promise: hangForever(), done: () => false });
-    await assert.rejects(() => loop.deleteGuild("guild_1", OPERATOR_ACTOR), (error: unknown) => {
+    await assert.rejects(() => loop.deleteGuild("guild_1"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /delivering/);
       assert.equal(error.status, 409);
@@ -900,7 +899,7 @@ describe("generation", { concurrency: 1 }, () => {
         }
       }
     };
-    await loop.deleteGuild("guild_1", OPERATOR_ACTOR);
+    await loop.deleteGuild("guild_1");
     assert.ok(notes.rejected);
     assert.equal(notes.rejected.status, 409);
     assert.match(notes.rejected.detail, /being deleted/);
@@ -937,6 +936,9 @@ describe("generation", { concurrency: 1 }, () => {
       async writeNote(actor: { orgId: string; agentId: string | null }, args: { key: string; content: string }) {
         const href = `org/${actor.orgId}/agents/${actor.agentId}/${args.key}`;
         return { href, row: noteRowAt(href, args.content) };
+      },
+      async guildsToAnnounce() {
+        return [];
       },
     };
     const loop = makeLoop(db, notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {

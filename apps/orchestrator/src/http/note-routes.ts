@@ -6,19 +6,20 @@ import { loadOperatorActor } from "../artifacts/actors.js";
 import {
   latestFileChanges,
   listPathChanges,
-  readEmbeddableNotes,
 } from "../artifacts/host-files.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import {
   deleteOrgNote,
-  listPageNotes,
+  listAgentPageNotes,
+  listGuildPageNotes,
+  listOrgPageNotes,
   readAgentFile,
   readMemoryHistory,
+  readOperatorEmbeddableNotes,
   readOrgNote,
   writeAgentFile,
   writeOrgNote,
-  type NotesPage,
   type OperatorNotesServices,
 } from "../notes/operator.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
@@ -28,13 +29,15 @@ import { AgentParams, filePathParam, GuildParams } from "./params.js";
 import type { UserRow } from "../db/users.js";
 
 /**
- * A note's content, the version the writer edited (0 for a note that must not exist yet), and the
- * subject and mode of the row its access list starts with when the write creates it.
+ * A note's content, the version the writer edited (0 for a note that must not exist yet), and, when
+ * the write creates it, the subject and mode of the row its access list starts with and the guild
+ * it is homed in.
  */
 const NoteWriteSchema = Type.Object({
   content: Type.Optional(Type.String()),
   expected_version: Type.Optional(Type.Integer()),
   access: Type.Optional(SubjectEntrySchema),
+  home_guild_id: Type.Optional(Type.String()),
 });
 
 /** An agent's `task.md` or `memory.md` content, and the version the writer edited when they name one. */
@@ -49,6 +52,12 @@ const AGENT_FILES = ["task.md", "memory.md"] as const;
 /** The file a change log or the embeddable notes name by its display path. */
 const DisplayPathQuerySchema = Type.Object({ display_path: Type.Optional(Type.String()) });
 
+/** The embeddable notes a query asks for: one by its display path, or an agent's sections, or every one. */
+const EmbeddableNotesQuerySchema = Type.Object({
+  display_path: Type.Optional(Type.String()),
+  agent_id: Type.Optional(Type.String()),
+});
+
 /** The files whose newest change a query asks for, comma-separated. */
 const DisplayPathsQuerySchema = Type.Object({ display_paths: Type.Optional(Type.String()) });
 
@@ -56,9 +65,6 @@ const DisplayPathsQuerySchema = Type.Object({ display_paths: Type.Optional(Type.
 const DisplayPathsSchema = Type.Object({
   display_paths: Type.Optional(Type.Array(Type.String())),
 });
-
-/** The page whose notes a route lists, and the user it lists them for. */
-type NoteScope = { page: NotesPage; user: UserRow };
 
 /** The paths a list names, trimmed, without the empty ones. */
 function pathsOf(items: string[]): string[] {
@@ -78,33 +84,23 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
     stream: deps.generation?.groupChat ?? null,
   };
 
-  async function guildNotes(request: FastifyRequest, guildId: string): Promise<NoteScope> {
-    const user = await currentUser(db, request, deps);
-    const guild = await requireVisibleGuild(db, guildId, user.id);
-    return { page: { scope: "guild", guild }, user };
-  }
-
-  async function agentNotes(request: FastifyRequest, agentId: string): Promise<NoteScope> {
-    const user = await currentUser(db, request, deps);
-    const agent = await requireVisibleAgent(db, agentId, user.id);
-    return { page: { scope: "agent", agent }, user };
-  }
-
   async function orgScope(request: FastifyRequest): Promise<{ orgId: string; user: UserRow }> {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     return { orgId: String(org.id), user };
   }
 
-  const listNotes = (scope: NoteScope) => notesRead(listPageNotes(services, scope.page, scope.user));
+  app.get("/api/guilds/:guild_id/notes", { schema: { params: GuildParams } }, async (request) => {
+    const user = await currentUser(db, request, deps);
+    const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
+    return notesRead(listGuildPageNotes(services, guild, user));
+  });
 
-  app.get("/api/guilds/:guild_id/notes", { schema: { params: GuildParams } }, async (request) =>
-    listNotes(await guildNotes(request, request.params.guild_id)),
-  );
-
-  app.get("/api/agents/:agent_id/notes", { schema: { params: AgentParams } }, async (request) =>
-    listNotes(await agentNotes(request, request.params.agent_id)),
-  );
+  app.get("/api/agents/:agent_id/notes", { schema: { params: AgentParams } }, async (request) => {
+    const user = await currentUser(db, request, deps);
+    const agent = await requireVisibleAgent(db, request.params.agent_id, user.id);
+    return notesRead(listAgentPageNotes(services, agent, user));
+  });
 
   for (const name of AGENT_FILES) {
     app.get(`/api/agents/:agent_id/notes/${name}`, { schema: { params: AgentParams } }, async (request) => {
@@ -127,7 +123,7 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
 
   app.get("/api/org/notes", async (request) => {
     const { orgId, user } = await orgScope(request);
-    return listNotes({ page: { scope: "org", orgId }, user });
+    return notesRead(listOrgPageNotes(services, orgId, user));
   });
 
   app.get("/api/org/notes/*", async (request) => {
@@ -142,6 +138,7 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
       content: request.body.content ?? "",
       expectedVersion: request.body.expected_version,
       access: request.body.access,
+      homeGuildId: request.body.home_guild_id,
     };
     return writeOrgNote(services, orgId, user, write);
   });
@@ -196,11 +193,14 @@ export async function registerNoteRoutes(app: RouteApp, deps: RouteDeps): Promis
 
   app.get(
     "/api/org/embeddable-notes",
-    { schema: { querystring: DisplayPathQuerySchema } },
+    { schema: { querystring: EmbeddableNotesQuerySchema } },
     async (request) => {
-      const actor = await orgActor(request);
-      const displayPath = (request.query.display_path ?? "").trim();
-      return readEmbeddableNotes(deps.artifacts, actor, displayPath);
+      const user = await currentUser(db, request, deps);
+      const org = await currentOrg(db, request, user);
+      return readOperatorEmbeddableNotes(services, String(org.id), user, {
+        displayPath: (request.query.display_path ?? "").trim(),
+        agentId: (request.query.agent_id ?? "").trim(),
+      });
     },
   );
 }

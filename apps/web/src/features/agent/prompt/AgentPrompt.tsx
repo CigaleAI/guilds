@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../../../api/client";
 import {
   useAgentTask,
-  useEmbeddableNotes,
+  useAgentEmbeddableNotes,
   useEmbedStatus,
   useSaveTask,
 } from "../../../api/queries/notes";
@@ -31,7 +31,7 @@ import type { InsertKind } from "@guildsrun/ui";
 import { EmbedPreview } from "../../notes/EmbedPreview";
 import { embedIsBroken } from "../../notes/embeds";
 import { InsertPicker } from "../../notes/InsertPicker";
-import { taskEdit, type TaskDraft } from "./taskContext";
+import { taskDraftAfterSave, taskEdit, type TaskDraft } from "./taskContext";
 import { LatestChange } from "../../notes/LatestChange";
 
 const currentVersion = "current";
@@ -282,7 +282,7 @@ export function AgentPrompt() {
   const { org } = useIdentity();
   const task = useAgentTask(agentId);
   const save = useSaveTask(agentId, guildId);
-  const notes = useEmbeddableNotes();
+  const notes = useAgentEmbeddableNotes(agentId);
   const collections = useCollections();
   const embedStatus = useEmbedStatus(guildId);
 
@@ -359,7 +359,7 @@ export function AgentPrompt() {
     if (!task.data) return;
     void saveTask(value, draft?.base ?? task.data.version).then((next) => {
       if (!next) return;
-      setDraft(null);
+      setDraft((current) => taskDraftAfterSave(current, value, next));
       toast({
         kind: "success",
         title: next.version ? `Task saved as v${next.version}` : "Task saved",
@@ -470,7 +470,9 @@ export function AgentPrompt() {
       <InsertPicker
         kind={picking}
         notes={notes.data}
+        notesError={notes.error}
         collections={collections.data}
+        collectionsError={collections.error}
         orgId={org.id}
         onPick={(markup) => {
           setPicking(null);
@@ -481,7 +483,9 @@ export function AgentPrompt() {
       <EmbedPreview
         path={previewPath}
         notes={notes.data}
+        notesError={notes.error}
         collections={collections.data}
+        collectionsError={collections.error}
         orgId={org.id}
         onClose={() => setPreviewPath(null)}
       />

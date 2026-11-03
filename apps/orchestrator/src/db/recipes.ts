@@ -71,11 +71,16 @@ export async function getRecipe(pool: Queryable, recipeId: string): Promise<Reci
   return result.rows[0] ?? null;
 }
 
-/** An organisation's hundred most recently updated recipes. */
-export async function listRecipes(pool: Queryable, orgId: string): Promise<RecipeRow[]> {
+/**
+ * An organisation's hundred most recently updated recipes but those captured from one of
+ * `hiddenGuildIds`.
+ */
+export async function listRecipes(pool: Queryable, orgId: string, hiddenGuildIds: readonly string[]): Promise<RecipeRow[]> {
   const result = await pool.query<RecipeRow>(
-    `SELECT ${RECIPE_COLUMNS} FROM recipes WHERE org_id = $1 ORDER BY updated_at DESC LIMIT 100`,
-    [orgId],
+    `SELECT ${RECIPE_COLUMNS} FROM recipes
+      WHERE org_id = $1 AND (source_guild_id IS NULL OR source_guild_id <> ALL($2::text[]))
+      ORDER BY updated_at DESC LIMIT 100`,
+    [orgId, hiddenGuildIds],
   );
   return result.rows;
 }

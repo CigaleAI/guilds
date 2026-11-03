@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { ApiError, api } from "../client";
 import type { JsonObject } from "../wire";
+import { fileKeys } from "./files";
 import { noteKeys } from "./notes";
 import type {
   AccessBinding,
@@ -250,8 +251,9 @@ const isStudioChangeView = (query: Query) =>
   (query.queryKey[2] === "activity" || query.queryKey[3] === "state");
 
 /**
- * Replaces a note's or a table's access list with the full list given. The change refreshes every
- * access list and reach, and the Studio views that record it.
+ * Replaces a note's, a file's or a table's access list with the full list given. The change
+ * refreshes every access list and reach, the notes and files lists and the notes a Task can embed,
+ * which show how each page reaches an item, and the Studio views that record it.
  */
 export function useSetItemAccess(target: AccessTarget) {
   const client = useQueryClient();
@@ -261,6 +263,9 @@ export function useSetItemAccess(target: AccessTarget) {
     onSuccess: (list) => {
       client.setQueryData(accessKeys.itemAccess(target), list);
       void client.invalidateQueries({ queryKey: accessKeys.accessLists });
+      void client.invalidateQueries({ queryKey: noteKeys.noteLists });
+      void client.invalidateQueries({ queryKey: fileKeys.fileLists });
+      void client.invalidateQueries({ queryKey: noteKeys.embeddableNotes });
       void client.invalidateQueries({ predicate: isStudioChangeView });
       // A Task embed resolves as its agent, so a changed list can mend or break one.
       void client.invalidateQueries({ queryKey: noteKeys.embedStatuses });

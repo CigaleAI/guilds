@@ -63,5 +63,6 @@ export function editScope(call: StudioToolCall): EditScope {
     sourceGuildId: call.sourceGuildId,
     sessionId: call.session.id,
     user: call.user,
+    hidden: call.hidden,
   };
 }

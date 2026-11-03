@@ -7,6 +7,7 @@ import type {
   RawServerDefault,
 } from "fastify";
 import type { ArtifactFiles } from "../artifacts/files.js";
+import type { ItemAccessChange } from "../artifacts/access-lists.js";
 import type { SharedFileChange } from "../artifacts/operator-files.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { Database } from "../db/client.js";
@@ -64,6 +65,8 @@ export type AppDeps = {
   files?: ArtifactFiles;
   /** Tells a guild that one of its shared files changed; file writes announce nothing when absent. */
   publishSharedFileChanged?: (guildId: string, change: SharedFileChange) => Promise<void>;
+  /** Tells a guild that the access list of a note or a file its page lists changed; access writes announce nothing when absent. */
+  publishItemAccessChanged?: (guildId: string, change: ItemAccessChange) => Promise<void>;
   scripts: Scripts;
   schedules: Schedules;
   /** Tells a guild that one of its agents' routines changed; routine writes announce nothing when absent. */

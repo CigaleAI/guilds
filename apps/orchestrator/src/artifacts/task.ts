@@ -6,6 +6,7 @@ import {
   collectTaskEmbeds,
   EMBED_DEPTH,
   embedSource,
+  embedSourceShownTo,
   inlineTaskEmbeds,
   inspectEmbed,
   inspectTaskEmbeds,
@@ -227,7 +228,21 @@ export async function expandTaskEmbeds(source: EmbedSource, actor: ArtifactActor
 
 /** The agent's Task, inlined as its next run reads it, with the agent's Memory. */
 export async function agentTask(store: ArtifactStore, agent: AgentRow): Promise<AgentTaskView> {
-  const expanded = await expandTaskEmbeds(embedSource(store), taskEmbedActor(agent.org_id, agent), agent.task);
+  return readAgentTask(store, embedSource(store), agent);
+}
+
+/**
+ * The agent's Task as the operator `viewer` is shown it: inlined as its next run reads it, but with
+ * the unreachable marker in place of each note, file, or table hidden from the viewer; with the
+ * agent's Memory.
+ */
+export async function agentTaskShownTo(store: ArtifactStore, viewer: ArtifactActor, agent: AgentRow): Promise<AgentTaskView> {
+  return readAgentTask(store, embedSourceShownTo(store, viewer), agent);
+}
+
+/** The agent's Task with its embeds inlined from `source` as the agent reads them, with the agent's Memory. */
+async function readAgentTask(store: ArtifactStore, source: EmbedSource, agent: AgentRow): Promise<AgentTaskView> {
+  const expanded = await expandTaskEmbeds(source, taskEmbedActor(agent.org_id, agent), agent.task);
   const memory = await getMemoryRow(store, taskEmbedActor(agent.org_id, agent), agent.id);
   return {
     text: agent.task,

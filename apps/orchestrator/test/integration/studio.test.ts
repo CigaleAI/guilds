@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { NO_HIDDEN_GUILDS } from "../../src/artifacts/types.js";
 import { writeBinding } from "../../src/access/bindings.js";
 import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
@@ -58,7 +59,7 @@ import {
 import { listConfigChanges } from "../../src/db/config-changes.js";
 import { userActor } from "../../src/lib/change-actor.js";
 import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js";
-import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";
+import { getGuild, hiddenGuildsFor, insertGuild, updateGuild } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { getAgentTask } from "../../src/db/agents.js";
@@ -341,6 +342,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
         user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
+        hidden: NO_HIDDEN_GUILDS,
         generation: 1,
       },
       {
@@ -386,6 +388,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
         user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
+        hidden: NO_HIDDEN_GUILDS,
         generation: 1,
       },
       { agent_id: "writer", proposed_content: "Write notes.\n", rationale: "Shorter.", evidence_refs: [] },
@@ -421,6 +424,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
         user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
+        hidden: NO_HIDDEN_GUILDS,
         generation: 1,
       },
       {
@@ -587,6 +591,7 @@ test("studio reads agent access, script source, and granted connections", { time
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_access",
+      hidden: NO_HIDDEN_GUILDS,
       generation: 1,
     });
 
@@ -993,6 +998,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_ev",
+      hidden: NO_HIDDEN_GUILDS,
       generation: 1,
     });
     const sessionRow = async () => (await getStudioSession(db, session.id))!;
@@ -1288,6 +1294,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_ed",
+      hidden: NO_HIDDEN_GUILDS,
       generation: 1,
     });
     // Store the call and its result the way the runner commits them.
@@ -1550,6 +1557,7 @@ test("studio proposes tables to create, change, and delete that the operator app
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_tb",
+      hidden: await hiddenGuildsFor(db, "org_home", "user_operator"),
       generation: 1,
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
@@ -1922,6 +1930,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_nw",
+      hidden: NO_HIDDEN_GUILDS,
       generation: 1,
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
@@ -2184,6 +2193,7 @@ test("studio proposes routines to create, change, and delete that the operator a
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_rt",
+      hidden: NO_HIDDEN_GUILDS,
       generation: 1,
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {

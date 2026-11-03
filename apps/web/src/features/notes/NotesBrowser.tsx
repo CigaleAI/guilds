@@ -1,19 +1,20 @@
 import { useBlocker } from "@tanstack/react-router";
 import { ArrowLeft, Copy, FilePlus, FileText, Pin, ShieldCheck, Trash2 } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "../../api/client";
 import { useCollections } from "../../api/queries/tables";
 import {
   useDeleteNote,
   useEmbeddableNotes,
   useNote,
-  useNoteList,
+  useNoteSections,
   useSaveNote,
 } from "../../api/queries/notes";
-import type { AccessRow, AccessSubject } from "../../api/types/access";
-import type { FileContent, NoteItem } from "../../api/types/notes";
+import type { AccessRow, ItemSections, ReachSubject } from "../../api/types/access";
+import type { EmbeddableNoteList, FileContent, NoteItem } from "../../api/types/notes";
 import { copyText } from "../../app/clipboard";
+import { draftAfterSave } from "../../app/drafts";
 import { useIdentity } from "../../app/identity";
 import { useMediaQuery, visiblePanes, wideScreen } from "../../app/media";
 import {
@@ -21,11 +22,12 @@ import {
   Button,
   Icon,
   IconButton,
+  ModeTag,
+  Row,
+  SectionList,
   TaskEditor,
   SearchField,
-  Segmented,
   TextField,
-  FileTree,
   Banner,
   EmptyState,
   SkeletonRows,
@@ -38,60 +40,50 @@ import {
   DialogHeader,
   toast,
 } from "@guildsrun/ui";
-import type { FileTreeNode, InsertKind } from "@guildsrun/ui";
-import { AccessListPanel } from "../access/AccessListPanel";
+import type { InsertKind } from "@guildsrun/ui";
+import { AccessListDialog } from "../access/AccessListDialog";
+import { HomeGuildField } from "../access/HomeGuildField";
+import { homeLabel, isUnreached, listedItems, type OpenItem } from "../access/listedItems";
+import { sectionCopy } from "../access/sectionCopy";
 import { StartingAccessField } from "../access/StartingAccessField";
+import { UnlistedItem } from "../access/UnlistedItem";
+import { useOpenItem } from "../access/useOpenItem";
 import { EmbedPreview } from "./EmbedPreview";
 import { embedIsBroken } from "./embeds";
 import { InsertPicker } from "./InsertPicker";
-import { buildTree, newNotePath } from "./noteTree";
+import { newNotePath, searchNotes } from "./noteList";
 import { LatestChange, type OpenChangeStep } from "./LatestChange";
 
-/**
- * A page whose notes the browser lists: an agent's lists the notes it reads, a guild's the notes
- * whose access list names the guild, one of its agents or the organisation, the organisation's
- * every note. A note created from it starts with a row for the page's subject.
- */
-export type NoteScope = { title: string; page: AccessSubject };
-
 type NotesBrowserProps = {
-  /** The pages to browse, the first open at start; the organisation's is the last. */
-  scopes: NoteScope[];
+  /** The guild's or agent's page whose notes the browser lists; a note created from it starts with a row for it. */
+  page: ReachSubject;
+  /** The page's guild, or the agent's: a note created from the page is homed in it. */
   guildId: string;
   /** Opens the run step that changed a file; by default the run opens in its agent's chat. */
   onOpenStep?: OpenChangeStep;
-  /** A note to open first, by display path; the organisation's list, which holds every note, opens with it. */
+  /** A note to open first, by display path, in either section. */
   initialPath?: string | undefined;
   /** Pins the open file to a question for Studio's coach. */
   onAsk?: ((item: NoteItem) => void) | undefined;
 };
 
-const noNotes: NoteItem[] = [];
+const noNotes: ItemSections<NoteItem> = { own: [], shared: [] };
 
-/** What each page's list holds, as its empty state says. */
-const emptyNotes: Record<AccessSubject["type"], string> = {
-  agent: "Notes this agent reads appear here.",
-  guild: "Notes open to this guild, its agents or the organisation appear here.",
-  org: "Every note of the organisation appears here.",
-};
+const noteAccessIntro = "Who reads and writes this note.";
 
 /**
- * Notes by page: each page's list, and the open note in an editor. A save over a version someone
- * saved since is refused and the text kept; embeds work as in the Task.
+ * A guild's or an agent's notes in two sections, the guild's own and those shared with it, beside
+ * the open note in an editor. A greyed note, which no row reaches for the page, opens its access
+ * list. A save over a version someone saved since is refused and the text kept; embeds work as in
+ * the Task.
  */
-export function NotesBrowser({ scopes, guildId, onOpenStep, initialPath, onAsk }: NotesBrowserProps) {
-  const initialScope = initialPath ? scopes.find((item) => item.page.type === "org")?.page.type : undefined;
-  const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.page.type ?? "guild");
-  const scope = scopes.find((item) => item.page.type === scopeId) ?? scopes[0];
-  const pageOf = (type: AccessSubject["type"]) => scopes.find((item) => item.page.type === type)?.page ?? null;
-  const lists = {
-    agent: useNoteList(pageOf("agent")),
-    guild: useNoteList(pageOf("guild")),
-    org: useNoteList(pageOf("org")),
-  };
-  const [selected, setSelected] = useState<Partial<Record<AccessSubject["type"], string>>>(() =>
-    initialScope && initialPath ? { [initialScope]: initialPath } : {},
-  );
+export function NotesBrowser({ page, guildId, onOpenStep, initialPath, onAsk }: NotesBrowserProps) {
+  const wide = useMediaQuery(wideScreen);
+  const list = useNoteSections(page);
+  const [listOpen, setListOpen] = useState(!initialPath);
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [accessItem, setAccessItem] = useState<NoteItem | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const unsaved = Object.keys(drafts).length > 0;
 
@@ -101,115 +93,22 @@ export function NotesBrowser({ scopes, guildId, onOpenStep, initialPath, onAsk }
     withResolver: true,
   });
 
-  if (!scope) return null;
-
-  return (
-    <>
-      <ScopeNotes
-        scope={scope}
-        list={lists[scope.page.type]}
-        tabs={
-          scopes.length > 1 ? (
-            <Segmented
-              size="sm"
-              label="Notes list"
-              value={scope.page.type}
-              onValueChange={setScopeId}
-              options={scopes.map((item) => ({
-                value: item.page.type,
-                label: item.title,
-                count: lists[item.page.type].data?.length ?? 0,
-              }))}
-            />
-          ) : null
-        }
-        guildId={guildId}
-        onOpenStep={onOpenStep}
-        onAsk={onAsk}
-        chosenPath={selected[scope.page.type]}
-        onChoose={(path) => setSelected({ ...selected, [scope.page.type]: path })}
-        drafts={drafts}
-        onDraft={(path, text) =>
-          setDrafts((current) => {
-            const next = { ...current };
-            if (text === null) delete next[path];
-            else next[path] = text;
-            return next;
-          })
-        }
-        startsOnNote={Boolean(initialPath)}
-      />
-      <ConfirmDialog
-        kind="destructive"
-        open={blocker.status === "blocked"}
-        onOpenChange={(openDialog) => !openDialog && blocker.reset?.()}
-        title="Leave without saving?"
-        description="Unsaved changes to notes are lost."
-        confirmLabel="Discard changes"
-        cancelLabel="Keep editing"
-        onConfirm={() => blocker.proceed?.()}
-      />
-    </>
-  );
-}
-
-type ScopeNotesProps = {
-  scope: NoteScope;
-  list: UseQueryResult<NoteItem[]>;
-  /** The list picker above the list; null when there is one list. */
-  tabs: ReactNode;
-  guildId: string;
-  onOpenStep: OpenChangeStep | undefined;
-  onAsk: ((item: NoteItem) => void) | undefined;
-  /** The note chosen in this list, by display path; without one the first note opens. */
-  chosenPath: string | undefined;
-  onChoose: (path: string | undefined) => void;
-  /** The unsaved text of every note edited in the browser, by display path. */
-  drafts: Record<string, string>;
-  /** Keeps a note's unsaved text, or drops it with null. */
-  onDraft: (path: string, text: string | null) => void;
-  /** Whether a phone starts on the open note instead of the list. */
-  startsOnNote: boolean;
-};
-
-/** One page's notes: the searchable tree beside the open note, one at a time on a phone, and a new note. */
-function ScopeNotes({
-  scope,
-  list,
-  tabs,
-  guildId,
-  onOpenStep,
-  onAsk,
-  chosenPath,
-  onChoose,
-  drafts,
-  onDraft,
-  startsOnNote,
-}: ScopeNotesProps) {
-  const wide = useMediaQuery(wideScreen);
-  const [listOpen, setListOpen] = useState(!startsOnNote);
-  const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  const items = list.data ?? noNotes;
-  const open = items.find((item) => item.display_path === chosenPath) ?? items[0];
-  const panes = visiblePanes(wide, listOpen, Boolean(open));
-  const pickFile = (path: string) => {
-    onChoose(path);
+  const sections = list.data ?? noNotes;
+  const { opened, open, choose } = useOpenItem(sections, initialPath);
+  const panes = visiblePanes(wide, listOpen, opened.state !== "none");
+  const showList = wide ? undefined : () => setListOpen(true);
+  const pickNote = (path: string) => {
+    choose(path);
     setListOpen(false);
   };
-  const empty = (
-    <EmptyState
-      icon={FileText}
-      title="No notes yet"
-      description={`${emptyNotes[scope.page.type]} Agents write notes with their note tools.`}
-      action={
-        <Button size="sm" onClick={() => setCreating(true)}>
-          New note
-        </Button>
-      }
-    />
-  );
+  const keepDraft = (path: string, draftOf: (current: string | null) => string | null) =>
+    setDrafts((current) => {
+      const text = draftOf(current[path] ?? null);
+      const next = { ...current };
+      if (text === null) delete next[path];
+      else next[path] = text;
+      return next;
+    });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -219,7 +118,6 @@ function ScopeNotes({
           panes.list ? "flex flex-1" : "hidden",
         )}
       >
-        {tabs}
         <div className="flex items-center gap-2">
           <SearchField
             className="min-w-0 flex-1"
@@ -238,12 +136,12 @@ function ScopeNotes({
         </div>
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
           <NoteListContent
-            scope={scope}
+            page={page}
             list={list}
-            tree={buildTree(items, query)}
+            shown={searchNotes(sections, query)}
+            searching={Boolean(query.trim())}
             selectedPath={open?.display_path ?? null}
-            onSelect={pickFile}
-            empty={wide ? null : <div className="grid flex-1 place-items-center p-2">{empty}</div>}
+            onPick={(item) => (isUnreached(item) ? setAccessItem(item) : pickNote(item.display_path))}
           />
         </div>
       </aside>
@@ -251,72 +149,183 @@ function ScopeNotes({
       <section className={cn("min-h-0 min-w-0 flex-1 flex-col", panes.item ? "flex" : "hidden")}>
         {open ? (
           <NoteView
-            key={`${scope.page.type}:${open.display_path}`}
+            key={open.display_path}
             item={open}
             guildId={guildId}
             onOpenStep={onOpenStep}
             onAsk={onAsk}
-            onBack={wide ? undefined : () => setListOpen(true)}
+            onAccess={() => setAccessItem(open)}
+            onBack={showList}
             draft={drafts[open.display_path]}
-            onDraft={(text) => onDraft(open.display_path, text)}
+            onDraft={(text) => keepDraft(open.display_path, () => text)}
+            onSaved={(text) => keepDraft(open.display_path, (current) => draftAfterSave(current, text))}
             onDeleted={() => {
-              onChoose(undefined);
+              choose(undefined);
               setListOpen(true);
             }}
           />
-        ) : list.isPending ? null : (
-          <div className="grid flex-1 place-items-center p-6">{empty}</div>
+        ) : !list.isSuccess ? null : (
+          <div className="grid flex-1 place-items-center p-6">
+            <NoOpenNote
+              opened={opened}
+              listed={listedItems(sections).length > 0}
+              onCreate={() => setCreating(true)}
+              onShowList={showList}
+            />
+          </div>
         )}
       </section>
 
+      {accessItem ? (
+        <AccessListDialog
+          target={{ kind: "note", id: accessItem.id }}
+          name={accessItem.path}
+          intro={noteAccessIntro}
+          onClose={() => setAccessItem(null)}
+        />
+      ) : null}
       <NewNoteDialog
-        key={scope.page.type}
         open={creating}
         onOpenChange={setCreating}
-        scope={scope}
-        onCreated={(file) => pickFile(file.display_path)}
+        page={page}
+        guildId={guildId}
+        onCreated={(file) => pickNote(file.display_path)}
+      />
+      <ConfirmDialog
+        kind="destructive"
+        open={blocker.status === "blocked"}
+        onOpenChange={(openDialog) => !openDialog && blocker.reset?.()}
+        title="Leave without saving?"
+        description="Unsaved changes to notes are lost."
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        onConfirm={() => blocker.proceed?.()}
       />
     </div>
   );
 }
 
-type NoteListContentProps = {
-  scope: NoteScope;
-  list: UseQueryResult<NoteItem[]>;
-  /** The list's notes that match the search. */
-  tree: FileTreeNode[];
-  selectedPath: string | null;
-  onSelect: (path: string) => void;
-  /** What a list without notes shows; null where the note pane shows it instead. */
-  empty: ReactNode;
+type NoOpenNoteProps = {
+  /** What the page opens, which is no note. */
+  opened: OpenItem<NoteItem>;
+  /** Whether the page lists any note, every one of them greyed when none is open. */
+  listed: boolean;
+  onCreate: () => void;
+  /** Shows the list again, on a screen where it and the note pane take turns. */
+  onShowList: (() => void) | undefined;
 };
 
-/** One page's list of notes as it loads: the tree, a failure, no match for the search, or none yet. */
-function NoteListContent({
-  scope,
-  list,
-  tree,
-  selectedPath,
-  onSelect,
-  empty,
-}: NoteListContentProps) {
+/**
+ * The note pane with no note open: the chosen path is not listed on the page, no note is listed
+ * yet, or every listed note is greyed.
+ */
+function NoOpenNote({ opened, listed, onCreate, onShowList }: NoOpenNoteProps) {
+  if (opened.state === "unlisted") {
+    return <UnlistedItem kind="note" path={opened.path} icon={FileText} onShowList={onShowList} />;
+  }
+  return (
+    <EmptyState
+      icon={FileText}
+      title={listed ? "No note reached" : "No notes yet"}
+      description={
+        listed
+          ? "No row reaches the listed notes for this page. Open a greyed note to change its access."
+          : "Agents write notes with their note tools."
+      }
+      action={
+        <Button size="sm" onClick={onCreate}>
+          New note
+        </Button>
+      }
+    />
+  );
+}
+
+type NoteListContentProps = {
+  page: ReachSubject;
+  list: UseQueryResult<ItemSections<NoteItem>>;
+  /** The page's notes that match the search. */
+  shown: ItemSections<NoteItem>;
+  /** Whether a search is typed, so an empty section says no note matches. */
+  searching: boolean;
+  selectedPath: string | null;
+  /** Opens a note, or the access list of a greyed one. */
+  onPick: (item: NoteItem) => void;
+};
+
+/** The page's notes as they load: the two sections, or a failure. */
+function NoteListContent({ page, list, shown, searching, selectedPath, onPick }: NoteListContentProps) {
   if (list.isPending) return <SkeletonRows rows={5} label="Loading notes" />;
   if (list.isError) {
     return <Banner tone="error" title="Couldn't load the notes" meta={list.error.message} />;
   }
-  if (tree.length) {
-    return (
-      <FileTree
-        key={scope.page.type}
-        label={`${scope.title} notes`}
-        nodes={tree}
-        selectedId={selectedPath}
-        onSelect={(node) => node.kind === "file" && onSelect(node.id)}
+  const copy = sectionCopy("note", page.type);
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionList
+        label={copy.ownLabel}
+        count={shown.own.length}
+        empty={searching ? copy.noMatch : copy.ownEmpty}
+      >
+        {shown.own.map((item) => (
+          <NoteRow
+            key={item.id}
+            item={item}
+            selected={item.display_path === selectedPath}
+            onPick={onPick}
+          />
+        ))}
+      </SectionList>
+      <SectionList
+        label={copy.sharedLabel}
+        count={shown.shared.length}
+        empty={searching ? copy.noMatch : copy.sharedEmpty}
+      >
+        {shown.shared.map((item) => (
+          <NoteRow
+            key={item.id}
+            item={item}
+            meta={homeLabel(item)}
+            selected={item.display_path === selectedPath}
+            onPick={onPick}
+          />
+        ))}
+      </SectionList>
+    </div>
+  );
+}
+
+type NoteRowProps = {
+  item: NoteItem;
+  /** The caption under the key: where a shared note is homed. */
+  meta?: string;
+  selected: boolean;
+  onPick: (item: NoteItem) => void;
+};
+
+/** One listed note: its key and how the page reaches it, greyed when no row does. */
+function NoteRow({ item, meta, selected, onPick }: NoteRowProps) {
+  const unreached = isUnreached(item);
+  return (
+    <Row
+      asChild
+      interactive
+      density="compact"
+      mono
+      muted={unreached}
+      selected={selected}
+      title={item.path}
+      meta={meta}
+      trail={<ModeTag mode={item.viewer_mode} />}
+    >
+      <button
+        type="button"
+        aria-current={selected ? "true" : undefined}
+        title={unreached ? "No row reaches it for this page: open its access list" : undefined}
+        onClick={() => onPick(item)}
       />
-    );
-  }
-  if (list.data.length) return <p className="px-2 text-sm text-muted">No notes match.</p>;
-  return empty;
+    </Row>
+  );
 }
 
 type NoteViewProps = {
@@ -324,9 +333,13 @@ type NoteViewProps = {
   guildId: string;
   onOpenStep?: OpenChangeStep | undefined;
   onAsk?: ((item: NoteItem) => void) | undefined;
+  /** Opens the note's access list. */
+  onAccess: () => void;
   onBack?: (() => void) | undefined;
   draft: string | undefined;
   onDraft: (text: string | null) => void;
+  /** Settles the draft once this text from it is saved, keeping what was typed during the save. */
+  onSaved: (text: string) => void;
   onDeleted: () => void;
 };
 
@@ -336,9 +349,11 @@ function NoteView({
   guildId,
   onOpenStep,
   onAsk,
+  onAccess,
   onBack,
   draft,
   onDraft,
+  onSaved,
   onDeleted,
 }: NoteViewProps) {
   const { org } = useIdentity();
@@ -351,10 +366,13 @@ function NoteView({
   const resolvePick = useRef<((markup: string | null) => void) | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [sharing, setSharing] = useState(false);
 
-  const otherNotes = useMemo(
-    () => notes.data?.filter((note) => note.display_path !== item.display_path),
+  const otherNotes = useMemo<EmbeddableNoteList | undefined>(
+    () =>
+      notes.data && {
+        kind: "list",
+        notes: notes.data.notes.filter((note) => note.display_path !== item.display_path),
+      },
     [notes.data, item.display_path],
   );
   const isBroken = (path: string) =>
@@ -393,7 +411,7 @@ function NoteView({
             Ask the coach
           </Button>
         ) : null}
-        <Button variant="outline" size="xs" onClick={() => setSharing(true)}>
+        <Button variant="outline" size="xs" onClick={onAccess}>
           <Icon icon={ShieldCheck} size={14} />
           Access
         </Button>
@@ -438,8 +456,8 @@ function NoteView({
                 ...(file.data?.version !== undefined ? { expected_version: file.data.version } : {}),
               },
               {
-                onSuccess: () => {
-                  onDraft(null);
+                onSuccess: (_file, { content }) => {
+                  onSaved(content);
                   toast({ kind: "success", title: `${item.path} saved` });
                 },
                 onError: (error) => {
@@ -473,7 +491,9 @@ function NoteView({
       <InsertPicker
         kind={picking}
         notes={otherNotes}
+        notesError={notes.error}
         collections={collections.data}
+        collectionsError={collections.error}
         orgId={org.id}
         onPick={(markup) => {
           setPicking(null);
@@ -484,11 +504,12 @@ function NoteView({
       <EmbedPreview
         path={previewPath}
         notes={notes.data}
+        notesError={notes.error}
         collections={collections.data}
+        collectionsError={collections.error}
         orgId={org.id}
         onClose={() => setPreviewPath(null)}
       />
-      <NoteAccessDialog item={item} open={sharing} onOpenChange={setSharing} />
       <ConfirmDialog
         kind="destructive"
         open={deleting}
@@ -522,48 +543,24 @@ function NoteView({
   );
 }
 
-type NoteAccessDialogProps = {
-  item: NoteItem;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
-
-/** Who reaches a note: its access list, in a dialog over the open note. */
-function NoteAccessDialog({ item, open, onOpenChange }: NoteAccessDialogProps) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader title={`Access to ${item.path}`} />
-        <DialogBody>
-          <AccessListPanel
-            target={{ kind: "note", id: item.id }}
-            intro="Who reads and writes this note."
-          />
-        </DialogBody>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="ghost">Done</Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 type NewNoteDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  scope: NoteScope;
+  /** The page the note is made on: its first row names the page's guild or agent. */
+  page: ReachSubject;
+  /** The guild the note is homed in. */
+  guildId: string;
   onCreated: (file: FileContent) => void;
 };
 
 /**
- * Names a new note of the organisation and who reaches it first, the page's subject at write
- * unless the operator picks another. It only creates: a name another note holds is refused.
+ * Names a new note of the organisation, homed in the page's guild, and who reaches it first: the
+ * page's guild or agent at write unless the operator picks another. It only creates: a name
+ * another note holds is refused.
  */
-function NewNoteDialog({ open, onOpenChange, scope, onCreated }: NewNoteDialogProps) {
+function NewNoteDialog({ open, onOpenChange, page, guildId, onCreated }: NewNoteDialogProps) {
   const save = useSaveNote();
-  const pageAccess: AccessRow = { ...scope.page, mode: "write" };
+  const pageAccess: AccessRow = { ...page, mode: "write" };
   const [name, setName] = useState("untitled");
   const [access, setAccess] = useState<AccessRow>(pageAccess);
   const [touched, setTouched] = useState(false);
@@ -582,7 +579,7 @@ function NewNoteDialog({ open, onOpenChange, scope, onCreated }: NewNoteDialogPr
     setTouched(true);
     if ("error" in result) return;
     save.mutate(
-      { path: result.path, content: "", access, expected_version: 0 },
+      { path: result.path, content: "", access, home_guild_id: guildId, expected_version: 0 },
       {
         onSuccess: (file) => {
           onCreated(file);
@@ -603,12 +600,14 @@ function NewNoteDialog({ open, onOpenChange, scope, onCreated }: NewNoteDialogPr
               label="Name"
               mono
               autoFocus
+              disabled={save.isPending}
               value={name}
               onChange={(event) => setName(event.currentTarget.value)}
               onFocus={(event) => event.currentTarget.select()}
               hint={"path" in result ? `Saved as ${result.path}` : undefined}
               {...(touched && "error" in result ? { error: result.error } : {})}
             />
+            <HomeGuildField guildId={guildId} />
             <StartingAccessField value={access} onChange={setAccess} disabled={save.isPending} />
             {save.isError ? (
               <Banner tone="error" title="Couldn't create the note">

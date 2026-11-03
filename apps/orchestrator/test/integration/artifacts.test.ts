@@ -8,7 +8,7 @@ import { changesAt } from "../helpers/artifacts.js";
 import { unreachableMarker, embedSource, inlineTaskEmbeds, inspectTaskEmbeds } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { addAgent } from "../../src/agents/service.js";
-import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
+import { systemActor } from "../helpers/agents.js";
 import type { Database } from "../../src/db/client.js";
 import type { JsonObject, JsonValue } from "../../src/lib/json.js";
 import { connect } from "../../src/seed/connect.js";
@@ -782,7 +782,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual((await listAccess(store, operator, target)).map((row) => [row.type, row.id, row.mode]), [["guild", "guild_own", "write"]]);
 
     // deleting a guild soft-deletes its own tables and their records, and drops their access lists
-    await deleteGuild(db, "guild_other", OPERATOR_ACTOR);
+    await deleteGuild(db, "guild_other");
     await assert.rejects(() => getCollection(store, operator, own.id), /unknown collection/);
     const records = await database.pool.query(
       `SELECT count(*)::int AS n FROM artifacts WHERE collection_id = $1 AND deleted_at IS NULL`,
@@ -1209,7 +1209,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
   });
 
-  test("listings: the organisation lists every note, a guild what names it, its agents, or the organisation, an agent what it reads", async () => {
+  test("listings: the organisation lists every note; a guild's and an agent's pages list the notes homed in the guild and those shared with it, each with the viewer's mode", async () => {
     const now = new Date();
     await insertGuild(db, { guildId: "guild_list", name: "list", orgId: "org_home", about: "" }, now);
     await insertGuild(db, { guildId: "guild_list_other", name: "list-other", orgId: "org_home", about: "" }, now);
@@ -1238,15 +1238,41 @@ describe("artifact store", { concurrency: 1 }, () => {
       content: "s",
       startingAccess: [{ type: "agent", id: "a_list", mode: "none" }],
     });
+    // made on the guild's page, reached only by the other guild
+    const fromGuild = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator", guildId: "guild_list" });
+    await writeNote(store, fromGuild, {
+      key: "list-homed.md",
+      content: "h",
+      startingAccess: [{ type: "guild", id: "guild_list_other", mode: "read" }],
+    });
     const keys = (rows: Array<{ path: string }>) => rows.map((row) => row.path).filter((key) => key.startsWith("list-")).sort();
+    const modes = (rows: Array<{ path: string; viewer_mode: string }>) =>
+      rows.filter((row) => row.path.startsWith("list-")).map((row) => [row.path, row.viewer_mode]);
 
-    assert.deepEqual(keys(await listOrgNotes(store, operator)), ["list-agent.md", "list-guild.md", "list-org.md", "list-other.md", "list-shut.md"]);
-    // a row naming the guild's agent, whatever its mode, or the organisation's row puts the note on the guild's page
-    assert.deepEqual(keys(await listGuildNotes(store, operator, "guild_list")), ["list-agent.md", "list-guild.md", "list-org.md", "list-shut.md"]);
-    assert.deepEqual(keys(await listGuildNotes(store, operator, "guild_list_other")), ["list-org.md", "list-other.md"]);
-    // the agent's page lists what the agent reads: none shuts it out
-    assert.deepEqual(keys(await listAgentNotes(store, operator, { agentId: "a_list", guildId: "guild_list" })), ["list-agent.md", "list-guild.md", "list-org.md"]);
-    assert.deepEqual(keys(await listAgentNotes(store, operator, { agentId: "a_list_other", guildId: "guild_list_other" })), ["list-org.md", "list-other.md"]);
+    // the organisation's list: an organisation row reaches every agent, any other row some of them
+    assert.deepEqual(modes(await listOrgNotes(store, operator)), [
+      ["list-agent.md", "some"],
+      ["list-guild.md", "some"],
+      ["list-homed.md", "some"],
+      ["list-org.md", "all_read"],
+      ["list-other.md", "some"],
+      ["list-shut.md", "none"],
+    ]);
+    // the guild's page: its own section holds what is homed in it, reached or not; the shared section what its rows, its agents' rows, or the organisation's row reach
+    const guildPage = await listGuildNotes(store, operator, "guild_list");
+    assert.deepEqual(modes(guildPage.own), [["list-agent.md", "some"], ["list-homed.md", "none"]]);
+    assert.deepEqual(modes(guildPage.shared), [["list-guild.md", "all_read"], ["list-org.md", "all_read"], ["list-shut.md", "none"]]);
+    assert.deepEqual(guildPage.own[0]?.home, { id: "guild_list", name: "list" });
+    assert.equal(guildPage.shared[0]?.home, null);
+    const otherPage = await listGuildNotes(store, operator, "guild_list_other");
+    assert.deepEqual(modes(otherPage.own), []);
+    assert.deepEqual(modes(otherPage.shared), [["list-homed.md", "all_read"], ["list-org.md", "all_read"], ["list-other.md", "all_write"]]);
+    // the agent's page: the sections of its guild's page, with the agent's own mode, none for what no row lets it reach
+    const agentPage = await listAgentNotes(store, operator, { agentId: "a_list", guildId: "guild_list" });
+    assert.deepEqual(modes(agentPage.own), [["list-agent.md", "write"], ["list-homed.md", "none"]]);
+    assert.deepEqual(modes(agentPage.shared), [["list-guild.md", "read"], ["list-org.md", "read"], ["list-shut.md", "none"]]);
+    const otherAgentPage = await listAgentNotes(store, operator, { agentId: "a_list_other", guildId: "guild_list_other" });
+    assert.deepEqual(modes(otherAgentPage.shared), [["list-homed.md", "read"], ["list-org.md", "read"], ["list-other.md", "write"]]);
     // a find lists what the actor reads, with its mode
     const found = (await findNotes(store, lister, { query: "" })).notes.filter((note) => note.key.startsWith("list-"));
     assert.deepEqual(found.map((note) => [note.key, note.access]).sort(), [["list-agent.md", "write"], ["list-guild.md", "read"], ["list-org.md", "read"]]);
@@ -1261,6 +1287,67 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(keys(await listOrgNotes(store, blind)), ["list-org.md", "list-other.md"]);
     await replaceAccess(store, operator, { kind: "note", id: shut.id }, []);
     assert.deepEqual(keys(await listOrgNotes(store, blind)), ["list-org.md", "list-other.md", "list-shut.md"], "a note with no row is hidden from no one");
+    assert.deepEqual(keys((await listGuildNotes(store, blind, "guild_list_other")).shared), ["list-org.md", "list-other.md"]);
+  });
+
+  test("a note or a file homed in a guild hidden from an operator is hidden from them whatever its rows say", async () => {
+    const now = new Date();
+    await insertGuild(db, { guildId: "guild_home_vault", name: "home-vault", orgId: "org_home", about: "" }, now);
+    await insertGuild(db, { guildId: "guild_home_open", name: "home-open", orgId: "org_home", about: "" }, now);
+    await seedAgent("a_home_vault", "guild_home_vault", "home-vault", "art-home-vault");
+    await seedAgent("a_home_open", "guild_home_open", "home-open", "art-home-open");
+    const keeper = agentActor({ orgId: "org_home", guildId: "guild_home_vault", agentId: "a_home_vault", agentName: "home-vault" });
+    const outsider = agentActor({ orgId: "org_home", guildId: "guild_home_open", agentId: "a_home_open", agentName: "home-open" });
+    const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
+    const blind = operatorActor({
+      orgId: "org_home",
+      actorId: "user_blind",
+      actorName: "blind",
+      hidden: { guildIds: ["guild_home_vault"], agentIds: ["a_home_vault"] },
+    });
+    const { row, href } = await writeNote(store, keeper, { key: "home-vault.md", content: "kept at home" });
+    assert.equal(row.origin_guild_id, "guild_home_vault");
+    await replaceAccess(store, operator, { kind: "note", id: row.id }, [{ type: "org", id: "org_home", mode: "read" }]);
+
+    // the organisation row reaches every agent, the outsider included: agents are unaffected by the home
+    assert.equal((await getByDisplayPath(store, outsider, href)).row?.access, "read");
+    // the operator outside the home guild neither lists, searches, reads, nor sees the history of it
+    assert.equal((await listOrgNotes(store, blind)).some((note) => note.path === "home-vault.md"), false);
+    assert.equal((await listGuildNotes(store, blind, "guild_home_open")).shared.some((note) => note.path === "home-vault.md"), false);
+    const openPage = await listGuildNotes(store, operator, "guild_home_open");
+    assert.deepEqual(
+      openPage.shared.filter((note) => note.path === "home-vault.md").map((note) => [note.viewer_mode, note.home]),
+      [["all_read", { id: "guild_home_vault", name: "home-vault" }]],
+    );
+    assert.equal((await findNotes(store, blind, { query: "kept" })).notes.some((note) => note.key === "home-vault.md"), false);
+    assert.equal((await listEmbeddableNotes(store, blind)).some((note) => note.key === "home-vault.md"), false);
+    await assert.rejects(() => getByDisplayPath(store, blind, href), /artifact not found/);
+    assert.equal(await canReadDisplayPath(store, blind, href), false);
+    await assert.rejects(() => accessList(store, blind, { kind: "note", id: row.id }), /note not found/);
+    await assert.rejects(() => writeNote(store, blind, { key: "home-vault.md", content: "taken" }), /write not allowed/);
+    // the operator who sees the home guild reads it
+    assert.equal(await canReadDisplayPath(store, operator, href), true);
+    // the deleted note stays hidden by its home
+    await deleteByDisplayPath(store, operator, href);
+    assert.equal(await canReadDisplayPath(store, blind, href), false);
+  });
+
+  test("an item's reach never changes with its home", async () => {
+    const now = new Date();
+    await insertGuild(db, { guildId: "guild_home_reach", name: "home-reach", orgId: "org_home", about: "" }, now);
+    await seedAgent("a_home_reach", "guild_home_reach", "home-reach", "art-home-reach");
+    const homed = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator", guildId: "guild_home_reach" });
+    const agent = agentActor({ orgId: "org_home", guildId: "guild_home_reach", agentId: "a_home_reach", agentName: "home-reach" });
+    const { row, href } = await writeNote(store, homed, {
+      key: "home-reach.md",
+      content: "homed, reached by no row",
+      startingAccess: [{ type: "agent", id: "a_home_reach", mode: "none" }],
+    });
+    assert.equal(row.origin_guild_id, "guild_home_reach");
+    await assert.rejects(() => getByDisplayPath(store, agent, href), /artifact not found/);
+    assert.equal((await findNotes(store, agent, { query: "" })).notes.some((note) => note.key === "home-reach.md"), false);
+    const reach = await reachOf(store, homed, { type: "guild", id: "guild_home_reach", guildId: "guild_home_reach" });
+    assert.equal(reach.notes.some((note) => note.id === row.id), false);
   });
 
   test("notes sit directly under the organisation and the memory archive is the operator's", async () => {
@@ -1300,7 +1387,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     await writeMemory(store, alpha, "a_flat", { content: "second\n", detail: "run r_2" });
     const listed = await listAgentNotes(store, operator, { agentId: "a_flat", guildId: "guild_flat" });
     assert.deepEqual(
-      listed.filter((item) => item.path === "exploration.md" || item.path === "memory.md").map((item) => [item.path, item.kind]),
+      listed.own.filter((item) => item.path === "exploration.md" || item.path === "memory.md").map((item) => [item.path, item.kind]),
       [["exploration.md", "note"]],
     );
     assert.deepEqual(await listRevisions(store, alpha, "a_flat"), []);
@@ -1421,7 +1508,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       agentId: "a_taskver",
     });
     const listedStart = await listAgentNotes(store, operator, { agentId: "a_taskver", guildId: "guild_taskver" });
-    assert.equal(listedStart.find((item) => item.path === "task.md"), undefined);
+    assert.equal([...listedStart.own, ...listedStart.shared].find((item) => item.path === "task.md"), undefined);
     const seeded = await getAgentTask(db, "org_home", "a_taskver");
     assert.equal(seeded?.version, 1);
 

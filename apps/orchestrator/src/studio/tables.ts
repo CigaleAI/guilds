@@ -1,4 +1,3 @@
-import { loadOperatorActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { columnCatalog, describeColumn, type CatalogColumn } from "../artifacts/columns.js";
 import { listRecords } from "../artifacts/records.js";
@@ -37,7 +36,7 @@ import type { EditAction } from "./actions.js";
 import type { EditCollectionArguments, TableAccessArguments } from "./edit-arguments.js";
 import { jsonHash, type CollectionTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
-import { editActor } from "./actor.js";
+import { studioActor } from "./actor.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
 import { getGuild } from "../db/guilds.js";
@@ -126,13 +125,6 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** The operator reading tables, without the private guilds they do not operate. */
-async function tableActor(deps: EditDeps, scope: EditScope): Promise<ArtifactActor> {
-  return loadOperatorActor(deps.db, scope.user, {
-    orgId: scope.orgId,
-    guildId: scope.sourceGuildId,
-  });
-}
 
 async function tableContext(deps: EditDeps, scope: EditScope): Promise<TableContext> {
   const guild = await getGuild(deps.db, scope.sourceGuildId);
@@ -140,7 +132,7 @@ async function tableContext(deps: EditDeps, scope: EditScope): Promise<TableCont
   return {
     deps,
     scope,
-    actor: await tableActor(deps, scope),
+    actor: studioActor(scope),
     guildName: guild?.name ?? "this guild",
     members: agents.map((row) => ({ id: row.id, name: row.name })),
   };
@@ -527,7 +519,7 @@ export async function applyTable(
   plan: CollectionStep,
 ): Promise<void> {
   try {
-    await applyCollectionStep(deps.artifacts, editActor(scope), plan);
+    await applyCollectionStep(deps.artifacts, studioActor(scope), plan);
   } catch (error) {
     throw tableRefusal(error);
   }
@@ -575,7 +567,7 @@ export type StudioTable = {
 
 /** The tables Studio reaches: the source guild's own first, then the organisation's. */
 export async function listTables(deps: EditDeps, scope: EditScope): Promise<StudioTableSummary[]> {
-  const actor = await tableActor(deps, scope);
+  const actor = studioActor(scope);
   const tables = await guildTables(deps.artifacts, actor, scope.sourceGuildId);
   return tables
     .sort((a, b) => Number(!a.collection.guild) - Number(!b.collection.guild) || a.collection.name.localeCompare(b.collection.name))

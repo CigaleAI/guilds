@@ -4,6 +4,7 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { FILE_MAX_BYTES, type ArtifactActor } from "../artifacts/types.js";
 import { ArtifactFiles, mimeForName } from "../artifacts/files.js";
 import { AgentFileError, agentDisplayPath, readAgentFile, writeAgentFile } from "../lib/agent-file.js";
+import { announceItemChange, itemGuilds } from "./artifacts.js";
 import type { ToolServices } from "./services.js";
 import { callActor, nativeTool, type ToolInvocation, type ToolRun } from "./types.js";
 
@@ -32,15 +33,6 @@ function workspace(run: ToolRun): string {
     throw new ArtifactError("the agent's home is not available", 500);
   }
   return run.workspace_dir;
-}
-
-async function publish(services: ToolServices, run: ToolRun, displayPath: string): Promise<void> {
-  if (services.group_chat !== null && run.guild_id && services.group_chat.publish) {
-    await services.group_chat.publish(run.guild_id, "guild.artifacts.changed", {
-      path: displayPath,
-      agent_id: run.agent_id,
-    });
-  }
 }
 
 /** What `work` on a file of the agent's home gives; a refusal of its path is a 422 saying what was wrong with it. */
@@ -122,7 +114,7 @@ export const filePut = nativeTool({
       bytes: read.bytes,
     });
     const display = store.view(row).display_path;
-    await publish(services, run, display);
+    await announceItemChange(services, run, await itemGuilds(services, row.org_id, { kind: "file", id: row.id }), display);
     return display;
   },
 });
@@ -136,8 +128,9 @@ export const fileDelete = nativeTool({
     const store = files(services);
     const displayPath = call.arguments.path;
     const row = await store.loadFile(actor(run, call), displayPath);
+    const guilds = await itemGuilds(services, row.org_id, { kind: "file", id: row.id });
     await store.deleteFile(actor(run, call), row);
-    await publish(services, run, displayPath);
+    await announceItemChange(services, run, guilds, displayPath);
     return displayPath;
   },
 });

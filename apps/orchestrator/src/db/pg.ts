@@ -37,6 +37,11 @@ export function isUniqueViolation(error: unknown): error is pg.DatabaseError {
   return error instanceof pg.DatabaseError && error.code === "23505";
 }
 
+/** Whether `error` is the database refusing a write whose foreign key `constraint` names a row that does not exist. */
+export function isForeignKeyViolation(error: unknown, constraint: string): error is pg.DatabaseError {
+  return error instanceof pg.DatabaseError && error.code === "23503" && error.constraint === constraint;
+}
+
 /**
  * Runs `fn` in a transaction on `db`: a new one on a client of the pool, or, on the client of a
  * transaction already open, a savepoint inside it, so the caller's transaction commits or rolls

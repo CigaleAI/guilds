@@ -9,7 +9,19 @@ import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
 import { findLimit } from "./search.js";
-import { artifactMode, assertLiveCount, assertRead, assertWrite, type ArtifactStore, rowDisplayPath } from "./store.js";
+import {
+  artifactMode,
+  assertLiveCount,
+  assertRead,
+  assertWrite,
+  itemHome,
+  pageSections,
+  rowDisplayPath,
+  type ArtifactStore,
+  type ItemHome,
+  type PageSections,
+  type ViewerMode,
+} from "./store.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import {
   FILE_DESCRIPTION_MAX,
@@ -24,18 +36,24 @@ import { requireSubject, writeGrants } from "./grants.js";
 import {
   getLiveArtifact,
   insertFile,
-  listArtifactsByKind,
-  listGuildArtifacts,
-  listOrgArtifacts,
-  listReachedArtifacts,
-  searchArtifactsByKind,
+  isMissingHomeGuild,
   softDeleteArtifact,
   sumOrgFileBytes,
   updateFileContent,
 } from "../db/artifacts.js";
+import {
+  listAgentPageArtifacts,
+  listArtifactsByKind,
+  listGuildPageArtifacts,
+  listOrgArtifacts,
+  searchArtifactsByKind,
+  type AgentViewerMode,
+  type GuildViewerMode,
+  type PageArtifactRow,
+} from "../db/artifact-lists.js";
 import { agentReader, loadParsed, type ReachingAgent } from "./notes.js";
 
-/** A file as tools and the API return it. */
+/** A file as the file tools, an upload, and a download return it. */
 export type FileView = {
   id: string;
   display_path: string;
@@ -47,6 +65,15 @@ export type FileView = {
   author: string;
   updated_at: string;
   access?: AccessMode;
+};
+
+/**
+ * A file as an operator's page lists it: what the tools return but the reader's own mode, the guild
+ * it is homed in (null for the organisation), and the mode of the page's viewer on it.
+ */
+export type PageFileView<Mode extends ViewerMode> = Omit<FileView, "access"> & {
+  home: ItemHome | null;
+  viewer_mode: Mode;
 };
 
 type FileContent = { description: string; mime: string; bytes: Buffer };
@@ -228,20 +255,24 @@ export class ArtifactFiles {
     return rows.map((row) => this.view(row));
   }
 
-  /** Every file of the organisation the actor may read, by name. */
-  async listOrgFiles(actor: ArtifactActor): Promise<FileView[]> {
-    return (await listOrgArtifacts(this.store.db, actor, "file")).map((row) => this.view(row));
+  /** Every file of the organisation the actor may read, by name, with the organisation's viewer mode. */
+  async listOrgFiles(actor: ArtifactActor): Promise<Array<PageFileView<GuildViewerMode>>> {
+    return (await listOrgArtifacts(this.store.db, actor, "file")).map(pageFileView);
   }
 
-  /** The files whose access list has a row for the guild, one of its agents, or the organisation, that the actor may read, by name. */
-  async listGuildFiles(actor: ArtifactActor, guildId: string): Promise<FileView[]> {
-    return (await listGuildArtifacts(this.store.db, actor, guildId, "file")).map((row) => this.view(row));
+  /**
+   * The files a guild's page lists for the actor, by name, with the guild's viewer mode: in `own`
+   * those homed in the guild, whatever their rows; in `shared` those homed elsewhere or in the
+   * organisation whose access list has a row for the guild, one of its agents, or the organisation.
+   */
+  async listGuildFiles(actor: ArtifactActor, guildId: string): Promise<PageSections<PageFileView<GuildViewerMode>>> {
+    return pageSections(await listGuildPageArtifacts(this.store.db, actor, guildId, "file"), pageFileView);
   }
 
-  /** The files the agent reads, without those hidden from the actor, by name, each with the agent's mode. */
-  async listAgentFiles(actor: ArtifactActor, agent: ReachingAgent): Promise<FileView[]> {
+  /** The files an agent's page lists for the actor: the sections of its guild's page, each file with the agent's viewer mode. */
+  async listAgentFiles(actor: ArtifactActor, agent: ReachingAgent): Promise<PageSections<PageFileView<AgentViewerMode>>> {
     const reacher = agentReader(actor, agent);
-    return (await listReachedArtifacts(this.store.db, actor, reacher, "file")).map((row) => this.view(row));
+    return pageSections(await listAgentPageArtifacts(this.store.db, actor, reacher, "file"), pageFileView);
   }
 
   /** Soft-deletes a file the actor writes, keeping its access list on the tombstone, and removes its bytes. */
@@ -265,6 +296,7 @@ export class ArtifactFiles {
     await this.blobs.delete(fileBlobKey(row.org_id, row.id, row.version));
   }
 
+  /** A file row as the file tools, an upload, and a download return it. */
   view(row: ArtifactRow): FileView {
     return {
       id: row.id,
@@ -335,6 +367,9 @@ export class ArtifactFiles {
       if (isUniqueViolation(error)) {
         throw new ArtifactError("artifact already exists", 409);
       }
+      if (isMissingHomeGuild(error)) {
+        throw new ArtifactError("unknown guild", 404);
+      }
       throw error;
     }
   }
@@ -400,4 +435,21 @@ export class ArtifactFiles {
       throw new ArtifactError("file storage limit reached", 422);
     }
   }
+}
+
+/** A file row as an operator's page lists it. */
+function pageFileView<Mode extends ViewerMode>(row: PageArtifactRow<Mode>): PageFileView<Mode> {
+  return {
+    id: row.id,
+    display_path: rowDisplayPath(row),
+    name: row.key,
+    description: row.title ?? "",
+    mime: row.mime ?? "application/octet-stream",
+    bytes: row.bytes ?? 0,
+    version: row.version,
+    author: row.updated_by_name,
+    updated_at: formatOperationalTimestamp(row.updated_at),
+    home: itemHome(row),
+    viewer_mode: row.viewer_mode,
+  };
 }

@@ -15,7 +15,7 @@ import { hashArtifactContent } from "../artifacts/store.js";
 import type { AccessGrant } from "../artifacts/types.js";
 import { listAgents, type GuildAgentRow } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
-import { editActor } from "./actor.js";
+import { studioActor } from "./actor.js";
 import type { EditNoteArguments } from "./edit-arguments.js";
 import {
   assertContent,
@@ -39,7 +39,7 @@ export async function loadNoteBase(
   scope: EditScope,
   displayPath: string,
 ): Promise<EditBase> {
-  const actor = editActor(scope);
+  const actor = studioActor(scope);
   try {
     const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind !== "artifact") {
@@ -110,7 +110,7 @@ async function liveNoteAt(
   displayPath: string,
 ): Promise<{ version: number } | null> {
   try {
-    const view = await artifactAt(deps.artifacts, editActor(scope), displayPath);
+    const view = await artifactAt(deps.artifacts, studioActor(scope), displayPath);
     return view.kind === "row" && !view.deleted ? { version: view.row.version } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
@@ -223,7 +223,7 @@ export async function reviewRecordedNote(
 }
 
 export async function applyNote(deps: EditDeps, scope: EditScope, plan: NotePlan): Promise<number | null> {
-  const toolActor = editActor(scope, plan.action === "delete" ? { guildId: plan.guildId } : {});
+  const toolActor = studioActor(scope, plan.action === "delete" ? { guildId: plan.guildId } : {});
   try {
     if (plan.action === "create") {
       const written = await writeNote(deps.artifacts, toolActor, {

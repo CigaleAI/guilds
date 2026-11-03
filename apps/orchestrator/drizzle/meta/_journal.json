@@ -141,6 +141,13 @@
       "when": 1791946800000,
       "tag": "0020_access_list_only",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791950400000,
+      "tag": "0021_home_guild",
+      "breakpoints": true
     }
   ]
 }

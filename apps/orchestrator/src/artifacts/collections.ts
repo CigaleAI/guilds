@@ -24,7 +24,6 @@ import {
   type CollectionQueryRow,
 } from "../db/collections.js";
 import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
-import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
 import type { JsonValue } from "../lib/json.js";
@@ -48,7 +47,7 @@ import {
 import { ArtifactError } from "./errors.js";
 import { collectionAccessItem, setAccessRow, writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
-import type { ArtifactStore, CollectionDescription, CollectionView } from "./store.js";
+import { requireGuild, type ArtifactStore, type CollectionDescription, type CollectionView } from "./store.js";
 import {
   COLLECTION_NAME_RE,
   LIVE_COLLECTIONS_MAX,
@@ -152,16 +151,6 @@ export function collectionView(row: CollectionQueryRow, access: AccessMode, coun
     updated_at: formatOperationalTimestamp(row.updated_at),
     ...(count !== undefined ? { count } : {}),
   };
-}
-
-/** The guild of the organisation `guildId` names, refused when it is unknown or hidden from the actor. */
-async function requireGuild(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<string> {
-  const id = String(guildId ?? "").trim();
-  const guild = await getGuild(store.db, id);
-  if (!guild || guild.org_id !== actor.orgId || actor.hidden.guildIds.includes(id)) {
-    throw new ArtifactError("unknown guild", 404);
-  }
-  return id;
 }
 
 /** The actor's mode on a collection from its access list. The operator writes everything. */
@@ -417,6 +406,29 @@ export type CatalogCollection = {
   truncated?: true;
 };
 
+/** A collection as State's catalog lists it, with the reader's mode on it. */
+function catalogEntry(row: CollectionQueryRow, mode: AccessMode): CatalogCollection {
+  return {
+    name: row.name,
+    purpose: row.purpose,
+    access: mode,
+    scope: row.guild_id ? "guild" : "org",
+    display_path: collectionDisplayPath(row.org_id, row.name),
+    columns: columnCatalog(row.columns),
+  };
+}
+
+/** The entry that closes a catalog capped below the collections the reader reads. */
+const TRUNCATED_CATALOG_ENTRY: CatalogCollection = {
+  truncated: true,
+  name: "…",
+  purpose: "more collections exist",
+  access: "read",
+  scope: "org",
+  display_path: "",
+  columns: [],
+};
+
 /** The State catalog: name, purpose, access, display path, and columns; capped. */
 export async function collectionCatalog(
   store: ArtifactStore,
@@ -424,18 +436,26 @@ export async function collectionCatalog(
   limit = STATE_COLLECTIONS_MAX,
 ): Promise<CatalogCollection[]> {
   const rows = await accessibleCollections(store, actor);
-  const items: CatalogCollection[] = rows.slice(0, limit).map((item) => ({
-    name: item.row.name,
-    purpose: item.row.purpose,
-    access: item.mode,
-    scope: item.row.guild_id ? "guild" : "org",
-    display_path: collectionDisplayPath(item.row.org_id, item.row.name),
-    columns: columnCatalog(item.row.columns),
-  }));
-  if (rows.length > limit) {
-    items.push({ truncated: true, name: "…", purpose: "more collections exist", access: "read", scope: "org", display_path: "", columns: [] });
-  }
-  return items;
+  const items = rows.slice(0, limit).map((item) => catalogEntry(item.row, item.mode));
+  return rows.length > limit ? [...items, TRUNCATED_CATALOG_ENTRY] : items;
+}
+
+/**
+ * The State catalog `actor` reads, as the operator `viewer` is shown it: the entries `collectionCatalog`
+ * gives, less each own table of a guild hidden from the viewer.
+ */
+export async function collectionCatalogShownTo(
+  store: ArtifactStore,
+  viewer: ArtifactActor,
+  actor: ArtifactActor,
+  limit = STATE_COLLECTIONS_MAX,
+): Promise<CatalogCollection[]> {
+  const rows = await accessibleCollections(store, actor);
+  const items = rows
+    .slice(0, limit)
+    .filter((item) => visibleCollection(viewer, item.row) !== null)
+    .map((item) => catalogEntry(item.row, item.mode));
+  return rows.length > limit ? [...items, TRUNCATED_CATALOG_ENTRY] : items;
 }
 
 export async function getCollection(store: ArtifactStore, actor: ArtifactActor, collectionId: string): Promise<CollectionView> {

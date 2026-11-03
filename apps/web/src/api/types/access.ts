@@ -30,14 +30,28 @@ export type AccessTarget = { kind: "note" | "collection" | "file"; id: string };
 /** Who an access row names: the organisation, a guild, or one agent. */
 export type AccessSubjectType = "org" | "guild" | "agent";
 
-/** An access row's mode; `none` is for an agent row only and shuts that agent out. */
-export type AccessListMode = AccessMode | "none";
+/**
+ * The mode an agent has on an item: it reads and writes, it reads, or nothing. An access row gives
+ * it, `none` only on an agent's own row, where it shuts that agent out; an agent's page shows the
+ * mode the agent ends up with, `none` when no row reaches it.
+ */
+export type AgentAccessMode = AccessMode | "none";
+
+/**
+ * How a guild's agents reach an item, as the guild's page shows it: an organisation row or the
+ * guild's own row gives all of them write or read (`all_write`, `all_read`); only rows of single
+ * agents reach some of them (`some`); or no row reaches any (`none`).
+ */
+export type GuildViewerMode = "all_write" | "all_read" | "some" | "none";
+
+/** How the guild or the agent whose page lists an item reaches it. */
+export type ViewerMode = AgentAccessMode | GuildViewerMode;
 
 /** Who one access row names. */
 export type AccessSubject = { type: AccessSubjectType; id: string };
 
 /** One row of an access list as it is sent: the subject and its mode. */
-export type AccessRow = AccessSubject & { mode: AccessListMode };
+export type AccessRow = AccessSubject & { mode: AgentAccessMode };
 
 /**
  * One row of an access list as it is read, with the subject's name and guild: an agent's guild, a
@@ -76,6 +90,29 @@ export type Reach = { notes: ReachedNote[]; tables: ReachedTable[] };
 
 /** A guild, whose rows its agents share, or one agent. */
 export type ReachSubject = { type: "guild" | "agent"; id: string };
+
+/**
+ * The guild a note or a file belongs to: the guild it was made in. It groups the item on that
+ * guild's pages and never decides who reaches it.
+ */
+type ItemHome = { id: string; name: string };
+
+/** The two kinds of item a guild's or an agent's page lists by home. */
+export type ListedKind = Extract<AccessTarget["kind"], "note" | "file">;
+
+/**
+ * A note or a file as a guild's or an agent's page lists it: where it sits, its home guild (null
+ * for the organisation), and how the page's guild or agent reaches it.
+ */
+export type ListedItem = { display_path: string; home: ItemHome | null; viewer_mode: ViewerMode };
+
+/**
+ * A guild's or an agent's list of notes or files, by home: `own` holds the items homed in the
+ * page's guild, whether or not a row reaches them; `shared` the items homed elsewhere or in the
+ * organisation that a row for the guild, one of its agents or the organisation reaches. Each
+ * section is ordered by name.
+ */
+export type ItemSections<Item extends ListedItem> = { own: Item[]; shared: Item[] };
 
 /** Where a binding is set, from the widest to the narrowest; the narrowest set one wins. */
 export type BindingScope = "platform" | "org" | "guild" | "agent";

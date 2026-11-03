@@ -1,9 +1,9 @@
 import { ArrowLeft, Download, FileUp, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useState, type FormEvent, type ReactNode } from "react";
-import { useDeleteFile, useFileList, useUploadFile } from "../../api/queries/files";
-import type { AccessRow, AccessSubject } from "../../api/types/access";
-import type { FileItem } from "../../api/types/files";
+import { useState, type FormEvent } from "react";
+import { useDeleteFile, useFileSections, useUploadFile } from "../../api/queries/files";
+import type { AccessRow, ItemSections, ReachSubject } from "../../api/types/access";
+import type { FileItem, StoredFile } from "../../api/types/files";
 import { formatSize, relativeTime } from "../../app/format";
 import { useMediaQuery, visiblePanes, wideScreen } from "../../app/media";
 import {
@@ -19,139 +19,63 @@ import {
   EmptyState,
   Icon,
   IconButton,
+  ModeTag,
+  Row,
   SearchField,
-  Segmented,
+  SectionList,
   SkeletonRows,
   TextField,
   cn,
   toast,
 } from "@guildsrun/ui";
-import { AccessListPanel } from "../access/AccessListPanel";
+import { AccessListDialog } from "../access/AccessListDialog";
+import { HomeGuildField } from "../access/HomeGuildField";
+import { homeLabel, isUnreached, listedItems, type OpenItem } from "../access/listedItems";
+import { sectionCopy } from "../access/sectionCopy";
 import { StartingAccessField } from "../access/StartingAccessField";
+import { UnlistedItem } from "../access/UnlistedItem";
+import { useOpenItem } from "../access/useOpenItem";
 import { LatestChange, type OpenChangeStep } from "../notes/LatestChange";
 import { attemptFileDownload } from "./download";
-import { fileMeta, filterFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
-
-/**
- * A page whose files the browser lists: an agent's lists the files it reads, a guild's the files
- * whose access list names the guild, one of its agents or the organisation, the organisation's
- * every file. A file uploaded from it starts with a row for the page's subject.
- */
-export type FileScope = { title: string; page: AccessSubject };
+import { fileMeta, searchFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
 
 type FilesBrowserProps = {
-  /** The pages to browse, the first open at start; the organisation's is the last. */
-  scopes: FileScope[];
+  /** The guild's or agent's page whose files the browser lists; a file uploaded from it starts with a row for it. */
+  page: ReachSubject;
+  /** The page's guild, or the agent's: a file uploaded from the page is homed in it. */
   guildId: string;
   /** Opens the run step that changed a file; by default the run opens in its agent's chat. */
   onOpenStep?: OpenChangeStep;
-  /** A file to open first, by display path; the organisation's list, which holds every file, opens with it. */
+  /** A file to open first, by display path, in either section. */
   initialPath?: string | undefined;
 };
 
-const noFiles: FileItem[] = [];
+const noFiles: ItemSections<FileItem> = { own: [], shared: [] };
 
-/** What each page's list holds, as its empty state says. */
-const emptyFiles: Record<AccessSubject["type"], string> = {
-  agent: "Files this agent reads appear here.",
-  guild: "Files open to this guild, its agents or the organisation appear here.",
-  org: "Every file of the organisation appears here.",
-};
+const fileAccessIntro = "Who reads and writes this file.";
 
-/** Shared files by page: each page's list, and the open file with its facts and actions. */
-export function FilesBrowser({ scopes, guildId, onOpenStep, initialPath }: FilesBrowserProps) {
-  const initialScope = initialPath ? scopes.find((item) => item.page.type === "org")?.page.type : undefined;
-  const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.page.type ?? "guild");
-  const scope = scopes.find((item) => item.page.type === scopeId) ?? scopes[0];
-  const pageOf = (type: AccessSubject["type"]) => scopes.find((item) => item.page.type === type)?.page ?? null;
-  const lists = {
-    agent: useFileList(pageOf("agent")),
-    guild: useFileList(pageOf("guild")),
-    org: useFileList(pageOf("org")),
-  };
-  const [selected, setSelected] = useState<Partial<Record<AccessSubject["type"], string>>>(() =>
-    initialScope && initialPath ? { [initialScope]: initialPath } : {},
-  );
-
-  if (!scope) return null;
-
-  return (
-    <ScopeFiles
-      scope={scope}
-      list={lists[scope.page.type]}
-      tabs={
-        scopes.length > 1 ? (
-          <Segmented
-            size="sm"
-            label="Files list"
-            value={scope.page.type}
-            onValueChange={setScopeId}
-            options={scopes.map((item) => ({
-              value: item.page.type,
-              label: item.title,
-              count: lists[item.page.type].data?.length ?? 0,
-            }))}
-          />
-        ) : null
-      }
-      guildId={guildId}
-      onOpenStep={onOpenStep}
-      chosenPath={selected[scope.page.type]}
-      onChoose={(path) => setSelected({ ...selected, [scope.page.type]: path })}
-      startsOnFile={Boolean(initialPath)}
-    />
-  );
-}
-
-type ScopeFilesProps = {
-  scope: FileScope;
-  list: UseQueryResult<FileItem[]>;
-  /** The list picker above the list; null when there is one list. */
-  tabs: ReactNode;
-  guildId: string;
-  onOpenStep: OpenChangeStep | undefined;
-  /** The file chosen in this list, by display path; without one the first file opens. */
-  chosenPath: string | undefined;
-  onChoose: (path: string | undefined) => void;
-  /** Whether a phone starts on the open file instead of the list. */
-  startsOnFile: boolean;
-};
-
-/** One page's files: the searchable list beside the open file, one at a time on a phone, and the upload. */
-function ScopeFiles({
-  scope,
-  list,
-  tabs,
-  guildId,
-  onOpenStep,
-  chosenPath,
-  onChoose,
-  startsOnFile,
-}: ScopeFilesProps) {
+/**
+ * A guild's or an agent's shared files in two sections, the guild's own and those shared with it,
+ * beside the open file with its facts and actions. A greyed file, which no row reaches for the
+ * page, opens its access list.
+ */
+export function FilesBrowser({ page, guildId, onOpenStep, initialPath }: FilesBrowserProps) {
   const wide = useMediaQuery(wideScreen);
-  const [listOpen, setListOpen] = useState(!startsOnFile);
+  const list = useFileSections(page);
+  const [listOpen, setListOpen] = useState(!initialPath);
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [accessItem, setAccessItem] = useState<FileItem | null>(null);
 
-  const items = list.data ?? noFiles;
-  const open = items.find((item) => item.display_path === chosenPath) ?? items[0];
-  const panes = visiblePanes(wide, listOpen, Boolean(open));
+  const sections = list.data ?? noFiles;
+  const listed = listedItems(sections);
+  const { opened, open, choose } = useOpenItem(sections, initialPath);
+  const panes = visiblePanes(wide, listOpen, opened.state !== "none");
+  const showList = wide ? undefined : () => setListOpen(true);
   const pickFile = (path: string) => {
-    onChoose(path);
+    choose(path);
     setListOpen(false);
   };
-  const empty = (
-    <EmptyState
-      icon={Paperclip}
-      title="No files yet"
-      description={`${emptyFiles[scope.page.type]} Agents share files with their file tools.`}
-      action={
-        <Button size="sm" onClick={() => setUploading(true)}>
-          Upload a file
-        </Button>
-      }
-    />
-  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -161,7 +85,6 @@ function ScopeFiles({
           panes.list ? "flex flex-1" : "hidden",
         )}
       >
-        {tabs}
         <div className="flex items-center gap-2">
           <SearchField
             className="min-w-0 flex-1"
@@ -175,11 +98,12 @@ function ScopeFiles({
         </div>
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
           <FileListContent
+            page={page}
             list={list}
-            shown={filterFiles(items, query)}
+            shown={searchFiles(sections, query)}
+            searching={Boolean(query.trim())}
             selectedPath={open?.display_path ?? null}
-            onSelect={pickFile}
-            empty={wide ? null : <div className="grid flex-1 place-items-center p-2">{empty}</div>}
+            onPick={(item) => (isUnreached(item) ? setAccessItem(item) : pickFile(item.display_path))}
           />
         </div>
       </aside>
@@ -187,85 +111,176 @@ function ScopeFiles({
       <section className={cn("min-h-0 min-w-0 flex-1 flex-col", panes.item ? "flex" : "hidden")}>
         {open ? (
           <FileView
-            key={`${scope.page.type}:${open.display_path}`}
+            key={open.display_path}
             item={open}
             guildId={guildId}
             onOpenStep={onOpenStep}
-            onBack={wide ? undefined : () => setListOpen(true)}
+            onAccess={() => setAccessItem(open)}
+            onBack={showList}
             onDeleted={() => {
-              onChoose(undefined);
+              choose(undefined);
               setListOpen(true);
             }}
           />
-        ) : list.isPending ? null : (
-          <div className="grid flex-1 place-items-center p-6">{empty}</div>
+        ) : !list.isSuccess ? null : (
+          <div className="grid flex-1 place-items-center p-6">
+            <NoOpenFile
+              opened={opened}
+              listed={listed.length > 0}
+              onUpload={() => setUploading(true)}
+              onShowList={showList}
+            />
+          </div>
         )}
       </section>
 
+      {accessItem ? (
+        <AccessListDialog
+          target={{ kind: "file", id: accessItem.id }}
+          name={accessItem.name}
+          intro={fileAccessIntro}
+          onClose={() => setAccessItem(null)}
+        />
+      ) : null}
       <UploadDialog
-        key={scope.page.type}
         open={uploading}
         onOpenChange={setUploading}
-        scope={scope}
-        listed={items}
+        page={page}
+        guildId={guildId}
+        listed={listed}
         onUploaded={(file) => pickFile(file.display_path)}
       />
     </div>
   );
 }
 
-type FileListContentProps = {
-  list: UseQueryResult<FileItem[]>;
-  /** The list's files that match the search. */
-  shown: readonly FileItem[];
-  selectedPath: string | null;
-  onSelect: (path: string) => void;
-  /** What a list without files shows; null where the file pane shows it instead. */
-  empty: ReactNode;
+type NoOpenFileProps = {
+  /** What the page opens, which is no file. */
+  opened: OpenItem<FileItem>;
+  /** Whether the page lists any file, every one of them greyed when none is open. */
+  listed: boolean;
+  onUpload: () => void;
+  /** Shows the list again, on a screen where it and the file pane take turns. */
+  onShowList: (() => void) | undefined;
 };
 
-/** One page's list of files as it loads: rows, a failure, no match for the search, or none yet. */
-function FileListContent({ list, shown, selectedPath, onSelect, empty }: FileListContentProps) {
+/**
+ * The file pane with no file open: the chosen path is not listed on the page, no file is listed
+ * yet, or every listed file is greyed.
+ */
+function NoOpenFile({ opened, listed, onUpload, onShowList }: NoOpenFileProps) {
+  if (opened.state === "unlisted") {
+    return <UnlistedItem kind="file" path={opened.path} icon={Paperclip} onShowList={onShowList} />;
+  }
+  return (
+    <EmptyState
+      icon={Paperclip}
+      title={listed ? "No file reached" : "No files yet"}
+      description={
+        listed
+          ? "No row reaches the listed files for this page. Open a greyed file to change its access."
+          : "Agents share files with their file tools."
+      }
+      action={
+        <Button size="sm" onClick={onUpload}>
+          Upload a file
+        </Button>
+      }
+    />
+  );
+}
+
+type FileListContentProps = {
+  page: ReachSubject;
+  list: UseQueryResult<ItemSections<FileItem>>;
+  /** The page's files that match the search. */
+  shown: ItemSections<FileItem>;
+  /** Whether a search is typed, so an empty section says no file matches. */
+  searching: boolean;
+  selectedPath: string | null;
+  /** Opens a file, or the access list of a greyed one. */
+  onPick: (item: FileItem) => void;
+};
+
+/** The page's files as they load: the two sections, or a failure. */
+function FileListContent({ page, list, shown, searching, selectedPath, onPick }: FileListContentProps) {
   if (list.isPending) return <SkeletonRows rows={5} label="Loading files" />;
   if (list.isError) {
     return <Banner tone="error" title="Couldn't load the files" meta={list.error.message} />;
   }
-  if (shown.length) return <FileRows items={shown} selectedPath={selectedPath} onSelect={onSelect} />;
-  if (list.data.length) return <p className="px-2 text-sm text-muted">No files match.</p>;
-  return empty;
+  const copy = sectionCopy("file", page.type);
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionList
+        label={copy.ownLabel}
+        count={shown.own.length}
+        empty={searching ? copy.noMatch : copy.ownEmpty}
+      >
+        {shown.own.map((item) => (
+          <FileRow
+            key={item.id}
+            item={item}
+            selected={item.display_path === selectedPath}
+            onPick={onPick}
+          />
+        ))}
+      </SectionList>
+      <SectionList
+        label={copy.sharedLabel}
+        count={shown.shared.length}
+        empty={searching ? copy.noMatch : copy.sharedEmpty}
+      >
+        {shown.shared.map((item) => (
+          <FileRow
+            key={item.id}
+            item={item}
+            home={homeLabel(item)}
+            selected={item.display_path === selectedPath}
+            onPick={onPick}
+          />
+        ))}
+      </SectionList>
+    </div>
+  );
 }
 
-type FileRowsProps = {
-  items: readonly FileItem[];
-  selectedPath: string | null;
-  onSelect: (path: string) => void;
+type FileRowProps = {
+  item: FileItem;
+  /** Where a shared file is homed, before its facts. */
+  home?: string;
+  selected: boolean;
+  onPick: (item: FileItem) => void;
 };
 
-/** The files of one list, one row each: the name, then the description and facts. */
-function FileRows({ items, selectedPath, onSelect }: FileRowsProps) {
+/** One listed file: its name, description and facts, and how the page reaches it, greyed when no row does. */
+function FileRow({ item, home, selected, onPick }: FileRowProps) {
+  const unreached = isUnreached(item);
+  const facts = fileMeta(item, relativeTime(item.updated_at));
   return (
-    <ul className="flex flex-col" aria-label="Files">
-      {items.map((item) => (
-        <li key={item.id}>
-          <button
-            type="button"
-            aria-current={item.display_path === selectedPath ? "true" : undefined}
-            onClick={() => onSelect(item.display_path)}
-            className={cn(
-              "flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-surface-2",
-              item.display_path === selectedPath && "bg-surface-2",
-            )}
-          >
-            <span className="flex items-center gap-2 text-sm">
-              <Icon icon={Paperclip} size={14} className="text-muted" />
-              <span className="min-w-0 flex-1 truncate font-mono">{item.name}</span>
-            </span>
-            <span className="truncate pl-6 text-xs text-muted">{item.description}</span>
-            <span className="truncate pl-6 text-xs text-muted">{fileMeta(item, relativeTime(item.updated_at))}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <Row
+      asChild
+      interactive
+      density="compact"
+      mono
+      muted={unreached}
+      selected={selected}
+      lead={<Icon icon={Paperclip} size={14} />}
+      title={item.name}
+      meta={
+        <>
+          <span className="block truncate">{item.description}</span>
+          <span className="block truncate">{home ? `${home} · ${facts}` : facts}</span>
+        </>
+      }
+      trail={<ModeTag mode={item.viewer_mode} />}
+    >
+      <button
+        type="button"
+        aria-current={selected ? "true" : undefined}
+        title={unreached ? "No row reaches it for this page: open its access list" : undefined}
+        onClick={() => onPick(item)}
+      />
+    </Row>
   );
 }
 
@@ -273,15 +288,16 @@ type FileViewProps = {
   item: FileItem;
   guildId: string;
   onOpenStep?: OpenChangeStep | undefined;
+  /** Opens the file's access list. */
+  onAccess: () => void;
   onBack?: (() => void) | undefined;
   onDeleted: () => void;
 };
 
 /** One file: its path and provenance, what it is, and the actions on it. */
-function FileView({ item, guildId, onOpenStep, onBack, onDeleted }: FileViewProps) {
+function FileView({ item, guildId, onOpenStep, onAccess, onBack, onDeleted }: FileViewProps) {
   const remove = useDeleteFile();
   const [deleting, setDeleting] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const download = async () => {
@@ -298,7 +314,7 @@ function FileView({ item, guildId, onOpenStep, onBack, onDeleted }: FileViewProp
       <div className="flex flex-wrap items-center gap-2">
         {onBack ? <IconButton icon={ArrowLeft} label="Back to files" variant="ghost" size={28} onClick={onBack} /> : null}
         <span className="min-w-0 flex-1 truncate font-mono text-sm">{item.name}</span>
-        <Button variant="outline" size="xs" onClick={() => setSharing(true)}>
+        <Button variant="outline" size="xs" onClick={onAccess}>
           <Icon icon={ShieldCheck} size={14} />
           Access
         </Button>
@@ -327,22 +343,6 @@ function FileView({ item, guildId, onOpenStep, onBack, onDeleted }: FileViewProp
         Its bytes never reach a model.
       </p>
 
-      <Dialog open={sharing} onOpenChange={setSharing}>
-        <DialogContent size="lg">
-          <DialogHeader title={`Access to ${item.name}`} />
-          <DialogBody>
-            <AccessListPanel
-              target={{ kind: "file", id: item.id }}
-              intro="Who reads and writes this file."
-            />
-          </DialogBody>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="ghost">Done</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <ConfirmDialog
         kind="destructive"
         open={deleting}
@@ -370,25 +370,31 @@ function FileView({ item, guildId, onOpenStep, onBack, onDeleted }: FileViewProp
 type UploadDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  scope: FileScope;
-  /** The files the page lists: one of the same name is the file the upload replaces. */
+  /** The page the file is uploaded on: its first row names the page's guild or agent. */
+  page: ReachSubject;
+  /** The guild the file is homed in. */
+  guildId: string;
+  /** The files the page lists, in both sections: one of the same name is the file the upload replaces. */
   listed: readonly FileItem[];
-  onUploaded: (file: FileItem) => void;
+  onUploaded: (file: StoredFile) => void;
 };
 
 /**
- * Picks a file, says what it is, and names who reaches it first, the page's subject at write
- * unless the operator picks another. A file of the same name in the page's list is replaced over
- * the version the list loaded; any other upload only creates.
+ * Picks a file, says what it is, and names who reaches it first: the page's guild or agent at
+ * write unless the operator picks another. A new file is homed in the page's guild. A file of the
+ * same name in the page's list is replaced over the version the list loaded and keeps its home;
+ * any other upload only creates.
  */
-function UploadDialog({ open, onOpenChange, scope, listed, onUploaded }: UploadDialogProps) {
+function UploadDialog({ open, onOpenChange, page, guildId, listed, onUploaded }: UploadDialogProps) {
   const upload = useUploadFile();
-  const pageAccess: AccessRow = { ...scope.page, mode: "write" };
+  const pageAccess: AccessRow = { ...page, mode: "write" };
   const [file, setFile] = useState<File | null>(null);
   const [description, setDescription] = useState("");
   const [access, setAccess] = useState<AccessRow>(pageAccess);
   const [touched, setTouched] = useState(false);
   const problem = uploadProblem(file, description);
+  const expectedVersion = file ? uploadExpectedVersion(file.name, listed) : 0;
+  const replacing = file !== null && expectedVersion > 0;
 
   const close = () => {
     setFile(null);
@@ -404,7 +410,13 @@ function UploadDialog({ open, onOpenChange, scope, listed, onUploaded }: UploadD
     setTouched(true);
     if (problem || !file) return;
     upload.mutate(
-      { file, description, access, expectedVersion: uploadExpectedVersion(file.name, listed) },
+      {
+        file,
+        description,
+        access,
+        homeGuildId: guildId,
+        expectedVersion,
+      },
       {
         onSuccess: (item) => {
           onUploaded(item);
@@ -421,7 +433,7 @@ function UploadDialog({ open, onOpenChange, scope, listed, onUploaded }: UploadD
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
             title="Upload a file"
-            description="A file of the same name in this list is replaced and keeps its access list; a name another file of the organisation holds is refused."
+            description="A file of the same name in this list is replaced and keeps its access list and home; a name another file of the organisation holds is refused."
           />
           <DialogBody>
             <div className="flex flex-col gap-3">
@@ -430,6 +442,7 @@ function UploadDialog({ open, onOpenChange, scope, listed, onUploaded }: UploadD
                 <input
                   type="file"
                   className="text-sm"
+                  disabled={upload.isPending}
                   onChange={(event) => setFile(event.currentTarget.files?.[0] ?? null)}
                 />
               </label>
@@ -439,10 +452,20 @@ function UploadDialog({ open, onOpenChange, scope, listed, onUploaded }: UploadD
                 placeholder="What the file is, in a sentence"
                 value={description}
                 maxLength={400}
+                disabled={upload.isPending}
                 onChange={(event) => setDescription(event.currentTarget.value)}
                 {...(touched && problem ? { error: problem } : {})}
               />
-              <StartingAccessField value={access} onChange={setAccess} disabled={upload.isPending} />
+              {replacing ? (
+                <Banner tone="info" title={`Replaces ${file.name}`}>
+                  The listed file of this name is replaced, and keeps its home and access list.
+                </Banner>
+              ) : (
+                <>
+                  <HomeGuildField guildId={guildId} />
+                  <StartingAccessField value={access} onChange={setAccess} disabled={upload.isPending} />
+                </>
+              )}
               {upload.isError ? (
                 <Banner tone="error" title="Couldn't upload the file">
                   {uploadFailure(upload.error, upload.variables?.expectedVersion)}

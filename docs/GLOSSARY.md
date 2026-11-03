@@ -48,6 +48,7 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | [Script](concepts/scripts.md) | Python an agent keeps and runs again. It belongs to that agent. |
 | [Artifact](concepts/artifacts.md) | The store under notes, files, collection records, Memory, and scripts. One store per organisation. |
 | [Access list](concepts/access.md#access-lists-for-notes-collections-and-files) | Who may read or write one note, collection, or file. |
+| [Home guild](concepts/notes.md#home-guild) | The guild a note or a file was made in, or none for the organisation's. It groups the guild's lists and hides the item from operators who cannot see that guild; it never decides an agent's reach. In code it is `origin_guild_id`. |
 
 ## Tools
 

@@ -2,7 +2,7 @@
 // history, and a proposed change to a note.
 
 import { Type, type Static } from "typebox";
-import { operatorActor } from "../artifacts/actors.js";
+import { studioActor } from "./actor.js";
 import { artifactAt, findNotes, parseActorPath } from "../artifacts/notes.js";
 import { listFileChanges } from "../db/file-changes.js";
 import { studioTool } from "./arguments.js";
@@ -35,12 +35,7 @@ export const studioFindArtifacts: StudioTool = studioTool({
   parameters: FindArtifactsArguments,
   async run(deps, call, input: FindArtifactsArguments) {
     const limit = clampLimit(input.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
-    const actor = operatorActor({
-      orgId: call.orgId,
-      actorId: call.user.id,
-      actorName: call.user.name ?? "operator",
-      guildId: call.sourceGuildId,
-    });
+    const actor = studioActor(call);
     const found = await findNotes(deps.artifacts, actor, { query: input.query ?? "", limit: STUDIO_ARTIFACT_LIST_MAX });
     const allowed = [];
     for (const item of found.notes) {
@@ -73,12 +68,7 @@ export const studioGetArtifact: StudioTool = studioTool({
   parameters: GetArtifactArguments,
   async run(deps, call, input: GetArtifactArguments) {
     const displayPath = input.display_path;
-    const actor = operatorActor({
-      orgId: call.orgId,
-      actorId: call.user.id,
-      actorName: call.user.name ?? "operator",
-      guildId: call.sourceGuildId,
-    });
+    const actor = studioActor(call);
     const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind === "collection") {
       throw new StudioUnprocessableError(`${parsed.collectionName} is a table; read it with studio_get_collection`);
@@ -125,12 +115,7 @@ export const studioListFileChanges: StudioTool = studioTool({
   parameters: ListFileChangesArguments,
   async run(deps, call, input: ListFileChangesArguments) {
     const displayPath = input.display_path;
-    const actor = operatorActor({
-      orgId: call.orgId,
-      actorId: call.user.id,
-      actorName: call.user.name ?? "operator",
-      guildId: call.sourceGuildId,
-    });
+    const actor = studioActor(call);
     const parsed = parseActorPath(actor, displayPath);
     if (!(await studioReachesParsed(deps, call, parsed))) {
       throw new StudioUnprocessableError("path is not in the source guild's reach");

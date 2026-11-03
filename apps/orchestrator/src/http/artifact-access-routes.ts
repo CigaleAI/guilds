@@ -8,7 +8,7 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import type { RouteApp, RouteDeps } from "./deps.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { AgentParams, GuildParams } from "./params.js";
-import { accessList, reachOf, replaceAccess } from "../artifacts/access-lists.js";
+import { accessList, reachOf, replaceAndAnnounceItemAccess, type ItemAccessWriteDeps } from "../artifacts/access-lists.js";
 
 /** The path of one item whose access list a route reads or replaces. */
 const ItemParams = Type.Object({ item_id: Type.String() });
@@ -23,6 +23,10 @@ const ACCESS_TARGETS = [
 /** An item's access list, and what a guild or an agent reaches across the organisation's items. */
 export async function registerArtifactAccessRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const { db, artifacts: store } = deps;
+  const accessWrites: ItemAccessWriteDeps = {
+    store,
+    ...(deps.publishItemAccessChanged ? { publishItemAccessChanged: deps.publishItemAccessChanged } : {}),
+  };
 
   async function orgActor(request: FastifyRequest): Promise<ArtifactActor> {
     const user = await currentUser(db, request, deps);
@@ -42,7 +46,7 @@ export async function registerArtifactAccessRoutes(app: RouteApp, deps: RouteDep
       async (request) => {
         const actor = await orgActor(request);
         const item = { kind: target.kind, id: request.params.item_id };
-        return replaceAccess(store, actor, item, request.body.subjects);
+        return replaceAndAnnounceItemAccess(accessWrites, actor, item, request.body.subjects);
       },
     );
   }

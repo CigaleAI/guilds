@@ -6,7 +6,7 @@ import { validateGuildTextPatch, type GuildTextPatch } from "../guilds/validatio
 import { STUDIO_ACCESS_TOOLS, applyAccess, reviewAccess, reviewAccessRequest } from "./access.js";
 import { StudioConflictError, StudioError, StudioNotFoundError, StudioUnprocessableError, artifactRefusal } from "./errors.js";
 import type { StudioOrigin } from "../lib/change-actor.js";
-import { editActor } from "./actor.js";
+import { studioActor, type StudioOperator } from "./actor.js";
 import { decodeStudioArguments } from "./arguments.js";
 import {
   EditAccessArguments,
@@ -35,7 +35,6 @@ import { isJsonObject, type JsonObject } from "../lib/json.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage, type ConversationMessageRow } from "../db/conversations.js";
 import type { ConversationMessageMetadata, ToolCall } from "../db/schema/index.js";
-import type { UserRow } from "../db/users.js";
 import { writeNoteAt } from "../artifacts/notes.js";
 import { readMemoryVersion, writeMemory } from "../artifacts/memory.js";
 
@@ -74,14 +73,11 @@ export type EditDeps = {
 };
 
 /** The Studio session an edit belongs to, and the operator who proposes or applies it. */
-export type EditScope = {
-  orgId: string;
-  sourceGuildId: string;
+export type EditScope = StudioOperator & {
   /** The Studio session the edits belong to. */
   sessionId: string;
   /** The coach message being applied; set by `applyEdit` so every write links to it. */
   origin?: StudioOrigin;
-  user: UserRow;
 };
 
 export function guildTextHash(text: GuildText): string {
@@ -96,7 +92,7 @@ export async function loadMemoryBase(
 ): Promise<EditBase> {
   const memory = await readMemoryVersion(
     deps.artifacts,
-    editActor(scope, { agentId: agent.id }),
+    studioActor(scope, { agentId: agent.id }),
     agent.id,
   );
   return {
@@ -606,7 +602,7 @@ async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord
     if (guildTextHash(proposedGuildText(base, record.args)) !== edit.proposed_hash) {
       throw new StudioConflictError("the proposal no longer matches its request");
     }
-    const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), editActor(scope));
+    const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), studioActor(scope));
     if (!row) {
       throw new StudioUnprocessableError("source guild not found");
     }
@@ -619,7 +615,7 @@ async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord
   const toolCall = { id: record.toolCallId, name: record.toolName };
   try {
     if (base.kind === "memory") {
-      const actor = { ...editActor(scope, { agentId: base.agentId }), toolCall };
+      const actor = { ...studioActor(scope, { agentId: base.agentId }), toolCall };
       const { row } = await writeMemory(deps.artifacts, actor, base.agentId, {
         content: proposed,
         detail: record.toolName,
@@ -627,7 +623,7 @@ async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord
       });
       return { version: row.version };
     }
-    const actor = { ...editActor(scope, { guildId: base.guildId }), toolCall };
+    const actor = { ...studioActor(scope, { guildId: base.guildId }), toolCall };
     const written = await writeNoteAt(deps.artifacts, actor, base.displayPath, {
       content: proposed,
       expectedVersion: base.version,

@@ -1,7 +1,7 @@
 import { ApiError, readApiFailure } from "./client";
 import { requestId } from "./clientLog";
 import { identityHeaders } from "./session";
-import type { FileItem, FileUpload } from "./types/files";
+import type { FileUpload, StoredFile } from "./types/files";
 import { hasFields, isNumber, isJsonObject, isString } from "./wire";
 
 /** Where every upload goes: the organisation holds every shared file. */
@@ -12,10 +12,11 @@ export const FILE_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * Stores a file's bytes in the organisation with its description, its access list starting with
- * the upload's row; a file of the same name is replaced when the upload's expected version allows.
+ * the upload's row and its home the upload's guild; a file of the same name is replaced when the
+ * upload's expected version allows.
  */
-export async function uploadFile(upload: FileUpload): Promise<FileItem> {
-  const { file, description, access, expectedVersion } = upload;
+export async function uploadFile(upload: FileUpload): Promise<StoredFile> {
+  const { file, description, access, homeGuildId, expectedVersion } = upload;
   const response = await fetch(uploadPath, {
     method: "POST",
     headers: {
@@ -29,6 +30,7 @@ export async function uploadFile(upload: FileUpload): Promise<FileItem> {
       "X-Access-Type": access.type,
       "X-Access-Id": access.id,
       "X-Access-Mode": access.mode,
+      ...(homeGuildId !== undefined ? { "X-Home-Guild": homeGuildId } : {}),
       ...(expectedVersion !== undefined ? { "X-Expected-Version": String(expectedVersion) } : {}),
     },
     credentials: "same-origin",
@@ -38,14 +40,14 @@ export async function uploadFile(upload: FileUpload): Promise<FileItem> {
     throw await readApiFailure("POST", uploadPath, response);
   }
   const reply: unknown = await response.json();
-  if (!isFileItem(reply)) {
+  if (!isStoredFile(reply)) {
     throw new ApiError(response.status, "The server's reply is not a stored file.");
   }
   return reply;
 }
 
-/** Whether a reply is a stored file, as a files list holds one. */
-export function isFileItem(value: unknown): value is FileItem {
+/** Whether a reply is a stored file. */
+export function isStoredFile(value: unknown): value is StoredFile {
   return (
     isJsonObject(value) &&
     hasFields(

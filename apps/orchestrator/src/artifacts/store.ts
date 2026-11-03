@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { isHiddenByList, readAgentMode, type ArtifactMode } from "../db/artifact-access.js";
+import type { AgentViewerMode, GuildViewerMode, PageArtifactRow, SectionedArtifactRow } from "../db/artifact-lists.js";
 import { countLiveNotesAndFiles, type ArtifactRow } from "../db/artifacts.js";
 import { formatOperationalTimestamp } from "../db/codecs.js";
 import type { RecordRow } from "../db/collections.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
 import type { ArtifactContent, CollectionColumn, RecordBody, RecordValue, AccessMode } from "../db/schema/index.js";
 import type { Queryable } from "../db/pg.js";
 import { reachedMode } from "./access.js";
@@ -73,8 +75,26 @@ export type ArtifactTextView = {
   content: string | null;
 };
 
-/** A note as the Host lists it: `path` is its file name, `id` names it to the access API. */
-export type HostNoteView = Pick<ArtifactTextView, "display_path" | "kind" | "title" | "version"> & { id: string; path: string };
+/** The guild a note or a file is homed in: the guild it was made in, which groups the lists it shows in. */
+export type ItemHome = Pick<GuildRow, "id" | "name">;
+
+/** The mode a page's viewer has on an item it lists: an organisation's or a guild's, or an agent's. */
+export type ViewerMode = GuildViewerMode | AgentViewerMode;
+
+/**
+ * A note as the Host lists it: `path` is its file name, `id` names it to the access API, `home` is
+ * the guild it is homed in (null for the organisation), and `viewer_mode` is the mode of the page's
+ * viewer on it.
+ */
+export type HostNoteView<Mode extends ViewerMode> = Pick<ArtifactTextView, "display_path" | "kind" | "title" | "version"> & {
+  id: string;
+  path: string;
+  home: ItemHome | null;
+  viewer_mode: Mode;
+};
+
+/** What a guild's or an agent's page lists: the items homed in its guild, and those shared with the guild from elsewhere. */
+export type PageSections<View> = { own: View[]; shared: View[] };
 
 /** A collection by name with the reader's mode on it. */
 export type CollectionDescription = {
@@ -142,10 +162,46 @@ export function reachesAgent(actor: ArtifactActor, agentId: string): boolean {
   return agentId === actor.agentId;
 }
 
-/** Whether a note or a file is hidden from an operator actor: its list names only guilds and agents it does not reach. */
-export async function isHiddenItem(store: ArtifactStore, actor: ArtifactActor, row: Pick<ArtifactRow, "id" | "kind">): Promise<boolean> {
+/** The guild of the organisation `guildId` names, refused when it is unknown or hidden from the actor. */
+export async function requireGuild(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<string> {
+  const id = String(guildId ?? "").trim();
+  const guild = await getGuild(store.db, id);
+  if (!guild || guild.org_id !== actor.orgId || actor.hidden.guildIds.includes(id)) {
+    throw new ArtifactError("unknown guild", 404);
+  }
+  return id;
+}
+
+/**
+ * The operator actor whose new notes and files are homed in the guild `homeGuildId` names, or in
+ * the organisation when it is absent or blank. ArtifactError 404 when the guild is unknown or hidden
+ * from the actor.
+ */
+export async function homedActor(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  homeGuildId: string | undefined,
+): Promise<ArtifactActor> {
+  const named = (homeGuildId ?? "").trim();
+  const guildId = named ? await requireGuild(store, actor, named) : null;
+  return { ...actor, guildId };
+}
+
+/**
+ * Whether a note or a file is hidden from an operator actor: it is homed in a guild hidden from them,
+ * or it has no home and its list names only guilds and agents it does not reach. An item homed in a
+ * guild the actor sees is not hidden, whatever its rows.
+ */
+export async function isHiddenItem(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  row: Pick<ArtifactRow, "id" | "kind" | "origin_guild_id">,
+): Promise<boolean> {
   if (row.kind !== "note" && row.kind !== "file") {
     return false;
+  }
+  if (row.origin_guild_id !== null) {
+    return actor.hidden.guildIds.includes(row.origin_guild_id);
   }
   return isHiddenByList(store.db, { kind: row.kind, id: row.id }, actor.hidden);
 }
@@ -269,8 +325,13 @@ export function recordViewWithPath(row: RecordRow): RecordView {
   };
 }
 
+/** The guild a listed row is homed in; null for the organisation's. */
+export function itemHome(row: PageArtifactRow<ViewerMode>): ItemHome | null {
+  return row.origin_guild_id !== null && row.home_name !== null ? { id: row.origin_guild_id, name: row.home_name } : null;
+}
+
 /** A note as the Host lists it. */
-export function hostNoteView(row: ArtifactRow): HostNoteView {
+export function hostNoteView<Mode extends ViewerMode>(row: PageArtifactRow<Mode>): HostNoteView<Mode> {
   return {
     id: row.id,
     path: row.key,
@@ -278,5 +339,18 @@ export function hostNoteView(row: ArtifactRow): HostNoteView {
     kind: row.kind,
     title: row.title,
     version: row.version,
+    home: itemHome(row),
+    viewer_mode: row.viewer_mode,
+  };
+}
+
+/** A page's rows in their sections, each as `view` shows it: those homed in the page's guild, and the others. */
+export function pageSections<Mode extends ViewerMode, View>(
+  rows: Array<SectionedArtifactRow<Mode>>,
+  view: (row: SectionedArtifactRow<Mode>) => View,
+): PageSections<View> {
+  return {
+    own: rows.filter((row) => row.homed).map(view),
+    shared: rows.filter((row) => !row.homed).map(view),
   };
 }

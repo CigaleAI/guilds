@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { ApiError } from "./client";
-import { isFileItem, uploadFile } from "./files";
+import { isStoredFile, uploadFile } from "./files";
 
 const realFetch = globalThis.fetch;
 
@@ -21,16 +21,16 @@ const item = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
-test("isFileItem admits a stored file, with or without its access", () => {
-  assert.equal(isFileItem(item), true);
-  assert.equal(isFileItem({ ...item, access: "write" }), true);
+test("isStoredFile admits a stored file, with or without its access", () => {
+  assert.equal(isStoredFile(item), true);
+  assert.equal(isStoredFile({ ...item, access: "write" }), true);
 });
 
-test("isFileItem refuses a reply missing a field or naming another access", () => {
-  assert.equal(isFileItem({ ...item, name: undefined }), false);
-  assert.equal(isFileItem({ ...item, version: "3" }), false);
-  assert.equal(isFileItem({ ...item, access: "admin" }), false);
-  assert.equal(isFileItem([]), false);
+test("isStoredFile refuses a reply missing a field or naming another access", () => {
+  assert.equal(isStoredFile({ ...item, name: undefined }), false);
+  assert.equal(isStoredFile({ ...item, version: "3" }), false);
+  assert.equal(isStoredFile({ ...item, access: "admin" }), false);
+  assert.equal(isStoredFile([]), false);
 });
 
 const upload = {
@@ -64,6 +64,20 @@ test("uploadFile sends the version it expects: 0 to only create, the loaded one 
   assert.deepEqual(
     sent.map((headers) => headers.get("X-Expected-Version")),
     ["0", "3"],
+  );
+});
+
+test("uploadFile names the home guild when the upload has one, and none otherwise", async () => {
+  const sent: Headers[] = [];
+  globalThis.fetch = async (_input, init) => {
+    sent.push(new Headers(init?.headers));
+    return Response.json(item);
+  };
+  await uploadFile({ ...upload, homeGuildId: "g1" });
+  await uploadFile(upload);
+  assert.deepEqual(
+    sent.map((headers) => headers.get("X-Home-Guild")),
+    ["g1", null],
   );
 });
 

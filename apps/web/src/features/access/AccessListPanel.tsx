@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useAgentsByGuild } from "../../api/queries/agents";
 import { useGuilds } from "../../api/queries/guilds";
 import { useItemAccess, useSetItemAccess } from "../../api/queries/access";
-import type { AccessEntry, AccessListMode, AccessRow, AccessTarget } from "../../api/types/access";
+import type { AccessEntry, AgentAccessMode, AccessRow, AccessTarget } from "../../api/types/access";
 import { useIdentity } from "../../app/identity";
 import {
   Banner,
@@ -75,7 +75,7 @@ export function AccessListPanel({ target, intro }: AccessListPanelProps) {
 type AccessRowsProps = {
   entries: readonly AccessEntry[];
   disabled: boolean;
-  onMode: (entry: AccessEntry, mode: AccessListMode) => void;
+  onMode: (entry: AccessEntry, mode: AgentAccessMode) => void;
   onRemove: (entry: AccessEntry) => void;
 };
 
@@ -129,7 +129,7 @@ function AddAccessRow({ taken, disabled, onAdd }: AddAccessRowProps) {
   const guilds = useGuilds().data ?? [];
   const agentsByGuild = useAgentsByGuild(guilds.map((guild) => guild.id));
   const [picked, setPicked] = useState("");
-  const [mode, setMode] = useState<AccessListMode>("read");
+  const [mode, setMode] = useState<AgentAccessMode>("read");
   const groups = accessCandidates({ org, guilds, agentsByGuild, taken });
   const subject = findCandidate(groups, picked);
 

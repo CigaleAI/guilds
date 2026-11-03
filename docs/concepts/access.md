@@ -181,10 +181,13 @@ So an agent row can hold one agent back below its guild, with `none`
 or `read`, or raise it above its guild, with `write`. An item an agent
 cannot read behaves for it as if it did not exist.
 
-Nothing about who reaches a note or a file comes from who created it
-or from where. A note's or a file's name is unique in its
+Nothing about which agent reaches a note or a file comes from who
+created it or from where. A note's or a file's name is unique in its
 organisation, and its display path names the organisation and the
-name alone. A collection's owning guild is placement only: it decides
+name alone. A note's or a file's home guild, the guild it was made
+in, groups it in the app's lists and hides it from operators who
+cannot see that guild (below); it gives no agent a mode
+([Notes](notes.md#home-guild)). A collection's owning guild is placement only: it decides
 the collection's display path and where it is listed, not who reaches
 it, and moving a collection between a guild and the organisation
 leaves its access list as it is.
@@ -195,7 +198,7 @@ rows, shown and changed like any other:
 | The item | Starting rows |
 | --- | --- |
 | A note or a file an agent creates | that agent at `write` |
-| A note or a file an operator creates | the one row the operator names; the organisation at `write` when they name none |
+| A note or a file an operator creates | the one row the operator names, which the app's dialogs start at the page's guild or agent at `write`; the organisation at `write` when they name none |
 | A recipe's note | the rows the recipe states; the new guild at `write` when it states none ([Recipe format](recipe-format.md#notes)) |
 | A collection placed in a guild | that guild at `write` |
 | A collection placed at the organisation | the organisation at `read` |
@@ -206,9 +209,21 @@ Some things sit outside the access lists:
   [scripts](scripts.md) belong to that agent and have no access list.
   The agent always reads and writes them.
 - An operator reads and writes every note and file, except one that
-  is hidden from them: its access list is not empty, and every row on
-  it names a private guild they do not operate or an agent of such a
-  guild. A note or a file with no row is hidden from no operator. An
+  is hidden from them. The home decides first:
+  - **by home**: an item homed in a private guild they do not operate
+    is hidden, whatever its rows say, an organisation row included;
+    an item homed in a guild they can see is never hidden, whatever
+    its rows say;
+  - **by rows**: an item with no home is hidden when its access list
+    is not empty and every row on it names a private guild they do
+    not operate or an agent of such a guild.
+
+  A note or a file with no home and no row is hidden from no
+  operator. A hidden item is left out of every list and search, and
+  refused by every read and write, its change history included.
+  Hiding never changes what an agent reaches: an agent of another
+  guild that an organisation row reaches still reads a private
+  guild's note. An
   operator also reaches every collection, Memory, Task, and script,
   except a private guild's own collections and its agents' Memory,
   Tasks, and scripts when they do not operate it
@@ -303,16 +318,18 @@ gets each. It has no switches ([Secrets](secrets.md#in-the-app)).
 ### The Access panel
 
 The **Access** panel shows and edits one item's access list. It is
-in two places:
+in these places:
 
 - a collection's **Access** tab on the **Tables** page. The tab's
   count is the number of rows
   ([Collections](collections.md#the-tables-page)).
 - the **Access** button in the header of an open note, in the notes
-  browser. It opens a dialog titled **Access to `<path>`**
+  browser, and a click on a greyed note, one no row reaches for the
+  page. Both open a dialog titled **Access to `<path>`**
   ([Notes](notes.md#in-the-app)).
-- the **Access** button in the header of an open file, in the files
-  browser, with the same dialog ([Files](files.md#in-the-app)).
+- the **Access** button in the header of an open file, and a click on
+  a greyed file, in the files browser, with the same dialog
+  ([Files](files.md#in-the-app)).
 
 The panel:
 
@@ -326,7 +343,8 @@ The panel:
 
 Each change saves the whole list at once. Rows of private guilds the
 operator does not operate, and of their agents, do not show, and a
-save leaves them as they are.
+save leaves them as they are. The panel does not show or change a
+note's or a file's home guild.
 
 ### What a guild or an agent reaches
 
@@ -340,7 +358,8 @@ is read only. Its **Tables** and **Notes** sections always show, with
 Each item opens where its access is changed:
 
 - a table opens its **Access** tab on the **Tables** page
-- a note opens in the **Org** list of the guild's **State › Notes**
+- a note opens in the guild's **State › Notes**, in the section that
+  lists it
 
 ## Rules and limits
 
@@ -360,7 +379,7 @@ Each item opens where its access is changed:
 | Starting rows of a note or a file | One row: the creating agent at `write`, or the subject the operator names (the organisation at `write` by default) |
 | Starting rows of a collection | Placed in a guild: the guild at `write`. Placed at the organisation: the organisation at `read` |
 | Always reached by an agent | Its own Memory, Task, and scripts |
-| Hidden from an operator | A note or a file whose rows all name private guilds they do not operate or those guilds' agents; never one with no row |
+| Hidden from an operator | A note or a file homed in a private guild they do not operate, whatever its rows; or one with no home whose rows all name private guilds they do not operate or those guilds' agents. Never one homed in a guild they can see, nor one with no home and no row |
 | Who changes an access list | Any member of the organisation, on items they can see; never an agent |
 
 What an operator relies on about secrets, machines, and redaction is
@@ -541,9 +560,16 @@ and the organisation's row; when there is neither, no access. `none`
 and no row both mean no access. Every note, file, and record tool,
 State, and every listing an agent gets apply it. An operator actor skips it
 and writes every note and file except the hidden ones
-(`hiddenScope` in `apps/orchestrator/src/db/artifacts.ts`): a list
-that is not empty and whose every row names a guild in the
-operator's hidden set or an agent of one. The same rule over an item's listed rows
+(`hiddenScope` in `apps/orchestrator/src/db/artifacts.ts`, and
+`isHiddenItem` in `apps/orchestrator/src/artifacts/store.ts` for one
+item): an item whose `origin_guild_id` is a guild in the operator's
+hidden set, and an item whose `origin_guild_id` is null and whose
+list is not empty and names only guilds in that set or agents of
+them. An item whose `origin_guild_id` is a guild outside the set is
+never hidden. The home rule is part
+of the hiding predicate only; `agentModeSql`, `artifactModeSql`, the
+guild's scope (`guildScopeSql`), Studio's reach, and the starting
+rows never read the home. The same rule over an item's listed rows
 (`effectiveAccess` in `apps/orchestrator/src/artifacts/access.ts`)
 gives the modes Studio shows for a table and the access a recipe
 captures and raises.
@@ -571,14 +597,30 @@ A deleted note or file keeps its rows on its tombstone, so the hiding
 rule still covers it and its change history. History is read by item,
 so a name a hidden deleted item held does not show that item's
 changes once another item holds it
-([Artifact store](artifacts.md#file-provenance)). Deleting a guild or
-an agent removes the rows naming it, and with them every live note
-and file those rows alone reached: an item whose list
-that leaves empty is deleted too, as the operator who deleted the
-guild or the agent, and its deletion is recorded in its history. Its
-tombstone has no row left, so its history shows to every operator. A
-note or a file that another row still reaches stays, without the
-removed rows.
+([Artifact store](artifacts.md#file-provenance)). A deletion leaves
+nothing a private guild hid visible to the operators outside it:
+
+- Deleting an agent of a private guild first homes in that guild
+  every note and file, live or deleted, with no home whose list is
+  not empty and names only the agent
+  (`homeAgentOnlyNotesAndFiles` in
+  `apps/orchestrator/src/db/artifact-access.ts`), so it stays hidden
+  by its home and is listed greyed in the guild's own section. It
+  then removes the rows naming the agent.
+- Deleting an agent of a guild that is not private removes the rows
+  naming it and nothing else.
+- Deleting a private guild first removes every note and file, live
+  or deleted, homed in it whatever its rows, and every one with no
+  home whose list is not empty and names only the guild or its
+  agents, with its change history and the log of its access list
+  (`purgePrivateGuildNotesAndFiles`), so no operator reads what they
+  were. It then removes the rows naming the guild or one of its
+  agents.
+- Deleting a guild that is not private removes those rows; its items
+  hid nothing by home, so they stay and become the organisation's.
+
+Every other note and file stays under its home, without the removed
+rows.
 
 ```text
 GET  /api/notes/:note_id/access                { subjects }
@@ -637,6 +679,17 @@ Removed agent scout from the access of the table leads
 ```
 
 A `PUT` that changes nothing appends nothing.
+
+A `PUT` on a note's or a file's list publishes
+`guild.artifacts.changed`, as a write of the item does, on the stream
+of each guild whose page listed the item before the change or lists it
+after: its home guild, and the guilds in its scope, every guild of the
+organisation when the list has an organisation row. An item homed in
+a private guild is announced on that guild's stream alone. The guilds
+are read from every row of the list, those of guilds hidden from the
+operator who replaces it included
+([Notes](notes.md#http), [Files](files.md#http)). A `PUT` on a
+collection's list publishes nothing.
 
 The `reach` routes are read only. They answer what the guild's agents
 reach through the guild's and the organisation's rows, or what one

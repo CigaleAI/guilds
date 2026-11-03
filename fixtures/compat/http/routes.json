@@ -12642,10 +12642,13 @@
       "response": {
         "status": 200,
         "headers": {
-          "content-length": "131",
+          "content-length": "22",
           "content-type": "application/json"
         },
-        "json": []
+        "json": {
+          "own": [],
+          "shared": []
+        }
       }
     },
     {
@@ -13348,10 +13351,24 @@
       "response": {
         "status": 200,
         "headers": {
-          "content-length": "2",
+          "content-length": "168",
           "content-type": "application/json"
         },
-        "json": []
+        "json": {
+          "own": [],
+          "shared": [
+            {
+              "id": "<id:art:1>",
+              "path": "note.md",
+              "display_path": "org/org_home/note.md",
+              "kind": "note",
+              "title": null,
+              "version": 1,
+              "home": null,
+              "viewer_mode": "none"
+            }
+          ]
+        }
       }
     },
     {

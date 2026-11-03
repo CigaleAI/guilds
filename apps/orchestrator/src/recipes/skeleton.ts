@@ -368,7 +368,7 @@ async function rollBack(skeleton: Skeleton): Promise<string[]> {
 /** Creates everything the skeleton holds and records the apply with its plan and checklist. */
 async function build(skeleton: Skeleton, recipe: RecipeDocument, preview: ApplyPreview, choices: ApplyChoices): Promise<RecipeApplyRow> {
   const { org, user, recipeRow } = skeleton.source;
-  if (!choices.guild_id) {
+  if (preview.guild_id === null) {
     await createGuild(skeleton, recipe);
   }
   for (const role of recipe.roles) {
@@ -422,8 +422,8 @@ export async function createSkeleton(
     models: roleModelMap(preview.models),
     harnesses: roleHarnessMap(preview.harnesses),
   });
-  const maxAgentsPerMachine = await assertAllowed(apply, { orgId: org.id, machineId, guildId: choices.guild_id }, recipe);
-  const guildId = choices.guild_id ?? newId("guild");
+  const maxAgentsPerMachine = await assertAllowed(apply, { orgId: org.id, machineId, guildId: preview.guild_id ?? undefined }, recipe);
+  const guildId = preview.guild_id ?? newId("guild");
   const skeleton: Skeleton = {
     apply,
     source,

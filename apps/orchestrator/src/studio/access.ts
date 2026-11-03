@@ -13,7 +13,7 @@ import { connectionTools } from "../mcp/service.js";
 import type { AccessSetting, EditAccessArguments } from "./edit-arguments.js";
 import { jsonHash, type AccessChange, type AgentTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
-import { editActor } from "./actor.js";
+import { studioActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
 import { getBinding, listBindingsCovering, type BindingRow } from "../db/bindings.js";
@@ -325,7 +325,7 @@ export async function applyAccess(deps: EditDeps, scope: EditScope, agentId: str
     throw new StudioConflictError("the agent's access already matches this proposal");
   }
   const now = new Date();
-  const actor = editActor(scope, { agentId });
+  const actor = studioActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
       await resetBinding(deps.db,

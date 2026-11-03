@@ -1,15 +1,12 @@
-import {
-  useMutation,
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
-import { guildPath } from "./guilds";
-import type { AccessSubject } from "../types/access";
+import type { ItemSections, ReachSubject } from "../types/access";
 import type {
   EmbeddableNote,
+  EmbeddableNoteList,
+  EmbeddableNoteSections,
   EmbeddedNote,
+  ListedEmbeddableNote,
   EmbedStatus,
   FileContent,
   NoteItem,
@@ -30,22 +27,29 @@ export const noteKeys = {
   agentTask: (agentId: string) => ["artifacts", "task", agentId] as const,
   agentMemory: (agentId: string) => ["artifacts", "memory", agentId] as const,
   embeddableNotes: ["artifacts", "embeddable-notes"] as const,
+  agentEmbeddableNotes: (agentId: string) =>
+    ["artifacts", "embeddable-notes", "agent", agentId] as const,
   embedStatuses: ["artifacts", "embed-status"] as const,
   embedStatus: (guildId: string) => ["artifacts", "embed-status", guildId] as const,
   latestChange: (displayPath: string) => ["artifacts", "latest-change", displayPath] as const,
   fileChanges: (displayPath: string) => ["artifacts", "changes", displayPath] as const,
   liveMemory: (agentId: string) => ["artifacts", "live-memory", agentId] as const,
   noteLists: ["artifacts", "notes"] as const,
-  noteList: (page: AccessSubject) => ["artifacts", "notes", page.type, page.id] as const,
+  noteList: (page: ReachSubject) => ["artifacts", "notes", page.type, page.id] as const,
   note: (key: string) => ["artifacts", "note", key] as const,
 };
+
+/** Where a guild's agents' broken Task embeds are read. */
+function embedStatusPath(guildId: string): string {
+  return `/api/guilds/${encodeURIComponent(guildId)}/embed-status`;
+}
 
 /** Each listed guild's agents whose Task embeds something the agent cannot reach, by agent. */
 export function useBrokenEmbeds(guildIds: readonly string[]) {
   return useQueries({
     queries: guildIds.map((guildId) => ({
       queryKey: noteKeys.embedStatus(guildId),
-      queryFn: () => api<EmbedStatus>(`${guildPath(guildId)}/embed-status`),
+      queryFn: () => api<EmbedStatus>(embedStatusPath(guildId)),
       staleTime: 60_000,
     })),
     combine: (results) => {
@@ -81,8 +85,7 @@ export function useAgentTask(agentId: string) {
 export function useSaveTask(agentId: string, guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: TaskInput) =>
-      api<TaskFile>(taskPath(agentId), { method: "PUT", body }),
+    mutationFn: (body: TaskInput) => api<TaskFile>(taskPath(agentId), { method: "PUT", body }),
     onSuccess: (task) => {
       client.setQueryData(noteKeys.agentTask(agentId), task);
       void client.invalidateQueries({ queryKey: noteKeys.embedStatus(guildId) });
@@ -125,11 +128,37 @@ export function useSaveMemory(agentId: string) {
   });
 }
 
+function embeddableNoteList(notes: EmbeddableNote[]): EmbeddableNoteList {
+  return { kind: "list", notes };
+}
+
+function embeddableNoteSections(
+  sections: ItemSections<ListedEmbeddableNote>,
+): EmbeddableNoteSections {
+  return { kind: "sections", sections };
+}
+
 /** Notes the operator can read and embed, across the organisation (the server lists up to 500). */
 export function useEmbeddableNotes() {
   return useQuery({
     queryKey: noteKeys.embeddableNotes,
     queryFn: () => api<EmbeddableNote[]>("/api/org/embeddable-notes"),
+    select: embeddableNoteList,
+  });
+}
+
+/**
+ * The notes the agent's Task can embed, in its page's two sections, each with the agent's mode on
+ * it; the agent reads only those it reaches.
+ */
+export function useAgentEmbeddableNotes(agentId: string) {
+  return useQuery({
+    queryKey: noteKeys.agentEmbeddableNotes(agentId),
+    queryFn: () =>
+      api<ItemSections<ListedEmbeddableNote>>(
+        `/api/org/embeddable-notes?agent_id=${encodeURIComponent(agentId)}`,
+      ),
+    select: embeddableNoteSections,
   });
 }
 
@@ -148,7 +177,7 @@ export function useEmbeddableNote(displayPath: string | null, enabled: boolean) 
 export function useEmbedStatus(guildId: string) {
   return useQuery({
     queryKey: noteKeys.embedStatus(guildId),
-    queryFn: () => api<EmbedStatus>(`/api/guilds/${encodeURIComponent(guildId)}/embed-status`),
+    queryFn: () => api<EmbedStatus>(embedStatusPath(guildId)),
   });
 }
 
@@ -177,13 +206,8 @@ export function useFileChanges(displayPath: string | undefined) {
   });
 }
 
-/**
- * The route that lists a page's notes: the organisation's lists every note, a guild's the notes
- * whose access list names the guild, one of its agents or the organisation, an agent's the notes
- * it reads.
- */
-function noteListPath(page: AccessSubject): string {
-  if (page.type === "org") return "/api/org/notes";
+/** The route that lists a guild's or an agent's notes, by home. */
+function noteListPath(page: ReachSubject): string {
   return `/api/${page.type === "guild" ? "guilds" : "agents"}/${encodeURIComponent(page.id)}/notes`;
 }
 
@@ -192,12 +216,11 @@ function notePath(key: string): string {
   return `/api/org/notes/${encodeURIComponent(key)}`;
 }
 
-/** The notes a page lists, or nothing when there is no page. */
-export function useNoteList(page: AccessSubject | null) {
+/** A guild's or an agent's notes: those homed in its guild, and those shared with it. */
+export function useNoteSections(page: ReachSubject) {
   return useQuery({
-    queryKey: page ? noteKeys.noteList(page) : noteKeys.noteLists,
-    queryFn: () => api<NoteItem[]>(page ? noteListPath(page) : ""),
-    enabled: Boolean(page),
+    queryKey: noteKeys.noteList(page),
+    queryFn: () => api<ItemSections<NoteItem>>(noteListPath(page)),
   });
 }
 
@@ -212,35 +235,42 @@ export function useNote(key: string | null) {
 
 /**
  * Writes the organisation's note at the input's key, creating it with the input's first access row
- * when no note has that key, and refused (409) when the note is not at the version the input expects.
+ * and home when no note has that key, and refused (409) when the note is not at the version the
+ * input expects.
  */
 export function writeOrgNote(input: NoteInput): Promise<FileContent> {
   const { path, ...body } = input;
   return api<FileContent>(notePath(path), { method: "PUT", body });
 }
 
-/** Writes the organisation's note at a key through `writeOrgNote`, and refreshes what lists or shows it. */
+/**
+ * Writes the organisation's note at a key through `writeOrgNote`, and refreshes what lists or shows
+ * it; the write settles once the notes lists have refetched, so they hold a note it creates.
+ */
 export function useSaveNote() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: writeOrgNote,
     onSuccess: (file, { path }) => {
       client.setQueryData(noteKeys.note(path), file);
-      void client.invalidateQueries({ queryKey: noteKeys.noteLists });
       void client.invalidateQueries({ queryKey: noteKeys.embeddableNotes });
       void client.invalidateQueries({ queryKey: noteKeys.latestChange(file.display_path) });
+      return client.invalidateQueries({ queryKey: noteKeys.noteLists });
     },
   });
 }
 
-/** Deletes the organisation's note with this key; the server refuses one a Task still embeds. */
+/**
+ * Deletes the organisation's note with this key; the server refuses one a Task still embeds. The
+ * delete settles once the notes lists have refetched without the note.
+ */
 export function useDeleteNote() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (key: string) => api<undefined>(notePath(key), { method: "DELETE" }),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: noteKeys.noteLists });
       void client.invalidateQueries({ queryKey: noteKeys.embeddableNotes });
+      return client.invalidateQueries({ queryKey: noteKeys.noteLists });
     },
   });
 }

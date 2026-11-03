@@ -80,8 +80,8 @@ export async function readAgentMode(
 }
 
 /**
- * Whether an item is hidden from a reader that does not reach `hidden`'s guilds and agents: its
- * access list is not empty and every row names one of them. An item with no row is hidden from no one.
+ * Whether an item's access list hides it from a reader that does not reach `hidden`'s guilds and
+ * agents: the list is not empty and every row names one of them. An empty list hides nothing.
  */
 export async function isHiddenByList(
   db: Queryable,
@@ -189,6 +189,59 @@ export async function deleteAccessList(db: Queryable, target: AccessTargetRef): 
     target.kind,
     target.id,
   ]);
+}
+
+/**
+ * The predicate over the artifact `a` for an item whose access list is not empty and whose every
+ * row matches the SQL predicate `subjectRow` over a row `x`.
+ */
+function listNamesOnlySql(subjectRow: string): string {
+  const listed = `SELECT 1 FROM artifact_access x WHERE x.target_kind = a.kind AND x.target_id = a.id`;
+  return `(EXISTS (${listed}) AND NOT EXISTS (${listed} AND NOT ${subjectRow}))`;
+}
+
+/**
+ * Removes, when the guild `guildId` names is private, every note and file, live or deleted, that
+ * only its operators could see: those homed in it, and those with no home whose access list is not
+ * empty and names only the guild and its agents. Each goes with its change history (its
+ * `file_changes` rows go by cascade), its access list, and its access list's entries in the
+ * configuration log. A guild that is not private loses nothing. It runs before the guild's and its
+ * agents' access rows go. The bytes of a live file stay in the blob store.
+ */
+export async function purgePrivateGuildNotesAndFiles(db: Queryable, guildId: string): Promise<void> {
+  const guildRow = `((x.subject_type = 'guild' AND x.subject_id = g.id)
+                     OR (x.subject_type = 'agent' AND x.subject_id IN (SELECT ag.id FROM agents ag WHERE ag.guild_id = g.id)))`;
+  await db.query(
+    `WITH gone AS (
+       DELETE FROM artifacts a
+        USING guilds g
+        WHERE g.id = $1 AND g.visibility = 'private' AND a.org_id = g.org_id AND a.kind IN ('note', 'file')
+          AND (a.origin_guild_id = g.id OR (a.origin_guild_id IS NULL AND ${listNamesOnlySql(guildRow)}))
+       RETURNING a.org_id, a.kind, a.id
+     ), unlisted AS (
+       DELETE FROM artifact_access x USING gone
+        WHERE x.target_kind = gone.kind AND x.target_id = gone.id
+     )
+     DELETE FROM config_changes c USING gone
+      WHERE c.org_id = gone.org_id AND c.target_kind = gone.kind AND c.target_id = gone.id`,
+    [guildId],
+  );
+}
+
+/**
+ * Homes in the agent's guild, when that guild is private, every note and file with no home, live or
+ * deleted, whose access list is not empty and names only the agent `agentId` names, so it stays
+ * hidden from the operators outside the guild once the agent's rows go. It runs before they go.
+ */
+export async function homeAgentOnlyNotesAndFiles(db: Queryable, agentId: string): Promise<void> {
+  await db.query(
+    `UPDATE artifacts a SET origin_guild_id = g.id
+       FROM agents ag JOIN guilds g ON g.id = ag.guild_id
+      WHERE ag.id = $1 AND g.visibility = 'private' AND a.org_id = g.org_id
+        AND a.kind IN ('note', 'file') AND a.origin_guild_id IS NULL
+        AND ${listNamesOnlySql(`(x.subject_type = 'agent' AND x.subject_id = ag.id)`)}`,
+    [agentId],
+  );
 }
 
 /** The name of an access subject of the organisation, and the guild it sits in; null when it has none such. */

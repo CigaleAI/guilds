@@ -73,9 +73,11 @@ starts.
 broken state. Notes come before Tasks, because a Task that embeds a
 missing note cannot be written. Routines are created paused. If any
 step fails, everything the apply created so far is removed: its
-guild and agents, its collections, and every seed note it wrote,
-soft-deleted by id, whatever rows the note carries. An abort removes
-the same. When the undo cannot delete everything, the apply fails with
+guild and agents, its collections, and every seed note it wrote. Each
+seed note is soft-deleted by id, whatever rows it carries; the
+created guild's deletion leaves its notes to the organisation, so
+the note's own deletion is what removes it. An abort removes the
+same. When the undo cannot delete everything, the apply fails with
 both its failure and what was left in place (see
 [Activate and abort](#activate-and-abort)). The
 [steps](#create) are listed under Reference.
@@ -225,8 +227,10 @@ one. A namespaced tool the destination does not list is left out, and
 the apply goes on.
 
 The destination is a guild apply creates, or an **empty** guild (no
-live agents) named by `guild_id`. A guild with agents is refused
-(`destination guild is not empty`).
+live agents) named by `guild_id`. A guild of another organisation, or
+a private guild the operator does not operate, is 404 (`destination
+guild not found`); a guild with agents is refused (`destination guild
+is not empty`).
 
 ### Choices
 
@@ -399,10 +403,11 @@ broken:
 2. create the guild (or attach an empty one)
 3. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
-4. create the seed notes, each with the access list the recipe's
-   `org`, `guild`, and `writers` give it, the new guild at `write` when
-   they give none (see [Access](#access)). A key the organisation
-   already holds is written as `<guild name>-<key>`
+4. create the seed notes, each homed in the guild the apply creates or
+   attaches ([Notes](notes.md#home-guild)), with the access list the
+   recipe's `org`, `guild`, and `writers` give it, the new guild at
+   `write` when they give none (see [Access](#access)). A key the
+   organisation already holds is written as `<guild name>-<key>`
 5. for each role in turn:
    - rewrite the Task's note links
      ([embeds and note paths](recipe-format.md#embeds-and-tags)) to
@@ -546,15 +551,20 @@ POST   /api/applies/:id/abort
 
 | Route | Answer |
 |---|---|
-| `POST /api/recipes/:id/preview` | The preview; 404 for an unknown destination guild or machine; 422 for a guild that is not empty or a bad choice |
+| `POST /api/recipes/:id/preview` | The preview; 404 for an unknown destination guild, one hidden from the caller, or an unknown machine; 422 for a guild that is not empty or a bad choice |
 | `POST /api/recipes/:id/apply` | 201 with the apply. 422 when the recipe is not approved, has blocking errors, has no machine, or lacks a model or harness. 409 for a name collision, a limit reached, a full guild, or a collection that appeared since preview |
-| `GET /api/applies/:id` | The apply; 404 outside the organisation |
+| `GET /api/applies/:id` | The apply; 404 outside the organisation, and for an apply into a private guild the caller does not operate |
 | `GET /api/guilds/:guild_id/apply` | `{ apply, browser_logins }` |
 | `POST /api/applies/:id/overlays` | `{ ok: true }` |
 | `POST …/steps/:step_id/verify` | The apply with the step closed; 422 with the reason |
 | `POST …/steps/:step_id/confirm` | The apply with the step closed or skipped |
 | `POST /api/applies/:id/activate` | The apply at `ready`; 422 while a step is open |
 | `POST /api/applies/:id/abort` | The apply at `aborted`; 422 once ready |
+
+Every route under `/api/applies/:id` is 404 `apply not found` for an
+apply of another organisation, and for an apply into a private guild
+the caller does not operate, as a destination guild is in a preview.
+An apply whose guild is gone names none, and every member reads it.
 
 In `GET /api/guilds/:guild_id/apply`, `apply` is the open checklist,
 or null once it is done or aborted.

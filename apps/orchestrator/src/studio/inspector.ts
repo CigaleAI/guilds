@@ -1,6 +1,7 @@
 import { Type, type Static } from "typebox";
 import type { ArtifactStore } from "../artifacts/store.js";
-import { agentTask } from "../artifacts/task.js";
+import { agentTaskShownTo } from "../artifacts/task.js";
+import type { ArtifactActor } from "../artifacts/types.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getRun, listMessages, listRunHeaders, routineRunStats, type MessageRow, type RunHeaderRow, type RunRow } from "../db/runs.js";
@@ -12,7 +13,7 @@ import type { GenerationLoop } from "../generation/index.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import type { Schedules } from "../schedules/service.js";
 import { StudioNotFoundError } from "./errors.js";
-import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps, type StatePreview } from "./preview.js";
+import { nextRunTaskHash, previewStateShownTo, projectOfferedToolSchemas, type PreviewDeps, type StatePreview } from "./preview.js";
 
 /** What the Studio inspector reads a guild's runs and routines through, built once from the app's services. */
 export type InspectorServices = {
@@ -195,17 +196,23 @@ export type StudioInspector = {
   generating: boolean;
 };
 
-/** One agent as the inspector shows it: its Guidelines, task, state, Memory, and effective prompt beside its latest run. */
-export async function inspectAgent(deps: AgentInspectorDeps, agent: AgentRow): Promise<StudioInspector> {
-  const task = await agentTask(deps.artifacts, agent);
+/**
+ * One agent as the inspector shows it to the operator `viewer`: its Guidelines, task, state, Memory,
+ * and effective prompt beside its latest run, the Task's embeds inlined as `agentTaskShownTo` does
+ * and its State's tables as `previewStateShownTo` lists them. The Task's effective hash is the one
+ * its next run records (`nextRunTaskHash`), so it compares with the latest run's whatever is hidden
+ * from the viewer.
+ */
+export async function inspectAgent(deps: AgentInspectorDeps, viewer: ArtifactActor, agent: AgentRow): Promise<StudioInspector> {
+  const task = await agentTaskShownTo(deps.artifacts, viewer, agent);
   const standing = hydrateStanding({
     systemPath: deps.notesSystemPath,
     agentName: agent.name,
     agentId: agent.id,
   });
-  const preview = await previewCurrentState(deps.preview, agent);
+  const preview = await previewStateShownTo(deps.preview, viewer, agent);
   const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
-  const effectiveHash = promptHash(effectiveTask);
+  const effectiveHash = await nextRunTaskHash(deps.artifacts, agent);
   const tools = await projectOfferedToolSchemas(deps.preview, agent);
   const memoryEnabled = agent.config.memory;
   const composed = composeAgentSystemPrompt(

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { OPERATOR_ACTOR } from "../helpers/agents.js";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -345,7 +344,7 @@ describe("generation failures carried on past", { concurrency: 1 }, () => {
       throw new SandboxError("agent-stop failed");
     };
     const loop = makeLoop(db, notes, root, sandboxes);
-    const lines = await loggedLines(() => loop.deleteAgent("a_1", OPERATOR_ACTOR));
+    const lines = await loggedLines(() => loop.deleteAgent("a_1"));
     assert.deepEqual(purged, ["a_1"]);
     assert.ok(!existsSync(workspace));
     const line = lineFor(lines, "agent.stop");

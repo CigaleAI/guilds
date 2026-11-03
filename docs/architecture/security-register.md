@@ -9,6 +9,9 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-58](#sec-58--a-recipe-captured-from-a-private-guild-and-an-apply-into-one-were-open-to-every-member) | A recipe captured from a private guild, and an apply into one, were open to every member | Fixed 2026-11-03 |
+| [SEC-57](#sec-57--an-operator-could-see-a-private-guilds-notes-and-files-through-an-organisation-row) | An operator could see a private guild's notes and files through an organisation row | Fixed 2026-11-03 |
+| [SEC-56](#sec-56--deleting-a-private-guild-showed-the-history-of-its-notes-and-files-to-every-operator) | Deleting a private guild showed the history of its notes and files to every operator | Fixed 2026-11-03 |
 | [SEC-55](#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list) | A note's or a file's reach came from its owner as well as its access list | Fixed 2026-11-02 |
 | [SEC-54](#sec-54--while-a-browse-call-runs-any-process-on-the-orchestrators-host-can-drive-the-agents-chrome-through-its-cdp-bridge) | While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge | Open, accepted |
 | [SEC-53](#sec-53--an-agents-devtools-relay-answers-any-process-on-its-machines-container-network-without-authentication) | An agent's DevTools relay answers any process on its machine's container network without authentication | Open, accepted |
@@ -65,6 +68,184 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
 
+## SEC-58 — A recipe captured from a private guild, and an apply into one, were open to every member
+
+**Status:** fixed 2026-11-03.
+
+**Found:** 2026-11-03, reviewing the home guild of notes and files.
+
+**Where:** `orgRecipes`, `orgRecipe`, and `deleteOrgRecipe` in
+`apps/orchestrator/src/recipes/library.ts`, which every recipe route
+reads a recipe through; `destinationGuild` in
+`apps/orchestrator/src/recipes/plan.ts`, which a preview and an apply
+check their destination with; `orgApply` in
+`apps/orchestrator/src/recipes/lifecycle.ts`, which every route under
+`/api/applies/:id` reads an apply through.
+
+**Exposure:** a capture reads a guild only for a user who can see it,
+but the draft it stores was listed, read, exported, edited, applied,
+and deleted by every member of the organisation. A recipe captured
+from a private guild holds that guild's agents' Tasks, routines, and
+setup, and the notes the capture included, so a member outside the
+guild read them in its document. A preview or an apply named its
+destination by `guild_id` and checked only that the guild was of the
+organisation and empty, so a member could fill a private guild they
+do not operate with agents. An apply into a private guild was read by
+every member with its plan and checklist, and its overlays, step
+checks, activation, and abort were run by every member.
+
+**Fix:** a recipe whose `source_guild_id` names a private guild the
+user does not operate is left out of `GET /api/recipes` and is 404 on
+every route that names it. A destination guild hidden from the user
+is 404 `destination guild not found`, as an unknown one is, and the
+apply creates its skeleton in the guild the preview checked. An apply
+whose guild is a private guild the user does not operate is 404
+`apply not found` on `GET /api/applies/:id` and on its overlays, step
+verify and confirm, activate, and abort routes.
+`test/integration/recipe-capture.test.ts` pins it.
+
+**Residual risk:** a recipe keeps what it captured after its source
+guild is deleted or made visible: its `source_guild_id` is then null
+or names a guild every member sees, and every member reads it. A
+recipe drafted by the Builder or imported from a file names no source
+guild and is open to every member. An apply whose guild is deleted
+names no guild, and every member reads it.
+
+## SEC-57 — An operator could see a private guild's notes and files through an organisation row
+
+**Status:** fixed 2026-11-03.
+
+**Found:** 2026-11-02, giving notes and files a home guild.
+
+**Where:** `hiddenScope` in `apps/orchestrator/src/db/artifacts.ts`
+and `isHiddenItem` in `apps/orchestrator/src/artifacts/store.ts`,
+which every operator listing, read, write, search, access-list route,
+and change history of notes and files goes through, and Prompt
+Studio's actors (`apps/orchestrator/src/studio/`).
+
+**Exposure:** an operator was kept from a note or a file by its
+access rows alone: it was hidden while every row named a private
+guild they do not operate or an agent of one. A note or a file made
+in a private guild, by one of its agents or one of its operators,
+that also had a row for the organisation, another guild, or another
+guild's agent, was listed, read, written, searched, and shown in
+history to every operator of the organisation, those the guild is
+private from included: its name, its text or bytes, who wrote it and
+when. Opening a private guild's note to the organisation, so that
+every agent reads it, opened it to every operator too. The hiding
+rule read nothing about where an item was made:
+`artifacts.origin_guild_id` was written at insert, null on an
+operator's write, and read by nothing.
+
+**Fix:** a note's or a file's `origin_guild_id` is its home guild
+([Artifact store](../concepts/artifacts.md#kinds)). An item homed in a
+guild of the operator's hidden set, a private guild they do not
+operate, is hidden from them whatever its rows say, and an item
+homed in a guild they can see is visible to them whatever its rows
+say: `hiddenScope` and `isHiddenItem` decide by the home when there
+is one, and by the rows only for an item with no home. An operator's write
+names the home: the app sends the page's guild, as `home_guild_id`
+on a note and `X-Home-Guild` on an upload, and a home naming an
+unknown guild, or one hidden from the writer, is 404 `unknown guild`.
+Prompt Studio's actors carry the operator's hidden set, so its state
+list, references, and tools apply the same rule. Where an operator
+is shown a Task with its embeds inlined, the Studio inspector and
+`studio_get_agent_context`'s effective prompt, the embeds resolve as
+the Task's agent and a note, file, or table hidden from that operator
+takes the unreachable marker (`embedSourceShownTo` in
+`apps/orchestrator/src/artifacts/embeds.ts`), and the state they are
+shown, the inspector's and `studio_get_agent_context`'s and the one
+inside both effective prompts, lists the agent's tables less the own
+tables of guilds hidden from that operator
+(`previewStateShownTo` in `apps/orchestrator/src/studio/preview.ts`).
+The Task hashes those views compare with a run's `task_prompt_hash`
+are computed from the Task as the agent reads it
+(`nextRunTaskHash`); a hash shows no content.
+`test/integration/studio-home-guild.test.ts` pins it. Migration
+`0021_home_guild.sql` nulls every `origin_guild_id` that names no
+guild of the item's organisation; gives a live or deleted note or
+file with no home the one guild its access list names, when the list
+has no organisation row and its guild rows and the guilds of its
+agent rows all name that guild; and adds the foreign key
+`artifacts_origin_guild_id_fkey` (`ON DELETE SET NULL`) and the index
+`artifacts_by_origin_guild`. The home never enters an agent's mode, a
+guild's scope, Studio's reach, or a starting row.
+`test/integration/artifacts.test.ts`,
+`test/integration/home-guild.test.ts`, and
+`test/integration/migrations.test.ts` pin it.
+
+**Residual risk:**
+
+- Hiding is for operators only, by design. A private guild's note or
+  file with an organisation row is read by every agent of the
+  organisation, and with a row for another guild or its agents by
+  those agents, while the operators outside the private guild do not
+  see it. Such an agent can copy what it read into a note, a file, a
+  group chat, or a run that those operators see.
+- A run stores what its agent read: its opening system message holds
+  the Task with every embed inlined as the agent reads it, and its
+  transcript the results of its note and file reads. The run's System
+  tab and transcript show them to every operator who sees the
+  agent's guild, a private guild's note an organisation row lets the
+  agent read included.
+- A Studio draft's preflight composes the proposed Task as the
+  agent's next run reads it: its `token_estimate` counts the text of
+  every note, file, and table it inlines, and the tables in its state,
+  those hidden from the operator included, so the estimate reflects
+  the size of what is hidden from them. Its `prior_effective_hash` is
+  the hash of the live Task as the agent reads it, as the inspector's
+  is.
+- A name is one live note or one live file across the organisation.
+  An operator's write or upload at a name a hidden item holds is 422
+  (`write not allowed`), so it tells them the name is taken, though
+  not what holds it.
+- A note or a file an operator created before migration 0021 has no
+  recorded home when its access list has an organisation row or names
+  more than one guild. It stays the organisation's, and an
+  organisation row shows it to every operator. An agent's item keeps
+  the guild recorded when it was inserted.
+
+## SEC-56 — Deleting a private guild showed the history of its notes and files to every operator
+
+**Status:** fixed 2026-11-03.
+
+**Found:** 2026-11-02, giving notes and files a home guild.
+
+**Where:** `deleteGuild` in `apps/orchestrator/src/db/guilds.ts` and
+`deleteAgent` in `apps/orchestrator/src/db/agents.ts`.
+
+**Exposure:** a note or a file is hidden from an operator while its
+access rows all name private guilds they do not operate or those
+guilds' agents, and a deleted one keeps its rows so the rule covers
+its tombstone and its change history. Deleting a guild or an agent
+removed the rows naming it. A live item whose every row named a
+private guild or one of its agents was soft-deleted with no row left,
+and a tombstone in the same case lost its rows. An item with no row is
+hidden from no one, so every operator of the organisation read its
+change history: its display path, who wrote it and when, the runs
+that did, and the access-list changes logged against it.
+
+**Fix:** deleting a private guild removes, before its access rows
+go, every note and file, live or deleted, homed in it whatever its
+rows, and every one with no home whose access list is not empty and
+names only the guild or its agents, each with its access list, its
+`file_changes` rows, and the `config_changes` rows of its access list
+(`purgePrivateGuildNotesAndFiles` in
+`apps/orchestrator/src/db/artifact-access.ts`). Deleting an agent of
+a private guild first homes in that guild every note and file, live
+or deleted, with no home whose access list is not empty and names
+only the agent (`homeAgentOnlyNotesAndFiles`), so it stays hidden by
+its home once the agent's rows go. A note or a file homed in a guild
+an operator can see is never hidden from them by its rows, so the
+rows a deletion removes from it hide nothing. Deleting a guild that
+is not private, or an agent of one, removes only the access rows
+naming it: its items hid nothing, and a guild's stay as the
+organisation's. `test/integration/private-guild-artifacts.test.ts`
+and `test/integration/artifact-files.test.ts` pin it.
+
+**Residual risk:** a live file removed with its guild keeps its bytes
+in the blob store, no longer named by any row (SEC-46).
+
 ## SEC-55 — A note's or a file's reach came from its owner as well as its access list
 
 **Status:** fixed 2026-11-02.
@@ -111,10 +292,12 @@ guild. `test/integration/artifacts.test.ts`,
 **Residual risk:** an operator who removes every row of a private
 guild's note on its Access panel makes it visible, and writable, to every
 operator of the organisation; creation never leaves an item without a
-row. The tombstone of a note or a file deleted with its guild or agent
+row. Since 2026-11-03 a note or a file homed in that guild stays
+hidden by its home (SEC-57). The tombstone of a note or a file deleted with its guild or agent
 has no row left, so its change history shows to every operator of the
-organisation. A file deleted that way keeps its
-bytes in the blob store (SEC-46).
+organisation; since 2026-11-03 such an item homed in a deleted private
+guild is removed with its history instead (SEC-56). A file deleted
+that way keeps its bytes in the blob store (SEC-46).
 
 ## SEC-54 — While a `browse` call runs, any process on the orchestrator's host can drive the agent's Chrome through its CDP bridge
 

@@ -1,21 +1,37 @@
+import { requireVisibleAgent } from "../agents/access.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { creatorGrant, parseGrant, type SubjectEntry } from "../artifacts/access.js";
-import { guildsOnList } from "../artifacts/access-lists.js";
+import { guildsToAnnounce } from "../artifacts/access-lists.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { ArtifactStore, HostNoteView } from "../artifacts/store.js";
+import {
+  homedActor,
+  type ArtifactStore,
+  type ArtifactTextView,
+  type HostNoteView,
+  type PageSections,
+} from "../artifacts/store.js";
 import {
   deleteHostNote,
   ensureAgentArtifacts,
   hostFileName,
+  type EmbeddedNote,
   type HostFilePayload,
   readAgentHostFile,
+  readEmbeddableNotes,
   readHostNote,
   writeAgentHostFile,
   writeHostNote,
 } from "../artifacts/host-files.js";
-import { listAgentNotes, listGuildNotes, listOrgNotes } from "../artifacts/notes.js";
+import {
+  listAgentEmbeddableNotes,
+  listAgentNotes,
+  listGuildNotes,
+  listOrgNotes,
+  type EmbeddableNoteView,
+} from "../artifacts/notes.js";
 import { noteDisplayPath } from "../artifacts/paths.js";
 import { ArtifactError } from "../artifacts/errors.js";
+import type { AgentViewerMode, GuildViewerMode } from "../db/artifact-lists.js";
 import { getLiveNote } from "../db/artifacts.js";
 import type { AgentRow } from "../db/agents.js";
 import type { GuildRow } from "../db/guilds.js";
@@ -33,25 +49,17 @@ export type OperatorNotesServices = {
 };
 
 /**
- * The page whose notes a listing shows: the organisation's lists every note, a guild's the notes
- * whose access list has a row for the guild, one of its agents, or the organisation, an agent's the
- * notes it reads.
- */
-export type NotesPage =
-  | { scope: "org"; orgId: string }
-  | { scope: "guild"; guild: GuildRow }
-  | { scope: "agent"; agent: AgentRow };
-
-/**
  * A note as an operator writes it by key: its key, its content, the version they edited when they
- * say (0 for a note that must not exist yet), and the subject and mode of the row its access list
- * starts with when the write creates it; without one, the organisation writes it.
+ * say (0 for a note that must not exist yet), and, when the write creates it, the subject and mode
+ * of the row its access list starts with (without one, the organisation writes it) and the guild it
+ * is homed in (without one, the organisation).
  */
 export type NoteWrite = {
   path: string;
   content: string;
   expectedVersion: number | undefined;
   access: SubjectEntry | undefined;
+  homeGuildId: string | undefined;
 };
 
 /** An agent's `task.md` or `memory.md` as an operator writes it: its name, its content, and the version they edited, when they say. */
@@ -72,7 +80,7 @@ async function agentActorFor(services: OperatorNotesServices, agent: AgentRow, u
   return actor;
 }
 
-/** Announces a changed note on the stream of each guild its access list names. */
+/** Announces a changed note on the stream of each guild whose page lists it. */
 async function announceNote(services: OperatorNotesServices, guildIds: string[], path: string): Promise<void> {
   if (services.stream === null) {
     return;
@@ -82,10 +90,10 @@ async function announceNote(services: OperatorNotesServices, guildIds: string[],
   }
 }
 
-/** The guilds the access list of the organisation's note at `key` names; none when there is no such note. */
+/** The guilds whose pages list the organisation's note at `key`; none when there is no such note. */
 async function noteGuilds(services: OperatorNotesServices, actor: ArtifactActor, key: string): Promise<string[]> {
   const live = await getLiveNote(services.db, actor.orgId, key);
-  return live ? guildsOnList(services.artifacts, actor, { kind: "note", id: live.id }) : [];
+  return live ? guildsToAnnounce(services.artifacts, actor.orgId, { kind: "note", id: live.id }) : [];
 }
 
 /** A request's `expected_version`: a version, or undefined when it names none. */
@@ -99,17 +107,62 @@ function validateExpectedVersion(value: number | null | undefined): number | und
   return value;
 }
 
-/** The notes the page lists, as the user reads them. */
-export async function listPageNotes(services: OperatorNotesServices, page: NotesPage, user: UserRow): Promise<HostNoteView[]> {
-  if (page.scope === "org") {
-    return listOrgNotes(services.artifacts, await loadOperatorActor(services.db, user, { orgId: page.orgId }));
+/** Every note of the organisation the user reads, as the Host lists them. */
+export async function listOrgPageNotes(
+  services: OperatorNotesServices,
+  orgId: string,
+  user: UserRow,
+): Promise<Array<HostNoteView<GuildViewerMode>>> {
+  return listOrgNotes(services.artifacts, await loadOperatorActor(services.db, user, { orgId }));
+}
+
+/** The notes the guild's page lists for the user, in its two sections. */
+export async function listGuildPageNotes(
+  services: OperatorNotesServices,
+  guild: GuildRow,
+  user: UserRow,
+): Promise<PageSections<HostNoteView<GuildViewerMode>>> {
+  const actor = await loadOperatorActor(services.db, user, { orgId: guild.org_id, guildId: guild.id });
+  return listGuildNotes(services.artifacts, actor, guild.id);
+}
+
+/** The notes the agent's page lists for the user, in its two sections. */
+export async function listAgentPageNotes(
+  services: OperatorNotesServices,
+  agent: AgentRow,
+  user: UserRow,
+): Promise<PageSections<HostNoteView<AgentViewerMode>>> {
+  const actor = await agentActorFor(services, agent, user);
+  return listAgentNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
+}
+
+/**
+ * The embeddable notes an operator asks for: with a display path, one note by that path; with an
+ * agent and no display path, the notes the agent's Task may embed; with both empty, every note they
+ * may embed.
+ */
+export type EmbeddableNotesQuery = { displayPath: string; agentId: string };
+
+/**
+ * The embeddable notes `query` asks for, read as the user: with a display path, the one note it
+ * names; with an agent and no display path, the notes the agent's Task may embed in the two sections
+ * of the agent's page, each with its text and the agent's mode; with neither, every note of the
+ * organisation `orgId` the user may embed. ArtifactError 404 for a display path naming no note the
+ * user reads; AgentError 404 for an agent hidden from them.
+ */
+export async function readOperatorEmbeddableNotes(
+  services: OperatorNotesServices,
+  orgId: string,
+  user: UserRow,
+  query: EmbeddableNotesQuery,
+): Promise<PageSections<EmbeddableNoteView> | ArtifactTextView[] | EmbeddedNote> {
+  if (query.agentId && !query.displayPath) {
+    const agent = await requireVisibleAgent(services.db, query.agentId, user.id);
+    const actor = await loadOperatorActor(services.db, user, { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id });
+    return listAgentEmbeddableNotes(services.artifacts, actor, { agentId: agent.id, guildId: agent.guild_id });
   }
-  if (page.scope === "guild") {
-    const actor = await loadOperatorActor(services.db, user, { orgId: page.guild.org_id, guildId: page.guild.id });
-    return listGuildNotes(services.artifacts, actor, page.guild.id);
-  }
-  const actor = await agentActorFor(services, page.agent, user);
-  return listAgentNotes(services.artifacts, actor, { agentId: page.agent.id, guildId: page.agent.guild_id });
+  const actor = await loadOperatorActor(services.db, user, { orgId });
+  return readEmbeddableNotes(services.artifacts, actor, query.displayPath);
 }
 
 /** The organisation's note with this key. */
@@ -124,8 +177,9 @@ export async function readOrgNote(
 }
 
 /**
- * Writes the organisation's note at the write's key, creating it with the write's starting row when
- * it is missing, and announces it on the stream of each guild its access list names.
+ * Writes the organisation's note at the write's key, creating it with the write's starting row and
+ * home when it is missing, and announces it on the stream of each guild whose page lists it.
+ * ArtifactError 404 when the home names a guild that is unknown or hidden from the user.
  */
 export async function writeOrgNote(
   services: OperatorNotesServices,
@@ -133,19 +187,20 @@ export async function writeOrgNote(
   user: UserRow,
   write: NoteWrite,
 ): Promise<HostFilePayload> {
-  const actor = await loadOperatorActor(services.db, user, { orgId });
+  const operator = await loadOperatorActor(services.db, user, { orgId });
+  const actor = await homedActor(services.artifacts, operator, write.homeGuildId);
   const startingAccess = [write.access ? parseGrant(write.access, "access: ") : creatorGrant(actor)];
   const hostServices = { store: services.artifacts, db: services.db };
   const hostWrite = { path: write.path, content: write.content, expectedVersion: write.expectedVersion, startingAccess };
   const written = await writeHostNote(hostServices, actor, hostWrite);
   if (written.id) {
-    const guilds = await guildsOnList(services.artifacts, actor, { kind: "note", id: written.id });
+    const guilds = await guildsToAnnounce(services.artifacts, actor.orgId, { kind: "note", id: written.id });
     await announceNote(services, guilds, written.display_path);
   }
   return written;
 }
 
-/** Deletes the organisation's note with this key, and announces it on the stream of each guild its access list named. */
+/** Deletes the organisation's note with this key, and announces it on the stream of each guild whose page listed it. */
 export async function deleteOrgNote(
   services: OperatorNotesServices,
   orgId: string,

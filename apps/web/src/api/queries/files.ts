@@ -6,7 +6,7 @@ import {
 import { api } from "../client";
 import { uploadFile } from "../files";
 import { noteKeys } from "./notes";
-import type { AccessSubject } from "../types/access";
+import type { ItemSections, ReachSubject } from "../types/access";
 import type { FileItem, FileUpload } from "../types/files";
 
 /**
@@ -14,32 +14,26 @@ import type { FileItem, FileUpload } from "../types/files";
  */
 export const fileKeys = {
   fileLists: ["artifacts", "files"] as const,
-  fileList: (page: AccessSubject) => ["artifacts", "files", page.type, page.id] as const,
+  fileList: (page: ReachSubject) => ["artifacts", "files", page.type, page.id] as const,
 };
 
-/**
- * The route that lists a page's files: the organisation's lists every file, a guild's the files
- * whose access list names the guild, one of its agents or the organisation, an agent's the files
- * it reads.
- */
-function fileListPath(page: AccessSubject): string {
-  if (page.type === "org") return "/api/org/files";
+/** The route that lists a guild's or an agent's files, by home. */
+function fileListPath(page: ReachSubject): string {
   return `/api/${page.type === "guild" ? "guilds" : "agents"}/${encodeURIComponent(page.id)}/files`;
 }
 
-/** The files a page lists, or nothing when there is no page. */
-export function useFileList(page: AccessSubject | null) {
+/** A guild's or an agent's files: those homed in its guild, and those shared with it. */
+export function useFileSections(page: ReachSubject) {
   return useQuery({
-    queryKey: page ? fileKeys.fileList(page) : fileKeys.fileLists,
-    queryFn: () => api<FileItem[]>(page ? fileListPath(page) : ""),
-    enabled: Boolean(page),
+    queryKey: fileKeys.fileList(page),
+    queryFn: () => api<ItemSections<FileItem>>(fileListPath(page)),
   });
 }
 
 /**
  * Stores a file in the organisation; a file of the same name is replaced when the upload's expected
  * version allows. Every files list is refreshed either way, so a refused upload sees the file that
- * refused it.
+ * refused it; the upload settles once they have refetched.
  */
 export function useUploadFile() {
   const client = useQueryClient();
@@ -48,15 +42,15 @@ export function useUploadFile() {
     onSuccess: (item) => {
       void client.invalidateQueries({ queryKey: noteKeys.latestChange(item.display_path) });
     },
-    onSettled: () => void client.invalidateQueries({ queryKey: fileKeys.fileLists }),
+    onSettled: () => client.invalidateQueries({ queryKey: fileKeys.fileLists }),
   });
 }
 
-/** Deletes a shared file by id and refreshes every files list. */
+/** Deletes a shared file by id and refreshes every files list; the delete settles once they have refetched. */
 export function useDeleteFile() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<undefined>(`/api/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: fileKeys.fileLists }),
+    onSuccess: () => client.invalidateQueries({ queryKey: fileKeys.fileLists }),
   });
 }

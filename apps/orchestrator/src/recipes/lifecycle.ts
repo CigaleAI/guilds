@@ -1,7 +1,9 @@
 import { operatorActor } from "../artifacts/actors.js";
 import { listAgents } from "../db/agents.js";
+import { getGuild } from "../db/guilds.js";
 import { getRecipeApply, latestGuildApply, markApplyAborted, markApplyReady, type RecipeApplyRow } from "../db/recipe-applies.js";
 import { listSchedules } from "../db/schedules.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 import type { RecipeApply } from "./apply.js";
 import { appliedRecipe, blockingApplySteps, browserLoginAgentIds, deferLaunchSteps } from "./checklist.js";
@@ -12,10 +14,26 @@ import { undoApply, type AppliedItems } from "./undo.js";
 // An apply from its open checklist to its close: activated, which unpauses its routines, or
 // aborted, which removes the guild it created.
 
-/** The apply when it belongs to the organisation, otherwise null. */
-export async function orgApply(apply: RecipeApply, orgId: string, applyId: string): Promise<RecipeApplyRow | null> {
+/**
+ * The apply when it belongs to the organisation and the user sees the guild it applies to, as a
+ * preview's destination is seen; otherwise null. An apply whose guild is gone names none, and is the
+ * organisation's.
+ */
+export async function orgApply(
+  apply: RecipeApply,
+  orgId: string,
+  userId: string,
+  applyId: string,
+): Promise<RecipeApplyRow | null> {
   const row = await getRecipeApply(apply.db, applyId);
-  return row && row.org_id === orgId ? row : null;
+  if (!row || row.org_id !== orgId) {
+    return null;
+  }
+  if (row.guild_id === null) {
+    return row;
+  }
+  const guild = await getGuild(apply.db, row.guild_id);
+  return guild && canSeeGuild(guild, userId) ? row : null;
 }
 
 /** The open checklist, and agents whose recipe login was deferred until after activate. */

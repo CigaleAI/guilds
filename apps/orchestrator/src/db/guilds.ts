@@ -13,8 +13,7 @@ import {
   users,
 } from "./schema/index.js";
 import { deleteGuildUsage } from "./usage.js";
-import { retireUnlistedArtifacts } from "./artifacts.js";
-import type { ChangeActor } from "../lib/change-actor.js";
+import { purgePrivateGuildNotesAndFiles } from "./artifact-access.js";
 
 type Guild = InferSelectModel<typeof guilds>;
 type McpConnection = InferSelectModel<typeof mcpConnections>;
@@ -243,10 +242,13 @@ export async function insertGuild(pool: Queryable, guild: NewGuild, now: Date): 
 }
 
 /**
- * Deletes a guild with its own collections and the access rows naming it or one of its agents; a
- * note or a file only those rows reached is deleted with it, as `actor`.
+ * Deletes a guild with its own collections and the access rows naming it or one of its agents. A
+ * private guild's notes and files, live or deleted, go with it, with their history: those homed in
+ * it, and those with no home that only its rows and its agents' rows reached
+ * (`purgePrivateGuildNotesAndFiles`). Those of a guild that is not private stay, without a home. A
+ * note or a file homed elsewhere keeps its home, whatever rows its list is left with.
  */
-export async function deleteGuild(pool: Queryable, guildId: string, actor: ChangeActor): Promise<void> {
+export async function deleteGuild(pool: Queryable, guildId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
     await deleteGuildUsage(client, guildId);
     const now = new Date().toISOString();
@@ -260,16 +262,14 @@ export async function deleteGuild(pool: Queryable, guildId: string, actor: Chang
       `UPDATE artifact_collections SET deleted_at = $2, updated_at = $2 WHERE guild_id = $1 AND deleted_at IS NULL`,
       [guildId, now],
     );
-    const named = await client.query<{ target_kind: string; target_id: string }>(
+    await purgePrivateGuildNotesAndFiles(client, guildId);
+    await client.query(
       `DELETE FROM artifact_access
         WHERE (subject_type = 'guild' AND subject_id = $1)
            OR (subject_type = 'agent' AND subject_id IN (SELECT id FROM agents WHERE guild_id = $1))
-           OR (target_kind = 'collection' AND target_id IN (SELECT id FROM artifact_collections WHERE guild_id = $1))
-       RETURNING target_kind, target_id`,
+           OR (target_kind = 'collection' AND target_id IN (SELECT id FROM artifact_collections WHERE guild_id = $1))`,
       [guildId],
     );
-    const items = named.rows.filter((row) => row.target_kind !== "collection").map((row) => row.target_id);
-    await retireUnlistedArtifacts(client, items, actor, new Date(now));
     // A secret whose every grant goes with the guild goes with it.
     await client.query(
       `DELETE FROM secrets s

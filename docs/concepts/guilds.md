@@ -47,8 +47,22 @@ Notes and files belong to the organisation, not to a guild. Which
 notes, files, and collections an agent reaches is set on each item,
 in its access list. A row for the guild covers every agent of the
 guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
-A note or a file whose rows all name a private guild, or agents of
-it, is hidden from the operators who do not operate that guild.
+
+Each note and file has a home guild: the guild it was made in, or
+none for the organisation's ([Notes](notes.md#home-guild)). The
+guild's **State › Notes** and **State › Files** list two sections:
+
+- **Guild notes** and **Guild files**: the notes and files homed in
+  the guild, whether or not a row reaches its agents;
+- **Shared with this guild**: those homed elsewhere, or in the
+  organisation, that a row for the guild, one of its agents, or the
+  organisation reaches.
+
+A private guild's notes and files, those homed in it, are hidden from
+the operators who do not operate it, even when a row opens them to
+the organisation. So is a note or a file whose rows all name a
+private guild, or agents of it. Hiding is for operators only: an agent
+of another guild that a row reaches reads the item.
 
 ### Purpose: short description and description
 
@@ -103,8 +117,13 @@ the guild is generating or while the group chat is delivering. The
 guild takes with it its agents and everything they own, its group
 chat, operators, issues, own collections, repositories, the
 access-list rows that name it or its agents, and the secrets that
-only it or its agents held. A note or a file that only those rows
-reached is deleted with it; any other stays, without those rows.
+only it or its agents held. A private guild takes, live or deleted,
+with its change history, every note and file homed in it, whatever
+rows it had, and every note and file with no home whose rows named
+only the guild or its agents. A guild open to the organisation takes
+none: the notes and files homed in it stay and are the
+organisation's from then on. Every other note and file stays under
+its home, without the rows that went.
 Organisation collections and secrets granted elsewhere stay, and so
 do the machines
 ([Delete](#delete) has the full list).
@@ -217,14 +236,23 @@ visibility, and commit author email together.
 
 **Delete guild** explains: "Deleting the guild removes its group
 chat, and its agents with their sessions, Memory and homes. Their
-machines stay. Notes and files only the guild or its agents reached
-are deleted too; the others stay, without the access rows that named
-them." The confirm reads: "Its group chat, agents, their Memory and
-agent homes are removed, with the access rows naming the guild or its
-agents and the notes and files only they reached. Other notes and
-files stay. This can't be undone." It asks for the guild's name to be
-typed. The
-app then returns to `/`.
+machines stay." For a private guild it goes on: "Every note and file
+homed in the guild is deleted too, with its history, and so is every
+one with no home whose access rows all named the guild or its agents;
+the others stay, without the access rows that named the guild or its
+agents." For a guild open to the organisation: "Every note and file
+stays, without the access rows that named the guild or its agents;
+those homed in the guild move to the organisation."
+
+The confirm reads: "Its group chat, agents, their Memory and agent
+homes are removed, with the access rows naming the guild or its
+agents." For a private guild it goes on: "Every note and file homed in
+it goes too, with its history, and so does every one with no home
+whose access rows all named it or its agents. Other notes and files
+stay." For a guild open to the organisation: "Every note and file
+stays; those homed in it move to the organisation." It ends: "This
+can't be undone." It asks for the guild's name to be typed. The app
+then returns to `/`.
 
 ## Rules and limits
 
@@ -341,9 +369,15 @@ It holds every agent of the guild while it runs. It then:
 - deletes the guild's and its agents' usage counters
 - soft-deletes the guild's own collections with their records
 - deletes the access-list rows that name the guild or its agents,
-  and the rows on its own collections, and soft-deletes, as the
-  deleting operator, every live note and file those rows alone
-  reached
+  and the rows on its own collections
+- for a private guild, removes, before those rows go, every note and
+  file, live or deleted, homed in it whatever rows it had, and every
+  one with no home whose access list is not empty and names only the
+  guild or its agents, each with its access list, its change history,
+  and the log of its access list; a guild that is not private leaves
+  its notes and files, which become the organisation's
+- leaves every other note and file under its home, one that no row
+  reaches any more included
 - deletes every secret, not organisation-wide, whose grants all name
   the guild or its agents
 - deletes the guild row
@@ -360,6 +394,10 @@ PostgreSQL cascades:
 - guild issues
 - the agents' Memory and scripts
 - guild repositories
+
+The notes and files homed in the guild that stay, and every other
+item that names it as `origin_guild_id`, lose their home: PostgreSQL
+sets it to null ([Artifact store](artifacts.md#kinds)).
 
 Studio sessions, Studio drafts, recipes, and recipe applies that name
 the guild stay, with that reference cleared.

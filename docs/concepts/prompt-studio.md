@@ -194,7 +194,7 @@ selected item on the right.
 
 | Tab | List | Selected item |
 |---|---|---|
-| **Prompt** | none | The live Task and its version, with **Edit in agent**. An embed opens that note or table in **State**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. An embed the agent cannot reach shows as the marker its run gets ([Task](task.md#embed-expansion)). It says whether the latest run used this Task and this memory. Banners say when the agent is running and when the embeds hold more than the 64 KB budget |
+| **Prompt** | none | The live Task and its version, with **Edit in agent**. An embed opens that note or table in **State**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. An embed the agent cannot reach shows as the marker its run gets, and so does one hidden from the operator, by its rows or by its home, which the run inlines ([Task](task.md#embed-expansion)). Its state lists the tables the run gets, less those hidden from the operator. It says whether the latest run used this Task and this memory, whatever is hidden from the operator. Banners say when the agent is running and when the embeds hold more than the 64 KB budget |
 | **Draft** | none | The pending draft: its number and status, a **removes a lot** tag when it deletes much of the Task, why, and a side-by-side diff against its base version. **Publish** and **Discard** ask for confirmation first. **Edit** opens the proposed Task in a dialog, and your version replaces the coach's. A draft over a Task that changed since says **the live Task changed** |
 | **History** | Every run: what started it, time, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
 | **Memory** | Every version memory has held, newest first: version, author (run kind, person, or agent), added and removed lines; filter by author | Diff against the previous version, or the whole version. **Open step** on a version a run wrote opens the run at its `memory_write` call |
@@ -230,9 +230,11 @@ filter beside them, and in **List** a kind filter: **All**, **Notes**,
 
 **List** shows every note, table, script, and Memory in the guild's
 state: its agents' Memory and scripts, the tables its agents can be
-given, and the notes whose access list has a row for the guild, one of
-its agents, or the organisation. Only what the viewer can open is
-listed. For the window (24 h, 3 d, or 7 d), each row shows the item,
+given, and the notes the guild's **State › Notes** lists, those homed
+in the guild and those whose access list has a row for the guild, one
+of its agents, or the organisation ([Notes](notes.md#in-the-app)).
+Only what the viewer can open is listed: a note hidden from them, by
+its rows or by its home guild, is not. For the window (24 h, 3 d, or 7 d), each row shows the item,
 its size, its changes and reads, who changes it most and who reads it
 most with their share, and its last change. Filters narrow it by kind,
 by agent (the agent's own Memory and scripts, and the items it changes
@@ -567,7 +569,22 @@ guild's agents, Memory, and own collections, and the notes and files
 whose rows name only other guilds and their agents, are out of reach;
 another guild's about and description are not. One rule
 (`apps/orchestrator/src/studio/reach.ts`) decides reach for every tool
-that takes a display path, and for focus pins.
+that takes a display path, and for focus pins. A note's or a file's
+home guild never widens reach: a note homed in the source guild that
+no row for it, its agents, or the organisation reaches is out of
+reach. The tools read as the operator, with the private guilds they
+do not operate hidden, so a note or a file hidden from them, by its
+rows or by its home, is out of reach too
+([Access](access.md#access-lists-for-notes-collections-and-files)).
+
+Reach comes from access rows alone. Every tool, focus pin, and edit
+reads as the session's user, with the private guilds they do not
+operate hidden from them, read when a generation starts and when an
+edit is viewed or answered. A note or file hidden from them is left out
+of every search, read, history, and pin even when a row puts it in
+reach: one homed in such a guild, and one whose rows name only such
+guilds and their agents
+([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 | Tool | Behaviour |
 |---|---|
@@ -576,7 +593,7 @@ that takes a display path, and for focus pins.
 | `studio_get_script` | Reads one member script by name |
 | `studio_list_collections` | The source guild's own collections, then the organisation's. Each row has owner, purpose, record count, column names, the mode the source guild's agents get from the guild's and the organisation's rows (`guild_access`), and `studio_can`: `edit_or_delete` for the guild's own, `add_columns_and_access` for the organisation's |
 | `studio_get_collection` | One collection in reach by name: its full columns, record count, `updated_at`, `studio_can`, the organisation's row, the source guild's row, each live member's own row and the mode it ends up with (counting the guild's and the organisation's rows), the rows of other guilds and their agents, and its five most recently updated records as evidence (`apps/orchestrator/src/studio/tables.ts`). Rows of a private guild the operator does not operate are left out |
-| `studio_get_agent_context` | Sections `task`, `memory`, `state`, `config`, `effective_prompt` (the composed opening system message with embeds inlined), `effective_prompt_headers` |
+| `studio_get_agent_context` | Sections `task`, `memory`, `state`, `config`, `effective_prompt` (the composed opening system message with embeds inlined, an embed hidden from the session's user as the marker), `effective_prompt_headers`. `state` and the effective prompt's state list only the tables the session's user can see; the effective prompt's `task_hash` is the one the agent's next run records |
 | `studio_list_runs` | Filters by `kind`, `status`, `task_prompt_hash`, `error_only`, and `schedule_id` |
 | `studio_list_routines` | Each routine's run count and latest run |
 | `studio_get_run` | Takes `seq_start`, `seq_end`, and `tool_name`; `tool_name` keeps only the turns that requested that tool and their results |
@@ -728,7 +745,8 @@ actor, count, share }`), `writers`, `last_change` (`{ at, actor }`),
 and `flags` (`no_agent_read`, `writers`, `deletes_others_rows`,
 `untouched`). An actor is `{ kind: person | agent | other_guild, id,
 name }`. Items are read with the viewer's own permissions, so a
-private guild's or a hidden item never appears. A change counts on the
+private guild's item, or one hidden by its rows or its home guild,
+never appears. A change counts on the
 item whose artifact made it, and a record's change on the table whose
 collection holds the record, so a name or a table name another item
 held before brings none of its changes. Changes come from
@@ -809,7 +827,13 @@ input-token limit.
 
 The agent inspector response carries `effective_prompt` (content,
 hash, inlined task, per-section hashes, and whether each section
-matches the latest run).
+matches the latest run). Its content is composed for the user who
+asks: an embed hidden from them is the marker, and the state lists
+only the tables they can see. Its task hash, the Task's
+`effective_hash`, and `task_match` are computed from the Task as the
+agent's next run reads it, whatever is hidden from the user, so
+`task_match` says whether the latest run used the current Task for
+every operator. `hash` is the hash of the content they are shown.
 
 `GET …/references` returns `{ guild_id, budget, depth, nodes, edges }`,
 computed on read from Task and note text; nothing is stored. `budget`
@@ -840,8 +864,9 @@ The route reads the files with the viewing operator's own permissions:
 the notes whose access list has a row for the guild, one of its
 agents, or the organisation, the organisation's tables and the guild's
 own, and the notes and tables their embeds reach, followed as far as a
-run could inline them. The notes hidden from the operator, and the
-tables of a private guild they do not operate, are never listed
+run could inline them. The notes hidden from the operator, by their
+rows or by their home guild, and the tables of a private guild they
+do not operate, are never listed
 ([Access](access.md#access-lists-for-notes-collections-and-files)); an
 embed of one is a link that does not resolve. Each Task's walk, `hops`, `inlined_bytes`, and
 `unreachable_for` are read as that Task's agent, the way its run
@@ -874,11 +899,12 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/*-tools.ts` | The coach's tools, one file per sub-domain: prompt, task, memory, run, routine, guild, file, collection, access, and connection |
 | `apps/orchestrator/src/studio/arguments.ts`, `edit-arguments.ts` | A tool's arguments: the schema the model is offered and the decode of a call against it; the edit tools' parameters, which a recorded call is read by again |
 | `apps/orchestrator/src/studio/paging.ts`, `source-guild.ts` | What the tools share: paging and byte caps, and the source-guild agent a handle names |
+| `apps/orchestrator/src/studio/actor.ts` | The operator every tool, pin, and edit reads and writes as: the session's user with the private guilds hidden from them |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
 | `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |
 | `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |
 | `apps/orchestrator/src/studio/state-list.ts`, `state-data.ts` | The State list: items, their changes and reads, and an item's history |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
-| `apps/orchestrator/src/studio/reach.ts` | What a session reaches: the source guild, its members, the notes and files whose access list has a row for the source guild, one of its agents, or the organisation, and the collections its agents can be given |
+| `apps/orchestrator/src/studio/reach.ts` | What a session reaches: the source guild, its members, the notes and files whose access list has a row for the source guild, one of its agents, or the organisation, without those hidden from the operator, and the collections its agents can be given; never by an item's home guild |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |

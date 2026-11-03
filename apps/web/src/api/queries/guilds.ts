@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { api } from "../client";
 import { refreshMachines } from "./agents";
+import { noteKeys } from "./notes";
 import type {
   GuildInput,
   GuildUsage,
@@ -55,6 +56,7 @@ export function useUpdateGuild(guildId: string) {
       client.setQueryData(guildKeys.guild(guildId), guild);
       void client.invalidateQueries({ queryKey: guildKeys.guilds });
       void client.invalidateQueries({ queryKey: guildKeys.guildSchedules(guildId) });
+      void client.invalidateQueries({ queryKey: noteKeys.artifacts });
     },
   });
 }
@@ -101,6 +103,7 @@ export function useSetOperator(guildId: string) {
     onSuccess: (guild) => {
       client.setQueryData(guildKeys.guild(guildId), guild);
       void client.invalidateQueries({ queryKey: guildKeys.guilds });
+      void client.invalidateQueries({ queryKey: noteKeys.artifacts });
     },
   });
 }
@@ -115,13 +118,15 @@ export function useRemoveOperator(guildId: string) {
     onSuccess: (guild) => {
       client.setQueryData(guildKeys.guild(guildId), guild);
       void client.invalidateQueries({ queryKey: guildKeys.guilds });
+      void client.invalidateQueries({ queryKey: noteKeys.artifacts });
     },
   });
 }
 
 /**
- * Deletes the guild with its chat, agents and agent homes, the access rows naming it or its agents,
- * and the notes and files only they reached. Admins only.
+ * Deletes the guild with its chat, agents and agent homes and the access rows naming it or its agents;
+ * a private guild also takes, with their history, every note and file homed in it and every one with
+ * no home whose access rows all named it or its agents. Admins only.
  */
 export function useDeleteGuild() {
   const client = useQueryClient();
@@ -129,6 +134,7 @@ export function useDeleteGuild() {
     mutationFn: (guildId: string) => api<undefined>(guildPath(guildId), { method: "DELETE" }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: guildKeys.guilds });
+      void client.invalidateQueries({ queryKey: noteKeys.artifacts });
       refreshMachines(client);
     },
   });

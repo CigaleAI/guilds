@@ -23,6 +23,7 @@ import {
   writeNoteAt,
 } from "../artifacts/notes.js";
 import type { ArtifactStore } from "../artifacts/store.js";
+import { guildsToAnnounce, type ListedTarget } from "../artifacts/access-lists.js";
 import { writeMemory } from "../artifacts/memory.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import { bindQuery } from "../db/pg.js";
@@ -41,6 +42,7 @@ export function toolArtifacts(store: ArtifactStore) {
     updateRecord: bindQuery(store, updateRecord),
     removeRecord: bindQuery(store, removeRecord),
     writeMemory: bindQuery(store, writeMemory),
+    guildsToAnnounce: bindQuery(store, guildsToAnnounce),
   };
 }
 
@@ -70,6 +72,25 @@ async function publish(services: ToolServices, run: ToolRun, path: string): Prom
       path,
       agent_id: run.agent_id,
     });
+  }
+}
+
+/**
+ * The guilds to tell of a change the run's agent makes to a live note or file, read as an operator's
+ * change is (`guildsToAnnounce`): a private home alone, else its home and the guilds whose scope it
+ * is in. None without an artifact store.
+ */
+export async function itemGuilds(services: ToolServices, orgId: string, target: ListedTarget): Promise<string[]> {
+  return services.artifacts ? services.artifacts.guildsToAnnounce(orgId, target) : [];
+}
+
+/** Tells each guild of `guildIds` that the note or file at `path`, which the run's agent wrote or deleted, changed. */
+export async function announceItemChange(services: ToolServices, run: ToolRun, guildIds: string[], path: string): Promise<void> {
+  if (services.group_chat === null || !services.group_chat.publish) {
+    return;
+  }
+  for (const guildId of guildIds) {
+    await services.group_chat.publish(guildId, "guild.artifacts.changed", { path, agent_id: run.agent_id });
   }
 }
 
@@ -197,8 +218,9 @@ export const noteWrite = nativeTool({
   description: NOTE_WRITE_DESCRIPTION,
   parameters: NoteWriteParameters,
   async handler(services, run, _hooks, call) {
-    const { href } = await writeNoteArgs(services, run, call);
-    await publish(services, run, href);
+    const { href, row } = await writeNoteArgs(services, run, call);
+    const guilds = await itemGuilds(services, row.org_id, { kind: "note", id: row.id });
+    await announceItemChange(services, run, guilds, href);
     return href;
   },
 });
@@ -224,8 +246,9 @@ export const noteDelete = nativeTool({
     if (view.kind === "row") {
       assertDeletableNote(view.row);
     }
+    const guilds = view.kind === "row" ? await itemGuilds(services, view.row.org_id, { kind: "note", id: view.row.id }) : [];
     await artifacts.deleteByDisplayPath(actor(run, call), path);
-    await publish(services, run, path);
+    await announceItemChange(services, run, guilds, path);
     return path;
   },
 });

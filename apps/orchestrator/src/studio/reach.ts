@@ -7,15 +7,17 @@ import { listArtifactsEverAt } from "../db/artifacts.js";
 import { getRecordOrTombstone } from "../db/collections.js";
 import type { ChangeTarget } from "../db/file-changes.js";
 import type { Queryable } from "../db/pg.js";
-import { type ArtifactStore } from "../artifacts/store.js";
-import { operatorActor } from "../artifacts/actors.js";
+import { isHiddenItem, type ArtifactStore } from "../artifacts/store.js";
 import { describeCollection } from "../artifacts/collections.js";
+import { studioActor, type StudioOperator } from "./actor.js";
 
 // What a Studio session reaches outside its own transcript: the source
 // guild, its agents' Task, Memory, and scripts, the notes and files whose
 // access list has a row for the source guild, one of its agents, or the organisation, and the
 // tables the source guild's agents can be given (its own and the
 // organisation's). Every other note, file, Memory, and table stays out of reach.
+// Reach comes from access rows alone; what it reaches is still read as the
+// session's user, so a note or file hidden from them is never shown.
 
 /** The stores a reach check reads through. */
 export type StudioReachDeps = {
@@ -23,11 +25,8 @@ export type StudioReachDeps = {
   artifacts: ArtifactStore;
 };
 
-/** The organisation and source guild a Studio session reaches from. */
-export type StudioReachScope = {
-  orgId: string;
-  sourceGuildId: string;
-};
+/** The organisation and source guild a Studio session reaches from, and the operator it reads as. */
+export type StudioReachScope = StudioOperator;
 
 /** A table Studio reads: the source guild's own or the organisation's. */
 export function studioReachesTable(sourceGuildId: string, tableGuildId: string | null | undefined): boolean {
@@ -44,7 +43,7 @@ export async function studioReachesParsed(
     return false;
   }
   if (parsed.kind === "collection" || parsed.kind === "record") {
-    const table = await describeCollection(deps.artifacts, studioTableActor(scope), parsed.collectionName);
+    const table = await describeCollection(deps.artifacts, studioActor(scope), parsed.collectionName);
     return Boolean(table) && studioReachesTable(scope.sourceGuildId, table?.guild_id);
   }
   if (parsed.kind === "revision") {
@@ -60,18 +59,13 @@ export async function studioReachesParsed(
   return isInGuildScope(deps.db, { kind: row.kind, id: row.id }, scope.sourceGuildId);
 }
 
-/** The studio actor a table's reach is read as: an operator of the source guild. */
-function studioTableActor(scope: StudioReachScope) {
-  return operatorActor({ orgId: scope.orgId, actorId: "studio", actorName: "studio", guildId: scope.sourceGuildId });
-}
-
 /** The record a record path names, live or deleted, when its table is one the session reaches; nothing otherwise. */
 async function studioRecordTarget(
   deps: StudioReachDeps,
   scope: StudioReachScope,
   parsed: RecordPath,
 ): Promise<ChangeTarget> {
-  const table = await describeCollection(deps.artifacts, studioTableActor(scope), parsed.collectionName);
+  const table = await describeCollection(deps.artifacts, studioActor(scope), parsed.collectionName);
   const reached = table !== null && studioReachesTable(scope.sourceGuildId, table.guild_id);
   const record = reached ? await getRecordOrTombstone(deps.db, table.id, parseRecordId(parsed.recordId)) : null;
   return { artifactIds: record ? [record.id] : [], taskAgentId: null };
@@ -79,8 +73,9 @@ async function studioRecordTarget(
 
 /**
  * Whose changes a display path's history shows the session: every note or file that sat at the
- * path, live or deleted, in the source guild's scope; a source agent's Task, Memory, or script; a
- * record of a table the session reaches. Nothing for any other path.
+ * path, live or deleted, in the source guild's scope and not hidden from the session's user; a
+ * source agent's Task, Memory, or script; a record of a table the session reaches. Nothing for any
+ * other path.
  */
 export async function studioChangeTarget(
   deps: StudioReachDeps,
@@ -105,10 +100,12 @@ export async function studioChangeTarget(
     return { artifactIds: (await listArtifactsEverAt(deps.db, address)).map((row) => row.id), taskAgentId: null };
   }
   const rows = await listArtifactsEverAt(deps.db, address);
+  const actor = studioActor(scope);
   const reached = await Promise.all(
     rows.map(async (row) =>
       (row.kind === "note" || row.kind === "file") &&
-      (await isInGuildScope(deps.db, { kind: row.kind, id: row.id }, scope.sourceGuildId))
+      (await isInGuildScope(deps.db, { kind: row.kind, id: row.id }, scope.sourceGuildId)) &&
+      !(await isHiddenItem(deps.artifacts, actor, row))
         ? [row.id]
         : [],
     ),

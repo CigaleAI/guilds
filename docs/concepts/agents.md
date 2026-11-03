@@ -119,9 +119,12 @@ flowchart LR
   message: it does not replay older chat.
 - **Rename.** The name can change while the agent is idle. Its stored
   records keep the same id, so nothing breaks.
-- **Delete.** The agent, its runs, its routines, its Memory, its
-  home, and the notes and files only it reached go. Other notes and
-  files stay. Its posts in the group chat stay, under the name it had.
+- **Delete.** The agent, its runs, its routines, its Memory, and its
+  home go, with the access rows naming it. Every note and file stays
+  under its home, greyed on the pages where no row reaches it any
+  more. An agent of a private guild leaves the notes and files with
+  no home that only its rows reached homed in that guild, so they
+  stay hidden from the operators outside it. Its posts in the group chat stay, under the name it had.
 
 ## In the app
 
@@ -195,10 +198,9 @@ A **Browser login needed** strip can show after a recipe apply
 ([Browser](browser.md)).
 
 The menu deletes the agent after the operator types its name. The
-confirm reads: "Its sessions, routines, Memory, home, usage row, the
-access rows naming it and the notes and files only it reached are
-removed; other notes and files stay, and its posts stay in the group
-chat. This can't be undone."
+confirm reads: "Its sessions, routines, Memory, home, usage row and
+the access rows naming it are removed; every note and file stays, and
+its posts stay in the group chat. This can't be undone."
 
 The tabs, one route each, with an icon each. The tab strip scrolls
 sideways when they do not fit.
@@ -214,6 +216,14 @@ sideways when they do not fit.
 | **Tools**, **Secrets** | the agent-scope access view | [Access](access.md) |
 | **Usage** | tokens, cost, calls, and disk | [Usage](usage.md) |
 | **Settings** | everything on this page | below |
+
+The agent's **State › Notes** and **State › Files** list what its
+guild's page lists, in the same two sections: the items homed in the
+agent's guild, and those shared with the guild. Each item carries the
+agent's own mode on it, **Read & write** or **Read**, and an item no
+row reaches the agent is greyed, **No access**
+([Notes](notes.md#in-the-app), [Files](files.md#in-the-app)). A note
+or a file the agent creates is homed in its guild.
 
 ### Settings tab
 
@@ -466,9 +476,15 @@ already generating`). It then:
 - stops the agent's Chrome and terminal on its machine, and removes
   its home and its `/run/guilds/<agent id>/` files; the machine's
   container stays up for the other agents on it;
+- for an agent of a private guild, first homes in that guild every
+  note and file, live or deleted, with no home whose access list is
+  not empty and names only the agent, so it stays hidden from the
+  operators outside the guild and is listed greyed in the guild's own
+  section;
 - deletes the access-list rows that name the agent
-  (`artifact_access`), and soft-deletes, as the deleting operator,
-  every live note and file those rows alone reached;
+  (`artifact_access`) and nothing else of a note or a file: every one
+  stays, live or deleted, under its home, the one the agent created
+  in its guild included;
 - deletes every secret granted only to that agent;
 - deletes the agent row.
 

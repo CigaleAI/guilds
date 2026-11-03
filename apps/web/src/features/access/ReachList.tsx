@@ -1,9 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useReach } from "../../api/queries/access";
-import type { AccessMode, ReachSubject, ReachedNote, ReachedTable } from "../../api/types/access";
-import { Banner, SkeletonRows, Tag } from "@guildsrun/ui";
-import { accessModeLabel } from "./accessList";
+import type { ReachSubject, ReachedNote, ReachedTable } from "../../api/types/access";
+import { Banner, ModeTag, SkeletonRows } from "@guildsrun/ui";
 
 const intros: Record<ReachSubject["type"], string> = {
   guild:
@@ -13,16 +12,6 @@ const intros: Record<ReachSubject["type"], string> = {
 };
 
 const editHint = "Change who reaches an item on the item: a table's Access tab, a note's Access.";
-
-type ModeTagProps = { mode: AccessMode };
-
-function ModeTag({ mode }: ModeTagProps) {
-  return (
-    <Tag tone={mode === "write" ? "tide" : "signal"} font="sans">
-      {accessModeLabel[mode]}
-    </Tag>
-  );
-}
 
 type SectionProps = {
   title: string;

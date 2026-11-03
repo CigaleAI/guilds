@@ -355,7 +355,10 @@ recipes (
 
 Every route writes `visibility=private`, and no route changes it.
 Visibility does not limit access: any member of the organisation can
-open, edit, apply, and delete any recipe of the organisation. File
+open, edit, export, apply, and delete any recipe of the organisation,
+but one captured from a private guild they do not operate
+(`source_guild_id`), which is left out of their list and 404 on every
+route, since its document holds that guild's notes and setup. File
 import is the cross-organisation path. Reading another organisation's
 recipe is 404.
 
@@ -385,9 +388,9 @@ POST   /api/recipes/registry/import   { name, version? }
 
 | Route | Answer |
 |---|---|
-| `GET /api/recipes` | The organisation's recipes, most recently updated first, at most 100 |
+| `GET /api/recipes` | The organisation's recipes the caller may read, most recently updated first, at most 100: those captured from a private guild the caller does not operate are left out before the 100 are counted |
 | `POST /api/guilds/:guild_id/recipes` | 201 with the captured draft |
-| `GET /api/recipes/:id` | The recipe; 404 outside the organisation |
+| `GET /api/recipes/:id` | The recipe; 404 outside the organisation, and for one captured from a private guild the caller does not operate |
 | `PUT /api/recipes/:id` | Writes `{ recipe?, name?, description?, expected_body_version }`; returns the recipe as a draft with `body_version` + 1; 409 with the current `body_version` on a stale head |
 | `POST /api/recipes/:id/review` | The recipe, as a draft |
 | `POST /api/recipes/:id/access` | The recipe, as a draft, with `access_cuts` |

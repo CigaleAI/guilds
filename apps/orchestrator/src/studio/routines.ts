@@ -7,7 +7,7 @@ import type { EditAction } from "./actions.js";
 import type { EditRoutineArguments } from "./edit-arguments.js";
 import { jsonHash, type RoutineTarget } from "./edit-request.js";
 import type { EditDeps, EditScope } from "./edits.js";
-import { editActor } from "./actor.js";
+import { studioActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { getGuild } from "../db/guilds.js";
 import { listAgents } from "../db/agents.js";
@@ -276,7 +276,7 @@ async function writeRoutine(
 ): Promise<RoutineChange> {
   if (plan.action === "create") {
     const { timing, description, instruction, paused } = plan.definition;
-    const row = await deps.schedules.create(editActor(scope), plan.agentId, {
+    const row = await deps.schedules.create(studioActor(scope), plan.agentId, {
       when: timing,
       description,
       instruction,
@@ -285,9 +285,9 @@ async function writeRoutine(
     return { agentId: plan.agentId, action: "create", scheduleId: row.id };
   }
   if (plan.action === "edit") {
-    await deps.schedules.update(editActor(scope), plan.agentId, plan.scheduleId, plan.changes);
+    await deps.schedules.update(studioActor(scope), plan.agentId, plan.scheduleId, plan.changes);
   } else {
-    await deps.schedules.delete(editActor(scope), plan.agentId, plan.scheduleId);
+    await deps.schedules.delete(studioActor(scope), plan.agentId, plan.scheduleId);
   }
   return { agentId: plan.agentId, action: plan.action, scheduleId: plan.scheduleId };
 }

@@ -1,7 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
-import { retireUnlistedArtifacts } from "./artifacts.js";
+import { homeAgentOnlyNotesAndFiles } from "./artifact-access.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
@@ -243,17 +243,14 @@ export async function agentNameTaken(pool: Queryable, name: string): Promise<boo
 }
 
 /**
- * Deletes an agent with the access rows naming it; a note or a file only those rows reached is
- * deleted with it, as `actor`.
+ * Deletes an agent with the access rows naming it. Every note and file stays under its home, one
+ * that no row reaches any more included. An agent of a private guild first leaves the notes and
+ * files with no home that only its rows reach homed in that guild (`homeAgentOnlyNotesAndFiles`).
  */
-export async function deleteAgent(pool: Queryable, agentId: string, actor: ChangeActor): Promise<void> {
+export async function deleteAgent(pool: Queryable, agentId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const named = await client.query<{ target_id: string }>(
-      `DELETE FROM artifact_access WHERE subject_type = 'agent' AND subject_id = $1
-       RETURNING target_kind, target_id`,
-      [agentId],
-    );
-    await retireUnlistedArtifacts(client, named.rows.map((row) => row.target_id), actor, new Date());
+    await homeAgentOnlyNotesAndFiles(client, agentId);
+    await client.query(`DELETE FROM artifact_access WHERE subject_type = 'agent' AND subject_id = $1`, [agentId]);
     // A secret granted only to this agent goes with it.
     await client.query(
       `DELETE FROM secrets s

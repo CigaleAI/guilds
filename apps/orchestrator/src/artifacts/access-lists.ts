@@ -1,6 +1,8 @@
-import { getLiveArtifact, listReachedArtifacts } from "../db/artifacts.js";
+import { listAccessEntries } from "../db/artifact-access.js";
+import { listReachedArtifacts, type ListedKind } from "../db/artifact-lists.js";
+import { getLiveArtifact } from "../db/artifacts.js";
 import { recordConfigChange } from "../db/config-changes.js";
-import { listGuilds } from "../db/guilds.js";
+import { getGuild, listGuilds } from "../db/guilds.js";
 import { withTransaction } from "../db/pg.js";
 import {
   type AccessRaise,
@@ -103,16 +105,77 @@ export async function replaceAccess(
   });
 }
 
+/** A note or a file an access list belongs to. */
+export type ListedTarget = { kind: ListedKind; id: string };
+
 /**
- * The guilds whose scope an item is in, each once: every guild of the organisation when its access
- * list has an organisation row, else the guilds a guild row or one of a guild's agents' rows names.
+ * The guilds of the organisation `orgId` whose scope an item is in, from every row of its access
+ * list, each once: every guild when the list has an organisation row, else the guilds a guild row
+ * or one of a guild's agents' rows names.
  */
-export async function guildsOnList(store: ArtifactStore, actor: ArtifactActor, target: AccessTarget): Promise<string[]> {
-  const entries = await loadEntries(store.db, actor, target);
+async function guildsOnList(store: ArtifactStore, orgId: string, target: ListedTarget): Promise<string[]> {
+  const entries = await listAccessEntries(store.db, target);
   if (entries.some((entry) => entry.type === "org")) {
-    return (await listGuilds(store.db, actor.orgId)).map((guild) => guild.id);
+    return (await listGuilds(store.db, orgId)).map((guild) => guild.id);
   }
   return [...new Set(entries.flatMap((entry) => (entry.guild_id === null ? [] : [entry.guild_id])))];
+}
+
+/**
+ * The guilds to tell of a change to a live note or file of the organisation `orgId`, each once,
+ * whoever makes it: the private guild it is homed in alone, so its name reaches no other guild's
+ * listeners; else its home guild, then the guilds whose scope it is in (`guildsOnList`). None when
+ * it is not live.
+ */
+export async function guildsToAnnounce(store: ArtifactStore, orgId: string, target: ListedTarget): Promise<string[]> {
+  const row = await getLiveArtifact(store.db, orgId, target);
+  if (!row) {
+    return [];
+  }
+  if (row.origin_guild_id === null) {
+    return guildsOnList(store, orgId, target);
+  }
+  if ((await getGuild(store.db, row.origin_guild_id))?.visibility === "private") {
+    return [row.origin_guild_id];
+  }
+  return [...new Set([row.origin_guild_id, ...(await guildsOnList(store, orgId, target))])];
+}
+
+/** A note's or a file's access list that changed, for the listeners of the guilds whose pages list it: its kind and display path. */
+export type ItemAccessChange = { kind: ListedKind; displayPath: string };
+
+/** What an operator's access writes run with: the artifact store, and the announcement of a note's or a file's change. */
+export type ItemAccessWriteDeps = {
+  store: ArtifactStore;
+  /** Tells a guild that the access list of a note or a file its page lists changed; absent on a box with no guild stream. */
+  publishItemAccessChanged?: (guildId: string, change: ItemAccessChange) => Promise<void>;
+};
+
+/**
+ * Replaces an item's access list as `replaceAccess` does. For a note or a file, it then tells each
+ * guild `guildsToAnnounce` names before the change or after it that the list changed.
+ */
+export async function replaceAndAnnounceItemAccess(
+  deps: ItemAccessWriteDeps,
+  actor: ArtifactActor,
+  target: AccessTarget,
+  subjects: SubjectEntry[],
+): Promise<AccessList> {
+  if (target.kind === "collection") {
+    return replaceAccess(deps.store, actor, target, subjects);
+  }
+  const item = { kind: target.kind, id: target.id };
+  const before = await guildsToAnnounce(deps.store, actor.orgId, item);
+  const replaced = await replaceAccess(deps.store, actor, target, subjects);
+  const row = await getLiveArtifact(deps.store.db, actor.orgId, item);
+  if (!row) {
+    return replaced;
+  }
+  const change = { kind: target.kind, displayPath: rowDisplayPath(row) };
+  for (const guildId of new Set([...before, ...(await guildsToAnnounce(deps.store, actor.orgId, item))])) {
+    await deps.publishItemAccessChanged?.(guildId, change);
+  }
+  return replaced;
 }
 
 /** Sets one subject's row on an item as the operator through `setAccessRow`, in a transaction of its own. */

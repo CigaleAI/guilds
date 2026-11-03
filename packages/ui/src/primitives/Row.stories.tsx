@@ -53,6 +53,9 @@ export const States: Story = {
       <Row asChild interactive selected lead={<Icon icon={Database} />} title="degen-meta" meta="Tracking web3 & crypto meta" trail={<Icon icon={ChevronRight} />}>
         <button type="button" />
       </Row>
+      <Row asChild interactive muted lead={<Icon icon={Database} />} title="row · muted" meta="Greyed, still opens on click">
+        <button type="button" />
+      </Row>
       <Row danger title="row · danger" />
       <Row disabled title="row · disabled" />
     </>
