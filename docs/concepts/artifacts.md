@@ -168,7 +168,7 @@ is unique by (`org_id`, `agent_id`, `collection_id`, `path`, `key`),
 with nulls counted equal: a note's or a file's name is unique in its
 organisation, and Memory and scripts are unique per agent.
 `origin_guild_id` is the guild the item was made in, or null for the
-organisation, written at insert and never changed:
+organisation, written at insert and changed by no write:
 
 | Item | `origin_guild_id` |
 |---|---|
@@ -184,17 +184,22 @@ things. The guild and agent pages list the notes and files homed in
 their guild apart from those shared with it
 ([Notes](notes.md#http)). And an operator never reaches a note or a
 file homed in a guild hidden from them, a private guild they do not
-operate, whatever its rows say
+operate, whatever its rows say, and a note or a file homed in a guild
+they can see is never hidden from them by its rows
 ([Access](access.md#access-lists-for-notes-collections-and-files)).
 It never enters an agent's reach: the mode of an agent, Studio's
 reach, and the starting rows of a new item come from the access list
-alone. Memory, scripts, and records keep the value, and nothing groups
-or hides them by it; a record is listed with its collection.
+alone. Memory, scripts and records keep the guild recorded at insert
+while that guild exists and belongs to the organisation; nothing
+groups by it. A record is listed with its collection.
 
 `origin_guild_id` references `guilds(id)`
 (`artifacts_origin_guild_id_fkey`, `ON DELETE SET NULL`), so an item
 a deleted guild leaves becomes the organisation's; a private guild's
-notes and files are removed before its row goes. The index
+notes and files are removed before its row goes. Deleting an agent of
+a private guild sets the home of each note and file with no home that
+only the agent's rows reached to that guild
+([Access](access.md#access-lists)). The index
 `artifacts_by_origin_guild` on (`origin_guild_id`, `org_id`) serves
 the page lists, which select by home, and the foreign key's action
 when a guild goes.

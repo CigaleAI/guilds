@@ -15,17 +15,23 @@ Tasks, and scripts stay at `org/<org>/agents/<agent>/…`. An agent
 creates a note or a file written by itself alone, and reaches any other
 through its rows; an operator creates one with the row it names, the
 organisation at write by default, and writes every note and file but
-those homed in private guilds it does not operate and those whose rows
-all name such guilds or their agents. Deleting an agent removes only
-the rows naming it, and every note and file stays under its home;
-deleting a private guild removes the notes and files homed in it, live
-or deleted, whatever their rows, with their change history; a
-deleted note or file keeps its rows, so it stays hidden where it was. A path's change history shows only the
+those homed in private guilds it does not operate and those with no
+home whose rows all name such guilds or their agents. Deleting an
+agent removes only the rows naming it, and every note and file stays
+under its home; an agent of a private guild first homes in that guild
+the notes and files with no home that only its rows reached. Deleting
+a private guild removes, live or deleted, with their change history,
+the notes and files homed in it, whatever their rows, and those with
+no home that only its rows and its agents' rows reached; a deleted
+note or file keeps its rows, so it stays hidden where it was. A path's change history shows only the
 changes of the items held there that the reader reads, so a name
 another item now holds does not show a hidden deleted item's history.
 A recipe apply that fails, or is aborted, deletes every agent,
-collection, and note it made, into an existing guild too. A change to an
-item with an organisation row is announced to every guild.
+collection, and note it made, into an existing guild too. A change to
+a note or a file, by an agent or an operator, is announced to each
+guild whose page lists it: its home guild and the guilds its rows
+reach, every guild when it has an organisation row; one homed in a
+private guild is announced to that guild alone.
 `note_write` takes a `key` or a `path`, `file_put` no `level`,
 `note_find` and `file_find` no `level`, and Studio's `studio_edit_note`
 no `level`; results carry no `level` or `owner_id`. Notes are written
@@ -71,8 +77,14 @@ note** and **Upload a file** dialogs home the item in the page's guild
 and show it beside the first access row, which starts at the page's
 guild or agent at write. An operator who cannot see a private guild
 sees none of the notes and files homed in it, whatever their rows
-say, an organisation row included; Prompt Studio's lists and tools
-apply the same rule. Which agent reaches an item is still its access
+say, an organisation row included, and an item homed in a guild they
+can see is never hidden from them by its rows; Prompt Studio's lists
+and tools apply the same rule. Prompt Studio's inspector and
+effective prompts list only the tables the operator can see, and tell
+whether the latest run used the current Task as the agent reads it,
+whatever is hidden from the operator. A guild's tag is **All agents ·
+read & write** only when no row for one of its agents holds that
+agent below write. Which agent reaches an item is still its access
 list alone. A Task's **Insert › Note** lists the agent's two sections
 and does not insert a note the agent cannot reach.
 `GET /api/guilds/:id/notes`, `/api/guilds/:id/files`,
@@ -95,7 +107,9 @@ drops the `artifact_renames` table.
 A recipe captured from a private guild is left out of the recipes of a
 member who does not operate that guild, and is 404 to them on every
 recipe route; a preview or an apply into a private guild they do not
-operate is 404 `destination guild not found`.
+operate is 404 `destination guild not found`, and an apply into one is
+404 `apply not found` to them on every `/api/applies/:id` route.
+`GET /api/recipes` leaves those recipes out before it counts its 100.
 
 The inbox stream's notice of a new group message names the message's
 guild. A message posted in the chat an operator is watching no
