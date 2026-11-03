@@ -32,7 +32,7 @@ lives is the [Code map](code-map.md).
   machine), TypeScript SDK from that same commit
   (`sdks/sandbox/javascript`)
 - Token counting: `js-tiktoken` with one encoding, `o200k_base`, for
-  every model
+  every model, loaded once per process (`src/llm/tokens.ts`)
 - Cost: provider-reported `cost_usd` first, then the catalog's rate for
   the model on a billed provider, else `cost_source: unavailable`. The
   catalog rate prices uncached input, cache reads, and output;
@@ -359,6 +359,12 @@ its opening prompts.
 That prompt and the ordered message rows are the stored history.
 Each model call projects tool results from those rows
 (`conversation/projection.ts`).
+
+Before each model call, input tokens are the `o200k_base` length of
+the JSON text of the projected messages, plus the JSON text of the
+offered tools when any are offered, and at least 1. The process loads
+that encoding once. Studio uses the same counter. A run adds 1600
+tokens for each image. Counting runs on the server event loop.
 
 Tools:
 
