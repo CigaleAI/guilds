@@ -1,4 +1,5 @@
 import type { MessageMetadata, MessagePayload, ToolMessage } from "../db/schema/index.js";
+import type { ModelMessage, ModelToolDefinition } from "../llm/tokens.js";
 import { promptHash } from "../prompts/index.js";
 
 /**
@@ -15,9 +16,13 @@ export const AGENT_TOOL_RESULT_STUB_HINT =
 
 export type ProjectionBudget = {
   model: string;
-  schemas: unknown[];
+  schemas: readonly ModelToolDefinition[];
   maxInput: number;
-  countInputTokens: (model: string, messages: unknown[], tools?: unknown[] | null) => number;
+  countInputTokens: (
+    model: string,
+    messages: readonly ModelMessage[],
+    tools?: readonly ModelToolDefinition[] | null,
+  ) => number;
 };
 
 /** A stored message of a run or a coach conversation, as the projection reads it. */
@@ -130,7 +135,7 @@ function stubOldestLiveRowsUntilPromptFits(
   liveLarge: ProjectedRow[],
 ): MessagePayload[] {
   let messages = replaceStubbedToolPayloads(projection, stubSeqs);
-  let tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
+  let tokens = budget.countInputTokens(budget.model, messages as unknown as ModelMessage[], budget.schemas);
   const maxStub = Math.max(0, liveLarge.length - (projection.minUnstubbed ?? MIN_UNSTUBBED_TOOL_RESULTS));
   for (const row of liveLarge.slice(0, maxStub)) {
     if (tokens <= budget.maxInput) {
@@ -138,7 +143,7 @@ function stubOldestLiveRowsUntilPromptFits(
     }
     stubSeqs.add(row.seq);
     messages = replaceStubbedToolPayloads(projection, stubSeqs);
-    tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
+    tokens = budget.countInputTokens(budget.model, messages as unknown as ModelMessage[], budget.schemas);
   }
   return messages;
 }

@@ -6,7 +6,7 @@ import { agentTask, expandTaskText, publishAgentTask, taskDisplayPath } from "..
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { newId } from "../lib/ids.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
-import { countInputTokens } from "../llm/tokens.js";
+import { countInputTokens, type ModelToolDefinition } from "../llm/tokens.js";
 import { instructionHash } from "../schedules/item.js";
 import { capBytes } from "../lib/bytes.js";
 import {
@@ -391,7 +391,11 @@ export class StudioDrafts implements StudioDraftService {
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
-    const tokens = countInputTokens(config.model, [{ role: "system", content: composed }], tools.schemas);
+    const tokens = countInputTokens(
+      config.model,
+      [{ role: "system", content: composed }],
+      tools.schemas as unknown as ModelToolDefinition[],
+    );
     if (tokens > config.max_input_tokens) {
       throw new StudioUnprocessableError("composed prompt exceeds the target agent's max_input_tokens");
     }

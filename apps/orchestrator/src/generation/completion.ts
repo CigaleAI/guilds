@@ -21,7 +21,7 @@ import {
 } from "../llm/credentials.js";
 import { streamCompletion } from "../llm/client.js";
 import { LLMError, type Completion, type ModelEvent, type ModelMessage, type ModelRequest } from "../llm/completion.js";
-import { countInputTokens } from "../llm/tokens.js";
+import { countInputTokens, type ModelToolDefinition } from "../llm/tokens.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import { PolicyError, type OrgPolicy } from "../policy/index.js";
 import type { CancelEvent } from "../toolbox/index.js";
@@ -73,7 +73,12 @@ export type ModelHistory = {
 
 /** The input tokens the run's history takes with the schemas it is offered. */
 export function historyTokens(snapshot: RunConfigSnapshot, history: ModelHistory, schemas: FunctionTool[]): number {
-  return countRunInputTokens(snapshot.model, history.rows, schemas.length ? schemas : null, countInputTokensImpl);
+  return countRunInputTokens(
+    snapshot.model,
+    history.rows,
+    schemas.length ? (schemas as unknown as ModelToolDefinition[]) : null,
+    countInputTokensImpl,
+  );
 }
 
 /** A model call with the settings of the run's snapshot. */
@@ -165,7 +170,7 @@ export class ModelCompletion {
       minStubBytes: TOOL_RESULT_STUB_MIN_BYTES,
       budget: {
         model: snapshot.model,
-        schemas,
+        schemas: schemas as unknown as ModelToolDefinition[],
         maxInput: snapshot.max_input_tokens,
         countInputTokens: (model, messages, tools) =>
           countInputTokensImpl(model, messages, tools) + attachmentImageCount(listed) * IMAGE_INPUT_TOKENS,

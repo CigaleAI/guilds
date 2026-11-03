@@ -103,6 +103,7 @@ const editsDbName = uniqueDbName("agent_platform_studio_edits");
 const tablesDbName = uniqueDbName("agent_platform_studio_tables");
 const narrowDbName = uniqueDbName("agent_platform_studio_narrow");
 const routinesDbName = uniqueDbName("agent_platform_studio_routines");
+const historyDbName = uniqueDbName("agent_platform_studio_history");
 const originalStream = generationLive.streamCompletion;
 
 after(async () => {
@@ -114,6 +115,7 @@ after(async () => {
   await dropIsolatedDatabase(tablesDbName);
   await dropIsolatedDatabase(narrowDbName);
   await dropIsolatedDatabase(routinesDbName);
+  await dropIsolatedDatabase(historyDbName);
 });
 
 test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 }, async () => {
@@ -2410,6 +2412,174 @@ test("studio proposes routines to create, change, and delete that the operator a
       ],
     );
   } finally {
+    await app.close();
+    await database.close();
+  }
+});
+
+const RECORDED_INPUT_TOKENS = 18432;
+const HISTORY_TURNS = 40;
+
+function historyReply() {
+  const reply = completionReply("The history fits.");
+  reply.metadata.usage = {
+    input_tokens: RECORDED_INPUT_TOKENS,
+    output_tokens: 4,
+    cache_read_tokens: 0,
+  };
+  return reply;
+}
+
+function recordedInputTokens(
+  rows: Array<{ payload: { role?: string }; metadata?: { usage?: { input_tokens?: number } } }>,
+): number[] {
+  const totals: number[] = [];
+  for (const row of rows) {
+    const input = row.metadata?.usage?.input_tokens;
+    if (row.payload.role === "assistant" && typeof input === "number") {
+      totals.push(input);
+    }
+  }
+  return totals;
+}
+
+test("studio records the same input-token total for a large history", { timeout: 60_000 }, async () => {
+  const previousStream = generationLive.streamCompletion;
+  generationLive.streamCompletion = async function* stream() {
+    yield ["done", historyReply()];
+  };
+  const databaseUrl = await createIsolatedDatabase(historyDbName);
+  const database = await connect(databaseUrl);
+  const notes = new NotesStore(tempDir("guilds-studio-history-"), templatesRoot());
+  await notes.ensureSystemPrompt();
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
+  const studio = new StudioService({
+    db,
+    artifacts,
+    scripts,
+    schedules,
+    notesSystemPath: notes.systemPath(),
+  });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
+  const now = new Date();
+  try {
+    await insertGuild(db,
+      {
+        guildId: "guild_hist",
+        name: "history-guild",
+        orgId: "org_home",
+        about: "A long studio history",
+      },
+      now,
+    );
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId: "a_hist", guildId: "guild_hist", name: "writer", config: CONFIG, focus: "Write notes" }, task: "Write notes", placement: {} },
+      systemActor("org_home", { guildId: "guild_hist", agentId: "a_hist" }),
+      now,
+    );
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: {
+        mode: "optimize",
+        source_guild_id: "guild_hist",
+        coach_config: { model: TEST_MODEL, temperature: 0.2 },
+      },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    const session = created.json() as { id: string };
+    const body = "The weekly note keeps the canonical finding and links the source run. ".repeat(20);
+    let seq = 1;
+    for (let index = 0; index < HISTORY_TURNS; index += 1) {
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 0,
+          payload: { role: "user", content: `Step ${index}.` },
+          metadata: { generation: 0 },
+        },
+        now,
+      );
+      seq += 1;
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 0,
+          payload: {
+            role: "assistant",
+            content: "",
+            tool_calls: [{ id: `call_${index}`, type: "function", function: { name: "file_read", arguments: "{}" } }],
+          },
+          metadata: { generation: 0 },
+        },
+        now,
+      );
+      seq += 1;
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 0,
+          payload: { role: "tool", tool_call_id: `call_${index}`, content: body },
+          metadata: { generation: 0, tool_name: "file_read" },
+        },
+        now,
+      );
+      seq += 1;
+    }
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+      payload: { content: "What still belongs in the standing task?" },
+    });
+    assert.equal(posted.statusCode, 200, posted.body);
+    await studio.runner.wait(session.id);
+    const firstMessages = await app.inject({
+      method: "GET",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+    });
+    assert.equal(firstMessages.statusCode, 200);
+    assert.deepEqual(recordedInputTokens(firstMessages.json()), [RECORDED_INPUT_TOKENS]);
+    const firstUsage = await app.inject({ method: "GET", url: "/api/usage", headers: AUTH });
+    assert.equal(firstUsage.statusCode, 200);
+    const firstStudio = firstUsage.json().organisation.studio as { input_tokens: number };
+    assert.equal(firstStudio.input_tokens, RECORDED_INPUT_TOKENS);
+
+    const postedAgain = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+      payload: { content: "What still belongs in the standing task?" },
+    });
+    assert.equal(postedAgain.statusCode, 200, postedAgain.body);
+    await studio.runner.wait(session.id);
+    const secondMessages = await app.inject({
+      method: "GET",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+    });
+    assert.deepEqual(recordedInputTokens(secondMessages.json()), [RECORDED_INPUT_TOKENS, RECORDED_INPUT_TOKENS]);
+    const secondUsage = await app.inject({ method: "GET", url: "/api/usage", headers: AUTH });
+    const secondStudio = secondUsage.json().organisation.studio as { input_tokens: number };
+    assert.equal(secondStudio.input_tokens, RECORDED_INPUT_TOKENS * 2);
+  } finally {
+    generationLive.streamCompletion = previousStream;
     await app.close();
     await database.close();
   }

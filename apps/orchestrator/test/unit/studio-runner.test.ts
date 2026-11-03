@@ -129,7 +129,7 @@ test("projection stubs oldest current-generation tools only after the token budg
       schemas: [],
       maxInput: 1,
       countInputTokens(_model, next) {
-        const tools = (next as Array<Record<string, unknown>>).filter((item) => item.role === "tool");
+        const tools = (next as unknown as Array<Record<string, unknown>>).filter((item) => item.role === "tool");
         const live = tools.filter((item) => !String(item.content).includes('"stub":true'));
         return live.length > 2 ? 9 : 1;
       },

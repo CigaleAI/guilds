@@ -1,10 +1,13 @@
-import { getEncoding } from "js-tiktoken";
+import { getEncoding, type Tiktoken } from "js-tiktoken";
+import type OpenAI from "openai";
 
 /** Every model is counted with one encoding. */
 export const TOKEN_ENCODING = "o200k_base";
 
-export const INPUT_TOKEN_LIMIT_MESSAGE =
-  "Input token limit reached. Start a new run to continue.";
+export type ModelMessage = OpenAI.Chat.ChatCompletionMessageParam;
+export type ModelToolDefinition = OpenAI.Chat.ChatCompletionTool;
+
+export const INPUT_TOKEN_LIMIT_MESSAGE = "Input token limit reached. Start a new run to continue.";
 
 export class GenerationLimitError extends Error {
   operation = "generation.max_input_tokens";
@@ -15,7 +18,26 @@ export class GenerationLimitError extends Error {
   }
 }
 
-function blob(messages: unknown[], tools?: unknown[] | null): string {
+type TokenEncodingLoader = () => Tiktoken;
+
+let cachedEncoding: Tiktoken | undefined;
+let loadTokenEncoding: TokenEncodingLoader = () => getEncoding(TOKEN_ENCODING);
+
+/** Replace the loader and drop the cached encoding. */
+export function installTokenEncodingLoader(loader: TokenEncodingLoader): void {
+  loadTokenEncoding = loader;
+  cachedEncoding = undefined;
+}
+
+function sharedEncoding(): Tiktoken {
+  cachedEncoding ??= loadTokenEncoding();
+  return cachedEncoding;
+}
+
+function blob(
+  messages: readonly ModelMessage[],
+  tools?: readonly ModelToolDefinition[] | null,
+): string {
   let text = JSON.stringify(messages);
   if (tools && tools.length) {
     text += JSON.stringify(tools);
@@ -23,17 +45,19 @@ function blob(messages: unknown[], tools?: unknown[] | null): string {
   return text;
 }
 
-export function estimateInputTokens(messages: unknown[], tools?: unknown[] | null): number {
+export function estimateInputTokens(
+  messages: readonly ModelMessage[],
+  tools?: readonly ModelToolDefinition[] | null,
+): number {
   return Math.max(1, Math.floor(blob(messages, tools).length / 4));
 }
 
 export function countInputTokens(
   _model: string,
-  messages: unknown[],
-  tools?: unknown[] | null,
+  messages: readonly ModelMessage[],
+  tools?: readonly ModelToolDefinition[] | null,
 ): number {
-  const encoding = getEncoding(TOKEN_ENCODING);
-  return Math.max(1, encoding.encode(blob(messages, tools)).length);
+  return Math.max(1, sharedEncoding().encode(blob(messages, tools)).length);
 }
 
 export function enforceInputTokenLimit(tokens: number, maxInputTokens: number): void {
