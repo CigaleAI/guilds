@@ -42,9 +42,11 @@ import {
 import type { InsertKind } from "@guildsrun/ui";
 import { AccessListDialog } from "../access/AccessListDialog";
 import { HomeGuildField } from "../access/HomeGuildField";
-import { findOpenItem, homeLabel, isUnreached, listedItems } from "../access/listedItems";
+import { homeLabel, isUnreached, listedItems, type OpenItem } from "../access/listedItems";
 import { sectionCopy } from "../access/sectionCopy";
 import { StartingAccessField } from "../access/StartingAccessField";
+import { UnlistedItem } from "../access/UnlistedItem";
+import { useOpenItem } from "../access/useOpenItem";
 import { EmbedPreview } from "./EmbedPreview";
 import { embedIsBroken } from "./embeds";
 import { InsertPicker } from "./InsertPicker";
@@ -77,7 +79,6 @@ const noteAccessIntro = "Who reads and writes this note.";
 export function NotesBrowser({ page, guildId, onOpenStep, initialPath, onAsk }: NotesBrowserProps) {
   const wide = useMediaQuery(wideScreen);
   const list = useNoteSections(page);
-  const [chosenPath, setChosenPath] = useState(initialPath);
   const [listOpen, setListOpen] = useState(!initialPath);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -92,10 +93,11 @@ export function NotesBrowser({ page, guildId, onOpenStep, initialPath, onAsk }: 
   });
 
   const sections = list.data ?? noNotes;
-  const open = findOpenItem(sections, chosenPath);
-  const panes = visiblePanes(wide, listOpen, Boolean(open));
+  const { opened, open, choose } = useOpenItem(sections, initialPath);
+  const panes = visiblePanes(wide, listOpen, opened.state !== "none");
+  const showList = wide ? undefined : () => setListOpen(true);
   const pickNote = (path: string) => {
-    setChosenPath(path);
+    choose(path);
     setListOpen(false);
   };
   const keepDraft = (path: string, text: string | null) =>
@@ -151,17 +153,22 @@ export function NotesBrowser({ page, guildId, onOpenStep, initialPath, onAsk }: 
             onOpenStep={onOpenStep}
             onAsk={onAsk}
             onAccess={() => setAccessItem(open)}
-            onBack={wide ? undefined : () => setListOpen(true)}
+            onBack={showList}
             draft={drafts[open.display_path]}
             onDraft={(text) => keepDraft(open.display_path, text)}
             onDeleted={() => {
-              setChosenPath(undefined);
+              choose(undefined);
               setListOpen(true);
             }}
           />
-        ) : list.isPending ? null : (
+        ) : !list.isSuccess ? null : (
           <div className="grid flex-1 place-items-center p-6">
-            <NoOpenNote listed={listedItems(sections).length > 0} onCreate={() => setCreating(true)} />
+            <NoOpenNote
+              opened={opened}
+              listed={listedItems(sections).length > 0}
+              onCreate={() => setCreating(true)}
+              onShowList={showList}
+            />
           </div>
         )}
       </section>
@@ -196,13 +203,23 @@ export function NotesBrowser({ page, guildId, onOpenStep, initialPath, onAsk }: 
 }
 
 type NoOpenNoteProps = {
+  /** What the page opens, which is no note. */
+  opened: OpenItem<NoteItem>;
   /** Whether the page lists any note, every one of them greyed when none is open. */
   listed: boolean;
   onCreate: () => void;
+  /** Shows the list again, on a screen where it and the note pane take turns. */
+  onShowList: (() => void) | undefined;
 };
 
-/** The note pane with no note open: none listed yet, or every listed note greyed. */
-function NoOpenNote({ listed, onCreate }: NoOpenNoteProps) {
+/**
+ * The note pane with no note open: the chosen path is not listed on the page, no note is listed
+ * yet, or every listed note is greyed.
+ */
+function NoOpenNote({ opened, listed, onCreate, onShowList }: NoOpenNoteProps) {
+  if (opened.state === "unlisted") {
+    return <UnlistedItem kind="note" path={opened.path} icon={FileText} onShowList={onShowList} />;
+  }
   return (
     <EmptyState
       icon={FileText}

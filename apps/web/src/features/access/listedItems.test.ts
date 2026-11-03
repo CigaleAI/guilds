@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ItemSections, ListedItem, ViewerMode } from "../../api/types/access";
-import { filterSections, findOpenItem, homeLabel, isUnreached, listedItems } from "./listedItems";
+import {
+  filterSections,
+  findOpenItem,
+  homeLabel,
+  isUnreached,
+  listedItems,
+  type OpenItem,
+} from "./listedItems";
 
 function item(name: string, viewer_mode: ViewerMode): ListedItem {
   return { display_path: `org/o/${name}`, home: { id: "g1", name: "Research" }, viewer_mode };
@@ -41,17 +48,27 @@ test("a filter keeps the matching items of each section", () => {
   assert.deepEqual(paths(kept.shared), ["org/o/legal.md"]);
 });
 
+const openPath = (opened: OpenItem<ListedItem>) =>
+  opened.state === "open" ? opened.item.display_path : opened.state;
+
 test("without a choice, the first reached item opens and an unreached one never does", () => {
-  assert.equal(findOpenItem(sections, undefined)?.display_path, "org/o/plan.md");
+  assert.equal(openPath(findOpenItem(sections, undefined)), "org/o/plan.md");
   const onlyShared = { own: [item("draft.md", "none")], shared: [item("brand.md", "read")] };
-  assert.equal(findOpenItem(onlyShared, undefined)?.display_path, "org/o/brand.md");
+  assert.equal(openPath(findOpenItem(onlyShared, undefined)), "org/o/brand.md");
   const noneReached = { own: [item("draft.md", "none")], shared: [] };
-  assert.equal(findOpenItem(noneReached, undefined), undefined);
-  assert.equal(findOpenItem({ own: [], shared: [] }, undefined), undefined);
+  assert.deepEqual(findOpenItem(noneReached, undefined), { state: "none" });
+  assert.deepEqual(findOpenItem({ own: [], shared: [] }, undefined), { state: "none" });
 });
 
-test("the chosen item opens from either section, and a choice no longer listed falls back", () => {
-  assert.equal(findOpenItem(sections, "org/o/brand.md")?.display_path, "org/o/brand.md");
-  assert.equal(findOpenItem(sections, "org/o/legal.md")?.display_path, "org/o/legal.md");
-  assert.equal(findOpenItem(sections, "org/o/gone.md")?.display_path, "org/o/plan.md");
+test("the chosen item opens from either section, reached or not", () => {
+  assert.equal(openPath(findOpenItem(sections, "org/o/brand.md")), "org/o/brand.md");
+  assert.equal(openPath(findOpenItem(sections, "org/o/legal.md")), "org/o/legal.md");
+  assert.equal(openPath(findOpenItem(sections, "org/o/draft.md")), "org/o/draft.md");
+});
+
+test("a chosen path the page does not list opens no other item", () => {
+  assert.deepEqual(findOpenItem(sections, "org/o/gone.md"), {
+    state: "unlisted",
+    path: "org/o/gone.md",
+  });
 });

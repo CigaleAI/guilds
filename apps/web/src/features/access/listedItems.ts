@@ -27,17 +27,26 @@ export function listedItems<Item extends ListedItem>(sections: ItemSections<Item
 }
 
 /**
- * The item the page opens: the chosen one, by display path, in either section; without one
- * listed, the first item the page's guild or agent reaches. An unreached item opens only when it
- * is the chosen one.
+ * What a page's item pane shows: an item open; a chosen path the page does not list, with nothing
+ * open; or nothing, when nothing is chosen and the page reaches no listed item.
+ */
+export type OpenItem<Item extends ListedItem> =
+  { state: "open"; item: Item } | { state: "unlisted"; path: string } | { state: "none" };
+
+/**
+ * What the page opens: the chosen item, by display path, in either section, reached or not; a
+ * chosen path the page does not list opens no other item in its place. With nothing chosen, the
+ * first item the page's guild or agent reaches opens; an unreached item opens only when chosen.
  */
 export function findOpenItem<Item extends ListedItem>(
   sections: ItemSections<Item>,
   chosenPath: string | undefined,
-): Item | undefined {
+): OpenItem<Item> {
   const items = listedItems(sections);
-  return (
-    items.find((item) => item.display_path === chosenPath) ??
-    items.find((item) => !isUnreached(item))
-  );
+  if (chosenPath === undefined) {
+    const first = items.find((item) => !isUnreached(item));
+    return first ? { state: "open", item: first } : { state: "none" };
+  }
+  const chosen = items.find((item) => item.display_path === chosenPath);
+  return chosen ? { state: "open", item: chosen } : { state: "unlisted", path: chosenPath };
 }

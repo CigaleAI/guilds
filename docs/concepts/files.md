@@ -119,8 +119,12 @@ and closed, and says what it holds when it holds nothing.
   **No access**; on an agent's page **Read & write**, **Read**, or
   **No access**.
 - A file tagged **No access** is greyed. Clicking it opens its access
-  dialog instead of the file. The browser never opens a greyed file by
-  itself.
+  dialog instead of the file. The browser opens the file a link names,
+  or else the first file the page reaches; it never opens a greyed
+  file by itself. The open file stays open when the list refreshes,
+  even when it becomes greyed. A link that names a file the page does
+  not list opens no other file: the file pane says **Not listed on
+  this page**, and no file is selected.
 - An open file shows its provenance strip
   ([Artifact store](artifacts.md#in-the-app)), then its description,
   type, size, version, and display path. Its history holds the changes
@@ -216,8 +220,8 @@ rows.
 | Guild's files | `/guilds/<guild_id>/state/files?path=<display path>` |
 
 `?path=` is optional. It opens that file first, in whichever section
-lists it, greyed or not. A path neither section lists opens the first
-file the page reaches.
+lists it, greyed or not. A path neither section lists opens no file;
+the file pane says **Not listed on this page**.
 
 ### HTTP
 

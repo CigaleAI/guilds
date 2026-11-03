@@ -243,28 +243,34 @@ export function writeOrgNote(input: NoteInput): Promise<FileContent> {
   return api<FileContent>(notePath(path), { method: "PUT", body });
 }
 
-/** Writes the organisation's note at a key through `writeOrgNote`, and refreshes what lists or shows it. */
+/**
+ * Writes the organisation's note at a key through `writeOrgNote`, and refreshes what lists or shows
+ * it; the write settles once the notes lists have refetched, so they hold a note it creates.
+ */
 export function useSaveNote() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: writeOrgNote,
     onSuccess: (file, { path }) => {
       client.setQueryData(noteKeys.note(path), file);
-      void client.invalidateQueries({ queryKey: noteKeys.noteLists });
       void client.invalidateQueries({ queryKey: noteKeys.embeddableNotes });
       void client.invalidateQueries({ queryKey: noteKeys.latestChange(file.display_path) });
+      return client.invalidateQueries({ queryKey: noteKeys.noteLists });
     },
   });
 }
 
-/** Deletes the organisation's note with this key; the server refuses one a Task still embeds. */
+/**
+ * Deletes the organisation's note with this key; the server refuses one a Task still embeds. The
+ * delete settles once the notes lists have refetched without the note.
+ */
 export function useDeleteNote() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (key: string) => api<undefined>(notePath(key), { method: "DELETE" }),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: noteKeys.noteLists });
       void client.invalidateQueries({ queryKey: noteKeys.embeddableNotes });
+      return client.invalidateQueries({ queryKey: noteKeys.noteLists });
     },
   });
 }

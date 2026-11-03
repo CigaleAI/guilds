@@ -165,7 +165,11 @@ A note tagged **No access** is greyed. Clicking it opens its access
 dialog instead of the note, so the operator can give the page a row.
 Any other note opens in the editor. The browser opens the note a link
 names, or else the first note the page reaches; it never opens a
-greyed note by itself. When every listed note is greyed, the editor
+greyed note by itself. The open note stays open when the list
+refreshes, after an access change or an agent's write, even when it
+becomes greyed. A link that names a note the page does not list opens
+no other note: the editor pane says **Not listed on this page**, and
+no note is selected. When every listed note is greyed, the editor
 pane says that no row reaches them.
 
 - **New note** takes a name, `untitled` at first, and the note's
@@ -324,8 +328,8 @@ Code: `apps/orchestrator/src/artifacts/access-lists.ts`,
 | Open step | the agent's Chat tab with `?run=<run_id>&call=<tool_call_id>` |
 
 `?path=` is optional. It opens that note first, in whichever section
-lists it, greyed or not. A path neither section lists opens the first
-note the page reaches.
+lists it, greyed or not. A path neither section lists opens no note;
+the editor pane says **Not listed on this page**.
 
 ### HTTP
 

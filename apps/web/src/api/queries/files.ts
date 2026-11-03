@@ -33,7 +33,7 @@ export function useFileSections(page: ReachSubject) {
 /**
  * Stores a file in the organisation; a file of the same name is replaced when the upload's expected
  * version allows. Every files list is refreshed either way, so a refused upload sees the file that
- * refused it.
+ * refused it; the upload settles once they have refetched.
  */
 export function useUploadFile() {
   const client = useQueryClient();
@@ -42,15 +42,15 @@ export function useUploadFile() {
     onSuccess: (item) => {
       void client.invalidateQueries({ queryKey: noteKeys.latestChange(item.display_path) });
     },
-    onSettled: () => void client.invalidateQueries({ queryKey: fileKeys.fileLists }),
+    onSettled: () => client.invalidateQueries({ queryKey: fileKeys.fileLists }),
   });
 }
 
-/** Deletes a shared file by id and refreshes every files list. */
+/** Deletes a shared file by id and refreshes every files list; the delete settles once they have refetched. */
 export function useDeleteFile() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<undefined>(`/api/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: fileKeys.fileLists }),
+    onSuccess: () => client.invalidateQueries({ queryKey: fileKeys.fileLists }),
   });
 }

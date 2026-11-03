@@ -30,9 +30,11 @@ import {
 } from "@guildsrun/ui";
 import { AccessListDialog } from "../access/AccessListDialog";
 import { HomeGuildField } from "../access/HomeGuildField";
-import { findOpenItem, homeLabel, isUnreached, listedItems } from "../access/listedItems";
+import { homeLabel, isUnreached, listedItems, type OpenItem } from "../access/listedItems";
 import { sectionCopy } from "../access/sectionCopy";
 import { StartingAccessField } from "../access/StartingAccessField";
+import { UnlistedItem } from "../access/UnlistedItem";
+import { useOpenItem } from "../access/useOpenItem";
 import { LatestChange, type OpenChangeStep } from "../notes/LatestChange";
 import { attemptFileDownload } from "./download";
 import { fileMeta, searchFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
@@ -60,7 +62,6 @@ const fileAccessIntro = "Who reads and writes this file.";
 export function FilesBrowser({ page, guildId, onOpenStep, initialPath }: FilesBrowserProps) {
   const wide = useMediaQuery(wideScreen);
   const list = useFileSections(page);
-  const [chosenPath, setChosenPath] = useState(initialPath);
   const [listOpen, setListOpen] = useState(!initialPath);
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -68,10 +69,11 @@ export function FilesBrowser({ page, guildId, onOpenStep, initialPath }: FilesBr
 
   const sections = list.data ?? noFiles;
   const listed = listedItems(sections);
-  const open = findOpenItem(sections, chosenPath);
-  const panes = visiblePanes(wide, listOpen, Boolean(open));
+  const { opened, open, choose } = useOpenItem(sections, initialPath);
+  const panes = visiblePanes(wide, listOpen, opened.state !== "none");
+  const showList = wide ? undefined : () => setListOpen(true);
   const pickFile = (path: string) => {
-    setChosenPath(path);
+    choose(path);
     setListOpen(false);
   };
 
@@ -114,15 +116,20 @@ export function FilesBrowser({ page, guildId, onOpenStep, initialPath }: FilesBr
             guildId={guildId}
             onOpenStep={onOpenStep}
             onAccess={() => setAccessItem(open)}
-            onBack={wide ? undefined : () => setListOpen(true)}
+            onBack={showList}
             onDeleted={() => {
-              setChosenPath(undefined);
+              choose(undefined);
               setListOpen(true);
             }}
           />
-        ) : list.isPending ? null : (
+        ) : !list.isSuccess ? null : (
           <div className="grid flex-1 place-items-center p-6">
-            <NoOpenFile listed={listed.length > 0} onUpload={() => setUploading(true)} />
+            <NoOpenFile
+              opened={opened}
+              listed={listed.length > 0}
+              onUpload={() => setUploading(true)}
+              onShowList={showList}
+            />
           </div>
         )}
       </section>
@@ -148,13 +155,23 @@ export function FilesBrowser({ page, guildId, onOpenStep, initialPath }: FilesBr
 }
 
 type NoOpenFileProps = {
+  /** What the page opens, which is no file. */
+  opened: OpenItem<FileItem>;
   /** Whether the page lists any file, every one of them greyed when none is open. */
   listed: boolean;
   onUpload: () => void;
+  /** Shows the list again, on a screen where it and the file pane take turns. */
+  onShowList: (() => void) | undefined;
 };
 
-/** The file pane with no file open: none listed yet, or every listed file greyed. */
-function NoOpenFile({ listed, onUpload }: NoOpenFileProps) {
+/**
+ * The file pane with no file open: the chosen path is not listed on the page, no file is listed
+ * yet, or every listed file is greyed.
+ */
+function NoOpenFile({ opened, listed, onUpload, onShowList }: NoOpenFileProps) {
+  if (opened.state === "unlisted") {
+    return <UnlistedItem kind="file" path={opened.path} icon={Paperclip} onShowList={onShowList} />;
+  }
   return (
     <EmptyState
       icon={Paperclip}
