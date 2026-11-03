@@ -485,6 +485,7 @@ export function AgentPrompt() {
         notes={notes.data}
         notesError={notes.error}
         collections={collections.data}
+        collectionsError={collections.error}
         orgId={org.id}
         onClose={() => setPreviewPath(null)}
       />

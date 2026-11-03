@@ -25,23 +25,42 @@ type EmbedPreviewProps = {
   notes: EmbeddableNotes | undefined;
   /** Why the notes did not load; null while they load or once they have. */
   notesError: Error | null;
+  /** The tables the Task or note can embed; undefined while they load. */
   collections: readonly Collection[] | undefined;
+  /** Why the tables did not load; null while they load or once they have. */
+  collectionsError: Error | null;
   orgId: string;
   onClose: () => void;
 };
 
-type TablePreviewProps = { collection: Collection | undefined };
+type TablePreviewProps = {
+  /** The tables the Task or note can embed; undefined while they load. */
+  collections: readonly Collection[] | undefined;
+  /** Why the tables did not load; null while they load or once they have. */
+  collectionsError: Error | null;
+  /** The table the embed names, among `collections`. */
+  collection: Collection | undefined;
+};
 
-/** A table embed: the purpose of the table it names, or that the agent cannot reach it. */
-function TablePreview({ collection }: TablePreviewProps) {
-  if (!collection) {
+/**
+ * A table embed: the purpose of the table it names, that the agent cannot reach it, or the tables
+ * loading or failing to load.
+ */
+function TablePreview({ collections, collectionsError, collection }: TablePreviewProps) {
+  if (collection) {
+    return <p className="text-md text-fg-2">{collection.purpose || "No purpose written."}</p>;
+  }
+  if (collections) {
     return (
       <Banner tone="error" title="This table is not reachable">
         Runs get a line saying the file is not reachable in its place.
       </Banner>
     );
   }
-  return <p className="text-md text-fg-2">{collection.purpose || "No purpose written."}</p>;
+  if (collectionsError) {
+    return <Banner tone="error" title="Couldn't load the tables" meta={collectionsError.message} />;
+  }
+  return <SkeletonRows rows={2} label="Loading the table" />;
 }
 
 type NotePreviewProps = {
@@ -78,6 +97,7 @@ export function EmbedPreview({
   notes,
   notesError,
   collections,
+  collectionsError,
   orgId,
   onClose,
 }: EmbedPreviewProps) {
@@ -92,7 +112,11 @@ export function EmbedPreview({
         <DialogHeader title={path ? embedLabel(path) : ""} description={path} />
         <DialogBody>
           {table ? (
-            <TablePreview collection={collection} />
+            <TablePreview
+              collections={collections}
+              collectionsError={collectionsError}
+              collection={collection}
+            />
           ) : !notes && notesError ? (
             <Banner tone="error" title="Couldn't load the notes" meta={notesError.message} />
           ) : (
