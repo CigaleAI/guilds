@@ -46,7 +46,8 @@ Anyone who can see the guild lists, resolves, and reopens its issues.
 ### Inbox
 
 **Inbox** (`/inbox`) sits in the sidebar footer, with a count badge.
-The badge counts both issues and tags and updates live.
+The badge counts both issues and tags and updates live. The browser
+tab icon shows a dot while the Inbox has anything waiting.
 
 Filters: **All**, **Tags**, **Issues**, each with its count.
 **Mark tags as read** shows while any tags remain. It marks every
