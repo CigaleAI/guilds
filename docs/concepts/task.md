@@ -250,6 +250,11 @@ creation:
 
   This covers a path that is missing, deleted, out of the agent's
   reach, not a display path, or not a note or collection.
+- Where an operator is shown the expansion, the Studio inspector and
+  `studio_get_agent_context`'s `effective_prompt`, it is read as the
+  agent too, and a note, file, or table hidden from that operator, by
+  its rows or by its home ([Access](access.md#access-lists)), becomes
+  the marker as well. The run itself still inlines it.
 
 A run is refused with 422 `embed budget exceeded` when the embeds hold
 more than 64 KB of note text.

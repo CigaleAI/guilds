@@ -4,12 +4,13 @@
 import { Type, type Static } from "typebox";
 import type { AgentConfig } from "../db/schema/index.js";
 import type { JsonObject } from "../lib/json.js";
-import { agentTask } from "../artifacts/task.js";
+import { agentTaskShownTo } from "../artifacts/task.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { studioChoice, studioTool } from "./arguments.js";
 import { STUDIO_DEFAULT_CONTEXT_SECTIONS, STUDIO_TOTAL_RETURNED_BYTES } from "./constants.js";
 import { sliceStudioBytes, truncatePayload } from "./paging.js";
 import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
+import { studioActor } from "./actor.js";
 import { resolveHandle } from "./source-guild.js";
 import { wrapEvidence } from "./system.js";
 import type { StudioTool } from "./tools.js";
@@ -105,7 +106,7 @@ export const studioGetAgentContext: StudioTool = studioTool({
     const agent = await resolveHandle(deps, call, input.agent_id);
     const want = new Set<ContextSection>(input.sections ?? STUDIO_DEFAULT_CONTEXT_SECTIONS);
     const cursor = input.cursor;
-    const task = await agentTask(deps.artifacts, agent);
+    const task = await agentTaskShownTo(deps.artifacts, studioActor(call), agent);
     const memory = task.memory;
     // state and effective_prompt read the same projection; take it once.
     let statePreview: ReturnType<typeof previewCurrentState> | null = null;

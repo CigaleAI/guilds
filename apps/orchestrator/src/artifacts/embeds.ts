@@ -9,7 +9,7 @@ import type { TaskEmbedSnapshot } from "../db/schema/index.js";
 import { describeCollection } from "./collections.js";
 import { getByDisplayPath, type DisplayPathRead, type LiveNote } from "./notes.js";
 import type { ArtifactRow } from "../db/artifacts.js";
-import type { ArtifactStore, CollectionDescription } from "./store.js";
+import { isHiddenItem, type ArtifactStore, type CollectionDescription } from "./store.js";
 
 const EMBED_RE = /!\[\[([^\]]+)\]\]/g;
 
@@ -100,6 +100,26 @@ export type EmbedSource = {
 /** The embed source over the store's notes and collections. */
 export function embedSource(store: ArtifactStore): EmbedSource {
   return { getByDisplayPath: bindQuery(store, getByDisplayPath), describeCollection: bindQuery(store, describeCollection) };
+}
+
+/**
+ * The embed source over the store's notes and collections as they are shown to the operator
+ * `viewer`: what the reading actor reaches, less each note, file, and collection hidden from the
+ * viewer, by its rows or by its home, which reads as not found.
+ */
+export function embedSourceShownTo(store: ArtifactStore, viewer: ArtifactActor): EmbedSource {
+  return {
+    async getByDisplayPath(actor, href) {
+      const read = await getByDisplayPath(store, actor, href);
+      if (read.row && (await isHiddenItem(store, viewer, read.row))) {
+        throw new ArtifactError("artifact not found", 404);
+      }
+      return read;
+    },
+    async describeCollection(actor, name) {
+      return (await describeCollection(store, viewer, name)) === null ? null : describeCollection(store, actor, name);
+    },
+  };
 }
 
 /** One embed a run meets: the note that holds it (null for the Task), its depth, and whether the run inlines it. */

@@ -1,6 +1,7 @@
 import { Type, type Static } from "typebox";
 import type { ArtifactStore } from "../artifacts/store.js";
-import { agentTask } from "../artifacts/task.js";
+import { agentTaskShownTo } from "../artifacts/task.js";
+import type { ArtifactActor } from "../artifacts/types.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getRun, listMessages, listRunHeaders, routineRunStats, type MessageRow, type RunHeaderRow, type RunRow } from "../db/runs.js";
@@ -195,9 +196,12 @@ export type StudioInspector = {
   generating: boolean;
 };
 
-/** One agent as the inspector shows it: its Guidelines, task, state, Memory, and effective prompt beside its latest run. */
-export async function inspectAgent(deps: AgentInspectorDeps, agent: AgentRow): Promise<StudioInspector> {
-  const task = await agentTask(deps.artifacts, agent);
+/**
+ * One agent as the inspector shows it to the operator `viewer`: its Guidelines, task, state, Memory,
+ * and effective prompt beside its latest run, the Task's embeds inlined as `agentTaskShownTo` does.
+ */
+export async function inspectAgent(deps: AgentInspectorDeps, viewer: ArtifactActor, agent: AgentRow): Promise<StudioInspector> {
+  const task = await agentTaskShownTo(deps.artifacts, viewer, agent);
   const standing = hydrateStanding({
     systemPath: deps.notesSystemPath,
     agentName: agent.name,

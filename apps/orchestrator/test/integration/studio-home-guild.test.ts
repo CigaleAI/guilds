@@ -11,6 +11,7 @@ import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
 import { connect } from "../../src/seed/connect.js";
 import { studioFindArtifacts, studioGetArtifact, studioListFileChanges } from "../../src/studio/file-tools.js";
+import { studioGetAgentContext } from "../../src/studio/prompt-tools.js";
 import { resolveStudioFocus } from "../../src/studio/focus.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { GuildReferences } from "../../src/studio/references.js";
@@ -75,7 +76,7 @@ test(
 
       // An open guild both operators see, each with a Studio session on it.
       const desk = await call("POST", "/api/guilds", OWNER, { name: "desk" });
-      await call("POST", `/api/guilds/${String(desk.id)}/agents`, OWNER, {
+      const writer = await call("POST", `/api/guilds/${String(desk.id)}/agents`, OWNER, {
         name: "writer",
         config: { model: TEST_MODEL, browser: false },
       });
@@ -150,7 +151,8 @@ test(
       });
       assert.equal(pinnedOnMessage.statusCode, 422, pinnedOnMessage.body);
 
-      assert.deepEqual(await seen(INSIDER, insider, await session(INSIDER)), {
+      const insiderSession = await session(INSIDER);
+      assert.deepEqual(await seen(INSIDER, insider, insiderSession), {
         state: true,
         references: true,
         found: true,
@@ -158,6 +160,35 @@ test(
         changes: true,
         pinned: true,
       });
+
+      // The open guild's agent embeds the homed note, which its organisation row lets the agent read.
+      await call("PUT", `/api/agents/${String(writer.id)}/notes/task.md`, INSIDER, { content: `Follow ![[${homedPath}]]\n` });
+      /** The inspector's effective prompt and Studio's effective_prompt of the writer, as one operator's session shows them. */
+      const prompts = async (headers: Record<string, string>, user: UserRow, sessionId: string) => {
+        const inspected = (await call("GET", `/api/studio/sessions/${sessionId}/agents/${String(writer.id)}`, headers)) as {
+          effective_prompt: { content: string; task_content: string };
+        };
+        const toolCall: StudioToolCall = {
+          orgId: "org_home",
+          sourceGuildId: String(desk.id),
+          user,
+          hidden: await hiddenGuildsFor(db, "org_home", user.id),
+          session: (await getStudioSession(db, sessionId))!,
+          generation: 1,
+        };
+        const context = (await studioGetAgentContext.handler(toolDeps, toolCall, {
+          agent_id: String(writer.id),
+          sections: ["effective_prompt"],
+        })) as { effective_prompt: { content: string } };
+        return [inspected.effective_prompt.content, inspected.effective_prompt.task_content, context.effective_prompt.content];
+      };
+      for (const text of await prompts(OWNER, owner, ownerSession)) {
+        assert.ok(!text.includes("kept in the vault"), "the note's text is not shown to an operator outside its home");
+        assert.ok(text.includes(`<unreachable path="${homedPath}"`), "its place holds the unreachable marker");
+      }
+      for (const text of await prompts(INSIDER, insider, insiderSession)) {
+        assert.ok(text.includes("kept in the vault"), "the home's operator is shown what the agent reads");
+      }
     } finally {
       await app.close();
       await database.close();

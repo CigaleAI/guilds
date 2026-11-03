@@ -86,7 +86,7 @@ import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { CoachSessionConfig, StudioSourceGuild } from "../db/schema/index.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
-import type { StudioOperator } from "./actor.js";
+import { studioActor, type StudioOperator } from "./actor.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -445,9 +445,16 @@ export class StudioService {
     return inventoryItem(row);
   }
 
-  async inspector(session: StudioSessionRow, agentId: string): Promise<StudioInspector> {
+  /** One agent of the session's guild as the inspector shows it to `user`, without what is hidden from them. */
+  async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<StudioInspector> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
+    const viewer = studioActor({
+      orgId: session.org_id,
+      sourceGuildId: agent.guild_id,
+      user,
+      hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
+    });
     return inspectAgent(
       {
         db: this.deps.db,
@@ -456,6 +463,7 @@ export class StudioService {
         notesSystemPath: this.deps.notesSystemPath,
         isAgentBusy: this.deps.isAgentBusy,
       },
+      viewer,
       agent,
     );
   }

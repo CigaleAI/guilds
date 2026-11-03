@@ -102,7 +102,13 @@ names the home: the app sends the page's guild, as `home_guild_id`
 on a note and `X-Home-Guild` on an upload, and a home naming an
 unknown guild, or one hidden from the writer, is 404 `unknown guild`.
 Prompt Studio's actors carry the operator's hidden set, so its state
-list, references, and tools apply the same rule. Migration
+list, references, and tools apply the same rule. Where an operator
+is shown a Task with its embeds inlined, the Studio inspector and
+`studio_get_agent_context`'s effective prompt, the embeds resolve as
+the Task's agent and a note, file, or table hidden from that operator
+takes the unreachable marker (`embedSourceShownTo` in
+`apps/orchestrator/src/artifacts/embeds.ts`); `test/integration/studio-home-guild.test.ts`
+pins it. Migration
 `0021_home_guild.sql` nulls every `origin_guild_id` that names no
 guild of the item's organisation; gives a live or deleted note or
 file with no home the one guild its access list names, through its
@@ -123,6 +129,12 @@ guild's scope, Studio's reach, or a starting row.
   those agents, while the operators outside the private guild do not
   see it. Such an agent can copy what it read into a note, a file, a
   group chat, or a run that those operators see.
+- A run stores what its agent read: its opening system message holds
+  the Task with every embed inlined as the agent reads it, and its
+  transcript the results of its note and file reads. The run's System
+  tab and transcript show them to every operator who sees the
+  agent's guild, a private guild's note an organisation row lets the
+  agent read included.
 - A note or a file an operator created before migration 0021 has no
   recorded home when its access list has an organisation row or names
   more than one guild. It stays the organisation's, and an
