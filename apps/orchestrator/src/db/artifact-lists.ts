@@ -21,8 +21,9 @@ export type ListedKind = Extract<Artifact["kind"], "note" | "file">;
 
 /**
  * The mode an organisation's or a guild's list shows for an item: `all_write` or `all_read` when an
- * organisation row, or the guild's own row, reaches every agent, the better mode when both do;
- * `some` when only rows of single agents reach some of them; `none` when no row reaches any.
+ * organisation row, or the guild's own row, reaches every agent, the better mode when both do, and
+ * no agent row at `none` shuts one of them out; `some` when such a row shuts one out, or only rows
+ * of single agents reach some of them; `none` when no row reaches any.
  */
 export type GuildViewerMode = "all_write" | "all_read" | "some" | "none";
 
@@ -44,29 +45,36 @@ export type SectionedArtifactRow<Mode> = PageArtifactRow<Mode> & { homed: boolea
 /** A join giving each artifact `a` the name of the guild it is homed in, as `hg.name`. */
 const HOME_JOIN = `LEFT JOIN guilds hg ON hg.id = a.origin_guild_id`;
 
-/** A join giving each artifact `a` the organisation's viewer mode on it (`GuildViewerMode`), as `v.viewer_mode`. */
-const ORG_VIEWER_JOIN = `CROSS JOIN LATERAL (
-    SELECT CASE max(x.mode) FILTER (WHERE x.subject_type = 'org')
-             WHEN 'write' THEN 'all_write' WHEN 'read' THEN 'all_read'
-             ELSE CASE WHEN bool_or(x.mode <> 'none') THEN 'some' ELSE 'none' END
+/**
+ * A join giving each artifact `a` a viewer's mode on it (`GuildViewerMode`), as `v.viewer_mode`,
+ * from one pass over the item's rows. Over a row `x`, the SQL predicate `allRow` picks a row that
+ * reaches every agent of the viewer, `someRow` one that reaches some of them, and `ownAgentRow` the
+ * row of one of them, which shuts that agent out at `none`.
+ */
+function viewerJoin(allRow: string, someRow: string, ownAgentRow: string): string {
+  return `CROSS JOIN LATERAL (
+    SELECT CASE
+             WHEN max(x.mode) FILTER (WHERE ${allRow}) IS NOT NULL
+                  AND NOT bool_or(x.mode = 'none' AND ${ownAgentRow})
+               THEN CASE max(x.mode) FILTER (WHERE ${allRow}) WHEN 'write' THEN 'all_write' ELSE 'all_read' END
+             WHEN bool_or(x.mode <> 'none' AND ${someRow}) THEN 'some'
+             ELSE 'none'
            END AS viewer_mode
       FROM artifact_access x
      WHERE x.target_kind = a.kind AND x.target_id = a.id) v`;
+}
+
+/** A join giving each artifact `a` the organisation's viewer mode on it (`GuildViewerMode`), as `v.viewer_mode`. */
+const ORG_VIEWER_JOIN = viewerJoin(`x.subject_type = 'org'`, `true`, `x.subject_type = 'agent'`);
 
 /**
  * A join giving each artifact `a` the viewer mode (`GuildViewerMode`) of the guild whose id is the
- * SQL `guildId`, as `v.viewer_mode`, from one pass over the item's rows.
+ * SQL `guildId`, as `v.viewer_mode`.
  */
 function guildViewerJoin(guildId: string): string {
-  return `CROSS JOIN LATERAL (
-    SELECT CASE max(x.mode) FILTER (WHERE x.subject_type = 'org' OR (x.subject_type = 'guild' AND x.subject_id = ${guildId}))
-             WHEN 'write' THEN 'all_write' WHEN 'read' THEN 'all_read'
-             ELSE CASE WHEN bool_or(x.subject_type = 'agent' AND x.mode <> 'none'
-                                    AND x.subject_id IN (SELECT ag.id FROM agents ag WHERE ag.guild_id = ${guildId}))
-                       THEN 'some' ELSE 'none' END
-           END AS viewer_mode
-      FROM artifact_access x
-     WHERE x.target_kind = a.kind AND x.target_id = a.id) v`;
+  const allRow = `(x.subject_type = 'org' OR (x.subject_type = 'guild' AND x.subject_id = ${guildId}))`;
+  const ownAgentRow = `(x.subject_type = 'agent' AND x.subject_id IN (SELECT ag.id FROM agents ag WHERE ag.guild_id = ${guildId}))`;
+  return viewerJoin(allRow, `(${allRow} OR ${ownAgentRow})`, ownAgentRow);
 }
 
 /**

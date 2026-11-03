@@ -367,8 +367,8 @@ by key.
 
 | List | `viewer_mode` |
 |---|---|
-| The organisation's | `all_write` or `all_read` from an organisation row; `some` when only guild or agent rows reach agents; `none` when no row reaches one |
-| A guild's | `all_write` or `all_read` from an organisation row or the guild's own row, the better of the two; `some` when only rows of the guild's agents reach them; `none` when no row reaches one |
+| The organisation's | `all_write` or `all_read` from an organisation row with no agent row at `none`; `some` when an agent row at `none` shuts an agent out of the organisation row, or only guild or agent rows reach agents; `none` when no row reaches one |
+| A guild's | `all_write` or `all_read` from an organisation row or the guild's own row, the better of the two, with no row at `none` for one of the guild's agents; `some` when such a row shuts one of them out, or only rows of the guild's agents reach them; `none` when no row reaches one |
 | An agent's | the agent's mode: `write`, `read`, or `none` when no row reaches it |
 
 Each listing reads every note's `viewer_mode` and home in the same

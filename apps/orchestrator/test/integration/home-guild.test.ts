@@ -133,6 +133,36 @@ test("a note homed in a guild that no row reaches is listed greyed in its own se
   assert.deepEqual(modesOf((await list(`/api/guilds/${vaultId}/notes`, OWNER)).shared, [noteId]), [[noteId, "some"]]);
 });
 
+test("an agent row at none beside an organisation or a guild row tags the guilds of that agent some agents, not all", async () => {
+  const write = async (key: string, home: string, subjects: Array<{ type: string; id: string; mode: string }>) => {
+    const created = await app.inject({
+      method: "PUT",
+      url: `/api/org/notes/${key}`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: key, home_guild_id: home },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    const id = String(created.json().id);
+    const listed = await app.inject({ method: "PUT", url: `/api/notes/${id}/access`, headers: { ...OWNER, ...JSON_BODY }, payload: { subjects } });
+    assert.equal(listed.statusCode, 200, listed.body);
+    return id;
+  };
+  const orgShut = await write("org-shut.md", openId, [
+    { type: "org", id: "org_home", mode: "read" },
+    { type: "agent", id: keeperId, mode: "none" },
+  ]);
+  const guildShut = await write("guild-shut.md", vaultId, [
+    { type: "guild", id: vaultId, mode: "write" },
+    { type: "agent", id: keeperId, mode: "none" },
+  ]);
+  const vaultPage = await list(`/api/guilds/${vaultId}/notes`, OWNER);
+  assert.deepEqual(modesOf(vaultPage.shared, [orgShut]), [[orgShut, "some"]]);
+  assert.deepEqual(modesOf(vaultPage.own, [guildShut]), [[guildShut, "some"]]);
+  assert.deepEqual(modesOf((await list(`/api/guilds/${openId}/notes`, OWNER)).own, [orgShut]), [[orgShut, "all_read"]], "no agent of the open guild is shut out");
+  const orgList = (await app.inject({ method: "GET", url: "/api/org/notes", headers: OWNER })).json() as Listed[];
+  assert.deepEqual(modesOf(orgList, [orgShut, guildShut]), [[guildShut, "some"], [orgShut, "some"]]);
+});
+
 test("a write or an upload whose home names an unknown or hidden guild is 404, and a home is never taken from an update", async () => {
   const hidden = await app.inject({
     method: "PUT",
