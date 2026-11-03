@@ -406,6 +406,29 @@ export type CatalogCollection = {
   truncated?: true;
 };
 
+/** A collection as State's catalog lists it, with the reader's mode on it. */
+function catalogEntry(row: CollectionQueryRow, mode: AccessMode): CatalogCollection {
+  return {
+    name: row.name,
+    purpose: row.purpose,
+    access: mode,
+    scope: row.guild_id ? "guild" : "org",
+    display_path: collectionDisplayPath(row.org_id, row.name),
+    columns: columnCatalog(row.columns),
+  };
+}
+
+/** The entry that closes a catalog capped below the collections the reader reads. */
+const TRUNCATED_CATALOG_ENTRY: CatalogCollection = {
+  truncated: true,
+  name: "…",
+  purpose: "more collections exist",
+  access: "read",
+  scope: "org",
+  display_path: "",
+  columns: [],
+};
+
 /** The State catalog: name, purpose, access, display path, and columns; capped. */
 export async function collectionCatalog(
   store: ArtifactStore,
@@ -413,18 +436,26 @@ export async function collectionCatalog(
   limit = STATE_COLLECTIONS_MAX,
 ): Promise<CatalogCollection[]> {
   const rows = await accessibleCollections(store, actor);
-  const items: CatalogCollection[] = rows.slice(0, limit).map((item) => ({
-    name: item.row.name,
-    purpose: item.row.purpose,
-    access: item.mode,
-    scope: item.row.guild_id ? "guild" : "org",
-    display_path: collectionDisplayPath(item.row.org_id, item.row.name),
-    columns: columnCatalog(item.row.columns),
-  }));
-  if (rows.length > limit) {
-    items.push({ truncated: true, name: "…", purpose: "more collections exist", access: "read", scope: "org", display_path: "", columns: [] });
-  }
-  return items;
+  const items = rows.slice(0, limit).map((item) => catalogEntry(item.row, item.mode));
+  return rows.length > limit ? [...items, TRUNCATED_CATALOG_ENTRY] : items;
+}
+
+/**
+ * The State catalog `actor` reads, as the operator `viewer` is shown it: the entries `collectionCatalog`
+ * gives, less each own table of a guild hidden from the viewer.
+ */
+export async function collectionCatalogShownTo(
+  store: ArtifactStore,
+  viewer: ArtifactActor,
+  actor: ArtifactActor,
+  limit = STATE_COLLECTIONS_MAX,
+): Promise<CatalogCollection[]> {
+  const rows = await accessibleCollections(store, actor);
+  const items = rows
+    .slice(0, limit)
+    .filter((item) => visibleCollection(viewer, item.row) !== null)
+    .map((item) => catalogEntry(item.row, item.mode));
+  return rows.length > limit ? [...items, TRUNCATED_CATALOG_ENTRY] : items;
 }
 
 export async function getCollection(store: ArtifactStore, actor: ArtifactActor, collectionId: string): Promise<CollectionView> {

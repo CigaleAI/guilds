@@ -13,7 +13,7 @@ import type { GenerationLoop } from "../generation/index.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import type { Schedules } from "../schedules/service.js";
 import { StudioNotFoundError } from "./errors.js";
-import { previewCurrentState, projectOfferedToolSchemas, type PreviewDeps, type StatePreview } from "./preview.js";
+import { nextRunTaskHash, previewStateShownTo, projectOfferedToolSchemas, type PreviewDeps, type StatePreview } from "./preview.js";
 
 /** What the Studio inspector reads a guild's runs and routines through, built once from the app's services. */
 export type InspectorServices = {
@@ -198,7 +198,10 @@ export type StudioInspector = {
 
 /**
  * One agent as the inspector shows it to the operator `viewer`: its Guidelines, task, state, Memory,
- * and effective prompt beside its latest run, the Task's embeds inlined as `agentTaskShownTo` does.
+ * and effective prompt beside its latest run, the Task's embeds inlined as `agentTaskShownTo` does
+ * and its State's tables as `previewStateShownTo` lists them. The Task's effective hash is the one
+ * its next run records (`nextRunTaskHash`), so it compares with the latest run's whatever is hidden
+ * from the viewer.
  */
 export async function inspectAgent(deps: AgentInspectorDeps, viewer: ArtifactActor, agent: AgentRow): Promise<StudioInspector> {
   const task = await agentTaskShownTo(deps.artifacts, viewer, agent);
@@ -207,9 +210,9 @@ export async function inspectAgent(deps: AgentInspectorDeps, viewer: ArtifactAct
     agentName: agent.name,
     agentId: agent.id,
   });
-  const preview = await previewCurrentState(deps.preview, agent);
+  const preview = await previewStateShownTo(deps.preview, viewer, agent);
   const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
-  const effectiveHash = promptHash(effectiveTask);
+  const effectiveHash = await nextRunTaskHash(deps.artifacts, agent);
   const tools = await projectOfferedToolSchemas(deps.preview, agent);
   const memoryEnabled = agent.config.memory;
   const composed = composeAgentSystemPrompt(

@@ -194,7 +194,7 @@ selected item on the right.
 
 | Tab | List | Selected item |
 |---|---|---|
-| **Prompt** | none | The live Task and its version, with **Edit in agent**. An embed opens that note or table in **State**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. An embed the agent cannot reach shows as the marker its run gets, and so does one hidden from the operator, by its rows or by its home, which the run inlines ([Task](task.md#embed-expansion)). It says whether the latest run used this Task and this memory. Banners say when the agent is running and when the embeds hold more than the 64 KB budget |
+| **Prompt** | none | The live Task and its version, with **Edit in agent**. An embed opens that note or table in **State**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. An embed the agent cannot reach shows as the marker its run gets, and so does one hidden from the operator, by its rows or by its home, which the run inlines ([Task](task.md#embed-expansion)). Its state lists the tables the run gets, less those hidden from the operator. It says whether the latest run used this Task and this memory, whatever is hidden from the operator. Banners say when the agent is running and when the embeds hold more than the 64 KB budget |
 | **Draft** | none | The pending draft: its number and status, a **removes a lot** tag when it deletes much of the Task, why, and a side-by-side diff against its base version. **Publish** and **Discard** ask for confirmation first. **Edit** opens the proposed Task in a dialog, and your version replaces the coach's. A draft over a Task that changed since says **the live Task changed** |
 | **History** | Every run: what started it, time, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
 | **Memory** | Every version memory has held, newest first: version, author (run kind, person, or agent), added and removed lines; filter by author | Diff against the previous version, or the whole version. **Open step** on a version a run wrote opens the run at its `memory_write` call |
@@ -593,7 +593,7 @@ guilds and their agents
 | `studio_get_script` | Reads one member script by name |
 | `studio_list_collections` | The source guild's own collections, then the organisation's. Each row has owner, purpose, record count, column names, the mode the source guild's agents get from the guild's and the organisation's rows (`guild_access`), and `studio_can`: `edit_or_delete` for the guild's own, `add_columns_and_access` for the organisation's |
 | `studio_get_collection` | One collection in reach by name: its full columns, record count, `updated_at`, `studio_can`, the organisation's row, the source guild's row, each live member's own row and the mode it ends up with (counting the guild's and the organisation's rows), the rows of other guilds and their agents, and its five most recently updated records as evidence (`apps/orchestrator/src/studio/tables.ts`). Rows of a private guild the operator does not operate are left out |
-| `studio_get_agent_context` | Sections `task`, `memory`, `state`, `config`, `effective_prompt` (the composed opening system message with embeds inlined, an embed hidden from the session's user as the marker), `effective_prompt_headers` |
+| `studio_get_agent_context` | Sections `task`, `memory`, `state`, `config`, `effective_prompt` (the composed opening system message with embeds inlined, an embed hidden from the session's user as the marker), `effective_prompt_headers`. `state` and the effective prompt's state list only the tables the session's user can see; the effective prompt's `task_hash` is the one the agent's next run records |
 | `studio_list_runs` | Filters by `kind`, `status`, `task_prompt_hash`, `error_only`, and `schedule_id` |
 | `studio_list_routines` | Each routine's run count and latest run |
 | `studio_get_run` | Takes `seq_start`, `seq_end`, and `tool_name`; `tool_name` keeps only the turns that requested that tool and their results |
@@ -827,9 +827,13 @@ input-token limit.
 
 The agent inspector response carries `effective_prompt` (content,
 hash, inlined task, per-section hashes, and whether each section
-matches the latest run). It is composed for the user who asks: an
-embed hidden from them is the marker, so its hashes match the latest
-run only when nothing the run inlined is hidden from them.
+matches the latest run). Its content is composed for the user who
+asks: an embed hidden from them is the marker, and the state lists
+only the tables they can see. Its task hash, the Task's
+`effective_hash`, and `task_match` are computed from the Task as the
+agent's next run reads it, whatever is hidden from the user, so
+`task_match` says whether the latest run used the current Task for
+every operator. `hash` is the hash of the content they are shown.
 
 `GET …/references` returns `{ guild_id, budget, depth, nodes, edges }`,
 computed on read from Task and note text; nothing is stored. `budget`

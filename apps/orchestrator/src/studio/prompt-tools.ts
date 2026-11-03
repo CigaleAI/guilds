@@ -9,7 +9,7 @@ import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } f
 import { studioChoice, studioTool } from "./arguments.js";
 import { STUDIO_DEFAULT_CONTEXT_SECTIONS, STUDIO_TOTAL_RETURNED_BYTES } from "./constants.js";
 import { sliceStudioBytes, truncatePayload } from "./paging.js";
-import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
+import { nextRunTaskHash, previewStateShownTo, projectOfferedToolSchemas } from "./preview.js";
 import { studioActor } from "./actor.js";
 import { resolveHandle } from "./source-guild.js";
 import { wrapEvidence } from "./system.js";
@@ -109,8 +109,8 @@ export const studioGetAgentContext: StudioTool = studioTool({
     const task = await agentTaskShownTo(deps.artifacts, studioActor(call), agent);
     const memory = task.memory;
     // state and effective_prompt read the same projection; take it once.
-    let statePreview: ReturnType<typeof previewCurrentState> | null = null;
-    const currentState = () => (statePreview ??= previewCurrentState(deps.preview, agent));
+    let statePreview: ReturnType<typeof previewStateShownTo> | null = null;
+    const currentState = () => (statePreview ??= previewStateShownTo(deps.preview, studioActor(call), agent));
     const result: AgentContext = {
       agent_id: agent.id,
       name: agent.name,
@@ -180,7 +180,7 @@ export const studioGetAgentContext: StudioTool = studioTool({
         ownership: "derived",
         editable: false,
         hash: promptHash(composed),
-        task_hash: promptHash(effectiveTask),
+        task_hash: await nextRunTaskHash(deps.artifacts, agent),
         memory_hash: promptHash(task.memoryText),
         projected_at: preview.projected_at,
         ...(task.expanded.ok ? {} : { embed_warning: task.expanded.error }),

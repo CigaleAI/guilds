@@ -1,4 +1,5 @@
 import { agentActor } from "../artifacts/actors.js";
+import { agentTask } from "../artifacts/task.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
@@ -16,7 +17,8 @@ import type { Scripts } from "../scripts/catalog.js";
 import { listServers, type LoadedConnector } from "../connectors/servers.js";
 import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { connectionTools } from "../mcp/service.js";
-import { collectionCatalog, type CatalogCollection } from "../artifacts/collections.js";
+import { collectionCatalog, collectionCatalogShownTo, type CatalogCollection } from "../artifacts/collections.js";
+import { promptHash } from "../prompts/index.js";
 
 import type { FunctionTool } from "../lib/tool-schema.js";
 import type { ScriptCatalogItem } from "../scripts/catalog.js";
@@ -41,10 +43,10 @@ export type PreviewDeps = {
   scripts: Scripts;
 };
 
-/** The collections the agent reaches, or none when artifacts refuses to list them, as a run reads them. */
-async function previewCollections(store: ArtifactStore, actor: ArtifactActor): Promise<CatalogCollection[]> {
+/** The catalog `listing` gives, or none when artifacts refuses to list it, as a run reads it. */
+async function catalogOrNone(listing: Promise<CatalogCollection[]>): Promise<CatalogCollection[]> {
   try {
-    return await collectionCatalog(store, actor);
+    return await listing;
   } catch (error) {
     if (error instanceof ArtifactError) {
       return [];
@@ -56,16 +58,42 @@ async function previewCollections(store: ArtifactStore, actor: ArtifactActor): P
 /** An agent's State as its next run would read it, and when it was projected. */
 export type StatePreview = { state: ReturnType<typeof collectRunState>; projected_at: string };
 
+/** The actor an agent's run reads its State as. */
+function runActor(agent: AgentRow): ArtifactActor {
+  return agentActor({ orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id, agentName: agent.name });
+}
+
+/** An agent's State as its next run would read it, and when it was projected. */
 export async function previewCurrentState(deps: PreviewDeps, agent: AgentRow): Promise<StatePreview> {
+  return projectState(deps, agent, await catalogOrNone(collectionCatalog(deps.artifacts, runActor(agent))));
+}
+
+/**
+ * An agent's State as the operator `viewer` is shown it: as its next run would read it, less each
+ * table in its catalog that is the own table of a guild hidden from the viewer.
+ */
+export async function previewStateShownTo(deps: PreviewDeps, viewer: ArtifactActor, agent: AgentRow): Promise<StatePreview> {
+  const catalog = collectionCatalogShownTo(deps.artifacts, viewer, runActor(agent));
+  return projectState(deps, agent, await catalogOrNone(catalog));
+}
+
+/**
+ * The hash a run of the agent records as its `task_prompt_hash`: of its Task with the embeds inlined
+ * as the agent reads them, or of the Task as written when the store refuses inlining them.
+ */
+export async function nextRunTaskHash(store: ArtifactStore, agent: AgentRow): Promise<string> {
+  const task = await agentTask(store, agent);
+  return promptHash(task.expanded.ok ? task.expanded.text : task.text);
+}
+
+/** An agent's State as its next run would read it, with `collections` as its catalog, and when it was projected. */
+async function projectState(deps: PreviewDeps, agent: AgentRow, collections: CatalogCollection[]): Promise<StatePreview> {
   const projectedAt = new Date().toISOString();
-  const orgId = agent.org_id;
   const guildId = agent.guild_id;
   const agentId = agent.id;
   const secrets = await deps.db.agentSecrets(agent);
   const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
-  const actor = agentActor({ orgId, guildId, agentId, agentName: agent.name });
-  const collections = await previewCollections(deps.artifacts, actor);
   const config = agent.config;
   const state = collectRunState(null, agent.org_slug, agent.guild_name, agent.name, {
     members,

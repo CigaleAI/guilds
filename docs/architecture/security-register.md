@@ -153,8 +153,15 @@ is shown a Task with its embeds inlined, the Studio inspector and
 `studio_get_agent_context`'s effective prompt, the embeds resolve as
 the Task's agent and a note, file, or table hidden from that operator
 takes the unreachable marker (`embedSourceShownTo` in
-`apps/orchestrator/src/artifacts/embeds.ts`); `test/integration/studio-home-guild.test.ts`
-pins it. Migration
+`apps/orchestrator/src/artifacts/embeds.ts`), and the state they are
+shown, the inspector's and `studio_get_agent_context`'s and the one
+inside both effective prompts, lists the agent's tables less the own
+tables of guilds hidden from that operator
+(`previewStateShownTo` in `apps/orchestrator/src/studio/preview.ts`).
+The Task hashes those views compare with a run's `task_prompt_hash`
+are computed from the Task as the agent reads it
+(`nextRunTaskHash`); a hash shows no content.
+`test/integration/studio-home-guild.test.ts` pins it. Migration
 `0021_home_guild.sql` nulls every `origin_guild_id` that names no
 guild of the item's organisation; gives a live or deleted note or
 file with no home the one guild its access list names, when the list
@@ -181,6 +188,13 @@ guild's scope, Studio's reach, or a starting row.
   tab and transcript show them to every operator who sees the
   agent's guild, a private guild's note an organisation row lets the
   agent read included.
+- A Studio draft's preflight composes the proposed Task as the
+  agent's next run reads it: its `token_estimate` counts the text of
+  every note, file, and table it inlines, and the tables in its state,
+  those hidden from the operator included, so the estimate reflects
+  the size of what is hidden from them. Its `prior_effective_hash` is
+  the hash of the live Task as the agent reads it, as the inspector's
+  is.
 - A name is one live note or one live file across the organisation.
   An operator's write or upload at a name a hidden item holds is 422
   (`write not allowed`), so it tells them the name is taken, though

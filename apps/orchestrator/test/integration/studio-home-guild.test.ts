@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
+import { getAgent } from "../../src/db/agents.js";
+import { insertRun } from "../../src/db/runs.js";
 import { hiddenGuildsFor } from "../../src/db/guilds.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { getStudioSession } from "../../src/db/studio.js";
@@ -12,11 +14,13 @@ import { agentSchedules } from "../../src/schedules/service.js";
 import { connect } from "../../src/seed/connect.js";
 import { studioFindArtifacts, studioGetArtifact, studioListFileChanges } from "../../src/studio/file-tools.js";
 import { studioGetAgentContext } from "../../src/studio/prompt-tools.js";
+import { nextRunTaskHash } from "../../src/studio/preview.js";
 import { resolveStudioFocus } from "../../src/studio/focus.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { GuildReferences } from "../../src/studio/references.js";
 import type { StudioToolCall, StudioToolDeps } from "../../src/studio/tools.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { runSnapshot } from "../helpers/generation.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -188,6 +192,78 @@ test(
       }
       for (const text of await prompts(INSIDER, insider, insiderSession)) {
         assert.ok(text.includes("kept in the vault"), "the home's operator is shown what the agent reads");
+      }
+
+      // The writer's latest run read the Task as the agent reads it; both operators' inspectors call it current.
+      const writerRow = await getAgent(db, String(writer.id));
+      assert.ok(writerRow);
+      const runTaskHash = await nextRunTaskHash(artifacts, writerRow);
+      await insertRun(
+        db,
+        {
+          runId: "r_writer_latest",
+          agentId: String(writer.id),
+          kind: "direct",
+          configSnapshot: runSnapshot(writerRow.config),
+          systemContent: "system prompt",
+          taskContent: "task prompt",
+          opening: [],
+          systemPromptHash: "s",
+          taskPromptHash: runTaskHash,
+          memoryPromptHash: "m",
+        },
+        new Date(),
+      );
+      for (const [headers, sessionId] of [[OWNER, ownerSession], [INSIDER, insiderSession]] as const) {
+        const inspected = (await call("GET", `/api/studio/sessions/${sessionId}/agents/${String(writer.id)}`, headers)) as {
+          task: { effective_hash: string };
+          effective_prompt: { sections: { task_hash: string }; latest_run: { id: string; task_match: boolean } | null };
+        };
+        assert.equal(inspected.task.effective_hash, runTaskHash, "the effective hash is the agent's, not the masked text's");
+        assert.equal(inspected.effective_prompt.sections.task_hash, runTaskHash);
+        assert.deepEqual(inspected.effective_prompt.latest_run && [inspected.effective_prompt.latest_run.id, inspected.effective_prompt.latest_run.task_match], [
+          "r_writer_latest",
+          true,
+        ]);
+      }
+
+      // A table of the private guild that an organisation row lets the open guild's agent read.
+      const ledger = await call("POST", "/api/collections", INSIDER, {
+        name: "vault_ledger",
+        purpose: "Entries kept in the vault",
+        guild_id: String(vault.id),
+      });
+      await call("PUT", `/api/collections/${String(ledger.id)}/access`, INSIDER, {
+        subjects: [
+          { type: "guild", id: String(vault.id), mode: "write" },
+          { type: "org", id: "org_home", mode: "read" },
+        ],
+      });
+      /** The inspector's state and effective prompt, and Studio's state and effective_prompt of the writer, as one operator's session shows them. */
+      const stateTexts = async (headers: Record<string, string>, user: UserRow, sessionId: string) => {
+        const inspected = (await call("GET", `/api/studio/sessions/${sessionId}/agents/${String(writer.id)}`, headers)) as {
+          state: { content: unknown };
+          effective_prompt: { content: string };
+        };
+        const toolCall: StudioToolCall = {
+          orgId: "org_home",
+          sourceGuildId: String(desk.id),
+          user,
+          hidden: await hiddenGuildsFor(db, "org_home", user.id),
+          session: (await getStudioSession(db, sessionId))!,
+          generation: 1,
+        };
+        const context = (await studioGetAgentContext.handler(toolDeps, toolCall, {
+          agent_id: String(writer.id),
+          sections: ["state", "effective_prompt"],
+        })) as { state: { content: string }; effective_prompt: { content: string } };
+        return [JSON.stringify(inspected.state.content), inspected.effective_prompt.content, context.state.content, context.effective_prompt.content];
+      };
+      for (const text of await stateTexts(OWNER, owner, ownerSession)) {
+        assert.ok(!text.includes("vault_ledger"), "a private guild's table is not listed to an operator outside it");
+      }
+      for (const text of await stateTexts(INSIDER, insider, insiderSession)) {
+        assert.ok(text.includes("vault_ledger"), "the guild's operator is shown the table the agent reads");
       }
     } finally {
       await app.close();
