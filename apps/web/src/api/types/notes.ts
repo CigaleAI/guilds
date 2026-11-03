@@ -126,7 +126,7 @@ export type NoteInput = {
 };
 
 /** Who wrote a memory version. */
-export type MemoryActor = {
+type MemoryActor = {
   type: "run" | "user" | "agent" | "unknown";
   id: string | null;
   name: string | null;

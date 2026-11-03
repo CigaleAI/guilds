@@ -9,12 +9,12 @@ export function collectionDisplayPath(orgId: string, collection: Pick<Collection
 }
 
 /** A column as a Task names it: `table.column` in code, so the agent reads it as a machine name. */
-export function columnMarkup(table: string, column: string): string {
+function columnMarkup(table: string, column: string): string {
   return `\`${table}.${column}\``;
 }
 
 /** What the operator chose in the insert picker: a note's or table's path, and for a column its table's name. */
-export type InsertPick = { path: string; table: string; column: string | null; mode: EmbedMode };
+type InsertPick = { path: string; table: string; column: string | null; mode: EmbedMode };
 
 const markupByKind: Record<InsertKind, (pick: InsertPick) => string | null> = {
   note: (pick) => linkMarkup(pick.path, pick.mode),
@@ -60,7 +60,7 @@ export function noteEmbed(path: string, notes: EmbeddableNotes): NoteEmbed {
  * Task, the notes the Task can embed, and the tables the operator can see in the organisation
  * (each `undefined` until it loads).
  */
-export type KnownEmbeds = {
+type KnownEmbeds = {
   serverBroken: readonly string[];
   notes: EmbeddableNotes | undefined;
   collections: readonly Pick<Collection, "name">[] | undefined;

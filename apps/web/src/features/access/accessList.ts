@@ -7,13 +7,13 @@ import type {
 } from "../../api/types/access";
 
 /** The modes a row of each subject type takes: only an agent row can shut its agent out. */
-export const accessModes: Record<AccessSubjectType, readonly AgentAccessMode[]> = {
+const accessModes: Record<AccessSubjectType, readonly AgentAccessMode[]> = {
   org: ["read", "write"],
   guild: ["read", "write"],
   agent: ["none", "read", "write"],
 };
 
-export const accessModeLabel: Record<AgentAccessMode, string> = {
+const accessModeLabel: Record<AgentAccessMode, string> = {
   none: "None",
   read: "Read",
   write: "Read & write",
@@ -64,9 +64,9 @@ export function modeForType(type: AccessSubjectType, mode: AgentAccessMode): Age
 }
 
 /** A subject the add picker offers, keyed by `subjectKey`. */
-export type AccessCandidate = AccessSubject & { value: string; label: string; description?: string };
+type AccessCandidate = AccessSubject & { value: string; label: string; description?: string };
 
-export type AccessCandidateGroup = { label: string; options: AccessCandidate[] };
+type AccessCandidateGroup = { label: string; options: AccessCandidate[] };
 
 type Named = { id: string; name: string };
 

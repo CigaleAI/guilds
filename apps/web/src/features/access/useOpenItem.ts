@@ -3,7 +3,7 @@ import type { ItemSections, ListedItem } from "../../api/types/access";
 import { findOpenItem, type OpenItem } from "./listedItems";
 
 /** The item a page's browser opens, as `findOpenItem` finds it, and how the operator chooses another. */
-export type ItemChoice<Item extends ListedItem> = {
+type ItemChoice<Item extends ListedItem> = {
   opened: OpenItem<Item>;
   /** The open item; undefined when the pane opens none. */
   open: Item | undefined;

@@ -1,7 +1,7 @@
 import type { ListedKind, ReachSubject } from "../../api/types/access";
 
 /** The words of a page's two sections of notes or files: their labels, and what each says when it holds nothing. */
-export type SectionCopy = {
+type SectionCopy = {
   /** The section of the items homed in the page's guild. */
   ownLabel: string;
   ownEmpty: string;
