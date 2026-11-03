@@ -1,6 +1,7 @@
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { assignGuildLooks } from "../avatars/looks.js";
+import { hiddenGuildsFor } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import {
   deleteRecipe,
@@ -85,19 +86,32 @@ export function addRecipeDraft(db: Queryable, draft: RecipeDraft, now: Date): Pr
   );
 }
 
-export function orgRecipes(db: Queryable, orgId: string): Promise<RecipeRow[]> {
-  return listRecipes(db, orgId);
+/** Whether a recipe was captured from one of `guildIds`. */
+function isCapturedFrom(row: RecipeRow, guildIds: readonly string[]): boolean {
+  return row.source_guild_id !== null && guildIds.includes(row.source_guild_id);
 }
 
-/** The recipe when it belongs to the organisation, otherwise null. */
-export async function orgRecipe(db: Queryable, orgId: string, recipeId: string): Promise<RecipeRow | null> {
+/** The organisation's recipes the user may read: every one but those captured from a private guild they do not operate. */
+export async function orgRecipes(db: Queryable, orgId: string, userId: string): Promise<RecipeRow[]> {
+  const hidden = await hiddenGuildsFor(db, orgId, userId);
+  return (await listRecipes(db, orgId)).filter((row) => !isCapturedFrom(row, hidden.guildIds));
+}
+
+/**
+ * The recipe when it belongs to the organisation and was not captured from a private guild the user
+ * does not operate, otherwise null.
+ */
+export async function orgRecipe(db: Queryable, orgId: string, userId: string, recipeId: string): Promise<RecipeRow | null> {
   const row = await getRecipe(db, recipeId);
-  return row && row.org_id === orgId ? row : null;
+  if (!row || row.org_id !== orgId) {
+    return null;
+  }
+  return isCapturedFrom(row, (await hiddenGuildsFor(db, orgId, userId)).guildIds) ? null : row;
 }
 
-/** Deletes the recipe when it belongs to the organisation; false when it does not. */
-export async function deleteOrgRecipe(db: Queryable, orgId: string, recipeId: string): Promise<boolean> {
-  return (await orgRecipe(db, orgId, recipeId)) !== null && deleteRecipe(db, recipeId);
+/** Deletes the recipe when `orgRecipe` gives it to the user; false when it does not. */
+export async function deleteOrgRecipe(db: Queryable, orgId: string, userId: string, recipeId: string): Promise<boolean> {
+  return (await orgRecipe(db, orgId, userId, recipeId)) !== null && deleteRecipe(db, recipeId);
 }
 
 /** Writes `edit` over the recipe at `version`; a recipe that moved on refuses with its current version. */

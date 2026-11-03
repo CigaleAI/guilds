@@ -26,6 +26,7 @@ import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { GuildParams } from "./params.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
+import type { UserRow } from "../db/users.js";
 import { confirmStep, skipStep, verifyStep, writeApplyOverlays } from "../recipes/checklist.js";
 import { abortApply, activateApply, guildApplyState, orgApply } from "../recipes/lifecycle.js";
 import { previewApply } from "../recipes/plan.js";
@@ -38,8 +39,8 @@ function applyOf(deps: AppDeps) {
   return deps.apply;
 }
 
-async function ownedRecipe(deps: AppDeps, recipeId: string, org: OrgMembershipRow) {
-  const row = await orgRecipe(deps.db, org.id, recipeId);
+async function ownedRecipe(deps: AppDeps, recipeId: string, org: OrgMembershipRow, user: UserRow) {
+  const row = await orgRecipe(deps.db, org.id, user.id, recipeId);
   if (!row) {
     throw new HttpError(404, "recipe not found");
   }
@@ -104,7 +105,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
   app.get("/api/recipes", async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    return orgRecipes(db, org.id);
+    return orgRecipes(db, org.id, user.id);
   });
 
   app.post(
@@ -164,7 +165,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
   app.get("/api/recipes/:recipe_id", { schema: { params: RecipeParams } }, async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    return ownedRecipe(deps, request.params.recipe_id, org);
+    return ownedRecipe(deps, request.params.recipe_id, org, user);
   });
 
   app.put(
@@ -174,7 +175,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const body = request.body;
-      const row = await ownedRecipe(deps, request.params.recipe_id, org);
+      const row = await ownedRecipe(deps, request.params.recipe_id, org, user);
       return await changeRecipe(db, row, {
         bodyVersion: body.expected_body_version ?? row.body_version,
         document: body.recipe,
@@ -190,7 +191,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedRecipe(deps, request.params.recipe_id, org);
+      const row = await ownedRecipe(deps, request.params.recipe_id, org, user);
       return await editRecipeAccess(db, row, parseAccessEdits(request.body));
     },
   );
@@ -202,7 +203,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const body = request.body;
-      const row = await ownedRecipe(deps, request.params.recipe_id, org);
+      const row = await ownedRecipe(deps, request.params.recipe_id, org, user);
       return await reviewRecipe(db, row, body.path ?? "", parseReviewAction(body));
     },
   );
@@ -210,7 +211,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
   app.delete("/api/recipes/:recipe_id", { schema: { params: RecipeParams } }, async (request) => {
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
-    if (!(await deleteOrgRecipe(db, org.id, request.params.recipe_id))) {
+    if (!(await deleteOrgRecipe(db, org.id, user.id, request.params.recipe_id))) {
       throw new HttpError(404, "recipe not found");
     }
     return { ok: true };
@@ -222,7 +223,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedRecipe(deps, request.params.recipe_id, org);
+      const row = await ownedRecipe(deps, request.params.recipe_id, org, user);
       return await validateLibraryRecipe(applyOf(deps), row);
     },
   );
@@ -233,7 +234,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedRecipe(deps, request.params.recipe_id, org);
+      const row = await ownedRecipe(deps, request.params.recipe_id, org, user);
       return await publishRecipe(applyOf(deps), row);
     },
   );
@@ -244,7 +245,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const recipe = exportRecipe(await ownedRecipe(deps, request.params.recipe_id, org));
+      const recipe = exportRecipe(await ownedRecipe(deps, request.params.recipe_id, org, user));
       reply.header("content-type", "application/json");
       return recipe;
     },
@@ -256,7 +257,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedRecipe(deps, request.params.recipe_id, org);
+      const row = await ownedRecipe(deps, request.params.recipe_id, org, user);
       return await previewApply(applyOf(deps), { org, recipeRow: row, user }, request.body);
     },
   );
@@ -267,7 +268,7 @@ export async function registerRecipeRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request, reply) => {
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
-      const row = await ownedRecipe(deps, request.params.recipe_id, org);
+      const row = await ownedRecipe(deps, request.params.recipe_id, org, user);
       const scope = { org, user, recipeRow: row };
       const created = await createSkeleton(applyOf(deps), scope, request.body);
       reply.code(201);

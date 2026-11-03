@@ -227,8 +227,10 @@ one. A namespaced tool the destination does not list is left out, and
 the apply goes on.
 
 The destination is a guild apply creates, or an **empty** guild (no
-live agents) named by `guild_id`. A guild with agents is refused
-(`destination guild is not empty`).
+live agents) named by `guild_id`. A guild of another organisation, or
+a private guild the operator does not operate, is 404 (`destination
+guild not found`); a guild with agents is refused (`destination guild
+is not empty`).
 
 ### Choices
 
@@ -549,7 +551,7 @@ POST   /api/applies/:id/abort
 
 | Route | Answer |
 |---|---|
-| `POST /api/recipes/:id/preview` | The preview; 404 for an unknown destination guild or machine; 422 for a guild that is not empty or a bad choice |
+| `POST /api/recipes/:id/preview` | The preview; 404 for an unknown destination guild, one hidden from the caller, or an unknown machine; 422 for a guild that is not empty or a bad choice |
 | `POST /api/recipes/:id/apply` | 201 with the apply. 422 when the recipe is not approved, has blocking errors, has no machine, or lacks a model or harness. 409 for a name collision, a limit reached, a full guild, or a collection that appeared since preview |
 | `GET /api/applies/:id` | The apply; 404 outside the organisation |
 | `GET /api/guilds/:guild_id/apply` | `{ apply, browser_logins }` |

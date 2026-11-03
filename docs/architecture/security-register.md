@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-58](#sec-58--a-recipe-captured-from-a-private-guild-and-an-apply-into-one-were-open-to-every-member) | A recipe captured from a private guild, and an apply into one, were open to every member | Fixed 2026-11-03 |
 | [SEC-57](#sec-57--an-operator-could-see-a-private-guilds-notes-and-files-through-an-organisation-row) | An operator could see a private guild's notes and files through an organisation row | Fixed 2026-11-03 |
 | [SEC-56](#sec-56--deleting-a-private-guild-showed-the-history-of-its-notes-and-files-to-every-operator) | Deleting a private guild showed the history of its notes and files to every operator | Fixed 2026-11-03 |
 | [SEC-55](#sec-55--a-notes-or-a-files-reach-came-from-its-owner-as-well-as-its-access-list) | A note's or a file's reach came from its owner as well as its access list | Fixed 2026-11-02 |
@@ -66,6 +67,41 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-58 — A recipe captured from a private guild, and an apply into one, were open to every member
+
+**Status:** fixed 2026-11-03.
+
+**Found:** 2026-11-03, reviewing the home guild of notes and files.
+
+**Where:** `orgRecipes`, `orgRecipe`, and `deleteOrgRecipe` in
+`apps/orchestrator/src/recipes/library.ts`, which every recipe route
+reads a recipe through; `destinationGuild` in
+`apps/orchestrator/src/recipes/plan.ts`, which a preview and an apply
+check their destination with.
+
+**Exposure:** a capture reads a guild only for a user who can see it,
+but the draft it stores was listed, read, exported, edited, applied,
+and deleted by every member of the organisation. A recipe captured
+from a private guild holds that guild's agents' Tasks, routines, and
+setup, and the notes the capture included, so a member outside the
+guild read them in its document. A preview or an apply named its
+destination by `guild_id` and checked only that the guild was of the
+organisation and empty, so a member could fill a private guild they
+do not operate with agents.
+
+**Fix:** a recipe whose `source_guild_id` names a private guild the
+user does not operate is left out of `GET /api/recipes` and is 404 on
+every route that names it. A destination guild hidden from the user
+is 404 `destination guild not found`, as an unknown one is, and the
+apply creates its skeleton in the guild the preview checked.
+`test/integration/recipe-capture.test.ts` pins it.
+
+**Residual risk:** a recipe keeps what it captured after its source
+guild is deleted or made visible: its `source_guild_id` is then null
+or names a guild every member sees, and every member reads it. A
+recipe drafted by the Builder or imported from a file names no source
+guild and is open to every member.
 
 ## SEC-57 — An operator could see a private guild's notes and files through an organisation row
 

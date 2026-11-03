@@ -91,6 +91,11 @@ item's organisation, gives each note and file without one the one
 guild its access list names when the list has no organisation row,
 and drops the `artifact_renames` table.
 
+A recipe captured from a private guild is left out of the recipes of a
+member who does not operate that guild, and is 404 to them on every
+recipe route; a preview or an apply into a private guild they do not
+operate is 404 `destination guild not found`.
+
 The inbox stream's notice of a new group message names the message's
 guild. A message posted in the chat an operator is watching no
 longer chimes or raises a desktop notification, and a desktop

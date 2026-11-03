@@ -31,6 +31,7 @@ import type { RecipeRow } from "../db/recipes.js";
 import { listSecrets } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import { validateGuildName } from "../guilds/validation.js";
 import { validateAgentName } from "../agents/validation.js";
 import { integrationForConnector } from "../instance/integrations.js";
@@ -70,8 +71,8 @@ import { applyBlockingErrors, validateRecipe } from "./validate.js";
 // and what blocks it, with the choices the operator makes on it.
 
 /** Who reads the organisation on a preview; a preview only reads. */
-function previewActor(org: OrgMembershipRow, user?: UserRow): ArtifactActor {
-  return operatorActor({ orgId: org.id, actorId: user?.id ?? org.id, actorName: user?.name ?? "operator" });
+function previewActor(org: OrgMembershipRow, user: UserRow): ArtifactActor {
+  return operatorActor({ orgId: org.id, actorId: user.id, actorName: user.name ?? "operator" });
 }
 
 function machineChoice(machine: MachineWithAgents, minimum: MachineSize): MachineChoice {
@@ -494,13 +495,16 @@ function inventoryFromRecipe(recipe: RecipeDocument, plan: InventoryPlan): Apply
   };
 }
 
-/** The empty guild the recipe fills, when the operator picked one; refuses one of another organisation or with agents. */
-async function destinationGuild(apply: RecipeApply, orgId: string, guildId: string | undefined): Promise<string | null> {
+/**
+ * The empty guild the recipe fills, when the operator picked one; refuses one of another
+ * organisation, a private guild the user does not operate, and one with agents.
+ */
+async function destinationGuild(apply: RecipeApply, source: PreviewSource, guildId: string | undefined): Promise<string | null> {
   if (!guildId) {
     return null;
   }
   const guild = await getGuild(apply.db, guildId);
-  if (!guild || guild.org_id !== orgId) {
+  if (!guild || guild.org_id !== source.org.id || !canSeeGuild(guild, source.user.id)) {
     throw new RecipeError("destination guild not found", 404);
   }
   if ((await listAgents(apply.db, guild.id)).length) {
@@ -510,7 +514,7 @@ async function destinationGuild(apply: RecipeApply, orgId: string, guildId: stri
 }
 
 /** Where a preview reads from: the organisation, the recipe, and the operator who previews it. */
-export type PreviewSource = { org: OrgMembershipRow; recipeRow: RecipeRow; user?: UserRow | undefined };
+export type PreviewSource = { org: OrgMembershipRow; recipeRow: RecipeRow; user: UserRow };
 
 /** The recipe settled with the preview's choices, and what validating it in the organisation found. */
 async function preparedRecipe(
@@ -546,7 +550,7 @@ export async function previewApply(
   const names = resolveNames(recipe, choices.names ?? []);
   const collisions = await nameCollisions(apply, names.values());
   const guildName = validateGuildName(choices.guild_name || recipe.guild.name_suggestion);
-  const guildId = await destinationGuild(apply, org.id, choices.guild_id);
+  const guildId = await destinationGuild(apply, source, choices.guild_id);
   const connections = await planConnections(apply, org.id, recipe, choices.connections ?? []);
   const secrets = await planSecrets(apply, org.id, recipe, choices.secrets ?? []);
   const placement = await planMachine(apply, { orgId: org.id, user }, recipe, choices.machine_id);
