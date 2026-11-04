@@ -673,8 +673,8 @@ function streamCompletion(
 // src/llm/tokens.ts
 function countInputTokens(
   model: string,
-  messages: unknown[],
-  tools?: unknown[] | null,
+  messages: readonly MessagePayload[],
+  tools?: readonly FunctionTool[] | null,
 ): number;
 ```
 

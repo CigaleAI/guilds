@@ -2,7 +2,8 @@
 // Run: pnpm --filter @guildsrun/orchestrator exec tsx scripts/measure-token-encoding.ts
 import { performance } from "node:perf_hooks";
 import { getEncoding, type Tiktoken } from "js-tiktoken";
-import type { ModelMessage, ModelToolDefinition } from "../src/llm/tokens.js";
+import type { MessagePayload } from "../src/db/schema/index.js";
+import type { FunctionTool } from "../src/lib/tool-schema.js";
 import { readStudioSystemTemplate } from "../src/studio/system.js";
 import { studioToolSchemas } from "../src/studio/tools.js";
 import { NATIVE_TOOL_NAMES, schemasFor } from "../src/toolbox/index.js";
@@ -14,11 +15,11 @@ const STUB_LIMIT_CHARS = 1800;
 
 type Payload = {
   name: string;
-  messages: ModelMessage[];
-  tools: ModelToolDefinition[] | null;
+  messages: MessagePayload[];
+  tools: FunctionTool[] | null;
 };
 
-function promptBlob(messages: readonly ModelMessage[], tools?: readonly ModelToolDefinition[] | null): string {
+function promptBlob(messages: readonly MessagePayload[], tools?: readonly FunctionTool[] | null): string {
   let text = JSON.stringify(messages);
   if (tools && tools.length) {
     text += JSON.stringify(tools);
@@ -54,8 +55,8 @@ function toolBody(index: number): string {
     .slice(0, STUB_LIMIT_CHARS);
 }
 
-function historyTurns(count: number): ModelMessage[] {
-  const messages: ModelMessage[] = [];
+function historyTurns(count: number): MessagePayload[] {
+  const messages: MessagePayload[] = [];
   for (let index = 0; index < count; index += 1) {
     messages.push(
       { role: "user", content: `Continue the standing task. Step ${index}.` },
@@ -81,17 +82,17 @@ function historyTurns(count: number): ModelMessage[] {
 
 function turnsUntilChars(
   system: string,
-  tools: readonly ModelToolDefinition[],
+  tools: readonly FunctionTool[],
   targetChars: number,
-): ModelMessage[] {
-  const messages: ModelMessage[] = [{ role: "system", content: system }];
+): MessagePayload[] {
+  const messages: MessagePayload[] = [{ role: "system", content: system }];
   while (promptBlob(messages, tools).length < targetChars) {
     messages.push(...historyTurns(1));
   }
   return messages;
 }
 
-function agentSystemPrompt(tools: readonly ModelToolDefinition[]): string {
+function agentSystemPrompt(tools: readonly FunctionTool[]): string {
   return [
     "You are an agent in a work guild.",
     "State is a snapshot of the UTC clock, the last 10 public group messages, and the catalogs for this run.",

@@ -5,8 +5,8 @@ import {
 } from "./types.js";
 import type { AttachmentRef, MessageMetadata, MessagePayload } from "../db/schema/index.js";
 import type { BlobStore } from "../lib/blob-store.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import type { ContentPart, ModelMessage } from "../llm/completion.js";
-import type { ModelMessage as CountedMessage, ModelToolDefinition } from "../llm/tokens.js";
 
 /** A stored message as the attachments read it: what the model reads, and the files attached to it. */
 export type AttachedMessage = { payload: MessagePayload; metadata: Pick<MessageMetadata, "attachments"> };
@@ -30,11 +30,11 @@ export function attachmentImageCount(rows: Array<Pick<AttachedMessage, "metadata
 export function countRunInputTokens(
   model: string,
   rows: AttachedMessage[],
-  tools: readonly ModelToolDefinition[] | null,
+  tools: readonly FunctionTool[] | null,
   countInputTokens: (
     model: string,
-    messages: readonly CountedMessage[],
-    tools?: readonly ModelToolDefinition[] | null,
+    messages: readonly MessagePayload[],
+    tools?: readonly FunctionTool[] | null,
   ) => number,
 ): number {
   const payloads = rows.map((row) => row.payload);

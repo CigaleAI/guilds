@@ -5,11 +5,6 @@ import type { FunctionTool } from "../lib/tool-schema.js";
 /** Every model is counted with one encoding. */
 export const TOKEN_ENCODING = "o200k_base";
 
-/** A stored message, as input counting serialises it. */
-export type ModelMessage = MessagePayload;
-/** A tool schema, as input counting serialises it. */
-export type ModelToolDefinition = FunctionTool;
-
 export const INPUT_TOKEN_LIMIT_MESSAGE = "Input token limit reached. Start a new run to continue.";
 
 export class GenerationLimitError extends Error {
@@ -38,8 +33,8 @@ function sharedEncoding(): Tiktoken {
 }
 
 function blob(
-  messages: readonly ModelMessage[],
-  tools?: readonly ModelToolDefinition[] | null,
+  messages: readonly MessagePayload[],
+  tools?: readonly FunctionTool[] | null,
 ): string {
   let text = JSON.stringify(messages);
   if (tools && tools.length) {
@@ -49,16 +44,16 @@ function blob(
 }
 
 export function estimateInputTokens(
-  messages: readonly ModelMessage[],
-  tools?: readonly ModelToolDefinition[] | null,
+  messages: readonly MessagePayload[],
+  tools?: readonly FunctionTool[] | null,
 ): number {
   return Math.max(1, Math.floor(blob(messages, tools).length / 4));
 }
 
 export function countInputTokens(
   _model: string,
-  messages: readonly ModelMessage[],
-  tools?: readonly ModelToolDefinition[] | null,
+  messages: readonly MessagePayload[],
+  tools?: readonly FunctionTool[] | null,
 ): number {
   return Math.max(1, sharedEncoding().encode(blob(messages, tools)).length);
 }

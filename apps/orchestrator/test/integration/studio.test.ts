@@ -70,7 +70,7 @@ import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
 import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
 import { insertIssue } from "../../src/db/issues.js";
 import { getSchedule, listSchedules } from "../../src/db/schedules.js";
-import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq } from "../../src/db/conversations.js";
+import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq, type ConversationMessageRow } from "../../src/db/conversations.js";
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
@@ -2432,14 +2432,11 @@ function providerUsageReply() {
   return reply;
 }
 
-function assistantInputTokens(
-  rows: Array<{ payload: { role?: string }; metadata?: { usage?: { input_tokens?: number } } }>,
-): number[] {
+function assistantInputTokens(rows: Array<Pick<ConversationMessageRow, "payload" | "metadata">>): number[] {
   const totals: number[] = [];
   for (const row of rows) {
-    const input = row.metadata?.usage?.input_tokens;
-    if (row.payload.role === "assistant" && typeof input === "number") {
-      totals.push(input);
+    if (row.payload.role === "assistant" && row.metadata.usage) {
+      totals.push(row.metadata.usage.input_tokens);
     }
   }
   return totals;

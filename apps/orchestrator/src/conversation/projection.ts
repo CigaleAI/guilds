@@ -1,5 +1,5 @@
 import type { MessageMetadata, MessagePayload, ToolMessage } from "../db/schema/index.js";
-import type { ModelMessage, ModelToolDefinition } from "../llm/tokens.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import { promptHash } from "../prompts/index.js";
 
 /**
@@ -16,12 +16,12 @@ export const AGENT_TOOL_RESULT_STUB_HINT =
 
 export type ProjectionBudget = {
   model: string;
-  schemas: readonly ModelToolDefinition[];
+  schemas: readonly FunctionTool[];
   maxInput: number;
   countInputTokens: (
     model: string,
-    messages: readonly ModelMessage[],
-    tools?: readonly ModelToolDefinition[] | null,
+    messages: readonly MessagePayload[],
+    tools?: readonly FunctionTool[] | null,
   ) => number;
 };
 

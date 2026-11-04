@@ -5,13 +5,13 @@ import {
   TOKEN_ENCODING,
   countInputTokens,
   installTokenEncodingLoader,
-  type ModelMessage,
-  type ModelToolDefinition,
 } from "../../src/llm/tokens.js";
+import type { MessagePayload } from "../../src/db/schema/index.js";
+import type { FunctionTool } from "../../src/lib/tool-schema.js";
 
 const MODEL = "openrouter/openai/gpt-5.6-luna";
 
-const MESSAGES: ModelMessage[] = [
+const MESSAGES: MessagePayload[] = [
   { role: "system", content: "You are an agent in a work guild." },
   { role: "user", content: "hello" },
   {
@@ -28,7 +28,7 @@ const MESSAGES: ModelMessage[] = [
   { role: "tool", tool_call_id: "call_1", content: "The weekly note keeps the canonical finding." },
 ];
 
-const TOOLS: ModelToolDefinition[] = [
+const TOOLS: FunctionTool[] = [
   {
     type: "function",
     function: {
@@ -44,8 +44,8 @@ const TOOLS: ModelToolDefinition[] = [
 ];
 
 function legacyCount(
-  messages: readonly ModelMessage[],
-  tools?: readonly ModelToolDefinition[] | null,
+  messages: readonly MessagePayload[],
+  tools?: readonly FunctionTool[] | null,
 ): number {
   let text = JSON.stringify(messages);
   if (tools && tools.length) {
