@@ -81,10 +81,10 @@ test("a machine body: a custom machine has a size within the bounds, no other ti
   assert.deepEqual(validateMachineInput({ name: "edge", box: "custom", cpu: 0.5, memory_mib: 512 }).cpu, 0.5);
   assert.equal(validateMachineInput({ name: "top", box: "custom", cpu: 4, memory_mib: 8192 }).memory_mib, 8192);
   assert.equal(validateMachineInput({ name: "q", box: "custom", cpu: 1.75, memory_mib: 1024 }).cpu, 1.75);
-  for (const cpu of [0.25, 4.25, 1.1]) {
+  for (const cpu of [0.25, 8.25, 1.1]) {
     assert.throws(
       () => validateMachineInput({ name: "m", box: "custom", cpu, memory_mib: 1024 }),
-      /cpu must be between 0.5 and 4 in steps of 0.25/,
+      /cpu must be between 0.5 and 8 in steps of 0.25/,
     );
   }
   for (const memory of [256, 8193, 1024.5]) {

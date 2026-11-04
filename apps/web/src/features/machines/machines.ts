@@ -17,7 +17,7 @@ export const machineTiers: Record<
 /** A custom machine's size: CPUs in quarter steps and memory in MiB, within these bounds. */
 export const customMachineBounds = {
   minCpu: 0.5,
-  maxCpu: 4,
+  maxCpu: 8,
   cpuStep: 0.25,
   minMemoryMib: 512,
   maxMemoryMib: 8192,

@@ -144,7 +144,7 @@ test("a machine form checks the name, a custom size, and the disk cap", () => {
   assert.deepEqual(machineFormErrors({ ...form, cpu: "99" }), {});
   const custom = { ...form, box: "custom" as const };
   assert.deepEqual(machineFormErrors(custom), {});
-  assert.match(machineFormErrors({ ...custom, cpu: "0.25" }).cpu ?? "", /0.5 to 4 CPUs/);
+  assert.match(machineFormErrors({ ...custom, cpu: "0.25" }).cpu ?? "", /0.5 to 8 CPUs/);
   assert.match(machineFormErrors({ ...custom, cpu: "1.1" }).cpu ?? "", /steps of 0.25/);
   assert.equal(machineFormErrors({ ...custom, cpu: "3.75" }).cpu, undefined);
   assert.match(machineFormErrors({ ...custom, memory_mib: "256" }).memory_mib ?? "", /512 to 8192/);
@@ -159,10 +159,10 @@ test("a custom size keeps CPUs in quarter steps within bounds", () => {
   assert.deepEqual(customSizeErrors(size), {});
   for (const cpu of ["0.5", "4", "0.75"])
     assert.equal(customSizeErrors({ ...size, cpu }).cpu, undefined);
-  for (const cpu of ["", " ", "0.25", "4.25", "1.1", "abc", "Infinity", "NaN", "-1"]) {
+  for (const cpu of ["", " ", "0.25", "8.25", "1.1", "abc", "Infinity", "NaN", "-1"]) {
     assert.match(
       customSizeErrors({ ...size, cpu }).cpu ?? "",
-      /0.5 to 4 CPUs, in steps of 0.25/,
+      /0.5 to 8 CPUs, in steps of 0.25/,
       cpu,
     );
   }

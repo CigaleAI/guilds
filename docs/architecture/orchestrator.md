@@ -128,7 +128,7 @@ Configurable only in tests:
 - `TOOL_RESULT_MAX_BYTES` default = 65536
 - sandbox resources = 1 CPU and 2Gi on a standard machine, 2 CPU and
   4Gi on a code machine, and the machine's `cpu` and `memory_mib` on
-  a custom one (0.5 to 4 CPUs in steps of 0.25, 512 to 8192 MiB)
+  a custom one (0.5 to 8 CPUs in steps of 0.25, 512 to 8192 MiB)
 - agents per machine = 32 (slots 0 to 31)
 - agent minimum = the largest of 0.5 CPU and 256 MiB, 1 CPU and 2 GiB
   with `browser`, 2 CPU and 4 GiB with `coding`

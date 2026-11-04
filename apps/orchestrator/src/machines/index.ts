@@ -26,7 +26,7 @@ export const MACHINE_TIERS: Record<Exclude<MachineBox, "custom">, MachineSize> =
 
 /** A custom machine's size: CPUs in quarter steps and memory in MiB, each within these bounds. */
 export const CUSTOM_MIN_CPU = 0.5;
-export const CUSTOM_MAX_CPU = 4;
+export const CUSTOM_MAX_CPU = 8;
 export const CUSTOM_CPU_STEP = 0.25;
 export const CUSTOM_MIN_MEMORY_MIB = 512;
 export const CUSTOM_MAX_MEMORY_MIB = 8192;

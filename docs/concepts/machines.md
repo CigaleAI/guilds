@@ -43,7 +43,7 @@ the organisation pick one.
 | --- | --- | --- |
 | Standard | 1 | 2 GiB |
 | Code | 2 | 4 GiB |
-| Custom | 0.5 to 4, in steps of 0.25 | 512 to 8192 MiB |
+| Custom | 0.5 to 8, in steps of 0.25 | 512 to 8192 MiB |
 
 Which agents a machine takes depends on its size, not its tier
 ([Machine sizing](#machine-sizing)).
@@ -236,7 +236,7 @@ The recipe apply preview has the same picker, and warns the same way
 | --- | --- |
 | Machines in a new organisation | one Standard machine named `default` |
 | Machine name | lowercase letter first, then lowercase letters, digits, `-`; up to 63 characters; unique in the organisation |
-| Custom size | 0.5 to 4 CPUs in steps of 0.25; 512 to 8192 MiB |
+| Custom size | 0.5 to 8 CPUs in steps of 0.25; 512 to 8192 MiB |
 | Machine disk cap | 10240 MiB by default |
 | Agents on one machine | at most 32, whatever the organisation's plan says |
 | Agent minimum | 0.5 CPU and 256 MiB; 1 CPU and 2 GiB with a browser; 2 CPUs and 4 GiB with coding |
@@ -299,7 +299,7 @@ the machine's `cpu` and `memory_mib` for `custom`. Its directory on the host is
   custom machine needs both; an update that keeps it custom keeps the
   current ones. A body that moves a machine to `standard` or `code`
   drops them.
-- `cpu` outside 0.5 to 4 or off a 0.25 step, `memory_mib` outside 512
+- `cpu` outside 0.5 to 8 or off a 0.25 step, `memory_mib` outside 512
   to 8192 or not an integer, and a `max_workspace_mib` that is not a
   positive integer are 422.
 - A name the organisation already has is 409.
