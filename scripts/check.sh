@@ -13,6 +13,10 @@
 # set to its own root. The checkout, the install and every step then happen in that root, with core
 # and every other submodule at the commit it pins, and its check.steps adds steps, one per line: the
 # lane it joins (orchestrator or web), a name, and the command.
+#
+# Without a Docker daemon the check runs what it can: the orchestrator tests that need PostgreSQL
+# run against R1_ADMIN_DATABASE_URL when it is set and are left out otherwise, the core-stack lane
+# is left out, and the result is partial: it is reported as such and not remembered as passed.
 set -euo pipefail
 
 core="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -28,6 +32,9 @@ commit=""
 postgres=""
 # The submodules checked out into the tree, by path.
 submodules=()
+# Whether a Docker daemon answers; without one the check is partial.
+has_docker=true
+docker info >/dev/null 2>&1 || has_docker=false
 
 cleanup() {
   if [[ -n "$postgres" ]]; then docker rm -f "$postgres" >/dev/null 2>&1 || true; fi
@@ -38,7 +45,8 @@ cleanup() {
     git -C "$repo" worktree remove --force "$tree" >/dev/null 2>&1 || true
   fi
   # A container's files can belong to another user on Linux; removing them is not part of the check.
-  rm -rf "$work" 2>/dev/null || docker run --rm --volume "$work:/work" postgres:17 sh -c 'rm -rf /work/*' >/dev/null 2>&1 || true
+  rm -rf "$work" 2>/dev/null ||
+    { $has_docker && docker run --rm --volume "$work:/work" postgres:17 sh -c 'rm -rf /work/*' >/dev/null 2>&1; } || true
   rm -rf "$work" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -70,20 +78,29 @@ else
   echo "check: working tree"
 fi
 
-postgres="guilds-check-$$"
-docker run --detach --rm --name "$postgres" \
-  --env POSTGRES_DB=agent_platform \
-  --env POSTGRES_USER=agent_platform \
-  --env POSTGRES_PASSWORD=agent_platform \
-  --publish 127.0.0.1::5432 \
-  --tmpfs /var/lib/postgresql/data \
-  postgres:17 >/dev/null
-until docker exec "$postgres" pg_isready -q -h 127.0.0.1 -U agent_platform -d agent_platform; do
-  sleep 0.5
-done
-port="$(docker port "$postgres" 5432/tcp | head -n 1 | sed 's/.*://')"
+if $has_docker; then
+  postgres="guilds-check-$$"
+  docker run --detach --rm --name "$postgres" \
+    --env POSTGRES_DB=agent_platform \
+    --env POSTGRES_USER=agent_platform \
+    --env POSTGRES_PASSWORD=agent_platform \
+    --publish 127.0.0.1::5432 \
+    --tmpfs /var/lib/postgresql/data \
+    postgres:17 >/dev/null
+  until docker exec "$postgres" pg_isready -q -h 127.0.0.1 -U agent_platform -d agent_platform; do
+    sleep 0.5
+  done
+  port="$(docker port "$postgres" 5432/tcp | head -n 1 | sed 's/.*://')"
+  export R1_ADMIN_DATABASE_URL="postgresql://agent_platform:agent_platform@127.0.0.1:${port}/postgres"
+  test_orchestrator=test
+elif [[ -n "${R1_ADMIN_DATABASE_URL:-}" ]]; then
+  echo "check: no Docker; PostgreSQL from R1_ADMIN_DATABASE_URL"
+  test_orchestrator=test
+else
+  echo "check: no Docker and no R1_ADMIN_DATABASE_URL; the orchestrator's unit tests alone"
+  test_orchestrator=test:unit
+fi
 
-export R1_ADMIN_DATABASE_URL="postgresql://agent_platform:agent_platform@127.0.0.1:${port}/postgres"
 export STATE_ROOT="$work/state"
 export POSTGRES_PASSWORD=agent_platform
 export OPENSANDBOX_API_KEY=guilds-dev
@@ -92,6 +109,13 @@ mkdir -p "$STATE_ROOT/workspaces" "$STATE_ROOT/opensandbox" "$STATE_ROOT/notes"
 step() {
   local name="$1"
   shift
+  if [[ "$1" == "--needs-docker" ]]; then
+    shift
+    if ! $has_docker; then
+      echo "– $name (no Docker)"
+      return 0
+    fi
+  fi
   local log="$work/$name.log"
   local started=$SECONDS
   if (cd "$tree" && "$@") >"$log" 2>&1; then
@@ -119,7 +143,7 @@ orchestrator_lane() {
     step lint-rules pnpm test:lint-rules &&
     step import-cycles pnpm --filter @guildsrun/orchestrator cycles &&
     step compat-verify pnpm --filter @guildsrun/orchestrator compat:verify &&
-    step test-orchestrator pnpm --filter @guildsrun/orchestrator test &&
+    step test-orchestrator pnpm --filter @guildsrun/orchestrator "$test_orchestrator" &&
     extension_steps orchestrator
 }
 
@@ -133,7 +157,7 @@ web_lane() {
 }
 
 stack_lane() {
-  step smoke-core-stack "$core_path/scripts/smoke-core-stack.sh"
+  step smoke-core-stack --needs-docker "$core_path/scripts/smoke-core-stack.sh"
 }
 
 started=$SECONDS
@@ -151,6 +175,10 @@ wait "$stack" || status=1
 if [[ $status -ne 0 ]]; then
   echo "check failed ($((SECONDS - started))s)"
   exit 1
+fi
+if ! $has_docker; then
+  echo "check passed without Docker ($((SECONDS - started))s); CI runs the whole check"
+  exit 0
 fi
 if [[ -n "$commit" ]]; then echo "$commit" >>"$passed"; fi
 echo "check passed ($((SECONDS - started))s)"

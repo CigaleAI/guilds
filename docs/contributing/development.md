@@ -100,6 +100,7 @@ In `apps/orchestrator`, run as `pnpm --filter @guildsrun/orchestrator <script>`:
 | `sweep:workspaces` | Lists, or with `--apply` removes, orphan machine directories and agent homes ([Maintain](../operations/maintain.md#free-disk-space)) |
 | `typesafe:replay` | Replays the group-chat recipient choice for one message ([Group chat](../concepts/group-chat.md)) |
 | `browse:spike` | Runs one browse task on an agent's Chrome through the CDP bridge and prints each step, the result, and its cost ([Browser](../concepts/browser.md)) |
+| `test`, `test:unit` | Every test, or the unit tests alone ([Tests](#tests)) |
 | `cycles` | The import-cycle check; `cycles --write` rewrites its list ([Lint and format](#lint-and-format)) |
 | `compat:verify`, `compat:digest` | Checks, or rewrites, the fixture digests ([Tests](#tests)) |
 | `format` | Prettier over the package |
@@ -168,6 +169,13 @@ checks that commit the way CI does: a clean worktree of it and
 `pnpm install --frozen-lockfile`. A commit that passed is
 recorded in the git directory's `check-passed` and not checked
 again.
+
+Without a Docker daemon the check runs what it can and says so.
+The orchestrator's tests run against `R1_ADMIN_DATABASE_URL` when
+it names a PostgreSQL, and are the unit tests alone when it does
+not; the core-stack lane is left out. Such a check is partial: it
+passes as "without Docker", records no commit as passed, and CI
+runs the whole check on the push.
 
 The pre-push hook (`.githooks/pre-push`) runs that check on the
 tip of every pushed ref and stops the push when it fails.
