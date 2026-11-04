@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import type { FastifyInstance } from "fastify";
 import { NO_HIDDEN_GUILDS } from "../../src/artifacts/types.js";
 import { writeBinding } from "../../src/access/bindings.js";
 import { addAgent } from "../../src/agents/service.js";
@@ -12,6 +13,7 @@ import { runItem } from "../../src/db/views.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import type { RemoteCall } from "../../src/mcp/pool.js";
 import { buildApp } from "../../src/app.js";
+import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -2417,20 +2419,20 @@ test("studio proposes routines to create, change, and delete that the operator a
   }
 });
 
-const RECORDED_INPUT_TOKENS = 18432;
+const PROVIDER_INPUT_TOKENS = 18432;
 const HISTORY_TURNS = 40;
 
-function historyReply() {
+function providerUsageReply() {
   const reply = completionReply("The history fits.");
   reply.metadata.usage = {
-    input_tokens: RECORDED_INPUT_TOKENS,
+    input_tokens: PROVIDER_INPUT_TOKENS,
     output_tokens: 4,
     cache_read_tokens: 0,
   };
   return reply;
 }
 
-function recordedInputTokens(
+function assistantInputTokens(
   rows: Array<{ payload: { role?: string }; metadata?: { usage?: { input_tokens?: number } } }>,
 ): number[] {
   const totals: number[] = [];
@@ -2443,30 +2445,32 @@ function recordedInputTokens(
   return totals;
 }
 
-test("studio records the same input-token total for a large history", { timeout: 60_000 }, async () => {
+// The stubbed provider reports fixed usage, so this checks how Studio records and sums that usage, not the local token count.
+test("studio records provider-reported input tokens per turn and sums them across turns over a large history", { timeout: 60_000 }, async () => {
   const previousStream = generationLive.streamCompletion;
   generationLive.streamCompletion = async function* stream() {
-    yield ["done", historyReply()];
+    yield ["done", providerUsageReply()];
   };
-  const databaseUrl = await createIsolatedDatabase(historyDbName);
-  const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-history-"), templatesRoot());
-  await notes.ensureSystemPrompt();
-  const db = database.pool;
-  await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = artifactStore(database.pool, templatesRoot());
-  const scripts = agentScripts(db);
-  const schedules = agentSchedules(db);
-  const studio = new StudioService({
-    db,
-    artifacts,
-    scripts,
-    schedules,
-    notesSystemPath: notes.systemPath(),
-  });
-  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
-  const now = new Date();
+  let database: Database | null = null;
+  let app: FastifyInstance | null = null;
   try {
+    database = await connect(await createIsolatedDatabase(historyDbName));
+    const notes = new NotesStore(tempDir("guilds-studio-history-"), templatesRoot());
+    await notes.ensureSystemPrompt();
+    const db = database.pool;
+    await connectModelProvider(db, "org_home", "deepinfra");
+    const artifacts = artifactStore(database.pool, templatesRoot());
+    const scripts = agentScripts(db);
+    const schedules = agentSchedules(db);
+    const studio = new StudioService({
+      db,
+      artifacts,
+      scripts,
+      schedules,
+      notesSystemPath: notes.systemPath(),
+    });
+    app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
+    const now = new Date();
     await insertGuild(db,
       {
         guildId: "guild_hist",
@@ -2555,11 +2559,11 @@ test("studio records the same input-token total for a large history", { timeout:
       headers: AUTH,
     });
     assert.equal(firstMessages.statusCode, 200);
-    assert.deepEqual(recordedInputTokens(firstMessages.json()), [RECORDED_INPUT_TOKENS]);
+    assert.deepEqual(assistantInputTokens(firstMessages.json()), [PROVIDER_INPUT_TOKENS]);
     const firstUsage = await app.inject({ method: "GET", url: "/api/usage", headers: AUTH });
     assert.equal(firstUsage.statusCode, 200);
     const firstStudio = firstUsage.json().organisation.studio as { input_tokens: number };
-    assert.equal(firstStudio.input_tokens, RECORDED_INPUT_TOKENS);
+    assert.equal(firstStudio.input_tokens, PROVIDER_INPUT_TOKENS);
 
     const postedAgain = await app.inject({
       method: "POST",
@@ -2574,13 +2578,15 @@ test("studio records the same input-token total for a large history", { timeout:
       url: `/api/studio/sessions/${session.id}/messages`,
       headers: AUTH,
     });
-    assert.deepEqual(recordedInputTokens(secondMessages.json()), [RECORDED_INPUT_TOKENS, RECORDED_INPUT_TOKENS]);
+    assert.equal(secondMessages.statusCode, 200);
+    assert.deepEqual(assistantInputTokens(secondMessages.json()), [PROVIDER_INPUT_TOKENS, PROVIDER_INPUT_TOKENS]);
     const secondUsage = await app.inject({ method: "GET", url: "/api/usage", headers: AUTH });
+    assert.equal(secondUsage.statusCode, 200);
     const secondStudio = secondUsage.json().organisation.studio as { input_tokens: number };
-    assert.equal(secondStudio.input_tokens, RECORDED_INPUT_TOKENS * 2);
+    assert.equal(secondStudio.input_tokens, PROVIDER_INPUT_TOKENS * 2);
   } finally {
     generationLive.streamCompletion = previousStream;
-    await app.close();
-    await database.close();
+    await app?.close();
+    await database?.close();
   }
 });
