@@ -10,13 +10,14 @@ export function installCountingTokenEncodingLoader(): TokenEncodingUse {
   installTokenEncodingLoader(() => {
     use.loads += 1;
     const encoding = getEncoding(TOKEN_ENCODING);
-    const encode = encoding.encode.bind(encoding);
-    encoding.encode = (...args) => {
-      const tokens = encode(...args);
-      use.counts.push(tokens.length);
-      return tokens;
+    return {
+      encode: (...args) => {
+        const tokens = encoding.encode(...args);
+        use.counts.push(tokens.length);
+        return tokens;
+      },
+      decode: (tokens) => encoding.decode(tokens),
     };
-    return encoding;
   });
   return use;
 }
