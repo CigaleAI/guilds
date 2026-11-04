@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A run or a Studio turn counts its input tokens before
+each model call with the `o200k_base` encoding the orchestrator loads
+once per process, instead of loading it again for each count, so the
+count no longer holds the server for the load. The counts are
+unchanged.
+
 **Breaking.** A note or a file has an access list, which alone decides
 who reaches it, and no level and no owner. A name is one note or one file across the
 organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`; Memory,

@@ -1,4 +1,5 @@
 import type { MessageMetadata, MessagePayload, ToolMessage } from "../db/schema/index.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 import { promptHash } from "../prompts/index.js";
 
 /**
@@ -15,9 +16,13 @@ export const AGENT_TOOL_RESULT_STUB_HINT =
 
 export type ProjectionBudget = {
   model: string;
-  schemas: unknown[];
+  schemas: readonly FunctionTool[];
   maxInput: number;
-  countInputTokens: (model: string, messages: unknown[], tools?: unknown[] | null) => number;
+  countInputTokens: (
+    model: string,
+    messages: readonly MessagePayload[],
+    tools?: readonly FunctionTool[] | null,
+  ) => number;
 };
 
 /** A stored message of a run or a coach conversation, as the projection reads it. */

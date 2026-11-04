@@ -435,7 +435,7 @@ export class ConversationRunner {
     const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
     const result = await callConversationTool(turn, call, upcoming, finishReason);
     const envelope = { tool_message_seq: upcoming, ...result };
-    const candidateMessages = [
+    const candidateMessages: MessagePayload[] = [
       ...messages,
       { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
     ];

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import type { FastifyInstance } from "fastify";
 import { NO_HIDDEN_GUILDS } from "../../src/artifacts/types.js";
 import { writeBinding } from "../../src/access/bindings.js";
 import { addAgent } from "../../src/agents/service.js";
@@ -12,6 +13,7 @@ import { runItem } from "../../src/db/views.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import type { RemoteCall } from "../../src/mcp/pool.js";
 import { buildApp } from "../../src/app.js";
+import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -50,6 +52,7 @@ import { newId } from "../../src/lib/ids.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
+import { installCountingTokenEncodingLoader, restoreTokenEncodingLoader } from "../helpers/tokens.js";
 import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 import {
   createIsolatedDatabase,
@@ -68,7 +71,7 @@ import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
 import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
 import { insertIssue } from "../../src/db/issues.js";
 import { getSchedule, listSchedules } from "../../src/db/schedules.js";
-import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq } from "../../src/db/conversations.js";
+import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq, type ConversationMessageRow } from "../../src/db/conversations.js";
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
@@ -103,6 +106,7 @@ const editsDbName = uniqueDbName("agent_platform_studio_edits");
 const tablesDbName = uniqueDbName("agent_platform_studio_tables");
 const narrowDbName = uniqueDbName("agent_platform_studio_narrow");
 const routinesDbName = uniqueDbName("agent_platform_studio_routines");
+const historyDbName = uniqueDbName("agent_platform_studio_history");
 const originalStream = generationLive.streamCompletion;
 
 after(async () => {
@@ -114,6 +118,7 @@ after(async () => {
   await dropIsolatedDatabase(tablesDbName);
   await dropIsolatedDatabase(narrowDbName);
   await dropIsolatedDatabase(routinesDbName);
+  await dropIsolatedDatabase(historyDbName);
 });
 
 test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 }, async () => {
@@ -2412,5 +2417,185 @@ test("studio proposes routines to create, change, and delete that the operator a
   } finally {
     await app.close();
     await database.close();
+  }
+});
+
+const PROVIDER_INPUT_TOKENS = 18432;
+const HISTORY_TURNS = 40;
+
+function providerUsageReply() {
+  const reply = completionReply("The history fits.");
+  reply.metadata.usage = {
+    input_tokens: PROVIDER_INPUT_TOKENS,
+    output_tokens: 4,
+    cache_read_tokens: 0,
+  };
+  return reply;
+}
+
+function assistantInputTokens(rows: Array<Pick<ConversationMessageRow, "payload" | "metadata">>): number[] {
+  const totals: number[] = [];
+  for (const row of rows) {
+    if (row.payload.role === "assistant" && row.metadata.usage) {
+      totals.push(row.metadata.usage.input_tokens);
+    }
+  }
+  return totals;
+}
+
+// The stubbed provider reports fixed usage: the recorded totals are the provider's, and the local count only checks each turn's history against the input limit.
+test("studio records provider-reported input tokens per turn, sums them across turns, and counts a large history with one encoding load", { timeout: 60_000 }, async () => {
+  const previousStream = generationLive.streamCompletion;
+  let modelCalls = 0;
+  generationLive.streamCompletion = async function* stream() {
+    modelCalls += 1;
+    yield ["done", providerUsageReply()];
+  };
+  let database: Database | null = null;
+  let app: FastifyInstance | null = null;
+  try {
+    const encoding = installCountingTokenEncodingLoader();
+    database = await connect(await createIsolatedDatabase(historyDbName));
+    const notes = new NotesStore(tempDir("guilds-studio-history-"), templatesRoot());
+    await notes.ensureSystemPrompt();
+    const db = database.pool;
+    await connectModelProvider(db, "org_home", "deepinfra");
+    const artifacts = artifactStore(database.pool, templatesRoot());
+    const scripts = agentScripts(db);
+    const schedules = agentSchedules(db);
+    const studio = new StudioService({
+      db,
+      artifacts,
+      scripts,
+      schedules,
+      notesSystemPath: notes.systemPath(),
+    });
+    app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
+    const now = new Date();
+    await insertGuild(db,
+      {
+        guildId: "guild_hist",
+        name: "history-guild",
+        orgId: "org_home",
+        about: "A long studio history",
+      },
+      now,
+    );
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId: "a_hist", guildId: "guild_hist", name: "writer", config: CONFIG, focus: "Write notes" }, task: "Write notes", placement: {} },
+      systemActor("org_home", { guildId: "guild_hist", agentId: "a_hist" }),
+      now,
+    );
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: {
+        mode: "optimize",
+        source_guild_id: "guild_hist",
+        coach_config: { model: TEST_MODEL, temperature: 0.2 },
+      },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    const session = created.json() as { id: string };
+    const body = "The weekly note keeps the canonical finding and links the source run. ".repeat(20);
+    let seq = 1;
+    for (let index = 0; index < HISTORY_TURNS; index += 1) {
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 0,
+          payload: { role: "user", content: `Step ${index}.` },
+          metadata: { generation: 0 },
+        },
+        now,
+      );
+      seq += 1;
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 0,
+          payload: {
+            role: "assistant",
+            content: "",
+            tool_calls: [{ id: `call_${index}`, type: "function", function: { name: "file_read", arguments: "{}" } }],
+          },
+          metadata: { generation: 0 },
+        },
+        now,
+      );
+      seq += 1;
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 0,
+          payload: { role: "tool", tool_call_id: `call_${index}`, content: body },
+          metadata: { generation: 0, tool_name: "file_read" },
+        },
+        now,
+      );
+      seq += 1;
+    }
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+      payload: { content: "What still belongs in the standing task?" },
+    });
+    assert.equal(posted.statusCode, 200, posted.body);
+    await studio.runner.wait(session.id);
+    const firstMessages = await app.inject({
+      method: "GET",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+    });
+    assert.equal(firstMessages.statusCode, 200);
+    assert.deepEqual(assistantInputTokens(firstMessages.json()), [PROVIDER_INPUT_TOKENS]);
+    const firstUsage = await app.inject({ method: "GET", url: "/api/usage", headers: AUTH });
+    assert.equal(firstUsage.statusCode, 200);
+    const firstStudio = firstUsage.json().organisation.studio as { input_tokens: number };
+    assert.equal(firstStudio.input_tokens, PROVIDER_INPUT_TOKENS);
+    assert.equal(modelCalls, 1);
+    assert.equal(encoding.loads, 1);
+    const firstCounts = encoding.counts.length;
+    assert.ok(firstCounts > 0);
+
+    const postedAgain = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+      payload: { content: "What still belongs in the standing task?" },
+    });
+    assert.equal(postedAgain.statusCode, 200, postedAgain.body);
+    await studio.runner.wait(session.id);
+    const secondMessages = await app.inject({
+      method: "GET",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+    });
+    assert.equal(secondMessages.statusCode, 200);
+    assert.deepEqual(assistantInputTokens(secondMessages.json()), [PROVIDER_INPUT_TOKENS, PROVIDER_INPUT_TOKENS]);
+    const secondUsage = await app.inject({ method: "GET", url: "/api/usage", headers: AUTH });
+    assert.equal(secondUsage.statusCode, 200);
+    const secondStudio = secondUsage.json().organisation.studio as { input_tokens: number };
+    assert.equal(secondStudio.input_tokens, PROVIDER_INPUT_TOKENS * 2);
+    assert.equal(modelCalls, 2);
+    assert.equal(encoding.loads, 1);
+    assert.ok(encoding.counts.length > firstCounts);
+  } finally {
+    restoreTokenEncodingLoader();
+    generationLive.streamCompletion = previousStream;
+    await app?.close();
+    await database?.close();
   }
 });
