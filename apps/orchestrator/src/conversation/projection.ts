@@ -135,7 +135,7 @@ function stubOldestLiveRowsUntilPromptFits(
   liveLarge: ProjectedRow[],
 ): MessagePayload[] {
   let messages = replaceStubbedToolPayloads(projection, stubSeqs);
-  let tokens = budget.countInputTokens(budget.model, messages as unknown as ModelMessage[], budget.schemas);
+  let tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
   const maxStub = Math.max(0, liveLarge.length - (projection.minUnstubbed ?? MIN_UNSTUBBED_TOOL_RESULTS));
   for (const row of liveLarge.slice(0, maxStub)) {
     if (tokens <= budget.maxInput) {
@@ -143,7 +143,7 @@ function stubOldestLiveRowsUntilPromptFits(
     }
     stubSeqs.add(row.seq);
     messages = replaceStubbedToolPayloads(projection, stubSeqs);
-    tokens = budget.countInputTokens(budget.model, messages as unknown as ModelMessage[], budget.schemas);
+    tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
   }
   return messages;
 }

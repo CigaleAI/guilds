@@ -38,10 +38,7 @@ export function countRunInputTokens(
   ) => number,
 ): number {
   const payloads = rows.map((row) => row.payload);
-  return (
-    countInputTokens(model, payloads as unknown as CountedMessage[], tools) +
-    attachmentImageCount(rows) * IMAGE_INPUT_TOKENS
-  );
+  return countInputTokens(model, payloads, tools) + attachmentImageCount(rows) * IMAGE_INPUT_TOKENS;
 }
 
 function dataUrl(mime: string, bytes: Buffer): string {

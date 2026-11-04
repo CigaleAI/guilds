@@ -16,7 +16,7 @@ const MESSAGES: ModelMessage[] = [
   { role: "user", content: "hello" },
   {
     role: "assistant",
-    content: null,
+    content: "",
     tool_calls: [
       {
         id: "call_1",

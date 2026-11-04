@@ -16,7 +16,7 @@ import { EventQueue, type StreamEvent } from "../lib/event.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import { streamCompletion } from "../llm/client.js";
 import { LLMError, type Completion } from "../llm/completion.js";
-import { countInputTokens, type ModelMessage, type ModelToolDefinition } from "../llm/tokens.js";
+import { countInputTokens } from "../llm/tokens.js";
 import { CancelEvent } from "../toolbox/index.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { modelCatalog } from "../llm/catalog.js";
@@ -287,13 +287,7 @@ export class ConversationRunner {
     const { model, temperature } = turn.session.config_snapshot;
     const schemas = offeredToolSchemas(turn);
     const messages = await this.projectHistory(turn, progress);
-    if (
-      generationLive.countInputTokens(
-        model,
-        messages as unknown as ModelMessage[],
-        schemas as unknown as ModelToolDefinition[],
-      ) > turn.maxInput
-    ) {
+    if (generationLive.countInputTokens(model, messages, schemas) > turn.maxInput) {
       await this.blockAtInputTokenLimit(sessionId);
       return "stop";
     }
@@ -332,7 +326,7 @@ export class ConversationRunner {
       ...(minUnstubbed !== undefined ? { minUnstubbed } : {}),
       budget: {
         model: turn.session.config_snapshot.model,
-        schemas: offeredToolSchemas(turn) as unknown as ModelToolDefinition[],
+        schemas: offeredToolSchemas(turn),
         maxInput: turn.maxInput,
         countInputTokens: (nextModel, nextMessages, nextTools) =>
           generationLive.countInputTokens(nextModel, nextMessages, nextTools),
@@ -441,14 +435,14 @@ export class ConversationRunner {
     const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
     const result = await callConversationTool(turn, call, upcoming, finishReason);
     const envelope = { tool_message_seq: upcoming, ...result };
-    const candidateMessages = [
+    const candidateMessages: MessagePayload[] = [
       ...messages,
       { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
     ];
     const nextTokens = generationLive.countInputTokens(
       turn.session.config_snapshot.model,
-      candidateMessages as unknown as ModelMessage[],
-      offeredToolSchemas(turn) as unknown as ModelToolDefinition[],
+      candidateMessages,
+      offeredToolSchemas(turn),
     );
     const payload: ToolMessage =
       nextTokens > turn.maxInput

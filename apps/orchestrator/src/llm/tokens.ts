@@ -1,11 +1,14 @@
 import { getEncoding, type Tiktoken } from "js-tiktoken";
-import type OpenAI from "openai";
+import type { MessagePayload } from "../db/schema/index.js";
+import type { FunctionTool } from "../lib/tool-schema.js";
 
 /** Every model is counted with one encoding. */
 export const TOKEN_ENCODING = "o200k_base";
 
-export type ModelMessage = OpenAI.Chat.ChatCompletionMessageParam;
-export type ModelToolDefinition = OpenAI.Chat.ChatCompletionTool;
+/** A stored message, as input counting serialises it. */
+export type ModelMessage = MessagePayload;
+/** A tool schema, as input counting serialises it. */
+export type ModelToolDefinition = FunctionTool;
 
 export const INPUT_TOKEN_LIMIT_MESSAGE = "Input token limit reached. Start a new run to continue.";
 
