@@ -288,6 +288,13 @@ without a browser and test the functions a module exports:
 - in the design system, the content parsers: embeds, mentions,
   highlighting, and prompt blocks
 
+A hook that writes to the page is tested mounted: the test installs
+a `happy-dom` window as the globals, sets `NODE_ENV` to `test`, then
+imports React DOM, the query client, and the router, which pick
+browser or server as they load. It renders the hook under a
+`QueryClient` and a memory-history router, changes the query data,
+and restores the globals and `NODE_ENV` when it ends.
+
 `fixtures/compat/` holds the frozen contracts, one directory per
 surface: HTTP routes, SSE and WebSocket frames, crypto, adapters,
 prompts, seed rows, and more. `manifest.json` holds a sha256 digest
