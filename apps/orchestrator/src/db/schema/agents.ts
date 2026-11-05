@@ -59,6 +59,8 @@ export type AgentConfig = {
   max_steps: number;
   max_tool_calls: number;
   max_input_tokens: number;
+  /** The most wake-ups a run may fire. */
+  max_wake_ups: number;
   keep_tool_result_generations: number;
   max_scripts: number;
   max_workspace_mib: number;

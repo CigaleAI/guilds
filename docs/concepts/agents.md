@@ -79,6 +79,7 @@ Run limits stop a run that goes on too long:
 | Max steps | model calls in one generation | 30 |
 | Max tool calls | tool calls in one run | 50 |
 | Max input tokens | the size of the prompt sent to the model | 100000 |
+| Max wake-ups | the wake-ups one run may fire | 10 |
 | Keep tool results | how many user turns keep full tool output in the prompt; older large results are stubbed | 1 |
 
 A coding agent starts at 200 steps and 200 tool calls. What happens
@@ -251,7 +252,7 @@ saves.
 - **Model** (**Lead model** on a coding agent): the model, thinking,
   and temperature. **Agent capabilities** has four buttons: Browser,
   Coding, scripting, and Memory. **Run limits** sits under a
-  disclosure, with the five run limits and **Max scripts**. Browser
+  disclosure, with the six run limits and **Max scripts**. Browser
   and Coding are greyed out while off on a machine below the minimum
   they need, with a line naming both sizes. Coding is greyed out on a
   saved coding agent, which stays one. The browser language and
@@ -290,7 +291,7 @@ saves.
 
 ### Configuration keys
 
-Agent configuration is a JSON object of twenty-one keys. A missing key
+Agent configuration is a JSON object of twenty-two keys. A missing key
 takes its default, then the check runs. `model` has no default, so a
 configuration without it is 422 `missing keys: model`. Unknown keys
 are rejected. The tier, CPU, and memory belong to the machine, not to
@@ -305,6 +306,7 @@ the agent.
 | `max_steps` | positive integer | `30` (`200` for a new coding agent) | [Runs](runs.md#generation) |
 | `max_tool_calls` | positive integer | `50` (`200` for a new coding agent) | [Runs](runs.md#generation) |
 | `max_input_tokens` | positive integer | `100000` | [Runs](runs.md#generation) |
+| `max_wake_ups` | positive integer | `10` | [Runs](runs.md#snapshot) |
 | `keep_tool_result_generations` | positive integer | `1` | [Runs](runs.md#tool-result-stubbing) |
 | `max_scripts` | positive integer | `10` | [Scripts](scripts.md) |
 | `max_workspace_mib` | positive integer | `10240` | [Agent home](agent-home.md) |

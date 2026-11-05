@@ -13,7 +13,7 @@ import { MigrationsNotApplied, committedMigrations } from "../../src/db/migratio
 import { orchestratorRoot } from "../../src/lib/paths.js";
 import { tempDir } from "../helpers/env.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const migrationsFolder = path.join(orchestratorRoot(import.meta.url), "drizzle");
 const freshDb = uniqueDbName("agent_platform_migrate_fresh");
@@ -27,6 +27,7 @@ const browserConfigDb = uniqueDbName("agent_platform_migrate_browser_config");
 const listOnlyDb = uniqueDbName("agent_platform_migrate_list_only");
 const listOnlyPathsDb = uniqueDbName("agent_platform_migrate_list_only_paths");
 const homeGuildDb = uniqueDbName("agent_platform_migrate_home_guild");
+const wakeUpsConfigDb = uniqueDbName("agent_platform_migrate_wake_ups_config");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -39,6 +40,7 @@ after(async () => {
   await dropIsolatedDatabase(listOnlyDb);
   await dropIsolatedDatabase(listOnlyPathsDb);
   await dropIsolatedDatabase(homeGuildDb);
+  await dropIsolatedDatabase(wakeUpsConfigDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -326,6 +328,55 @@ test("the agent browser config migration gives a config the browser mode keys, k
     const byId = new Map(rows.rows.map((row) => [row.id, row.config]));
     assert.deepEqual(byId.get("old"), agentConfig({ model: MODEL, browser: true }));
     assert.deepEqual(byId.get("optimized"), optimized);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the wake-ups config migration gives agent configs and run snapshots max_wake_ups, keeping the values they have", async () => {
+  const pool = await createPool(await createIsolatedDatabase(wakeUpsConfigDb), reportPoolError);
+  try {
+    const folder = chainBefore("0023_agent_wake_ups_config");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    const run = (id: string, status: string, snapshot: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.runs (id, agent_id, status, config_snapshot, created_at, updated_at, org_id)
+         VALUES ($1, 'old', $2, $3, $4, $4, 'org_1')`,
+        [id, status, JSON.stringify(snapshot), now],
+      );
+    const { max_wake_ups: _agentWakeUps, ...older } = agentConfig();
+    await agent("old", 0, older);
+    const capped = agentConfig({ max_wake_ups: 3 });
+    await agent("capped", 1, capped);
+    const { max_wake_ups: _runWakeUps, ...olderSnapshot } = runSnapshot(agentConfig());
+    await run("run_active", "active", olderSnapshot);
+    await run("run_completed", "completed", olderSnapshot);
+    const cappedSnapshot = runSnapshot(capped);
+    await run("run_capped", "active", cappedSnapshot);
+
+    await applyMigrations(pool);
+    const agents = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const configs = new Map(agents.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(configs.get("old"), agentConfig());
+    assert.deepEqual(configs.get("capped"), capped);
+    const runs = await pool.query<{ id: string; config_snapshot: Record<string, unknown> }>("SELECT id, config_snapshot FROM public.runs");
+    const snapshots = new Map(runs.rows.map((row) => [row.id, row.config_snapshot]));
+    assert.deepEqual(snapshots.get("run_active"), runSnapshot(agentConfig()));
+    assert.deepEqual(snapshots.get("run_completed"), runSnapshot(agentConfig()));
+    assert.deepEqual(snapshots.get("run_capped"), cappedSnapshot);
   } finally {
     await pool.end();
   }

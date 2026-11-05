@@ -338,6 +338,7 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     max_steps: requirePositiveInteger(filled.max_steps, "max_steps"),
     max_tool_calls: requirePositiveInteger(filled.max_tool_calls, "max_tool_calls"),
     max_input_tokens: requirePositiveInteger(filled.max_input_tokens, "max_input_tokens"),
+    max_wake_ups: requirePositiveInteger(filled.max_wake_ups, "max_wake_ups"),
     keep_tool_result_generations: requirePositiveInteger(
       filled.keep_tool_result_generations,
       "keep_tool_result_generations",

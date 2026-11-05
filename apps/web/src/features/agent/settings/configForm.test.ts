@@ -177,6 +177,17 @@ test("the agent-optimized browser needs a browser model the organisation's key r
   );
 });
 
+test("max wake-ups starts at 10 for every agent, round-trips, and takes a whole number of 1 or more", () => {
+  const form = configFormOf(defaultAgentConfig);
+  assert.equal(form.max_wake_ups, "10");
+  assert.equal(withCoding(form, true).max_wake_ups, "10");
+  assert.equal(configOf({ ...form, max_wake_ups: "4" }, undefined).max_wake_ups, 4);
+  assert.equal(configFormOf({ ...defaultAgentConfig, max_wake_ups: 4 }).max_wake_ups, "4");
+  assert.equal(configErrors({ ...form, max_wake_ups: "0" }).max_wake_ups, "A whole number, 1 or more.");
+  assert.equal(configErrors({ ...form, max_wake_ups: "2.5" }).max_wake_ups, "A whole number, 1 or more.");
+  assert.equal(configErrors(form).max_wake_ups, undefined);
+});
+
 test("limits the operator already changed stay as typed", () => {
   const form = { ...configFormOf(defaultAgentConfig), max_steps: "80" };
   const coding = withCoding(form, true);

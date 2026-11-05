@@ -989,6 +989,7 @@ describe("generation", { concurrency: 1 }, () => {
     assert.equal(snapshot.database, false);
     assert.equal(snapshot.max_tool_calls, 50);
     assert.equal(snapshot.max_input_tokens, 100000);
+    assert.equal(snapshot.max_wake_ups, 10);
     assert.equal(snapshot.keep_tool_result_generations, 1);
     assert.equal(snapshot.projection_policy_version, 1);
     assert.deepEqual(snapshot.mcp, []);

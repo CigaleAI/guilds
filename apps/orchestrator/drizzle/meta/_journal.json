@@ -155,6 +155,13 @@
       "when": 1791954000000,
       "tag": "0022_run_wakes",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791957600000,
+      "tag": "0023_agent_wake_ups_config",
+      "breakpoints": true
     }
   ]
 }

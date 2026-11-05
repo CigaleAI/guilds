@@ -50,6 +50,7 @@ export const AGENT_CONFIG: AgentConfig = {
   max_steps: 30,
   max_tool_calls: 50,
   max_input_tokens: 100000,
+  max_wake_ups: 10,
   keep_tool_result_generations: 1,
   max_scripts: 10,
   max_workspace_mib: 10240,

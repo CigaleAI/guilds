@@ -18,6 +18,12 @@ unchanged.
 while the Inbox has an open issue or an unread tag, and turns plain
 again once it has none.
 
+**Rebuild.** Agent configs and run snapshots gain `max_wake_ups`, the
+most wake-ups a run may fire: a whole number of 1 or more, 10 by
+default for every agent; a migration fills it in. Settings shows
+**Max wake-ups** under **Run limits**, and a captured recipe carries
+it.
+
 **Breaking.** A note or a file has an access list, which alone decides
 who reaches it, and no level and no owner. A name is one note or one file across the
 organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`; Memory,

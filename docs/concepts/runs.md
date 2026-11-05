@@ -190,6 +190,7 @@ An ended run shows a banner under the transcript:
 | Max tool calls | 50 by default (200 for a new coding agent); counts every tool result in the run |
 | Wrap-up warning | when 8 tool calls or fewer are left |
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
+| Max wake-ups | 10 by default, for a coding agent too |
 | Full tool results kept | the current turn only, by default |
 | Results never stubbed | under 2048 bytes |
 | Routine check | every 30 seconds |
@@ -302,8 +303,9 @@ run creation, less `max_scripts` and `max_workspace_mib`, with
 and the `scripts` ([Scripts](scripts.md#snapshot)).
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
-`keep_tool_result_generations`, `projection_policy_version`, and
-`thinking_level`.
+`max_wake_ups`, `keep_tool_result_generations`,
+`projection_policy_version`, and `thinking_level`. `max_wake_ups` is
+the most wake-ups the run may fire.
 
 Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
 `harness` is a coding agent's harness or null, `harness_model` the
