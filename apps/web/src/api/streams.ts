@@ -251,6 +251,10 @@ export function useRunStream(
           refreshRun();
           onContinued?.(continuation.run_id);
         },
+        "run.wake.changed": ({ pending_wake }) =>
+          client.setQueryData<Run>(runKeys.run(runId), (run) =>
+            run ? { ...run, pending_wake } : run,
+          ),
       };
       dispatchLiveEvent(runEventGuards, handlers, name, data);
     },

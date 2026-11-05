@@ -203,6 +203,14 @@ does not accept images, or is not among the organisation's chosen
 models, the paperclip is disabled and a tooltip says so. The
 transcript shows the images on the operator's bubble.
 
+A run with a pending wake-up shows a banner under the transcript:
+**Wakes up at `<time>`**, with the agent's note, or **The agent left
+no note.**, and **Cancel**, which cancels the wake-up at once. The
+banner follows the run's stream, so it appears when the agent sets a
+wake-up and goes when the wake-up fires or is cancelled. The wake
+generation's message shows in the transcript as its own row
+([Run transcript](run-transcript.md#messages)).
+
 An ended run shows a banner under the transcript:
 
 - **This session has ended**, with **Resume**, when it can be resumed.

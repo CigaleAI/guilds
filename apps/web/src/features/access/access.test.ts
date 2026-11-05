@@ -138,6 +138,8 @@ test("native tools group by what they work on, including browser, coding and iss
   const groups = toolFamilyGroups([
     binding("note_find"),
     binding("group_post"),
+    binding("wake_cancel"),
+    binding("wake_after"),
     binding("browser_navigate"),
     binding("shell"),
     binding("code_search"),
@@ -151,6 +153,7 @@ test("native tools group by what they work on, including browser, coding and iss
       ["Notes", ["note_find"]],
       ["Files", ["file_fetch"]],
       ["Group chat", ["group_post"]],
+      ["Wake-ups", ["wake_cancel", "wake_after"]],
       ["Browser", ["browser_navigate"]],
       ["Coding", ["shell", "code_search"]],
       ["Issues", ["report_issue"]],

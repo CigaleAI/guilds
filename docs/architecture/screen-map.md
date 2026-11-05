@@ -69,7 +69,7 @@ and a copy button.
 | Agent inspector header and menu | `/guilds/<id>/agents/<id>` | [Agents](../concepts/agents.md) |
 | Coding readiness warning | agent inspector | [Coding agents](../concepts/coding/index.md) |
 | **Browser login needed** strip | agent inspector | [Browser](../concepts/browser.md) |
-| Agent **Chat** tab: transcript, run flow, attachments, **Resume** | `/guilds/<id>/agents/<id>` (`?run=…`) | [Run transcript](../concepts/run-transcript.md), [Runs](../concepts/runs.md) |
+| Agent **Chat** tab: transcript, run flow, attachments, **Resume**, the pending wake-up banner with **Cancel** | `/guilds/<id>/agents/<id>` (`?run=…`) | [Run transcript](../concepts/run-transcript.md), [Runs](../concepts/runs.md) |
 | Chat History drawer | `/guilds/<id>/agents/<id>/history` (`?history=true`) | [Run transcript](../concepts/run-transcript.md) |
 | Chat coding strip | agent **Chat** tab | [Coding agents](../concepts/coding/index.md) |
 | Chat `code_task` row and **Changes** panel | agent **Chat** tab | [Code tasks](../concepts/coding/code-tasks.md), [Reviewing changes](../concepts/coding/reviewing-changes.md) |

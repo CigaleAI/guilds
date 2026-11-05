@@ -174,6 +174,7 @@ const toolFamilies: { label: string; matches: (name: string) => boolean }[] = [
   { label: "Scripts", matches: (name) => name.startsWith("script_") },
   { label: "Routines", matches: (name) => name.startsWith("schedule_") },
   { label: "Group chat", matches: (name) => name.startsWith("group_") },
+  { label: "Wake-ups", matches: (name) => name.startsWith("wake_") },
   { label: "Secrets", matches: (name) => name.startsWith("secret_") },
   { label: "Browser", matches: (name) => name === "browse" || name.startsWith("browser_") },
   {

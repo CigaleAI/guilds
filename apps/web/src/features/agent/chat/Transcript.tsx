@@ -1,4 +1,4 @@
-import { Clock, MessageSquare } from "lucide-react";
+import { AlarmClock, Clock, MessageSquare } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { attachmentBlobUrl } from "../../../api/attachments";
 import { liveTurnActive, type LiveTurn } from "../../../api/liveTurn";
@@ -25,6 +25,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@guildsrun/ui";
+import { parseWakeUp } from "../../../api/wire";
 import { askedRequest } from "../../access/secrets";
 import {
   buildFlowSegments,
@@ -37,6 +38,7 @@ import { FlowView, type RevealStep } from "./FlowView";
 import { Reasoning } from "./Reasoning";
 import { offeredToolGroups, promptSectionsOf } from "./runContext";
 import { SecretRequestCard } from "./SecretRequestCard";
+import { firedWakeTitle } from "./wakeUp";
 
 type TranscriptProps = {
   agent: AgentDetail;
@@ -138,6 +140,21 @@ function messageStamp(message: RunMessage): { time?: string; dateTime?: string }
   return createdAt ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) } : {};
 }
 
+type FiredWakeProps = { message: RunMessage };
+
+/** A fired wake-up: when the agent set it and for when, and the note it left itself. */
+function FiredWake({ message }: FiredWakeProps) {
+  const wake = parseWakeUp(turnText(message));
+  return (
+    <div className="flex flex-col items-center gap-1 self-center">
+      <WakeNote icon={AlarmClock}>{firedWakeTitle(wake)}</WakeNote>
+      {wake?.message ? (
+        <p className="max-w-120 text-center text-xs text-muted">{wake.message}</p>
+      ) : null}
+    </div>
+  );
+}
+
 type UserTurnProps = { message: RunMessage };
 
 /** The operator's message, or what woke the agent when the run did not start from this chat. */
@@ -153,6 +170,9 @@ function UserTurn({ message }: UserTurnProps) {
   }
   if (meta.source === "schedule") {
     return <WakeNote icon={Clock}>Woken by a routine</WakeNote>;
+  }
+  if (meta.source === "wake") {
+    return <FiredWake message={message} />;
   }
   const text = turnText(message);
   return (

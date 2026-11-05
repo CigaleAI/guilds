@@ -37,6 +37,10 @@ a resume, or a cancel answers with, carry `pending_wake`;
 `DELETE /api/runs/:id/wake` cancels it as the operator; and the run's
 stream publishes `run.wake.changed` on every change of it, and the
 wake-up's message as it commits.
+The Chat tab shows a pending wake-up under the transcript, with when
+it is due, the agent's note, and **Cancel**; a fired wake-up is its
+own row in the transcript, with the times and the note; and the Tools
+tab lists the two tools under **Wake-ups**.
 
 **Rebuild.** Agent configs and run snapshots gain `max_wake_ups`, the
 most wake-ups a run may fire: a whole number of 1 or more, 10 by

@@ -189,7 +189,7 @@ SSE carries transient deltas and newly committed rows
 |---|---|---|
 | One per open guild | `/api/guilds/:id/group-chat/stream` | Chat, delivery state, issues, notes, files, Tasks and Memory, routines, and scripts |
 | The inbox | `/api/notifications/stream` | The inbox and its badge, each guild's unread count, and the chime for a message posted where the operator is not looking |
-| One per open run | `/api/runs/:id/stream` | The run transcript, the progress lines of its running tool calls, and the records its tools change |
+| One per open run | `/api/runs/:id/stream` | The run transcript, the progress lines of its running tool calls, the records its tools change, and its pending wake-up |
 | One per open Studio session | `/api/studio/sessions/:id/stream` | The coach chat and drafts |
 | One per open Builder session | `/api/builder/sessions/:id/stream` | The coach chat and the recipe draft |
 

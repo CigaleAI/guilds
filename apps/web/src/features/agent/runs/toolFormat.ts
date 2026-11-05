@@ -22,6 +22,7 @@ import {
   isShellStatusArguments,
   isString,
   isStudioToolArguments,
+  isWakeAfterArguments,
   parseJson,
   type JsonObject,
   type JsonValue,
@@ -249,6 +250,12 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
     args.name ? `Asked for ${args.name}` : "Asked for a secret",
   ),
   group_post: () => "Post to group",
+  wake_after: summaryOf(isWakeAfterArguments, (args) =>
+    args.minutes === undefined
+      ? "Set a wake-up"
+      : `Wake in ${args.minutes} minute${args.minutes === 1 ? "" : "s"}`,
+  ),
+  wake_cancel: () => "Cancel wake-up",
   report_issue: summaryOf(isReportIssueArguments, (args) =>
     args.summary ? `Report: ${args.summary}` : "Report issue",
   ),

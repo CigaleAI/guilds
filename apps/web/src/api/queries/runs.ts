@@ -130,6 +130,19 @@ export function useResumeRun(agentId: string) {
   });
 }
 
+/** Cancels the run's pending wake-up; the run shows none once it lands. */
+export function useCancelWake() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => api<undefined>(`${runPath(runId)}/wake`, { method: "DELETE" }),
+    onSuccess: (_reply, runId) => {
+      client.setQueryData<Run>(runKeys.run(runId), (run) =>
+        run ? { ...run, pending_wake: null } : run,
+      );
+    },
+  });
+}
+
 /** The diff a run made in one repository, fetched from the agent's home on demand. */
 export function useRunDiff(runId: string, repository: string | null) {
   return useQuery({

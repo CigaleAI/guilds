@@ -44,6 +44,11 @@ in the Task show as their inlined bodies, the nested hop included.
 - A run woken by the group chat opens with a note, **Woken by the
   group chat**, with the message number and its author. A run woken by
   a routine opens with **Woken by a routine**.
+- A fired wake-up is its own row, never an operator bubble: **Woken by
+  its wake-up · set `<time>` for `<time>`**, in the operator's time
+  zone, with the note the agent left itself under it
+  ([Runs](runs.md#wake-ups)). A `wake_after` call reads **Wake in N
+  minutes**, a `wake_cancel` call **Cancel wake-up**.
 - A system row after the system prompt shows as an info banner,
   **System note**.
 - A reply with reasoning shows it as a collapsed block above the text.

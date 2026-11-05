@@ -256,7 +256,7 @@ Every scope's **Tools** has two sub-tabs:
   guild, or agent.
 - **Native tools**: grouped by family (**Notes**, **Tables** for the
   record tools, **Files**, **Memory**, **Scripts**, **Routines**, **Group chat**,
-  **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
+  **Wake-ups**, **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
   each family collapsible.
 
 Each switchable item is an on/off switch captioned with where its
