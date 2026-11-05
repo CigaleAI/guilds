@@ -80,8 +80,13 @@ export class RunEvents {
   ): Promise<MessageRow> {
     const seq = await this.db.nextSeq(runId);
     const row = await this.db.insertMessage({ runId, seq, payload, metadata }, new Date());
-    await this.publish(runId, "message.committed", messageItem(row));
+    await this.publishCommitted(row);
     return row;
+  }
+
+  /** Publishes a row already committed to its run's history as `message.committed`. */
+  async publishCommitted(row: MessageRow): Promise<void> {
+    await this.publish(row.run_id, "message.committed", messageItem(row));
   }
 
   /** Logs the error, keeps it, redacted, in the run's errors, and publishes it. */

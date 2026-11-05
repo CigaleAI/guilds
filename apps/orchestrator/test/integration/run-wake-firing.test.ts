@@ -185,7 +185,21 @@ describe("firing run wake-ups", { concurrency: 1 }, () => {
   test("a due wake-up opens the next generation of an active run, which stays active", async () => {
     const runId = await seedRun("direct", "active");
     const wakeId = await setWake(runId, -1);
+    const stream = loop.events.subscribe(runId);
     await fire(runId);
+    const committed: unknown[] = [];
+    while (stream.size) {
+      const [event, data] = await stream.get();
+      if (
+        event === "message.committed" &&
+        data.metadata &&
+        (data.metadata as { source?: string }).source === "wake"
+      ) {
+        committed.push((data.metadata as { wake_id?: string }).wake_id);
+      }
+    }
+    loop.events.unsubscribe(runId, stream);
+    assert.deepEqual(committed, [wakeId], "the wake-up message is published to the run's stream");
     const [message] = await wakeMessages(runId);
     assert.ok(message);
     assert.equal(message.metadata.wake_id, wakeId);
@@ -244,6 +258,7 @@ describe("firing run wake-ups", { concurrency: 1 }, () => {
     const run = await getRun(database.pool, runId);
     assert.equal(run?.status, "completed");
     assert.equal(run?.metadata.resumed_at, undefined, "a wake-up's reopen is not a resume");
+    assert.equal(run?.metadata.wake_reopened_generation, message?.metadata.generation);
     const cursor = await database.pool.query<{ through: number }>(
       "SELECT group_chat_delivered_through AS through FROM agents WHERE id = $1",
       [agentId],

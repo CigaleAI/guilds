@@ -10,7 +10,7 @@ import {
   type WakeFiringQueries,
 } from "../../src/generation/wakes.js";
 import { logWriter } from "../../src/observability/log.js";
-import { isReopenedByWake, wakeUserMessage } from "../../src/wakes/message.js";
+import { wakeUserMessage } from "../../src/wakes/message.js";
 import { wakeUpsLeft } from "../../src/wakes/rules.js";
 import { runSnapshot } from "../helpers/generation.js";
 
@@ -64,8 +64,9 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
     countFiredRunWakes: async () => 1,
     nextGeneration: async () => 2,
     nextSeq: async () => 3,
-    insertMessage: async (message: { runId: string }) => {
+    insertMessage: async (message: { runId: string; seq: number }) => {
       inserted.push(message.runId);
+      return { run_id: message.runId, seq: message.seq };
     },
   } as unknown as WakeFiringQueries;
   const db = {
@@ -79,7 +80,12 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
   } as unknown as RunWakesDatabase;
   const wakes = new RunWakes({
     db,
-    events: { recordError: async () => undefined } as unknown as RunEvents,
+    events: {
+      recordError: async () => undefined,
+      publishCommitted: async (row: { run_id: string; seq: number }) => {
+        calls.push(`published ${row.run_id} ${row.seq}`);
+      },
+    } as unknown as RunEvents,
     generations: { isAgentBusy: () => false } as unknown as ActiveGenerations,
     starter: {
       beginGeneration: async (runId: string) => {
@@ -140,7 +146,13 @@ test("a wake-up that fails to fire is logged, frees its agent, and the next one 
   } finally {
     logWriter.write = write;
   }
-  assert.deepEqual(fake.calls, ["begin r_1", "end r_1", "begin r_2", "generate r_2 2"]);
+  assert.deepEqual(fake.calls, [
+    "begin r_1",
+    "end r_1",
+    "begin r_2",
+    "published r_2 3",
+    "generate r_2 2",
+  ]);
   assert.match(lines.join(""), /"operation":"wake.fire"/);
 });
 
@@ -172,21 +184,6 @@ test("the wake-up message carries when it was set, due and fired, its note, and 
     wake_id: "wk_1",
     reopened_run: true,
   });
-});
-
-test("a generation is reopened by a wake-up only when its wake-up message says so", () => {
-  const row = (generation: number, metadata: Record<string, unknown>) =>
-    ({ metadata: { generation, ...metadata } }) as unknown as Parameters<
-      typeof isReopenedByWake
-    >[0][number];
-  const rows = [
-    row(1, { source: "ui" }),
-    row(2, { source: "wake", wake_id: "wk_1", reopened_run: false }),
-    row(3, { source: "wake", wake_id: "wk_2", reopened_run: true }),
-  ];
-  assert.equal(isReopenedByWake(rows, 1), false);
-  assert.equal(isReopenedByWake(rows, 2), false);
-  assert.equal(isReopenedByWake(rows, 3), true);
 });
 
 test("the wake-ups left never go below none", () => {

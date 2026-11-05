@@ -18,7 +18,6 @@ import { harnessMissingError } from "../toolbox/harness-setup.js";
 import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js";
 import { isText } from "../toolbox/schema.js";
 import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
-import { isReopenedByWake } from "../wakes/message.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
@@ -68,11 +67,14 @@ export function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
 }
 
 /**
- * Whether the run completes when its generation ends: a schedule run does, and a group
- * continuation does, since the group delivery completes only the chain's first run. A resumed
- * run stays open.
+ * Whether the run completes when its generation `generation` ends: a run a wake-up reopened for
+ * that generation does, a schedule run does, and a group continuation does, since the group
+ * delivery completes only the chain's first run. A resumed run stays open.
  */
-function completesItself(run: RunRow): boolean {
+function completesAfter(run: RunRow, generation: number): boolean {
+  if (run.metadata.wake_reopened_generation === generation) {
+    return true;
+  }
   if (runWasResumed(run)) {
     return false;
   }
@@ -245,20 +247,9 @@ export class RunGenerator {
     if (cap !== null) {
       await wakes.cancelForCap(turn, cap);
     }
-    if (await this.completesAfter(finished, turn.generation)) {
+    if (completesAfter(finished, turn.generation)) {
       await db.completeRun(turn.runId, new Date());
     }
-  }
-
-  /**
-   * Whether the run completes when its generation `generation` ends: a run that completes
-   * itself does, and so does one a wake-up reopened for that generation.
-   */
-  private async completesAfter(run: RunRow, generation: number): Promise<boolean> {
-    if (completesItself(run)) {
-      return true;
-    }
-    return run.status === "active" && isReopenedByWake(await this.services.db.listMessages(run.id), generation);
   }
 
   /**

@@ -1,4 +1,3 @@
-import type { MessageRow } from "../db/runs.js";
 import type { UserMessage } from "../db/schema/index.js";
 import { iso, isoOrNull } from "../db/views.js";
 import type { RunWakeRow } from "../db/wakes.js";
@@ -36,14 +35,4 @@ export function wakeUserMessage(
     { role: "user", content: `${WAKE_PREFIX}${JSON.stringify(info, null, 2)}` },
     { generation, source: "wake", wake_id: wake.id, reopened_run: reopenedRun },
   ];
-}
-
-/** Whether the run's generation `generation` opened with a wake-up that reopened the run. */
-export function isReopenedByWake(rows: MessageRow[], generation: number): boolean {
-  return rows.some(
-    (row) =>
-      row.metadata.generation === generation &&
-      row.metadata.source === "wake" &&
-      row.metadata.reopened_run === true,
-  );
 }

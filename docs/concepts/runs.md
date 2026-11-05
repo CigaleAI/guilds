@@ -539,10 +539,14 @@ Each tick of the scheduler, before the due routines:
 5. It takes the agent's generation lock. A conflict leaves the
    wake-up due.
 6. In one transaction it marks the wake-up `fired`, sets a completed
-   run `active` without `metadata.resumed_at`, and appends the wake-up
-   message as the run's next generation. A wake-up no longer pending
-   by then appends nothing.
-7. It generates in the background, as an operator message does.
+   run `active` with `metadata.wake_reopened_generation` (the
+   generation it reopens the run for) and without
+   `metadata.resumed_at`, and appends the wake-up message as the run's
+   next generation. A wake-up no longer pending by then appends
+   nothing.
+7. It publishes the wake-up message on the run's stream as
+   `message.committed`, and generates in the background, as an
+   operator message does.
 
 The wake-up message is a user row, `metadata.source: "wake"`, with
 `wake_id` and `reopened_run` (whether it reopened a completed run):
@@ -563,8 +567,8 @@ wake-ups fired across its chain, this one included, and never below
 0. Tool results of earlier generations are stubbed as usual
 ([Stubbing rules](#stubbing-rules)).
 
-A generation whose wake-up message has `reopened_run` true completes
-the run when it ends, whatever its kind. A wake-up never stamps
+A run completes when the generation its
+`metadata.wake_reopened_generation` names ends, whatever its kind. A wake-up never stamps
 `metadata.resumed_at`, so a group or schedule run it reopens still
 refuses messages, and a completed group run it reopens completes
 without moving the agent's group cursor.

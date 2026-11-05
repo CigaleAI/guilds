@@ -483,13 +483,21 @@ export async function reopenRun(pool: Queryable, runId: string, now: Date): Prom
 }
 
 /**
- * Sets a completed run active for one wake-up generation, without stamping `resumed_at`, so the
- * run does not start taking operator messages; false when the run was not completed.
+ * Sets a completed run active for its wake-up generation `generation`, recorded as
+ * `metadata.wake_reopened_generation`, without stamping `resumed_at`, so the run does not start
+ * taking operator messages; false when the run was not completed.
  */
-export async function reopenForWake(pool: Queryable, runId: string, now: Date): Promise<boolean> {
+export async function reopenForWake(
+  pool: Queryable,
+  runId: string,
+  generation: number,
+  now: Date,
+): Promise<boolean> {
   const result = await pool.query(
-    `UPDATE runs SET status = 'active', updated_at = $2 WHERE id = $1 AND status = 'completed'`,
-    [runId, stamp(now)],
+    `UPDATE runs
+     SET status = 'active', metadata = metadata || $2::jsonb, updated_at = $3
+     WHERE id = $1 AND status = 'completed'`,
+    [runId, JSON.stringify({ wake_reopened_generation: generation }), stamp(now)],
   );
   return Boolean(result.rowCount);
 }

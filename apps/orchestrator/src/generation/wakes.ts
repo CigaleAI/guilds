@@ -190,27 +190,33 @@ export class RunWakes {
 
   /**
    * In one transaction: marks the wake-up fired, reopens the run when it is completed, and
-   * appends the wake-up message as the run's next generation. Returns that generation; null when
-   * the wake-up was no longer pending, and nothing is appended.
+   * appends the wake-up message as the run's next generation; once committed, the message is
+   * published to the run's subscribers. Returns that generation; null when the wake-up was no
+   * longer pending, and nothing is appended.
    */
-  private appendWake(run: RunRow, wakeId: string, now: Date): Promise<number | null> {
-    return this.services.db.wakeFiring(async (tx) => {
+  private async appendWake(run: RunRow, wakeId: string, now: Date): Promise<number | null> {
+    const appended = await this.services.db.wakeFiring(async (tx) => {
       const fired = await tx.markRunWakeFired(wakeId, now);
       if (fired === null) {
         return null;
       }
-      const reopened = await tx.reopenForWake(run.id, now);
       const generation = await tx.nextGeneration(run.id);
+      const reopened = await tx.reopenForWake(run.id, generation, now);
       const left = wakeUpsLeft(
         run.config_snapshot.max_wake_ups,
         await tx.countFiredRunWakes(fired.root_run_id),
       );
       const [payload, metadata] = wakeUserMessage(fired, left, generation, reopened);
-      await tx.insertMessage(
+      const message = await tx.insertMessage(
         { runId: run.id, seq: await tx.nextSeq(run.id), payload, metadata },
         now,
       );
-      return generation;
+      return { generation, message };
     });
+    if (appended === null) {
+      return null;
+    }
+    await this.services.events.publishCommitted(appended.message);
+    return appended.generation;
   }
 }

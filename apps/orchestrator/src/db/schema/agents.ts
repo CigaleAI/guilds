@@ -216,6 +216,8 @@ export type RunMetadata = {
   host_id?: string;
   harness_task?: RunHarnessTask;
   resumed_at?: string;
+  /** The generation a wake-up reopened the completed run for; the run completes again when it ends. */
+  wake_reopened_generation?: number;
   /** When the run first generated with the agent-optimized browser on and the System One key not set. */
   browse_integration_off_at?: string;
 };
