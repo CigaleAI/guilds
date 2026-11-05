@@ -125,6 +125,33 @@ flowchart LR
 The chain keeps the kind, the routine, or the group delivery of its
 first run. It holds at most five runs.
 
+### Wake-ups
+
+A wake-up brings a run back after a delay, in the same conversation.
+It belongs to one run, is due at a set time, and fires once. A run
+holds at most one pending wake-up. When it fires, the run takes one
+more generation that opens with a wake-up message, and the agent
+decides what to do next.
+
+The scheduler fires due wake-ups every 30 seconds, before it wakes
+due routines, so an agent goes back to work in progress before it
+starts new work. A wake-up whose agent is busy stays due for a later
+tick. Wake-ups are stored, so one that came due while the
+orchestrator was down fires on its first tick.
+
+| The run when the wake-up is due | What happens |
+| --- | --- |
+| open | the wake-up message starts the next generation |
+| completed at the end of its generation (a group chat or routine run), or because its model could not be called | the run reopens for the wake generation and completes again when it ends; it does not start taking messages |
+| continued in a new run after a hand-off | the wake-up moves to the latest run of the chain and fires there |
+| completed on its tool-call, input-token, or chain cap | the wake-up is cancelled, and the run records the error `wake.cancelled`, naming the cap |
+
+A run that ends on one of those caps cancels its pending wake-up as
+it ends. A wake generation is an ordinary generation: it counts
+toward the run's tool-call and input-token limits, starts the agent's
+machine when it is down, and starts the machine's idle timer again
+when it ends.
+
 ### Cancel, interrupt, resume
 
 - **Cancel** stops the current model call or tool command. A direct
@@ -194,6 +221,9 @@ An ended run shows a banner under the transcript:
 | Full tool results kept | the current turn only, by default |
 | Results never stubbed | under 2048 bytes |
 | Routine check | every 30 seconds |
+| Wake-up check | every 30 seconds, before the routines; a wake-up fires up to 30 seconds late |
+| Pending wake-ups | at most 1 per run |
+| Wake-up on a capped run | cancelled, with `wake.cancelled` recorded |
 | Coding run hand-off | at 70% of max input tokens |
 | Runs in a chain | at most 5 |
 | Images per message | at most 4, 10 MiB each, JPEG, PNG, GIF, or WebP |
@@ -221,7 +251,9 @@ chat** and `schedule` **Routine**.
 A direct run, or any run the operator has resumed, stays `active`
 after its generation. A group or schedule run becomes `completed`. Any
 run becomes `completed` when it ends on a limit, a hand-off, or a
-model it cannot call ([Generation](#generation)).
+model it cannot call ([Generation](#generation)). A completed run that
+a wake-up reopens becomes `completed` again after the wake generation
+([Wake-up rules](#wake-up-rules)).
 
 ### Opening rows
 
@@ -229,7 +261,8 @@ Row 0 is the composed system prompt. A direct run created with a
 message adds it as row 1. A group run adds one Group Chat info user
 message, and a schedule run one Schedule wake-up user message
 ([System prompt](system-prompt.md#the-runs-own-messages)). Later user
-messages append operator text only.
+messages append operator text, or a fired wake-up's message
+([Wake-up rules](#wake-up-rules)).
 
 ### Attachments
 
@@ -469,6 +502,68 @@ names the latest run of the chain. Cancelling the running continuation
 stops the chain. The run payload carries `chain` and
 `continued_by_run_id` when they are set.
 
+### Wake-up rules
+
+`run_wakes` holds a run's wake-ups: `id` (`wk_…`), `run_id`,
+`root_run_id` (the first run of the chain), `agent_id`, `due_at`,
+`message` (the agent's note, or null), `state` (`pending`, `fired`,
+or `cancelled`), `cancel_reason` (`replaced`, `agent`, `operator`, or
+`limit`, set only on a cancelled one), `set_tool_call_id`,
+`created_at`, and `fired_at` (set only on a fired one). A partial
+unique index keeps one pending wake-up per run. Deleting the run or
+the agent deletes its wake-ups.
+
+Each tick of the scheduler, before the due routines:
+
+1. It lists the pending wake-ups with `due_at` at or before now.
+2. It skips a wake-up whose agent is busy. It stays due.
+3. It loads the run. A run with `continued_by_run_id` hands the
+   wake-up to the latest run of its chain; when that run already has a
+   pending wake-up, this one is cancelled as `replaced`.
+4. A run that recorded `generation.max_tool_calls`,
+   `generation.max_input_tokens`, or `generation.max_chain` has its
+   wake-up cancelled as `limit`. The run records `wake.cancelled`,
+   whose message names the wake-up and the cap, and publishes it as
+   `run.error`.
+5. It takes the agent's generation lock. A conflict leaves the
+   wake-up due.
+6. In one transaction it marks the wake-up `fired`, sets a completed
+   run `active` without `metadata.resumed_at`, and appends the wake-up
+   message as the run's next generation. A wake-up no longer pending
+   by then appends nothing.
+7. It generates in the background, as an operator message does.
+
+The wake-up message is a user row, `metadata.source: "wake"`, with
+`wake_id` and `reopened_run` (whether it reopened a completed run):
+
+```text
+Wake-up: {
+  "id": "wk_…",
+  "set_at": "2026-11-05T14:02:11.204+00:00",
+  "due_at": "2026-11-05T14:12:11.204+00:00",
+  "fired_at": "2026-11-05T14:12:30.517+00:00",
+  "message": "Check deploy 4812 on the staging dashboard; if green, post the summary.",
+  "wake_ups_left": 7
+}
+```
+
+`wake_ups_left` is the run's snapshot `max_wake_ups` less the
+wake-ups fired across its chain, this one included, and never below
+0. Tool results of earlier generations are stubbed as usual
+([Stubbing rules](#stubbing-rules)).
+
+A generation whose wake-up message has `reopened_run` true completes
+the run when it ends, whatever its kind. A wake-up never stamps
+`metadata.resumed_at`, so a group or schedule run it reopens still
+refuses messages, and a completed group run it reopens completes
+without moving the agent's group cursor.
+
+When a run ends on `generation.max_tool_calls`,
+`generation.max_input_tokens`, or `generation.max_chain`, the
+generation cancels its pending wake-up as `limit` and records
+`wake.cancelled` as it ends. A hand-off moves the pending wake-up to
+the continuation as soon as the continuation is created.
+
 ### Streaming
 
 Committed assistant and tool rows are published over SSE after the
@@ -564,10 +659,16 @@ results.
   - `events.ts`: committed rows, run errors, and stream events
   - `run-secrets.ts`: the secrets of each generation
   - `chain.ts`: hand-offs and continuations
+  - `wakes.ts`: firing due wake-ups, and cancelling one on a capped run
+  - `caps.ts`: the caps a resume cannot lift and a wake-up does not
+    reopen
   - `workspace.ts`: the disk caps
   - `machines.ts` and `idle.ts`: machines, Chrome, the terminal, and
     idle timers
   - `operator.ts`: what the HTTP routes call
+- `apps/orchestrator/src/wakes/`: the wake-up message and the count of
+  wake-ups left
+- `apps/orchestrator/src/db/wakes.ts`: the wake-up store
 - `apps/orchestrator/src/conversation/projection.ts`: tool-result
   stubbing
 - `apps/orchestrator/src/attachments/`: uploads and image hydration

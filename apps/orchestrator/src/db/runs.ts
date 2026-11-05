@@ -482,6 +482,18 @@ export async function reopenRun(pool: Queryable, runId: string, now: Date): Prom
   );
 }
 
+/**
+ * Sets a completed run active for one wake-up generation, without stamping `resumed_at`, so the
+ * run does not start taking operator messages; false when the run was not completed.
+ */
+export async function reopenForWake(pool: Queryable, runId: string, now: Date): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE runs SET status = 'active', updated_at = $2 WHERE id = $1 AND status = 'completed'`,
+    [runId, stamp(now)],
+  );
+  return Boolean(result.rowCount);
+}
+
 export async function completeGroupDelivery(
   pool: Queryable,
   delivery: GroupDelivery,

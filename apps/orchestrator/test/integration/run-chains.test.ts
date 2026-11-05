@@ -26,6 +26,8 @@ import { codeDefaultMachine } from "../helpers/machines.js";
 import { getRun, listMessages, listRuns, mergeRunMetadata } from "../../src/db/runs.js";
 import { updateAgentConfig } from "../../src/db/agents.js";
 import { agentConfig } from "../helpers/generation.js";
+import { getPendingRunWake, setRunWake, type NewRunWake } from "../../src/db/wakes.js";
+import { newId } from "../../src/lib/ids.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -51,6 +53,19 @@ function script(reply: Reply) {
   return (async function* stream(options: { messages: Array<Record<string, unknown>> }) {
     yield ["done", completion(reply(options.messages))] as ["done", Completion];
   }) as unknown as typeof live.streamCompletion;
+}
+
+/** A wake-up of the run, due in an hour, so no tick fires it during the test. */
+function wakeOf(runId: string, agentId: string, rootRunId = runId): NewRunWake {
+  return {
+    wakeId: newId("wk"),
+    runId,
+    rootRunId,
+    agentId,
+    dueAt: new Date(Date.now() + 60 * 60_000),
+    message: "check the CI run",
+    setToolCallId: "call_wake",
+  };
 }
 
 const lastContent = (messages: Array<Record<string, unknown>>) => String(messages.at(-1)?.content ?? "");
@@ -146,10 +161,11 @@ test("a coding run near its input limit hands off and continues in a new run", {
       }
       return shellCall(`c${messages.length}`);
     });
-    const created = await loop.runs.createRun(agentId, "start the task");
-    const first = String(created.id);
+    const first = String((await loop.runs.createRun(agentId, null)).id);
+    const wake = await setRunWake(db, wakeOf(first, agentId), new Date());
     const continued: string[] = [];
     const queue = loop.events.subscribe(first);
+    await loop.addMessage(first, "start the task");
     await loop.generations.task(first);
     while (queue.size) {
       const [event, data] = await queue.get();
@@ -181,6 +197,10 @@ test("a coding run near its input limit hands off and continues in a new run", {
       handoff: "Goal: ship refunds. Done: tests. Remains: docs. See src/refund.ts:12.",
     });
     assert.equal((rowsB.at(-1)?.payload as Record<string, unknown>).content, "picked up");
+    const moved = await getPendingRunWake(db, second);
+    assert.equal(moved?.id, wake.wake.id, "the pending wake-up moves to the continuation");
+    assert.equal(moved?.root_run_id, first);
+    assert.equal(await getPendingRunWake(db, first), null);
     assert.equal(loop.isAgentBusy(agentId), false);
 
     const view = loop.runView(runB);
@@ -218,12 +238,20 @@ test("a coding run near its input limit hands off and continues in a new run", {
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
     const fifth = String((await loop.runs.createRun(agentId, null)).id);
     await mergeRunMetadata(db, fifth, { chain: { root_run_id: first, index: 5, previous_run_id: second } }, new Date());
+    const fifthWake = await setRunWake(db, wakeOf(fifth, agentId, first), new Date());
     await loop.addMessage(fifth, "go on");
     await loop.generations.task(fifth);
     const runE = (await getRun(db, fifth))!;
     assert.equal(runE.status, "completed");
     assert.equal((runE.metadata as Record<string, unknown>).continued_by_run_id, undefined);
-    assert.equal((runE.errors as Array<Record<string, unknown>>).at(-1)?.operation, "generation.max_chain");
+    assert.deepEqual(
+      runE.errors.slice(-2).map((entry) => entry.operation),
+      ["generation.max_chain", "wake.cancelled"],
+      "a run that ends on its chain cap cancels its pending wake-up",
+    );
+    assert.equal((await getPendingRunWake(db, fifth)), null);
+    const cancelled = await db.query<{ cancel_reason: string }>("SELECT cancel_reason FROM run_wakes WHERE id = $1", [fifthWake.wake.id]);
+    assert.equal(cancelled.rows[0]?.cancel_reason, "limit");
 
     // A group delivery completes, and its cursor advances, when the chain ends.
     live.streamCompletion = script((messages) => {

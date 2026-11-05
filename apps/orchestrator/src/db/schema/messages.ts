@@ -146,6 +146,10 @@ export type RunInputMetadata = {
   previous_run_id?: string;
   schedule_id?: string;
   instruction_hash?: string;
+  /** The wake-up a `wake` message fires. */
+  wake_id?: string;
+  /** Whether the wake-up reopened the run, which then completes again when its generation ends. */
+  reopened_run?: boolean;
   group_message_id?: number;
   group_seq?: number;
   author_type?: string;

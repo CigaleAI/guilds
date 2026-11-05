@@ -50,6 +50,7 @@ import {
 import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
 import { Runs, runsDatabase } from "./runs.js";
 import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
+import { RunWakes, runWakesDatabase } from "./wakes.js";
 import { toolServices, type ToolServices } from "../toolbox/services.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
@@ -94,6 +95,7 @@ function generationDatabase(db: Queryable) {
     ...runSecretsDatabase(db),
     ...runsDatabase(db),
     ...runChainsDatabase(db),
+    ...runWakesDatabase(db),
     ...runGeneratorDatabase(db),
     ...loopDatabase(db),
   };
@@ -175,6 +177,7 @@ export class GenerationLoop implements GroupRunner {
   chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
+  wakes: RunWakes;
   constructor(services: GenerationLoopDeps, timings: GenerationLoopTimings = LOOP_TIMINGS) {
     const { db, notes, workspaceRoot, sandboxes } = services;
     this.db = db;
@@ -225,6 +228,7 @@ export class GenerationLoop implements GroupRunner {
       coding: this.coding,
       tools,
     });
+    this.wakes = new RunWakes({ db, events: this.events, generations: this.generations, starter: this });
     this.runs = new Runs(
       {
         db,
@@ -232,6 +236,7 @@ export class GenerationLoop implements GroupRunner {
         generations: this.generations,
         schedules: this.schedules,
         starter: this,
+        wakes: this.wakes,
       },
       timings.schedulerTickMs,
     );
@@ -249,6 +254,7 @@ export class GenerationLoop implements GroupRunner {
       secrets: this.secrets,
       chains: this.chains,
       starter: this,
+      wakes: this.wakes,
     });
   }
 

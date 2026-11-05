@@ -64,6 +64,11 @@ and records the fire as its last wake, even when no run could be
 created (broken prompts, an unusable agent). So one broken agent does
 not retry in a tight loop.
 
+The same tick fires the due wake-ups of runs first
+([Runs](runs.md#wake-ups)). An agent a wake-up sets generating is
+busy, so its due routine waits for a later tick. The guild's routine
+switch holds routines only: a wake-up still fires while it is off.
+
 ### Pausing
 
 Each routine can be paused on its own. A paused routine never fires.
@@ -241,7 +246,9 @@ are in [Artifacts](artifacts.md#configuration-change-log).
 ### Firing
 
 `fireDueSchedules` (`apps/orchestrator/src/generation/runs.ts`) runs
-on each tick. The scheduler waits `schedulerTickMs` between ticks:
+on each tick, after `fireDueWakes`
+(`apps/orchestrator/src/generation/wakes.ts`,
+[Wake-up rules](runs.md#wake-up-rules)). The scheduler waits `schedulerTickMs` between ticks:
 30 seconds, set in `LOOP_TIMINGS`
 (`apps/orchestrator/src/generation/index.ts`), with no setting in
 `.env`. It skips a busy agent and

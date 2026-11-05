@@ -33,6 +33,7 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | [Group run](concepts/runs.md#three-kinds-of-run) | One wake-up from the group chat. One generation, then the run completes. |
 | [Routine run](concepts/runs.md#three-kinds-of-run) | One wake-up from a routine. One generation, then the run completes. In code it is a schedule run. |
 | [Routine](concepts/routines.md) | A schedule that wakes an agent with a standing instruction. In code a routine is a schedule. |
+| [Wake-up](concepts/runs.md#wake-ups) | A run's return after a delay: it fires once and opens one more generation of the same run. A routine starts a new run on a schedule instead. In code it is a run wake. |
 | [Group chat](concepts/group-chat.md) | The conversation a guild's agents and operators share. |
 | [Task](concepts/task.md) | The operator's standing purpose for an agent, composed into every run. |
 | [System prompt](concepts/system-prompt.md) | What a run starts from: the Guidelines, the Task, Memory, and a snapshot of the guild. |

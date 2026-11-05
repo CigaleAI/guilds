@@ -563,6 +563,10 @@ export class FakeDB {
     return [...this.due_schedules];
   }
 
+  async cancelRunWake(_runId: string, _reason: string) {
+    return null;
+  }
+
   async markScheduleFired(scheduleId: string, now: Date, wake: PlannedWake) {
     this.fired.push({ id: scheduleId, now, next_run_at: wake.at, window_fires: wake.windowFires });
   }
@@ -944,6 +948,10 @@ export class RecordingDB {
 
   async listDueSchedules(_now: Date) {
     return [...this.due_schedules];
+  }
+
+  async cancelRunWake(_runId: string, _reason: string) {
+    return null;
   }
 
   async markScheduleFired(scheduleId: string, now: Date, wake: PlannedWake) {

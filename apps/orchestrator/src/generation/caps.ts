@@ -8,7 +8,7 @@ const TERMINAL_CAP_OPERATIONS = new Set([
 
 /**
  * The cap the run ended on for good: its tool-call, input-token, or chain cap, which a resume
- * cannot lift. Null when it ended on none of them.
+ * cannot lift and a wake-up does not reopen. Null when it ended on none of them.
  */
 export function terminalCapOf(run: Pick<RunRow, "errors">): string | null {
   return (

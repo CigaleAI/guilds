@@ -2,6 +2,7 @@ import { getAgent } from "../db/agents.js";
 import type { AssistantMessage } from "../db/schema/index.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { completeRun, getRun, listMessages, mergeRunMetadata, type RunMessage, type RunRow } from "../db/runs.js";
+import { movePendingRunWake } from "../db/wakes.js";
 import type { Completion } from "../llm/completion.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/tokens.js";
 import { remainingAfter, stampToolResult } from "../toolbox/index.js";
@@ -71,6 +72,7 @@ export type RunChainsDatabase = {
   listMessages: BoundQuery<typeof listMessages>;
   mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
   completeRun: BoundQuery<typeof completeRun>;
+  movePendingRunWake: BoundQuery<typeof movePendingRunWake>;
 };
 
 /** The db/ functions a chain is followed and handed off through, on `db`. */
@@ -81,6 +83,7 @@ export function runChainsDatabase(db: Queryable): RunChainsDatabase {
     listMessages: bindQuery(db, listMessages),
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
     completeRun: bindQuery(db, completeRun),
+    movePendingRunWake: bindQuery(db, movePendingRunWake),
   };
 }
 
@@ -134,7 +137,8 @@ export class RunChains {
   /**
    * A coding run's prompt reached the hand-off share of its input limit: the agent is asked
    * for a hand-off, given one step, and the run continues in a new one of the same kind.
-   * The fifth run of a chain completes with `generation.max_chain` instead.
+   * The run's pending wake-up moves to the continuation. The fifth run of a chain completes with
+   * `generation.max_chain` instead.
    */
   async handOff(gen: Generation, tools: GenerationTools): Promise<void> {
     const { db, events, runs } = this.services;
@@ -162,6 +166,7 @@ export class RunChains {
       await events.recordError(gen, "generation.continue", error);
       return;
     }
+    await db.movePendingRunWake(gen.runId, next);
     await db.mergeRunMetadata(gen.runId, { continued_by_run_id: next }, new Date());
     await db.completeRun(gen.runId, new Date());
     this.continuations.set(gen.runId, next);
