@@ -128,8 +128,13 @@ first run. It holds at most five runs.
 ### Wake-ups
 
 A wake-up brings a run back after a delay, in the same conversation.
-It belongs to one run, is due at a set time, and fires once. A run
-holds at most one pending wake-up. When it fires, the run takes one
+The agent sets one with `wake_after`, a delay of 1 to 360 minutes, and
+an optional note to itself, and cancels it with `wake_cancel`
+([Native tools](../tools-and-connectors/native.md#wake-ups)). It
+belongs to one run, is due at a set time, and fires once. A run holds
+at most one pending wake-up; setting another replaces it. A run fires
+at most `max_wake_ups` wake-ups, 10 by default, counted across its
+chain. When it fires, the run takes one
 more generation that opens with a wake-up message, and the agent
 decides what to do next.
 
@@ -222,7 +227,11 @@ An ended run shows a banner under the transcript:
 | Results never stubbed | under 2048 bytes |
 | Routine check | every 30 seconds |
 | Wake-up check | every 30 seconds, before the routines; a wake-up fires up to 30 seconds late |
-| Pending wake-ups | at most 1 per run |
+| Pending wake-ups | at most 1 per run; a new one replaces it |
+| Wake-up delay | 1 to 360 minutes, whole |
+| Wake-up note | optional, trimmed, at most 1000 characters |
+| Wake-ups per run | `max_wake_ups`, counted over fired wake-ups across the chain |
+| Operator message before a wake-up is due | the wake-up stays pending and fires at its time |
 | Wake-up on a capped run | cancelled, with `wake.cancelled` recorded |
 | Coding run hand-off | at 70% of max input tokens |
 | Runs in a chain | at most 5 |
@@ -338,7 +347,8 @@ and the `scripts` ([Scripts](scripts.md#snapshot)).
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `max_wake_ups`, `keep_tool_result_generations`,
 `projection_policy_version`, and `thinking_level`. `max_wake_ups` is
-the most wake-ups the run may fire.
+the most wake-ups the run may fire, counted over the fired wake-ups of
+its chain; `wake_after` is refused past it.
 
 Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
 `harness` is a coding agent's harness or null, `harness_model` the
@@ -357,6 +367,7 @@ The complete tool schemas offered to the model:
 - the seven schedule tools, when bound, on direct and group chat
   runs;
 - `group_post` when that binding is on;
+- `wake_after` and `wake_cancel` when bound, on every kind of run;
 - the browser tools of its mode when `browser` is true: the eight
   step-by-step tools, or `browse` and `browser_eval` while
   `browser_optimized` and the System One platform key are on;
@@ -666,8 +677,11 @@ results.
   - `machines.ts` and `idle.ts`: machines, Chrome, the terminal, and
     idle timers
   - `operator.ts`: what the HTTP routes call
-- `apps/orchestrator/src/wakes/`: the wake-up message and the count of
-  wake-ups left
+- `apps/orchestrator/src/wakes/`: the wake-up message, the count of
+  wake-ups left, the delay and note rules, and setting and cancelling a
+  wake-up
+- `apps/orchestrator/src/toolbox/wake.ts`: `wake_after` and
+  `wake_cancel`
 - `apps/orchestrator/src/db/wakes.ts`: the wake-up store
 - `apps/orchestrator/src/conversation/projection.ts`: tool-result
   stubbing

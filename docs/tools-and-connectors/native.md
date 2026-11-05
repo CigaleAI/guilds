@@ -261,6 +261,34 @@ Seven tools manage the agent's own schedules
   the schedule and passed on the wake-up message.
 - An argument of the wrong type is refused, and nothing is written.
 
+## Wake-ups
+
+Two tools let the agent come back to the same run later
+([Runs](../concepts/runs.md#wake-ups)). They are on by default and
+offered in every kind of run. The operator turns them off like any
+other native tool.
+
+| Tool | Parameters | Does |
+|---|---|---|
+| `wake_after` | `minutes` (required), `message` | Sets the run's wake-up `minutes` from now, replacing a pending one. Answers `set <id>, due <time>`, `replaced: <id>` or `replaced: none`, and `wake_ups_left: N`, the wake-ups the run has left once this one fires |
+| `wake_cancel` | none | Cancels the run's pending wake-up: `cancelled <id>`, or `no pending wake-up` |
+
+- `minutes` is a whole number from 1 to 360.
+- `message` is the agent's note to itself, trimmed, at most 1,000
+  characters. A blank one is no note.
+- `wake_after` is refused, and nothing is set, when the wake-ups fired
+  across the run's chain reached the run's `max_wake_ups`:
+  `ERROR: this run has no wake-ups left: it fired the N it may`.
+- A delay or a note out of bounds is refused, and nothing is set.
+- The tool's description tells the agent what it is for: coming back
+  to the result of a long process that finishes on its own, such as a
+  CI run, a deploy, or an export, and not pausing or pacing ordinary
+  work. It asks for a note that says what to check and where, since
+  earlier tool results are stubbed by then; a delay under 5 minutes to
+  check a background command, since processes on the machine end 5
+  minutes after the last generation; and a routine for work on a
+  clock.
+
 ## Scripts
 
 Five tools manage the agent's Python scripts

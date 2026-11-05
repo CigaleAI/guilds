@@ -502,6 +502,7 @@ export class RunGenerator {
     const seat = agentSeat(agent);
     return createToolRun({
       run_id: runId,
+      chain_root_run_id: chainOf(gen.run).root_run_id,
       agent_id: agent.id,
       guild_id: agent.guild_id,
       sandbox: sandboxes.agent,
@@ -521,6 +522,7 @@ export class RunGenerator {
       memory_replaced_by: await memoryReplacedBy(db, gen.run),
       run_scripts: offer.scripts,
       max_scripts: agent.config.max_scripts,
+      max_wake_ups: snapshot.max_wake_ups,
       dynamic_tools: offer.names.has("script_run") ? dynamicScriptTools(offer.scripts) : {},
       connection_tool_names: [...offer.connections.keys()],
       offered_tools: offer.names,

@@ -1048,6 +1048,8 @@ describe("generation", { concurrency: 1 }, () => {
       "secret_store",
       "secret_request",
       "group_post",
+      "wake_after",
+      "wake_cancel",
       "report_issue",
     ]);
     const state = parsedState(String(db.create_args?.system_content));

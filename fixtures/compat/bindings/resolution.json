@@ -85,7 +85,9 @@
     "schedule_delete",
     "secret_store",
     "secret_request",
-    "group_post"
+    "group_post",
+    "wake_after",
+    "wake_cancel"
   ],
   "visibility": {
     "platform_on_agent": true,

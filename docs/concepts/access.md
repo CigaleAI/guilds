@@ -466,6 +466,7 @@ absent, enable:
 - `secret_store`
 - `secret_request`
 - `group_post`
+- the wake-up tools (`wake_after`, `wake_cancel`)
 
 `report_issue` and the browser tools, `browse` among them, are never
 bindings; a binding on one is 422 `NAME is not a binding`. The code tools are not

@@ -18,6 +18,22 @@ unchanged.
 while the Inbox has an open issue or an unread tag, and turns plain
 again once it has none.
 
+**Rebuild.** An agent can ask to come back to the same run later:
+`wake_after` sets the run's wake-up 1 to 360 minutes ahead, with an
+optional note of at most 1,000 characters, and replaces a pending one;
+`wake_cancel` cancels it. Both are native tools bound at the platform
+at boot, so every agent has them in every kind of run until an
+operator turns them off; runs already open keep their tools. The
+scheduler fires due wake-ups every 30 seconds, before routines: the
+run takes one more generation that opens with a `Wake-up:` message. A
+completed group chat or routine run, or one completed because its
+model could not be called, reopens for that generation and completes
+again, still refusing messages; a run continued after a hand-off wakes
+in the chain's latest run. A run that ends on its tool-call,
+input-token, or chain cap cancels its pending wake-up and records
+`wake.cancelled`. `wake_after` is refused once the run's chain fired
+`max_wake_ups` wake-ups.
+
 **Rebuild.** Agent configs and run snapshots gain `max_wake_ups`, the
 most wake-ups a run may fire: a whole number of 1 or more, 10 by
 default for every agent; a migration fills it in. Settings shows

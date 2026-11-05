@@ -1064,6 +1064,7 @@ export function makeLoop(
     db: db as ToolboxDatabase,
     events,
     browse: null,
+    wakes: null,
   };
   const loop: GenerationLoop = new GenerationLoop(
     {

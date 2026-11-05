@@ -31,6 +31,7 @@ import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { agentSchedules, type Schedules } from "../schedules/service.js";
 import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/group.js";
+import { agentWakes } from "../wakes/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
@@ -609,6 +610,7 @@ export function generationLoop(
     scripts,
     events,
     browse: browseService(db, credentials, events),
+    wakes: agentWakes(db),
   });
   const loop = new GenerationLoop(
     {

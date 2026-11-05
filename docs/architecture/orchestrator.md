@@ -899,8 +899,8 @@ before the machine is woken; once the workspace check passes,
 `harness.credential`, or `harness.check`; then the repositories are
 prepared. All of them run before the model is called
 ([Runs](../concepts/runs.md#generation)).
-`group_post` is offered when that binding is on. `secret_request`
-is offered only on direct runs. `report_issue` is always offered.
+`group_post`, `wake_after`, and `wake_cancel` are offered when their
+binding is on. `secret_request` is offered only on direct runs. `report_issue` is always offered.
 
 Tool output: custom filter, exact-value secret redaction, byte cap,
 then `remaining_tool_calls: N`. Official tool HTTP clients go

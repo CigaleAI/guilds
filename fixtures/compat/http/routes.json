@@ -1310,6 +1310,18 @@
                 "enabled": true,
                 "source_scope": "platform",
                 "overlay": null
+              },
+              {
+                "name": "wake_after",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
+              },
+              {
+                "name": "wake_cancel",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
               }
             ],
             "mcp": [
@@ -3610,6 +3622,18 @@
                 "enabled": true,
                 "source_scope": "platform",
                 "overlay": null
+              },
+              {
+                "name": "wake_after",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
+              },
+              {
+                "name": "wake_cancel",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
               }
             ],
             "mcp": [
@@ -5907,6 +5931,18 @@
               },
               {
                 "name": "group_post",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
+              },
+              {
+                "name": "wake_after",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
+              },
+              {
+                "name": "wake_cancel",
                 "enabled": true,
                 "source_scope": "platform",
                 "overlay": null
@@ -8266,6 +8302,18 @@
                 "enabled": true,
                 "source_scope": "platform",
                 "overlay": null
+              },
+              {
+                "name": "wake_after",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
+              },
+              {
+                "name": "wake_cancel",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
               }
             ],
             "mcp": [
@@ -10563,6 +10611,18 @@
               },
               {
                 "name": "group_post",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
+              },
+              {
+                "name": "wake_after",
+                "enabled": true,
+                "source_scope": "platform",
+                "overlay": null
+              },
+              {
+                "name": "wake_cancel",
                 "enabled": true,
                 "source_scope": "platform",
                 "overlay": null
@@ -14225,6 +14285,44 @@
               {
                 "type": "function",
                 "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
                   "name": "report_issue",
                   "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
                   "parameters": {
@@ -15037,6 +15135,44 @@
                     "required": [
                       "content"
                     ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                   }
                 }
               },
@@ -15950,6 +16086,44 @@
               {
                 "type": "function",
                 "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
                   "name": "report_issue",
                   "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
                   "parameters": {
@@ -16762,6 +16936,44 @@
                     "required": [
                       "content"
                     ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                   }
                 }
               },
@@ -17588,6 +17800,44 @@
               {
                 "type": "function",
                 "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
                   "name": "report_issue",
                   "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
                   "parameters": {
@@ -18171,6 +18421,22 @@
             },
             {
               "name": "group_post",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": {
+                "enabled": true
+              }
+            },
+            {
+              "name": "wake_after",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": {
+                "enabled": true
+              }
+            },
+            {
+              "name": "wake_cancel",
               "enabled": true,
               "source_scope": "platform",
               "overlay": {
@@ -20415,6 +20681,18 @@
               "enabled": true,
               "source_scope": "platform",
               "overlay": null
+            },
+            {
+              "name": "wake_after",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": null
+            },
+            {
+              "name": "wake_cancel",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": null
             }
           ],
           "mcp": [
@@ -22654,6 +22932,18 @@
               "enabled": true,
               "source_scope": "platform",
               "overlay": null
+            },
+            {
+              "name": "wake_after",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": null
+            },
+            {
+              "name": "wake_cancel",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": null
             }
           ],
           "mcp": [
@@ -24890,6 +25180,18 @@
             },
             {
               "name": "group_post",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": null
+            },
+            {
+              "name": "wake_after",
+              "enabled": true,
+              "source_scope": "platform",
+              "overlay": null
+            },
+            {
+              "name": "wake_cancel",
               "enabled": true,
               "source_scope": "platform",
               "overlay": null
@@ -29057,6 +29359,44 @@
               {
                 "type": "function",
                 "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
                   "name": "report_issue",
                   "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
                   "parameters": {
@@ -29877,6 +30217,44 @@
               {
                 "type": "function",
                 "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
                   "name": "report_issue",
                   "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
                   "parameters": {
@@ -30689,6 +31067,44 @@
                     "required": [
                       "content"
                     ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                   }
                 }
               },
@@ -31515,6 +31931,44 @@
               {
                 "type": "function",
                 "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
                   "name": "report_issue",
                   "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
                   "parameters": {
@@ -32327,6 +32781,44 @@
                     "required": [
                       "content"
                     ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                   }
                 }
               },
@@ -33336,6 +33828,44 @@
                     "required": [
                       "content"
                     ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_after",
+                  "description": "Come back to the result of a long process that finishes on its own, such as a CI run, a deploy, or an export: this run takes one more turn after `minutes`, opening with a Wake-up message, and you decide then what to do. It is for waiting on an outcome you cannot get by working, not a way to pause or to pace ordinary work. The run has one pending wake-up; setting another replaces it. Write in message what to check and where, because earlier tool results are stubbed by the time you wake. Processes on your machine end 5 minutes after your last turn, so check a background command with a delay under 5 minutes. For work that repeats on a clock, a routine is the right tool. Refused when the run has no wake-ups left.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "minutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 360,
+                        "description": "whole minutes from now, 1 to 360"
+                      },
+                      "message": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "optional note to yourself: what to check and where, at most 1000 characters"
+                      }
+                    },
+                    "required": [
+                      "minutes"
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "function",
+                "function": {
+                  "name": "wake_cancel",
+                  "description": "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                   }
                 }
               },
