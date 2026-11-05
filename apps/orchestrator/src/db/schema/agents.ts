@@ -1,4 +1,4 @@
-/** Agents, their runs and messages, the guild group chat, routines, and issues. */
+/** Agents, their runs, messages and wake-ups, the guild group chat, routines, and issues. */
 import {
   bigint,
   boolean,
@@ -14,6 +14,7 @@ import {
   primaryKey,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { Type, type Static } from "typebox";
 import { sql } from "drizzle-orm";
@@ -440,6 +441,53 @@ export const schedules = pgTable(
     }).onDelete("cascade"),
     index("schedules_by_agent").on(table.agent_id, table.created_at),
     index("schedules_due").on(table.next_run_at),
+  ],
+);
+
+export const runWakes = pgTable(
+  "run_wakes",
+  {
+    id: text("id").primaryKey(),
+    run_id: text("run_id").notNull(),
+    root_run_id: text("root_run_id").notNull(),
+    agent_id: text("agent_id").notNull(),
+    due_at: timestamptz("due_at").notNull(),
+    message: text("message"),
+    state: text("state", { enum: ["pending", "fired", "cancelled"] }).notNull(),
+    cancel_reason: text("cancel_reason", { enum: ["replaced", "agent", "operator", "limit"] }),
+    set_tool_call_id: text("set_tool_call_id").notNull(),
+    created_at: timestamptz("created_at").notNull(),
+    fired_at: timestamptz("fired_at"),
+  },
+  (table) => [
+    check("run_wakes_state_check", sql`${table.state} IN ('pending', 'fired', 'cancelled')`),
+    check(
+      "run_wakes_cancel_reason_check",
+      sql`${table.cancel_reason} IN ('replaced', 'agent', 'operator', 'limit')`,
+    ),
+    check(
+      "run_wakes_cancelled_has_reason",
+      sql`(${table.state} = 'cancelled') = (${table.cancel_reason} IS NOT NULL)`,
+    ),
+    check(
+      "run_wakes_fired_has_time",
+      sql`(${table.state} = 'fired') = (${table.fired_at} IS NOT NULL)`,
+    ),
+    foreignKey({
+      columns: [table.run_id],
+      foreignColumns: [runs.id],
+      name: "run_wakes_run_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.agent_id],
+      foreignColumns: [agents.id],
+      name: "run_wakes_agent_id_fkey",
+    }).onDelete("cascade"),
+    uniqueIndex("run_wakes_one_pending")
+      .on(table.run_id)
+      .where(sql`${table.state} = 'pending'`),
+    index("run_wakes_due").on(table.due_at).where(sql`${table.state} = 'pending'`),
+    index("run_wakes_by_root").on(table.root_run_id, table.state),
   ],
 );
 

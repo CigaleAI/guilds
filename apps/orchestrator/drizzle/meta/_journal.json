@@ -148,6 +148,13 @@
       "when": 1791950400000,
       "tag": "0021_home_guild",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791954000000,
+      "tag": "0022_run_wakes",
+      "breakpoints": true
     }
   ]
 }

@@ -525,6 +525,7 @@ Core's tables:
 - agents
 - runs
 - messages
+- run_wakes
 - group_messages
 - group_chat_reads
 - schedules

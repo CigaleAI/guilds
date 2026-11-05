@@ -134,8 +134,8 @@ export type ReportedToolMetadata = {
   browser_usage?: BrowserUsageMetadata;
 };
 
-/** Where a run's opening or operator message came from. */
-export type RunMessageSource = "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff";
+/** Where a run's system or user message came from. */
+export type RunMessageSource = "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff" | "wake";
 
 /** What a run's system or user message records about where it came from. */
 export type RunInputMetadata = {
