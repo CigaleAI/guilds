@@ -34,7 +34,7 @@ import { defaultGroupRouter } from "../typesafe/group.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
-import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";
+import { continuedBy, latestInChain, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
 import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
@@ -391,7 +391,7 @@ export class GenerationLoop implements GroupRunner {
     }
     const next = continuedBy(run);
     if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await this.chains.latestInChain(next)}`);
+      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}`);
     }
     if (terminalCapOf(run) !== null) {
       throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
@@ -440,7 +440,7 @@ export class GenerationLoop implements GroupRunner {
     }
     const next = continuedBy(run);
     if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await this.chains.latestInChain(next)}; send the message there`);
+      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}; send the message there`);
     }
     if (run.status !== "active") {
       throw new RunRequestError(409, "this run has ended; resume it to continue");

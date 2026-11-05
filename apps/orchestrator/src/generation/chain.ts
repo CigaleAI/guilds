@@ -84,6 +84,20 @@ export function runChainsDatabase(db: Queryable): RunChainsDatabase {
   };
 }
 
+/** The last run of the chain that `runId` belongs to, following each continuation. */
+export async function latestInChain(db: Pick<RunChainsDatabase, "getRun">, runId: string): Promise<string> {
+  let current = runId;
+  for (let hop = 0; hop < MAX_CHAIN_RUNS; hop += 1) {
+    const row = await db.getRun(current);
+    const next = row ? continuedBy(row) : null;
+    if (next === null) {
+      return current;
+    }
+    current = next;
+  }
+  return current;
+}
+
 /** Completes the run unless it already ended. */
 export async function completeIfActive(
   db: Pick<RunChainsDatabase, "getRun" | "completeRun">,
@@ -103,7 +117,7 @@ export type RunChainsServices = {
   runs: Pick<Runs, "createContinuation">;
 };
 
-/** The run chains of a loop: each hand-off, the continuation it creates, and the way to a chain's last run. */
+/** The run chains of a loop: each hand-off, and the continuation it creates. */
 export class RunChains {
   /** A run that handed off, to the run that continues it once its generation ends. */
   private readonly continuations = new Map<string, string>();
@@ -115,20 +129,6 @@ export class RunChains {
     const next = this.continuations.get(runId) ?? null;
     this.continuations.delete(runId);
     return next;
-  }
-
-  /** The last run of the chain that `runId` belongs to, following each continuation. */
-  async latestInChain(runId: string): Promise<string> {
-    let current = runId;
-    for (let hop = 0; hop < MAX_CHAIN_RUNS; hop += 1) {
-      const row = await this.services.db.getRun(current);
-      const next = row ? continuedBy(row) : null;
-      if (next === null) {
-        return current;
-      }
-      current = next;
-    }
-    return current;
   }
 
   /**
