@@ -8,6 +8,7 @@ export const CONFIG_KEYS = new Set([
   "max_steps",
   "max_tool_calls",
   "max_input_tokens",
+  "max_wake_ups",
   "keep_tool_result_generations",
   "max_scripts",
   "max_workspace_mib",
@@ -29,6 +30,8 @@ export const DEFAULT_MAX_TOKENS = 8192;
 export const DEFAULT_MAX_STEPS = 30;
 export const DEFAULT_MAX_TOOL_CALLS = 50;
 export const DEFAULT_MAX_INPUT_TOKENS = 100_000;
+/** The most wake-ups a run may fire, for every agent, coding or not. */
+export const DEFAULT_MAX_WAKE_UPS = 10;
 /** How many user turns, including the current one, keep full tool results in the model prompt. */
 export const DEFAULT_KEEP_TOOL_RESULT_GENERATIONS = 1;
 export const DEFAULT_MAX_SCRIPTS = 10;
@@ -108,6 +111,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
   max_steps: DEFAULT_MAX_STEPS,
   max_tool_calls: DEFAULT_MAX_TOOL_CALLS,
   max_input_tokens: DEFAULT_MAX_INPUT_TOKENS,
+  max_wake_ups: DEFAULT_MAX_WAKE_UPS,
   keep_tool_result_generations: DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
   max_scripts: DEFAULT_MAX_SCRIPTS,
   max_workspace_mib: DEFAULT_MAX_WORKSPACE_MIB,

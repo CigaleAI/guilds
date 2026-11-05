@@ -134,8 +134,8 @@ export type ReportedToolMetadata = {
   browser_usage?: BrowserUsageMetadata;
 };
 
-/** Where a run's opening or operator message came from. */
-export type RunMessageSource = "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff";
+/** Where a run's system or user message came from. */
+export type RunMessageSource = "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff" | "wake";
 
 /** What a run's system or user message records about where it came from. */
 export type RunInputMetadata = {
@@ -146,6 +146,10 @@ export type RunInputMetadata = {
   previous_run_id?: string;
   schedule_id?: string;
   instruction_hash?: string;
+  /** The wake-up a `wake` message fires. */
+  wake_id?: string;
+  /** Whether the wake-up reopened the run, which then completes again when its generation ends. */
+  reopened_run?: boolean;
   group_message_id?: number;
   group_seq?: number;
   author_type?: string;

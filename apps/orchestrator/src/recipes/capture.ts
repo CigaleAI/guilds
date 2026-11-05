@@ -130,6 +130,7 @@ export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
     max_steps: config.max_steps,
     max_tool_calls: config.max_tool_calls,
     max_input_tokens: config.max_input_tokens,
+    max_wake_ups: config.max_wake_ups,
     keep_tool_result_generations: config.keep_tool_result_generations,
     max_scripts: config.max_scripts,
     max_workspace_mib: config.max_workspace_mib,

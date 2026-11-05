@@ -34,6 +34,8 @@ export const SCHEDULE_TOOLS = [
   "schedule_delete",
 ] as const;
 
+export const WAKE_TOOLS = ["wake_after", "wake_cancel"] as const;
+
 // secret_request is offered on direct runs only; the operator answers it in that chat.
 export const SECRET_TOOLS = ["secret_store", "secret_request"] as const;
 
@@ -43,6 +45,7 @@ export const NATIVE_TOOLS = [
   ...SCHEDULE_TOOLS,
   ...SECRET_TOOLS,
   "group_post",
+  ...WAKE_TOOLS,
 ] as const;
 
 export const DROPPED_NATIVE_TOOLS = [
@@ -74,6 +77,7 @@ export const PLATFORM_NATIVE_TOOLS = [
   "memory_write",
   ...SECRET_TOOLS,
   "group_post",
+  ...WAKE_TOOLS,
 ] as const;
 
 /** Core's connectors as the seed installs them. */

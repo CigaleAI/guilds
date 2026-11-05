@@ -7,6 +7,7 @@ import type { Issues } from "../issues/index.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { Wakes } from "../wakes/service.js";
 import type { JsonObject } from "../lib/json.js";
 import type { ToolArtifacts } from "./artifacts.js";
 import type { GroupChat } from "./types.js";
@@ -27,6 +28,8 @@ export type ToolServices = {
   events: ToolEvents | null;
   /** Runs `browse` calls on the agent-optimized browser. */
   browse: BrowseService | null;
+  /** Sets and cancels the run's wake-up. */
+  wakes: Wakes | null;
 };
 
 /** The db/ functions the tools keep their run's state and its agent's harness logins through. */

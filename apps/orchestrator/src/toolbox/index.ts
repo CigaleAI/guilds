@@ -24,6 +24,7 @@ import { reportIssue } from "./report.js";
 import { scheduleCreateCron, scheduleCreateWindow, scheduleDelete, scheduleList, schedulePause, scheduleResume, scheduleUpdate } from "./schedule.js";
 import { scriptCreate, scriptDelete, scriptList, scriptRead, scriptRun } from "./script.js";
 import { secretRequest, secretStore } from "./secret.js";
+import { wakeAfter, wakeCancel } from "./wake.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import type { ToolServices } from "./services.js";
 import type { Tool, ToolHooks, ToolInvocation, ToolRun, ToolsByName } from "./types.js";
@@ -79,6 +80,8 @@ register(codeSearch);
 register(codeTask);
 register(secretStore);
 register(secretRequest);
+register(wakeAfter);
+register(wakeCancel);
 
 export const NATIVE_TOOL_NAMES = Object.freeze(Object.keys(REGISTRY));
 

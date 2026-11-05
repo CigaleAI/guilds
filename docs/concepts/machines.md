@@ -415,7 +415,9 @@ then the agent's home.
   once every 30 seconds.
 - When the timer fires with no agent on the machine generating, the
   orchestrator destroys the container and leaves the machine's
-  directory in place.
+  directory in place. A pending wake-up of a run does not keep it up;
+  the wake generation starts the container again
+  ([Runs](runs.md#wake-ups)).
 - On orchestrator startup, every running machine container on which
   no agent generates gets the same timer.
 - A change of the machine's tier or size destroys an idle container at

@@ -41,6 +41,7 @@ test("a coding problem is fixed under Harness, or under Repositories when the gu
 
 test("a section has errors when one of its fields does", () => {
   assert.equal(sectionHasErrors(sectionErrors.model, { max_steps: "bad" }), true);
+  assert.equal(sectionHasErrors(sectionErrors.model, { max_wake_ups: "bad" }), true);
   assert.equal(sectionHasErrors(sectionErrors.machine, { max_steps: "bad" }), false);
   assert.equal(sectionHasErrors(sectionErrors.harness, { harness: "bad" }), true);
   assert.equal(sectionHasErrors(sectionErrors.harness, { max_workspace_mib: "bad" }), false);

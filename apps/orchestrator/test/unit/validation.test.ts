@@ -8,6 +8,7 @@ import {
   DEFAULT_MAX_SCRIPTS,
   DEFAULT_MAX_WORKSPACE_MIB,
   DEFAULT_MAX_TOOL_CALLS,
+  DEFAULT_MAX_WAKE_UPS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TEMPERATURE,
@@ -233,7 +234,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 21);
+  assert.equal(CONFIG_KEYS.size, 22);
   assert.throws(() => validateAgentConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateAgentConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateAgentConfig({ model }), false);
@@ -258,6 +259,7 @@ test("a config that leaves out every setting but its model takes every default",
     max_steps: DEFAULT_MAX_STEPS,
     max_tool_calls: DEFAULT_MAX_TOOL_CALLS,
     max_input_tokens: DEFAULT_MAX_INPUT_TOKENS,
+    max_wake_ups: DEFAULT_MAX_WAKE_UPS,
     keep_tool_result_generations: DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
     max_scripts: DEFAULT_MAX_SCRIPTS,
     max_workspace_mib: DEFAULT_MAX_WORKSPACE_MIB,
@@ -398,6 +400,17 @@ test("an update cannot switch a coding agent's coding off", () => {
   assert.throws(() => assertCodingAgent(plain, coder), /coding cannot be switched off/);
   assert.doesNotThrow(() => assertCodingAgent(plain, plain));
   assert.doesNotThrow(() => assertCodingAgent(coder, plain));
+});
+
+test("max_wake_ups defaults to 10 for every agent, coding or not, and takes a positive whole number", () => {
+  const model = VALID_CONFIG.model;
+  assert.equal(DEFAULT_MAX_WAKE_UPS, 10);
+  assert.equal(validateAgentConfig({ model }).max_wake_ups, DEFAULT_MAX_WAKE_UPS);
+  assert.equal(validateNewAgentConfig({ model, coding: true, harness: "codex" }).max_wake_ups, DEFAULT_MAX_WAKE_UPS);
+  assert.equal(validateAgentConfig({ model, max_wake_ups: 1 }).max_wake_ups, 1);
+  for (const refused of [0, -1, 2.5, "3", null]) {
+    assert.throws(() => validateAgentConfig({ model, max_wake_ups: refused }), /max_wake_ups must be a positive integer/);
+  }
 });
 
 test("config defaults missing run limits", () => {

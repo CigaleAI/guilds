@@ -181,7 +181,8 @@ States are `running`, `exited N`, `stopping`, `stopped`, and `ended`
 SIGTERM to its process group, then SIGKILL five seconds later.
 
 Background commands do not keep the machine's container running. They
-end with its idle stop ([Machines](../machines.md)).
+end with its idle stop ([Machines](../machines.md)), and a pending
+wake-up of the run does not delay it ([Runs](../runs.md#wake-ups)).
 
 ### `file_read`
 

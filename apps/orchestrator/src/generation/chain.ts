@@ -10,6 +10,7 @@ import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents } from "./events.js";
 import type { Generation } from "./generate.js";
 import type { Runs } from "./runs.js";
+import type { Wakes } from "../wakes/service.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 
 /**
@@ -84,6 +85,20 @@ export function runChainsDatabase(db: Queryable): RunChainsDatabase {
   };
 }
 
+/** The last run of the chain that `runId` belongs to, following each continuation. */
+export async function latestInChain(db: Pick<RunChainsDatabase, "getRun">, runId: string): Promise<string> {
+  let current = runId;
+  for (let hop = 0; hop < MAX_CHAIN_RUNS; hop += 1) {
+    const row = await db.getRun(current);
+    const next = row ? continuedBy(row) : null;
+    if (next === null) {
+      return current;
+    }
+    current = next;
+  }
+  return current;
+}
+
 /** Completes the run unless it already ended. */
 export async function completeIfActive(
   db: Pick<RunChainsDatabase, "getRun" | "completeRun">,
@@ -101,9 +116,11 @@ export type RunChainsServices = {
   events: RunEvents;
   completion: ModelCompletion;
   runs: Pick<Runs, "createContinuation">;
+  /** Where the pending wake-up of a run that hands off moves to its continuation. */
+  wakes: Pick<Wakes, "move">;
 };
 
-/** The run chains of a loop: each hand-off, the continuation it creates, and the way to a chain's last run. */
+/** The run chains of a loop: each hand-off, and the continuation it creates. */
 export class RunChains {
   /** A run that handed off, to the run that continues it once its generation ends. */
   private readonly continuations = new Map<string, string>();
@@ -117,24 +134,11 @@ export class RunChains {
     return next;
   }
 
-  /** The last run of the chain that `runId` belongs to, following each continuation. */
-  async latestInChain(runId: string): Promise<string> {
-    let current = runId;
-    for (let hop = 0; hop < MAX_CHAIN_RUNS; hop += 1) {
-      const row = await this.services.db.getRun(current);
-      const next = row ? continuedBy(row) : null;
-      if (next === null) {
-        return current;
-      }
-      current = next;
-    }
-    return current;
-  }
-
   /**
    * A coding run's prompt reached the hand-off share of its input limit: the agent is asked
    * for a hand-off, given one step, and the run continues in a new one of the same kind.
-   * The fifth run of a chain completes with `generation.max_chain` instead.
+   * The run's pending wake-up moves to the continuation. The fifth run of a chain completes with
+   * `generation.max_chain` instead.
    */
   async handOff(gen: Generation, tools: GenerationTools): Promise<void> {
     const { db, events, runs } = this.services;
@@ -162,6 +166,7 @@ export class RunChains {
       await events.recordError(gen, "generation.continue", error);
       return;
     }
+    await this.services.wakes.move(gen.runId, next);
     await db.mergeRunMetadata(gen.runId, { continued_by_run_id: next }, new Date());
     await db.completeRun(gen.runId, new Date());
     this.continuations.set(gen.runId, next);

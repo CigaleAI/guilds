@@ -256,7 +256,7 @@ Every scope's **Tools** has two sub-tabs:
   guild, or agent.
 - **Native tools**: grouped by family (**Notes**, **Tables** for the
   record tools, **Files**, **Memory**, **Scripts**, **Routines**, **Group chat**,
-  **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
+  **Wake-ups**, **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
   each family collapsible.
 
 Each switchable item is an on/off switch captioned with where its
@@ -466,6 +466,7 @@ absent, enable:
 - `secret_store`
 - `secret_request`
 - `group_post`
+- the wake-up tools (`wake_after`, `wake_cancel`)
 
 `report_issue` and the browser tools, `browse` among them, are never
 bindings; a binding on one is 422 `NAME is not a binding`. The code tools are not

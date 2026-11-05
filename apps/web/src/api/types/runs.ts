@@ -56,6 +56,29 @@ export type Run = {
   chain?: { root_run_id: string; index: number; previous_run_id: string };
   /** The run that continued this one after its hand-off. */
   continued_by_run_id?: string;
+  /** The run's pending wake-up, null when it has none; a run list leaves it out. */
+  pending_wake?: PendingWake | null;
+};
+
+/** A run's pending wake-up: when it is due, the agent's note to itself, and when it was set. */
+export type PendingWake = {
+  id: string;
+  due_at: string;
+  message: string | null;
+  created_at: string;
+};
+
+/** `run.wake.changed`: the run's pending wake-up after a change, null when none is left. */
+export type RunWakeChange = { pending_wake: PendingWake | null };
+
+/** A fired wake-up as its message tells the agent: when it was set, due and fired, its note, and the wake-ups left. */
+export type WakeUp = {
+  id: string;
+  set_at: string;
+  due_at: string;
+  fired_at: string | null;
+  message: string | null;
+  wake_ups_left: number;
 };
 
 /** The operator's first message to an agent, with the images attached to it. */
@@ -162,6 +185,9 @@ export type NamedToolArguments = { name?: string };
 
 /** A `report_issue` call's arguments: the issue's summary. */
 export type ReportIssueArguments = { summary?: string };
+
+/** A `wake_after` call's arguments: the delay in minutes, and the agent's note. */
+export type WakeAfterArguments = { minutes?: number; message?: string };
 
 /** A `browse` call's arguments: the task it delegates, and the page it starts from. */
 export type BrowseArguments = { task?: string; start?: string };
@@ -288,9 +314,9 @@ export type ToolResultMetadata = {
   repeat_of?: number;
 } & ReportedToolMetadata;
 
-/** Where a run's opening or operator message came from. */
+/** Where a run's system or user message came from. */
 export type RunMessageSource =
-  "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff";
+  "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff" | "wake";
 
 /** What a run's system or user message records about where it came from. */
 export type RunInputMetadata = {
@@ -299,6 +325,10 @@ export type RunInputMetadata = {
   previous_run_id?: string;
   schedule_id?: string;
   instruction_hash?: string;
+  /** The wake-up a `wake` message fires. */
+  wake_id?: string;
+  /** Whether the wake-up reopened a completed run for this generation. */
+  reopened_run?: boolean;
   group_message_id?: number;
   group_seq?: number;
   author_type?: string;

@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef } from "react";
 import { useAgent } from "../../../api/queries/agents";
 import {
   useCancelRun,
+  useCancelWake,
   useResumeRun,
   useRun,
   useRunMessages,
@@ -24,6 +25,7 @@ import { Button, Composer, Banner, EmptyState, SkeletonRows, toast, Row } from "
 import { ChangesPanel } from "./ChangesPanel";
 import type { RevealStep } from "./FlowView";
 import { HistoryDrawer } from "./HistoryDrawer";
+import { PendingWakeBanner } from "./PendingWake";
 import { RunStatus, useChatSession, type ChatSearch } from "./SessionChrome";
 import { Transcript } from "./Transcript";
 import { useIdentity } from "../../../app/identity";
@@ -270,6 +272,7 @@ export function AgentChat() {
   const send = useSendRunMessage(agentId);
   const cancel = useCancelRun(agentId);
   const resume = useResumeRun(agentId);
+  const cancelWake = useCancelWake();
   const log = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
@@ -352,6 +355,15 @@ export function AgentChat() {
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 px-4 pb-3 md:px-7 md:pb-6">
+          {current ? (
+            <PendingWakeBanner
+              run={current}
+              cancelling={cancelWake.isPending}
+              onCancel={() =>
+                cancelWake.mutate(current.id, { onError: failed("Couldn't cancel the wake-up") })
+              }
+            />
+          ) : null}
           {current ? (
             <SessionEnd
               run={current}

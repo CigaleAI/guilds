@@ -133,6 +133,14 @@
       {
         "catalog_id": "secret_store",
         "enabled": true
+      },
+      {
+        "catalog_id": "wake_after",
+        "enabled": true
+      },
+      {
+        "catalog_id": "wake_cancel",
+        "enabled": true
       }
     ],
     "expected_platform_native_tools": [
@@ -164,7 +172,9 @@
       "memory_write",
       "secret_store",
       "secret_request",
-      "group_post"
+      "group_post",
+      "wake_after",
+      "wake_cancel"
     ],
     "bash_absent": true,
     "native_tools_constant": [
@@ -196,7 +206,9 @@
       "schedule_delete",
       "secret_store",
       "secret_request",
-      "group_post"
+      "group_post",
+      "wake_after",
+      "wake_cancel"
     ],
     "connectors": [
       {
@@ -352,7 +364,7 @@
     "orgs": 1,
     "org_members": 1,
     "connectors": 15,
-    "bindings": 29,
+    "bindings": 31,
     "secrets": 0
   }
 }

@@ -28,6 +28,7 @@ import {
   preparedSnapshot,
   type PreparedRun,
 } from "./snapshot.js";
+import type { RunWakes } from "./wakes.js";
 
 /** The db/ functions runs are created and delivered through. */
 export type RunsDatabase = {
@@ -73,12 +74,14 @@ export type RunsServices = {
   generations: ActiveGenerations;
   schedules: Schedules;
   starter: GenerationStarter;
+  wakes: Pick<RunWakes, "fireDueWakes">;
 };
 
 /**
  * Creates the runs of a loop's agents: those an operator opens, those the group chat delivers,
  * those a schedule wakes, and the continuation of a run that handed off. A run created with a
- * message starts generating at once; the scheduler wakes the due schedules each tick.
+ * message starts generating at once; the scheduler fires the due wake-ups, then wakes the due
+ * schedules, each tick.
  */
 export class Runs {
   private readonly db: RunsDatabase;
@@ -86,6 +89,7 @@ export class Runs {
   private readonly generations: ActiveGenerations;
   private readonly schedules: Schedules;
   private readonly starter: GenerationStarter;
+  private readonly wakes: Pick<RunWakes, "fireDueWakes">;
   private scheduler: { abort: AbortController; task: Promise<void> } | null = null;
 
   constructor(
@@ -97,6 +101,7 @@ export class Runs {
     this.generations = services.generations;
     this.schedules = services.schedules;
     this.starter = services.starter;
+    this.wakes = services.wakes;
   }
 
   /**
@@ -378,12 +383,26 @@ export class Runs {
       if (signal.aborted) {
         return;
       }
-      logOperationFailure(await this.fireTick());
+      logOperationFailure(await this.fireWakeTick());
+      logOperationFailure(await this.fireScheduleTick());
+    }
+  }
+
+  /**
+   * Fires the due wake-ups of one tick, before its schedules, so an agent goes back to work in
+   * progress before it starts new work; returns the failure of a tick that did not go through.
+   */
+  private async fireWakeTick(): Promise<OperationFailure | null> {
+    try {
+      await this.wakes.fireDueWakes();
+      return null;
+    } catch (error) {
+      return { message: "wake-up tick failed", fields: { operation: "wake.tick" }, error };
     }
   }
 
   /** Fires the due schedules of one tick; returns the failure of a tick that did not go through, after which the next tick still runs. */
-  private async fireTick(): Promise<OperationFailure | null> {
+  private async fireScheduleTick(): Promise<OperationFailure | null> {
     try {
       await this.fireDueSchedules();
       return null;

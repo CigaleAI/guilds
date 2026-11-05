@@ -28,6 +28,9 @@ import type {
   ShellArguments,
   ShellStatusArguments,
   StudioToolArguments,
+  PendingWake,
+  WakeAfterArguments,
+  WakeUp,
 } from "./types/runs";
 import type { SecretRequest, SecretRequestAsked } from "./types/secrets";
 import type {
@@ -249,6 +252,39 @@ export function isNamedToolArguments(value: unknown): value is NamedToolArgument
 /** Whether a tool call's arguments are a `report_issue` call's: its summary as text. */
 export function isReportIssueArguments(value: unknown): value is ReportIssueArguments {
   return hasTextParameters(value, ["summary"]);
+}
+
+/** Whether a tool call's arguments are a `wake_after` call's: its minutes a number, its note text. */
+export function isWakeAfterArguments(value: unknown): value is WakeAfterArguments {
+  return hasTextParameters(value, ["message"]) && isOptionalNumber(value.minutes);
+}
+
+/** Whether a value is a run's pending wake-up as the server sends it. */
+export function isPendingWake(value: unknown): value is PendingWake {
+  return (
+    isJsonObject(value) &&
+    hasFields(value, ["id", "due_at", "created_at"], isString) &&
+    isStringOrNull(value.message)
+  );
+}
+
+const WAKE_UP_PREFIX = "Wake-up: ";
+
+/** Whether a JSON object is a fired wake-up as its message tells the agent of it. */
+function isWakeUp(body: JsonObject): body is JsonObject & WakeUp {
+  return (
+    hasFields(body, ["id", "set_at", "due_at"], isString) &&
+    hasFields(body, ["fired_at", "message"], isStringOrNull) &&
+    isNumber(body.wake_ups_left)
+  );
+}
+
+/** The fired wake-up a `wake` message's text tells the agent of; null when the text is not one. */
+export function parseWakeUp(content: string): WakeUp | null {
+  if (!content.startsWith(WAKE_UP_PREFIX)) return null;
+  const body = parseJson(content.slice(WAKE_UP_PREFIX.length));
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  return isWakeUp(body) ? body : null;
 }
 
 /** Whether a tool call's arguments are a `browse` call's: its task and start page, as text. */

@@ -52,6 +52,13 @@ export const NATIVE_CAPABILITY_GROUPS = [
     ],
   },
   {
+    id: "wakes",
+    label: "Wake-ups",
+    description:
+      "The agent asks to be woken again in the same run after 1 to 360 minutes, to come back to the result of a long process that finishes on its own, such as a CI run or a deploy. One pending wake-up per run; the run fires at most max_wake_ups of them. On in every kind of run. For work on a clock, use a routine.",
+    tools: ["wake_after", "wake_cancel"],
+  },
+  {
     id: "chat",
     label: "Group chat",
     description:

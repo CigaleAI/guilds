@@ -18,6 +18,36 @@ unchanged.
 while the Inbox has an open issue or an unread tag, and turns plain
 again once it has none.
 
+**Rebuild.** An agent can ask to come back to the same run later:
+`wake_after` sets the run's wake-up 1 to 360 minutes ahead, with an
+optional note of at most 1,000 characters, and replaces a pending one;
+`wake_cancel` cancels it. Both are native tools bound at the platform
+at boot, so every agent has them in every kind of run until an
+operator turns them off; runs already open keep their tools. The
+scheduler fires due wake-ups every 30 seconds, before routines: the
+run takes one more generation that opens with a `Wake-up:` message. A
+completed group chat or routine run, or one completed because its
+model could not be called, reopens for that generation and completes
+again, still refusing messages; a run continued after a hand-off wakes
+in the chain's latest run. A run that ends on its tool-call,
+input-token, or chain cap cancels its pending wake-up and records
+`wake.cancelled`. `wake_after` is refused once the run's chain fired
+`max_wake_ups` wake-ups. `GET /api/runs/:id`, and the run a message,
+a resume, or a cancel answers with, carry `pending_wake`;
+`DELETE /api/runs/:id/wake` cancels it as the operator; and the run's
+stream publishes `run.wake.changed` on every change of it, and the
+wake-up's message as it commits.
+The Chat tab shows a pending wake-up under the transcript, with when
+it is due, the agent's note, and **Cancel**; a fired wake-up is its
+own row in the transcript, with the times and the note; and the Tools
+tab lists the two tools under **Wake-ups**.
+
+**Rebuild.** Agent configs and run snapshots gain `max_wake_ups`, the
+most wake-ups a run may fire: a whole number of 1 or more, 10 by
+default for every agent; a migration fills it in. Settings shows
+**Max wake-ups** under **Run limits**, and a captured recipe carries
+it.
+
 **Breaking.** A note or a file has an access list, which alone decides
 who reaches it, and no level and no owner. A name is one note or one file across the
 organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`; Memory,

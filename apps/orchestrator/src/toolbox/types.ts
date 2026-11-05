@@ -1,5 +1,5 @@
 import type { Static, TObject } from "typebox";
-import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
+import { DEFAULT_MAX_SCRIPTS, DEFAULT_MAX_WAKE_UPS } from "../agents/config.js";
 import type { Harness, Effort, ReportedToolMetadata } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { JsonObject } from "../lib/json.js";
@@ -82,6 +82,8 @@ export type AgentSecretStore = {
 /** What a run's tools work with, the same for every call: whose run it is, where its commands run, and what it offers. */
 export type ToolRun = {
   run_id: string;
+  /** The first run of the run's chain: the run itself unless it continues another. */
+  chain_root_run_id: string;
   agent_id: string;
   guild_id: string;
   guild_name: string;
@@ -110,6 +112,8 @@ export type ToolRun = {
   run_scripts: RunScriptSnapshot[];
   /** How many scripts this agent may keep; `script_create` of a new name is refused past it. */
   max_scripts: number;
+  /** The most wake-ups the run may fire across its chain, from its snapshot; `wake_after` is refused past it. */
+  max_wake_ups: number;
   connection_tool_names: string[];
   dynamic_tools: ToolsByName;
   /** When set, only these names plus `dynamic_tools` may run. `null` skips the check. */
@@ -147,6 +151,7 @@ export function createToolRun(
   partial: Pick<ToolRun, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> & Partial<ToolRun>,
 ): ToolRun {
   return {
+    chain_root_run_id: partial.run_id,
     guild_name: "",
     agent_name: "",
     org_slug: "",
@@ -161,6 +166,7 @@ export function createToolRun(
     memory_replaced_by: "",
     run_scripts: [],
     max_scripts: DEFAULT_MAX_SCRIPTS,
+    max_wake_ups: DEFAULT_MAX_WAKE_UPS,
     connection_tool_names: [],
     dynamic_tools: {},
     offered_tools: null,

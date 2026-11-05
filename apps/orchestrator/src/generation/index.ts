@@ -31,9 +31,12 @@ import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { agentSchedules, type Schedules } from "../schedules/service.js";
 import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/group.js";
+import { pendingWakeItem, type PendingWakeView } from "../wakes/item.js";
+import { agentWakes, type Wakes } from "../wakes/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
-import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";
+import { terminalCapOf } from "./caps.js";
+import { continuedBy, latestInChain, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
 import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
@@ -49,6 +52,7 @@ import {
 import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
 import { Runs, runsDatabase } from "./runs.js";
 import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
+import { RunWakes, runWakesDatabase } from "./wakes.js";
 import { toolServices, type ToolServices } from "../toolbox/services.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
@@ -57,17 +61,6 @@ import type { GenerationArtifacts } from "./prepare.js";
 export type GenerationLoopTimings = { idleTimeoutMs: number; schedulerTickMs: number };
 
 export const LOOP_TIMINGS: GenerationLoopTimings = { idleTimeoutMs: 5 * 60 * 1000, schedulerTickMs: 30_000 };
-
-const TERMINAL_CAP_OPERATIONS = new Set([
-  "generation.max_tool_calls",
-  "generation.max_input_tokens",
-  "generation.max_chain",
-]);
-
-/** Whether the run ended on its tool-call, input-token, or chain cap, which a resume cannot lift. */
-function runHitTerminalCap(run: RunRow): boolean {
-  return run.errors.some((entry) => TERMINAL_CAP_OPERATIONS.has(entry.operation));
-}
 
 /** The db/ functions the loop's own run and delete operations read and write through, on `db`. */
 function loopDatabase(db: Queryable) {
@@ -104,12 +97,16 @@ function generationDatabase(db: Queryable) {
     ...runSecretsDatabase(db),
     ...runsDatabase(db),
     ...runChainsDatabase(db),
+    ...runWakesDatabase(db),
     ...runGeneratorDatabase(db),
     ...loopDatabase(db),
   };
 }
 
 export type GenerationDatabase = ReturnType<typeof generationDatabase>;
+
+/** One run as its own page reads it: its view, and its pending wake-up, or null. */
+export type RunDetailView = RunView & { pending_wake: PendingWakeView | null };
 
 /**
  * What a generation loop runs with beside its database, built once at composition: its notes
@@ -153,6 +150,8 @@ export type GenerationLoopDeps = Omit<GenerationLoopServices, "artifacts"> & {
   events: RunEvents;
   /** What the runs' tools call. */
   tools: ToolServices;
+  /** The runs' pending wake-ups, whose changes are published on `events`. */
+  wakes: Wakes;
 };
 
 /**
@@ -185,6 +184,8 @@ export class GenerationLoop implements GroupRunner {
   chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
+  wakes: Wakes;
+  runWakes: RunWakes;
   constructor(services: GenerationLoopDeps, timings: GenerationLoopTimings = LOOP_TIMINGS) {
     const { db, notes, workspaceRoot, sandboxes } = services;
     this.db = db;
@@ -235,6 +236,14 @@ export class GenerationLoop implements GroupRunner {
       coding: this.coding,
       tools,
     });
+    this.wakes = services.wakes;
+    this.runWakes = new RunWakes({
+      db,
+      events: this.events,
+      generations: this.generations,
+      starter: this,
+      wakes: this.wakes,
+    });
     this.runs = new Runs(
       {
         db,
@@ -242,10 +251,17 @@ export class GenerationLoop implements GroupRunner {
         generations: this.generations,
         schedules: this.schedules,
         starter: this,
+        wakes: this.runWakes,
       },
       timings.schedulerTickMs,
     );
-    this.chains = new RunChains({ db, events: this.events, completion: this.completion, runs: this.runs });
+    this.chains = new RunChains({
+      db,
+      events: this.events,
+      completion: this.completion,
+      runs: this.runs,
+      wakes: this.wakes,
+    });
     this.generator = new RunGenerator({
       db,
       scripts: this.scripts,
@@ -259,6 +275,7 @@ export class GenerationLoop implements GroupRunner {
       secrets: this.secrets,
       chains: this.chains,
       starter: this,
+      wakes: this.runWakes,
     });
   }
 
@@ -388,22 +405,22 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  async resumeRun(runId: string): Promise<RunView> {
+  async resumeRun(runId: string): Promise<RunDetailView> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
     }
     if (run.status === "active") {
-      return this.runView(run);
+      return this.runDetail(run);
     }
     if (run.status !== "completed") {
       throw new RunRequestError(409, "run cannot be resumed");
     }
     const next = continuedBy(run);
     if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await this.chains.latestInChain(next)}`);
+      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}`);
     }
-    if (runHitTerminalCap(run)) {
+    if (terminalCapOf(run) !== null) {
       throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
     }
     if ((await this.db.getAgent(run.agent_id)) === null) {
@@ -418,7 +435,7 @@ export class GenerationLoop implements GroupRunner {
     runId: string,
     content: string,
     attachments: AttachmentRef[] = [],
-  ): Promise<RunView> {
+  ): Promise<RunDetailView> {
     const run = await this.runTakingMessages(runId);
     try {
       await this.beginGeneration(runId, run.agent_id);
@@ -450,7 +467,7 @@ export class GenerationLoop implements GroupRunner {
     }
     const next = continuedBy(run);
     if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await this.chains.latestInChain(next)}; send the message there`);
+      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}; send the message there`);
     }
     if (run.status !== "active") {
       throw new RunRequestError(409, "this run has ended; resume it to continue");
@@ -479,7 +496,7 @@ export class GenerationLoop implements GroupRunner {
     return generation;
   }
 
-  async cancel(runId: string): Promise<RunView | null> {
+  async cancel(runId: string): Promise<RunDetailView | null> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
@@ -500,7 +517,14 @@ export class GenerationLoop implements GroupRunner {
       await task;
     }
     const row = await this.db.getRun(runId);
-    return row ? this.runView(row) : null;
+    return row ? this.runDetail(row) : null;
+  }
+
+  /** Cancels the run's pending wake-up as the operator; 404 when it has none. */
+  async cancelWake(runId: string): Promise<void> {
+    if ((await this.wakes.cancel(runId, "operator")) === null) {
+      throw new RunRequestError(404, "no pending wake-up");
+    }
   }
 
   async reconcile(): Promise<void> {
@@ -540,12 +564,18 @@ export class GenerationLoop implements GroupRunner {
     return runItem(row, this.isGenerating(row.id));
   }
 
-  private async currentRunView(runId: string): Promise<RunView> {
+  /** The run's view with its pending wake-up. */
+  async runDetail(row: RunRow): Promise<RunDetailView> {
+    const pending = await this.db.getPendingRunWake(row.id);
+    return { ...this.runView(row), pending_wake: pending === null ? null : pendingWakeItem(pending) };
+  }
+
+  private async currentRunView(runId: string): Promise<RunDetailView> {
     const row = await this.db.getRun(runId);
     if (row === null) {
       throw new RunRequestError(404, "run not found");
     }
-    return this.runView(row);
+    return this.runDetail(row);
   }
 
   /** Admits a generation of the run on its agent; the agent's machine stops counting down to its idle stop. */
@@ -603,6 +633,7 @@ export function generationLoop(
   const scripts = agentScripts(db);
   const artifacts = services.artifacts ? generationArtifacts(services.artifacts) : null;
   const credentials = services.credentials ?? coreModelCredentials(db);
+  const wakes = agentWakes(db, events);
   const tools = toolServices(db, {
     notes: services.notes,
     artifacts,
@@ -613,6 +644,7 @@ export function generationLoop(
     scripts,
     events,
     browse: browseService(db, credentials, events),
+    wakes,
   });
   const loop = new GenerationLoop(
     {
@@ -627,6 +659,7 @@ export function generationLoop(
       scripts,
       events,
       tools,
+      wakes,
     },
     timings,
   );

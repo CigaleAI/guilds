@@ -56,6 +56,7 @@ export const sectionErrors: Readonly<Record<SettingsSection, ReadonlyArray<keyof
     "max_steps",
     "max_tool_calls",
     "max_input_tokens",
+    "max_wake_ups",
     "keep_tool_result_generations",
     "max_scripts",
     "browser_model",

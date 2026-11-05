@@ -23,6 +23,8 @@ export const NATIVE_TOOL_NAMES = new Set([
   "file_delete",
   "memory_write",
   "group_post",
+  "wake_after",
+  "wake_cancel",
   "report_issue",
   "script_create",
   "script_list",

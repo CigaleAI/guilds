@@ -62,6 +62,8 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   schedule_pause: { kind: "write", level: "local" },
   schedule_resume: { kind: "write", level: "local" },
   schedule_delete: { kind: "write", level: "local" },
+  wake_after: { kind: "write", level: "local" },
+  wake_cancel: { kind: "write", level: "local" },
   browse: { kind: "act" },
   browser_navigate: { kind: "act" },
   browser_snapshot: { kind: "read" },

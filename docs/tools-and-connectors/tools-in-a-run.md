@@ -16,7 +16,7 @@ A run draws its tools from three sources:
 
 ## What a run offers
 
-The note, record, file, memory, script, schedule, secret, and
+The note, record, file, memory, script, schedule, secret, wake-up, and
 `group_post` tools are bindings. A run offers the ones that resolve
 enabled for its agent.
 

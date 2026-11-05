@@ -248,6 +248,10 @@ test("summarizeCalls names what a batch did, merging calls that share a verb", (
     summarizeCalls([call("group_post", {}), call("browser_snapshot", {})]),
     "Post to group · Read page snapshot",
   );
+  assert.equal(summarizeCalls([call("wake_after", { minutes: 10 })]), "Wake in 10 minutes");
+  assert.equal(summarizeCalls([call("wake_after", { minutes: 1 })]), "Wake in 1 minute");
+  assert.equal(summarizeCalls([call("wake_after", { minutes: "ten" })]), "wake_after");
+  assert.equal(summarizeCalls([call("wake_cancel", {})]), "Cancel wake-up");
   assert.equal(
     summarizeCalls([call("custom", { a: 1, b: 2 }), call("custom", { a: 3, b: 4 })]),
     "custom",

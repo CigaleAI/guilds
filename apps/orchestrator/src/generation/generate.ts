@@ -19,6 +19,7 @@ import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js
 import { isText } from "../toolbox/schema.js";
 import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
+import { terminalCapOf } from "./caps.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
 import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase, type CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
@@ -37,6 +38,7 @@ import {
 import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
 import type { GenerationStarter } from "./runs.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
+import type { RunWakes } from "./wakes.js";
 import type { WorkspaceLimits } from "./workspace.js";
 
 const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
@@ -65,11 +67,14 @@ export function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
 }
 
 /**
- * Whether the run completes when its generation ends: a schedule run does, and a group
- * continuation does, since the group delivery completes only the chain's first run. A resumed
- * run stays open.
+ * Whether the run completes when its generation `generation` ends: a run a wake-up reopened for
+ * that generation does, a schedule run does, and a group continuation does, since the group
+ * delivery completes only the chain's first run. A resumed run stays open.
  */
-function completesItself(run: RunRow): boolean {
+function completesAfter(run: RunRow, generation: number): boolean {
+  if (run.metadata.wake_reopened_generation === generation) {
+    return true;
+  }
   if (runWasResumed(run)) {
     return false;
   }
@@ -153,6 +158,7 @@ export type RunGeneratorServices = {
   secrets: RunSecrets;
   chains: RunChains;
   starter: Pick<GenerationStarter, "endGeneration">;
+  wakes: Pick<RunWakes, "cancelForCap">;
 };
 
 /**
@@ -222,15 +228,26 @@ export class RunGenerator {
     return { ...turn, run, agent, snapshot: run.config_snapshot };
   }
 
-  /** Settles a cancel, tells the run's subscribers the generation finished, and completes a run that completes itself. */
+  /**
+   * Settles a cancel, tells the run's subscribers the generation finished, cancels the pending
+   * wake-up of a run that ended on a terminal cap, and completes a run that completes after this
+   * generation.
+   */
   private async finish(turn: RunGeneration, cancelled: boolean): Promise<void> {
-    const { db, events } = this.services;
+    const { db, events, wakes } = this.services;
     if (cancelled) {
       logOperationFailure(await this.settleCancel(turn));
     }
     await events.publish(turn.runId, "generation.finished", { generation: turn.generation });
     const finished = await db.getRun(turn.runId);
-    if (finished !== null && completesItself(finished)) {
+    if (finished === null) {
+      return;
+    }
+    const cap = terminalCapOf(finished);
+    if (cap !== null) {
+      await wakes.cancelForCap(turn, cap);
+    }
+    if (completesAfter(finished, turn.generation)) {
       await db.completeRun(turn.runId, new Date());
     }
   }
@@ -476,6 +493,7 @@ export class RunGenerator {
     const seat = agentSeat(agent);
     return createToolRun({
       run_id: runId,
+      chain_root_run_id: chainOf(gen.run).root_run_id,
       agent_id: agent.id,
       guild_id: agent.guild_id,
       sandbox: sandboxes.agent,
@@ -495,6 +513,7 @@ export class RunGenerator {
       memory_replaced_by: await memoryReplacedBy(db, gen.run),
       run_scripts: offer.scripts,
       max_scripts: agent.config.max_scripts,
+      max_wake_ups: snapshot.max_wake_ups,
       dynamic_tools: offer.names.has("script_run") ? dynamicScriptTools(offer.scripts) : {},
       connection_tool_names: [...offer.connections.keys()],
       offered_tools: offer.names,

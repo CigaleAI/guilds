@@ -10,6 +10,7 @@ import type {
   MessagePayload,
   RunContinuation,
   RunMessage,
+  RunWakeChange,
   ToolCall,
   ToolProgressEvent,
 } from "./types/runs";
@@ -29,6 +30,7 @@ import {
   isString,
   isStringList,
   isStringOrNull,
+  isPendingWake,
   isStudioFocus,
   type JsonValue,
 } from "./wire";
@@ -182,6 +184,10 @@ export function isRunContinuation(data: unknown): data is RunContinuation {
   return isJsonObject(data) && isString(data.run_id);
 }
 
+export function isRunWakeChange(data: unknown): data is RunWakeChange {
+  return isJsonObject(data) && (data.pending_wake === null || isPendingWake(data.pending_wake));
+}
+
 /** Whether a value is a coach message's metadata: a JSON object, its focus, when it has one, whole. */
 function isConversationMessageMetadata(value: unknown): value is ConversationMessageMetadata {
   return isJsonObject(value) && (value.focus === undefined || isStudioFocus(value.focus));
@@ -256,6 +262,7 @@ export type RunEvents = {
   "run.error": unknown;
   "generation.finished": unknown;
   "run.continued": RunContinuation;
+  "run.wake.changed": RunWakeChange;
 };
 
 export const runEventGuards: PayloadGuards<RunEvents> = {
@@ -267,6 +274,7 @@ export const runEventGuards: PayloadGuards<RunEvents> = {
   "run.error": isAnyPayload,
   "generation.finished": isAnyPayload,
   "run.continued": isRunContinuation,
+  "run.wake.changed": isRunWakeChange,
 };
 
 /** What each event of a Studio session's stream carries. */

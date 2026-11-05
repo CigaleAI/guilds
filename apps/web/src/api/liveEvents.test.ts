@@ -239,8 +239,33 @@ function recordingHandlers(calls: string[]): LiveEventHandlers<RunEvents> {
     "run.error": record("run.error"),
     "generation.finished": record("generation.finished"),
     "run.continued": record("run.continued"),
+    "run.wake.changed": record("run.wake.changed"),
   };
 }
+
+test("run.wake.changed carries the run's pending wake-up, or null when none is left", () => {
+  const calls: string[] = [];
+  const pending = {
+    id: "wk_1",
+    due_at: "2026-11-05T14:12:11.204+00:00",
+    message: null,
+    created_at: "2026-11-05T14:02:11.204+00:00",
+  };
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", {
+    pending_wake: pending,
+  });
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", {
+    pending_wake: null,
+  });
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", {
+    pending_wake: { id: "wk_2" },
+  });
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", {});
+  assert.deepEqual(calls, [
+    `run.wake.changed:${JSON.stringify({ pending_wake: pending })}`,
+    'run.wake.changed:{"pending_wake":null}',
+  ]);
+});
 
 test("dispatchLiveEvent hands a payload that passes its guard to the event's handler", () => {
   const calls: string[] = [];

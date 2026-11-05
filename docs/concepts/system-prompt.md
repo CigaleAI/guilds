@@ -57,6 +57,10 @@ The run's own messages follow the system message:
   tagged.
 - A run woken by a [routine](routines.md) gets a Schedule wake-up
   message: the routine's instruction and when it last fired.
+- A later generation can open with a Wake-up message instead, when a
+  wake-up of the run fires: when it was set, due, and fired, the
+  agent's note, and how many wake-ups the run has left
+  ([Runs](runs.md#wake-ups)).
 
 ### Guidelines fit the agent
 
