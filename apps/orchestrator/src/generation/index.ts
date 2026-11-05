@@ -33,6 +33,7 @@ import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/group.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
+import { terminalCapOf } from "./caps.js";
 import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
@@ -57,17 +58,6 @@ import type { GenerationArtifacts } from "./prepare.js";
 export type GenerationLoopTimings = { idleTimeoutMs: number; schedulerTickMs: number };
 
 export const LOOP_TIMINGS: GenerationLoopTimings = { idleTimeoutMs: 5 * 60 * 1000, schedulerTickMs: 30_000 };
-
-const TERMINAL_CAP_OPERATIONS = new Set([
-  "generation.max_tool_calls",
-  "generation.max_input_tokens",
-  "generation.max_chain",
-]);
-
-/** Whether the run ended on its tool-call, input-token, or chain cap, which a resume cannot lift. */
-function runHitTerminalCap(run: RunRow): boolean {
-  return run.errors.some((entry) => TERMINAL_CAP_OPERATIONS.has(entry.operation));
-}
 
 /** The db/ functions the loop's own run and delete operations read and write through, on `db`. */
 function loopDatabase(db: Queryable) {
@@ -403,7 +393,7 @@ export class GenerationLoop implements GroupRunner {
     if (next !== null) {
       throw new RunRequestError(409, `this run continued in run ${await this.chains.latestInChain(next)}`);
     }
-    if (runHitTerminalCap(run)) {
+    if (terminalCapOf(run) !== null) {
       throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
     }
     if ((await this.db.getAgent(run.agent_id)) === null) {
