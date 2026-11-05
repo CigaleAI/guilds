@@ -15256,7 +15256,8 @@
           "created_at": "<ts:+00:00-us>",
           "updated_at": "<ts:+00:00-us>",
           "kind": "direct",
-          "group_chat_through_seq": null
+          "group_chat_through_seq": null,
+          "pending_wake": null
         }
       }
     },
@@ -15301,6 +15302,29 @@
             "cost_usd": null
           }
         ]
+      }
+    },
+    {
+      "name": "run-wake-cancel-none",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/runs/<id:r:2>/wake",
+        "headers": {
+          "X-Guilds-User": "user_operator",
+          "X-Guilds-Org": "org_home"
+        },
+        "json": null,
+        "params": null
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-length": "31",
+          "content-type": "application/json"
+        },
+        "json": {
+          "detail": "no pending wake-up"
+        }
       }
     },
     {
@@ -16201,7 +16225,8 @@
           "created_at": "<ts:+00:00-us>",
           "updated_at": "<ts:+00:00-us>",
           "kind": "direct",
-          "group_chat_through_seq": null
+          "group_chat_through_seq": null,
+          "pending_wake": null
         }
       }
     },
@@ -17057,7 +17082,8 @@
           "created_at": "<ts:+00:00-us>",
           "updated_at": "<ts:+00:00-us>",
           "kind": "direct",
-          "group_chat_through_seq": null
+          "group_chat_through_seq": null,
+          "pending_wake": null
         }
       }
     },
@@ -30332,7 +30358,8 @@
           "created_at": "<ts:+00:00-us>",
           "updated_at": "<ts:+00:00-us>",
           "kind": "direct",
-          "group_chat_through_seq": null
+          "group_chat_through_seq": null,
+          "pending_wake": null
         }
       }
     },
@@ -32046,7 +32073,8 @@
           "created_at": "<ts:+00:00-us>",
           "updated_at": "<ts:+00:00-us>",
           "kind": "direct",
-          "group_chat_through_seq": null
+          "group_chat_through_seq": null,
+          "pending_wake": null
         }
       }
     },
@@ -32910,7 +32938,8 @@
           "created_at": "<ts:+00:00-us>",
           "updated_at": "<ts:+00:00-us>",
           "kind": "direct",
-          "group_chat_through_seq": null
+          "group_chat_through_seq": null,
+          "pending_wake": null
         }
       }
     },

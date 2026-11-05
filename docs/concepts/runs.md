@@ -581,8 +581,8 @@ the continuation as soon as the continuation is created.
 
 ### Streaming
 
-Committed assistant and tool rows are published over SSE after the
-database transaction. Reasoning and token deltas may stream first, and
+Committed assistant and tool rows, and a fired wake-up's message, are
+published over SSE after the database transaction. Reasoning and token deltas may stream first, and
 a running `code_task` streams its progress lines, and a running
 `browse` call each of its steps, as `tool.progress`.
 History is the committed row. On reconnect the UI reloads ordered
@@ -651,12 +651,24 @@ results.
 | --- | --- | --- | --- |
 | `GET /api/agents/:id/runs` | the agent's runs | 200 | |
 | `POST /api/agents/:id/runs` | creates a direct run, with optional `message` and attachment ids | 201 idle, 202 generating | 422 empty message, a `message` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 agent generating, guild being deleted |
-| `GET /api/runs/:id` | the run | 200 | 404 |
+| `GET /api/runs/:id` | the run, with `pending_wake` | 200 | 404 |
 | `GET /api/runs/:id/messages` | its rows in order | 200 | 404 |
 | `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty, a `content` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 one-shot not resumed, continued, ended, or generating |
 | `POST /api/runs/:id/resume` | reopens a completed run | 200 | 409 continued or capped |
 | `POST /api/runs/:id/cancel` | cancels the current generation | 202, or 204 with nothing to cancel | 404; 409 `run is not active` |
+| `DELETE /api/runs/:id/wake` | cancels the run's pending wake-up as the operator | 204 | 404 `run not found`, or `no pending wake-up` |
 | `GET /api/runs/:id/stream` | the run's SSE stream | 200 | |
+
+`GET /api/runs/:id`, and the run that `POST /api/runs/:id/messages`,
+`POST /api/runs/:id/resume`, and a 202 from
+`POST /api/runs/:id/cancel` answer with, carry `pending_wake`: null,
+or the run's pending wake-up as `{ id, due_at, message, created_at }`.
+A run list and a new run do not carry it. Every change of the pending
+wake-up publishes `run.wake.changed` with `{ pending_wake }` in the
+same shape on the run's stream: set, replaced, cancelled by the agent,
+the operator, or a cap, moved on a hand-off (on both runs), and fired.
+`DELETE /api/runs/:id/wake` is open to whoever may read the run, as
+cancel and resume are, and records `cancel_reason: "operator"`.
 
 ### Code
 

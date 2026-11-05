@@ -173,7 +173,7 @@ async function wakeState(
 
 /** Fires the due wake-ups and waits for the generation the run's wake-up started. */
 async function fire(runId: string): Promise<void> {
-  await loop.wakes.fireDueWakes();
+  await loop.runWakes.fireDueWakes();
   await loop.generations.task(runId);
 }
 
@@ -229,14 +229,14 @@ describe("firing run wake-ups", { concurrency: 1 }, () => {
   test("a wake-up not yet due, or whose agent is busy, stays pending", async () => {
     const runId = await seedRun("direct", "active");
     const later = await setWake(runId, 10);
-    await loop.wakes.fireDueWakes();
+    await loop.runWakes.fireDueWakes();
     assert.equal((await wakeState(later)).state, "pending");
     await database.pool.query("DELETE FROM run_wakes");
     const due = await setWake(runId, -1);
     const busy = await seedRun("direct", "active");
     await loop.beginGeneration(busy, agentId);
     try {
-      await loop.wakes.fireDueWakes();
+      await loop.runWakes.fireDueWakes();
       assert.equal((await wakeState(due)).state, "pending");
     } finally {
       loop.endGeneration(busy);
@@ -289,7 +289,7 @@ describe("firing run wake-ups", { concurrency: 1 }, () => {
     ]) {
       const runId = await seedRun("direct", "completed", [capError(cap)]);
       const wakeId = await setWake(runId, -1);
-      await loop.wakes.fireDueWakes();
+      await loop.runWakes.fireDueWakes();
       assert.deepEqual(await wakeState(wakeId), {
         run_id: runId,
         state: "cancelled",
@@ -355,7 +355,7 @@ describe("firing run wake-ups", { concurrency: 1 }, () => {
     await mergeRunMetadata(database.pool, first, { continued_by_run_id: second }, new Date());
     const stale = await setWake(first, -2);
     const own = await setWake(second, 20, first);
-    await loop.wakes.fireDueWakes();
+    await loop.runWakes.fireDueWakes();
     assert.deepEqual(await wakeState(stale), {
       run_id: first,
       state: "cancelled",

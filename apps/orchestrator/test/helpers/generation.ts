@@ -41,6 +41,7 @@ import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
 import { GroupChat, type GroupChatDatabase } from "../../src/groupchat/index.js";
 import { defaultGroupRouter } from "../../src/typesafe/group.js";
 import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
+import { Wakes, type WakesDatabase } from "../../src/wakes/service.js";
 import { validateAgentConfig } from "../../src/agents/validation.js";
 
 export const AGENT_CONFIG: AgentConfig = {
@@ -567,6 +568,10 @@ export class FakeDB {
     return null;
   }
 
+  async getPendingRunWake(_runId: string) {
+    return null;
+  }
+
   async markScheduleFired(scheduleId: string, now: Date, wake: PlannedWake) {
     this.fired.push({ id: scheduleId, now, next_run_at: wake.at, window_fires: wake.windowFires });
   }
@@ -954,6 +959,10 @@ export class RecordingDB {
     return null;
   }
 
+  async getPendingRunWake(_runId: string) {
+    return null;
+  }
+
   async markScheduleFired(scheduleId: string, now: Date, wake: PlannedWake) {
     this.fired.push({ id: scheduleId, now, next_run_at: wake.at, window_fires: wake.windowFires });
   }
@@ -1053,6 +1062,7 @@ export function makeLoop(
   const schedules = new Schedules(db as ScheduleDatabase);
   const scripts = new Scripts(db as ScriptDatabase);
   const events = new RunEvents(db as RunEventsDatabase);
+  const wakes = new Wakes({ db: db as WakesDatabase, events });
   const tools: ToolServices = {
     notes: notes as NotesStore,
     artifacts,
@@ -1064,7 +1074,7 @@ export function makeLoop(
     db: db as ToolboxDatabase,
     events,
     browse: null,
-    wakes: null,
+    wakes,
   };
   const loop: GenerationLoop = new GenerationLoop(
     {
@@ -1077,6 +1087,7 @@ export function makeLoop(
       scripts,
       events,
       tools,
+      wakes,
       notes: notes as NotesStore,
       workspaceRoot,
       sandboxes: sandboxes as GenerationSandboxes,

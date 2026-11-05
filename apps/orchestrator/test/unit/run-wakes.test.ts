@@ -12,6 +12,8 @@ import {
 import { logWriter } from "../../src/observability/log.js";
 import { wakeUserMessage } from "../../src/wakes/message.js";
 import { wakeUpsLeft } from "../../src/wakes/rules.js";
+import { Wakes } from "../../src/wakes/service.js";
+import { isJsonObject } from "../../src/lib/json.js";
 import { runSnapshot } from "../helpers/generation.js";
 
 const NOW = "2026-11-05T14:12:30.000Z";
@@ -74,8 +76,6 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
     nextGeneration: async () => 2,
     listDueRunWakes: async () => due,
     getPendingRunWake: async () => null,
-    cancelRunWake: async () => null,
-    movePendingRunWake: async () => null,
     wakeFiring: async <T>(work: (queries: WakeFiringQueries) => Promise<T>) => work(tx),
   } as unknown as RunWakesDatabase;
   const wakes = new RunWakes({
@@ -87,6 +87,13 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
       },
     } as unknown as RunEvents,
     generations: { isAgentBusy: () => false } as unknown as ActiveGenerations,
+    wakes: {
+      cancel: async () => null,
+      move: async () => null,
+      announceFired: async (runId: string) => {
+        calls.push(`fired ${runId}`);
+      },
+    },
     starter: {
       beginGeneration: async (runId: string) => {
         calls.push(`begin ${runId}`);
@@ -151,6 +158,7 @@ test("a wake-up that fails to fire is logged, frees its agent, and the next one 
     "end r_1",
     "begin r_2",
     "published r_2 3",
+    "fired r_2",
     "generate r_2 2",
   ]);
   assert.match(lines.join(""), /"operation":"wake.fire"/);
@@ -189,4 +197,54 @@ test("the wake-up message carries when it was set, due and fired, its note, and 
 test("the wake-ups left never go below none", () => {
   assert.equal(wakeUpsLeft(10, 3), 7);
   assert.equal(wakeUpsLeft(2, 5), 0);
+});
+
+/** A run's wake-ups over a fake store whose writes answer `row`, and what they publish. */
+function publishingWakes(row: RunWakeRow | null) {
+  const published: Array<[string, string | null]> = [];
+  const wakes = new Wakes({
+    db: {
+      setRunWake: async () => ({ wake: wakeRow({ id: "wk_new" }), replaced: row }),
+      cancelRunWake: async () => row,
+      movePendingRunWake: async () => row,
+      countFiredRunWakes: async () => 0,
+    },
+    events: {
+      publish: async (runId, event, data) => {
+        assert.equal(event, "run.wake.changed");
+        const pending = data.pending_wake;
+        published.push([
+          runId,
+          isJsonObject(pending) && typeof pending.id === "string" ? pending.id : null,
+        ]);
+      },
+    },
+  });
+  return { wakes, published };
+}
+
+test("each change of a run's pending wake-up is published with what it leaves", async () => {
+  const { wakes, published } = publishingWakes(wakeRow());
+  await wakes.set(
+    { runId: "r_1", rootRunId: "r_1", agentId: "a_1", maxWakeUps: 10 },
+    { minutes: 5, message: null, toolCallId: "call_1" },
+    new Date(NOW),
+  );
+  await wakes.cancel("r_1", "operator");
+  await wakes.move("r_1", "r_2");
+  await wakes.announceFired("r_2");
+  assert.deepEqual(published, [
+    ["r_1", "wk_new"],
+    ["r_1", null],
+    ["r_1", null],
+    ["r_2", "wk_1"],
+    ["r_2", null],
+  ]);
+});
+
+test("a cancel or a move that finds no pending wake-up publishes nothing", async () => {
+  const { wakes, published } = publishingWakes(null);
+  assert.equal(await wakes.cancel("r_1", "agent"), null);
+  assert.equal(await wakes.move("r_1", "r_2"), null);
+  assert.deepEqual(published, []);
 });

@@ -279,7 +279,7 @@ describe("the wake-up tools", { concurrency: 1 }, () => {
     const pending = await getPendingRunWake(database.pool, runId);
     assert.ok(pending);
     requests.length = 0;
-    await loop.wakes.fireDueWakes(new Date(Date.now() + 2 * MINUTE));
+    await loop.runWakes.fireDueWakes(new Date(Date.now() + 2 * MINUTE));
     await loop.generations.task(runId);
     const opened = (await listMessages(database.pool, runId)).find(
       (row) => row.metadata.source === "wake",

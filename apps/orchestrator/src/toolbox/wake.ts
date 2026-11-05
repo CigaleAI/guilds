@@ -72,7 +72,7 @@ export const wakeCancel = nativeTool({
     "Cancel this run's pending wake-up, set with wake_after. Says so when there is none.",
   parameters: Type.Object({}),
   async handler(services, run) {
-    const cancelled = await wakes(services).cancel(run.run_id);
+    const cancelled = await wakes(services).cancel(run.run_id, "agent");
     return cancelled === null ? "no pending wake-up" : `cancelled ${cancelled.id}`;
   },
 });

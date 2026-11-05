@@ -445,6 +445,7 @@ events and what each carries, beside the stream: `CoachEvents` in
 | `generation.finished` | run, Studio, Builder | durable | A generation ended |
 | `run.error` | run | durable | A run error; cancellation has `operation: "generation.cancelled"` |
 | `run.continued` | run | durable | A coding run continued in the run named by `run_id` |
+| `run.wake.changed` | run | durable | `{ pending_wake }`: the run's pending wake-up after it was set, replaced, cancelled, moved to or from the run on a hand-off, or fired; null when none is left |
 | `assistant.delta` | run, Studio, Builder | ephemeral | Text being written |
 | `assistant.reasoning.delta` | run, Studio, Builder | ephemeral | Reasoning being written |
 | `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines, session_id?}`: a running `code_task`'s redacted progress lines with its session, or a running `browse` call's redacted step line |

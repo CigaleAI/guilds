@@ -31,7 +31,8 @@ import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { agentSchedules, type Schedules } from "../schedules/service.js";
 import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/group.js";
-import { agentWakes } from "../wakes/service.js";
+import { pendingWakeItem, type PendingWakeView } from "../wakes/item.js";
+import { agentWakes, type Wakes } from "../wakes/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
@@ -104,6 +105,9 @@ function generationDatabase(db: Queryable) {
 
 export type GenerationDatabase = ReturnType<typeof generationDatabase>;
 
+/** One run as its own page reads it: its view, and its pending wake-up, or null. */
+export type RunDetailView = RunView & { pending_wake: PendingWakeView | null };
+
 /**
  * What a generation loop runs with beside its database, built once at composition: its notes
  * and machines, and the services its runs call. A service left out takes core's own.
@@ -146,6 +150,8 @@ export type GenerationLoopDeps = Omit<GenerationLoopServices, "artifacts"> & {
   events: RunEvents;
   /** What the runs' tools call. */
   tools: ToolServices;
+  /** The runs' pending wake-ups, whose changes are published on `events`. */
+  wakes: Wakes;
 };
 
 /**
@@ -178,7 +184,8 @@ export class GenerationLoop implements GroupRunner {
   chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
-  wakes: RunWakes;
+  wakes: Wakes;
+  runWakes: RunWakes;
   constructor(services: GenerationLoopDeps, timings: GenerationLoopTimings = LOOP_TIMINGS) {
     const { db, notes, workspaceRoot, sandboxes } = services;
     this.db = db;
@@ -229,7 +236,14 @@ export class GenerationLoop implements GroupRunner {
       coding: this.coding,
       tools,
     });
-    this.wakes = new RunWakes({ db, events: this.events, generations: this.generations, starter: this });
+    this.wakes = services.wakes;
+    this.runWakes = new RunWakes({
+      db,
+      events: this.events,
+      generations: this.generations,
+      starter: this,
+      wakes: this.wakes,
+    });
     this.runs = new Runs(
       {
         db,
@@ -237,11 +251,17 @@ export class GenerationLoop implements GroupRunner {
         generations: this.generations,
         schedules: this.schedules,
         starter: this,
-        wakes: this.wakes,
+        wakes: this.runWakes,
       },
       timings.schedulerTickMs,
     );
-    this.chains = new RunChains({ db, events: this.events, completion: this.completion, runs: this.runs });
+    this.chains = new RunChains({
+      db,
+      events: this.events,
+      completion: this.completion,
+      runs: this.runs,
+      wakes: this.wakes,
+    });
     this.generator = new RunGenerator({
       db,
       scripts: this.scripts,
@@ -255,7 +275,7 @@ export class GenerationLoop implements GroupRunner {
       secrets: this.secrets,
       chains: this.chains,
       starter: this,
-      wakes: this.wakes,
+      wakes: this.runWakes,
     });
   }
 
@@ -385,13 +405,13 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  async resumeRun(runId: string): Promise<RunView> {
+  async resumeRun(runId: string): Promise<RunDetailView> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
     }
     if (run.status === "active") {
-      return this.runView(run);
+      return this.runDetail(run);
     }
     if (run.status !== "completed") {
       throw new RunRequestError(409, "run cannot be resumed");
@@ -415,7 +435,7 @@ export class GenerationLoop implements GroupRunner {
     runId: string,
     content: string,
     attachments: AttachmentRef[] = [],
-  ): Promise<RunView> {
+  ): Promise<RunDetailView> {
     const run = await this.runTakingMessages(runId);
     try {
       await this.beginGeneration(runId, run.agent_id);
@@ -476,7 +496,7 @@ export class GenerationLoop implements GroupRunner {
     return generation;
   }
 
-  async cancel(runId: string): Promise<RunView | null> {
+  async cancel(runId: string): Promise<RunDetailView | null> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
@@ -497,7 +517,14 @@ export class GenerationLoop implements GroupRunner {
       await task;
     }
     const row = await this.db.getRun(runId);
-    return row ? this.runView(row) : null;
+    return row ? this.runDetail(row) : null;
+  }
+
+  /** Cancels the run's pending wake-up as the operator; 404 when it has none. */
+  async cancelWake(runId: string): Promise<void> {
+    if ((await this.wakes.cancel(runId, "operator")) === null) {
+      throw new RunRequestError(404, "no pending wake-up");
+    }
   }
 
   async reconcile(): Promise<void> {
@@ -537,12 +564,18 @@ export class GenerationLoop implements GroupRunner {
     return runItem(row, this.isGenerating(row.id));
   }
 
-  private async currentRunView(runId: string): Promise<RunView> {
+  /** The run's view with its pending wake-up. */
+  async runDetail(row: RunRow): Promise<RunDetailView> {
+    const pending = await this.db.getPendingRunWake(row.id);
+    return { ...this.runView(row), pending_wake: pending === null ? null : pendingWakeItem(pending) };
+  }
+
+  private async currentRunView(runId: string): Promise<RunDetailView> {
     const row = await this.db.getRun(runId);
     if (row === null) {
       throw new RunRequestError(404, "run not found");
     }
-    return this.runView(row);
+    return this.runDetail(row);
   }
 
   /** Admits a generation of the run on its agent; the agent's machine stops counting down to its idle stop. */
@@ -600,6 +633,7 @@ export function generationLoop(
   const scripts = agentScripts(db);
   const artifacts = services.artifacts ? generationArtifacts(services.artifacts) : null;
   const credentials = services.credentials ?? coreModelCredentials(db);
+  const wakes = agentWakes(db, events);
   const tools = toolServices(db, {
     notes: services.notes,
     artifacts,
@@ -610,7 +644,7 @@ export function generationLoop(
     scripts,
     events,
     browse: browseService(db, credentials, events),
-    wakes: agentWakes(db),
+    wakes,
   });
   const loop = new GenerationLoop(
     {
@@ -625,6 +659,7 @@ export function generationLoop(
       scripts,
       events,
       tools,
+      wakes,
     },
     timings,
   );

@@ -14,16 +14,15 @@ import {
   type RunRow,
 } from "../db/runs.js";
 import {
-  cancelRunWake,
   countFiredRunWakes,
   getPendingRunWake,
   listDueRunWakes,
   markRunWakeFired,
-  movePendingRunWake,
   type RunWakeRow,
 } from "../db/wakes.js";
 import { wakeUserMessage } from "../wakes/message.js";
 import { wakeUpsLeft, WakeCancelled } from "../wakes/rules.js";
+import type { Wakes } from "../wakes/service.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
 import { continuedBy, latestInChain } from "./chain.js";
@@ -45,26 +44,22 @@ function wakeFiringQueries(db: Queryable) {
 
 export type WakeFiringQueries = ReturnType<typeof wakeFiringQueries>;
 
-/** The db/ functions the wake-ups of a loop's runs are fired and cancelled through. */
+/** The db/ functions the wake-ups of a loop's runs are read and fired through. */
 export type RunWakesDatabase = {
   getRun: BoundQuery<typeof getRun>;
   nextGeneration: BoundQuery<typeof nextGeneration>;
   listDueRunWakes: BoundQuery<typeof listDueRunWakes>;
   getPendingRunWake: BoundQuery<typeof getPendingRunWake>;
-  cancelRunWake: BoundQuery<typeof cancelRunWake>;
-  movePendingRunWake: BoundQuery<typeof movePendingRunWake>;
   wakeFiring: Transaction<WakeFiringQueries>;
 };
 
-/** The db/ functions the wake-ups of a loop's runs are fired and cancelled through, on `db`. */
+/** The db/ functions the wake-ups of a loop's runs are read and fired through, on `db`. */
 export function runWakesDatabase(db: Queryable): RunWakesDatabase {
   return {
     getRun: bindQuery(db, getRun),
     nextGeneration: bindQuery(db, nextGeneration),
     listDueRunWakes: bindQuery(db, listDueRunWakes),
     getPendingRunWake: bindQuery(db, getPendingRunWake),
-    cancelRunWake: bindQuery(db, cancelRunWake),
-    movePendingRunWake: bindQuery(db, movePendingRunWake),
     wakeFiring: bindTransaction(db, wakeFiringQueries),
   };
 }
@@ -75,6 +70,8 @@ export type RunWakesServices = {
   events: RunEvents;
   generations: ActiveGenerations;
   starter: GenerationStarter;
+  /** Where a run's pending wake-up is cancelled, moved, and announced fired. */
+  wakes: Pick<Wakes, "cancel" | "move" | "announceFired">;
 };
 
 /**
@@ -105,8 +102,8 @@ export class RunWakes {
    * `wake.cancelled` naming the cap on the run; nothing when the run has none pending.
    */
   async cancelForCap(turn: RunGeneration, cap: string): Promise<void> {
-    const { db, events } = this.services;
-    const cancelled = await db.cancelRunWake(turn.runId, "limit");
+    const { wakes, events } = this.services;
+    const cancelled = await wakes.cancel(turn.runId, "limit");
     if (cancelled !== null) {
       await events.recordError(turn, "wake.cancelled", new WakeCancelled(cancelled.id, cap));
     }
@@ -173,7 +170,7 @@ export class RunWakes {
    * has a pending wake-up of its own, which replaces this one.
    */
   private async wakingRun(due: RunWakeRow): Promise<RunRow | null> {
-    const { db } = this.services;
+    const { db, wakes } = this.services;
     const run = await db.getRun(due.run_id);
     const next = run === null ? null : continuedBy(run);
     if (next === null) {
@@ -181,18 +178,18 @@ export class RunWakes {
     }
     const latest = await latestInChain(db, next);
     if ((await db.getPendingRunWake(latest)) !== null) {
-      await db.cancelRunWake(due.run_id, "replaced");
+      await wakes.cancel(due.run_id, "replaced");
       return null;
     }
-    await db.movePendingRunWake(due.run_id, latest);
+    await wakes.move(due.run_id, latest);
     return db.getRun(latest);
   }
 
   /**
    * In one transaction: marks the wake-up fired, reopens the run when it is completed, and
-   * appends the wake-up message as the run's next generation; once committed, the message is
-   * published to the run's subscribers. Returns that generation; null when the wake-up was no
-   * longer pending, and nothing is appended.
+   * appends the wake-up message as the run's next generation; once committed, the message and
+   * the wake-up's firing are published to the run's subscribers. Returns that generation; null
+   * when the wake-up was no longer pending, and nothing is appended.
    */
   private async appendWake(run: RunRow, wakeId: string, now: Date): Promise<number | null> {
     const appended = await this.services.db.wakeFiring(async (tx) => {
@@ -217,6 +214,7 @@ export class RunWakes {
       return null;
     }
     await this.services.events.publishCommitted(appended.message);
+    await this.services.wakes.announceFired(run.id);
     return appended.generation;
   }
 }

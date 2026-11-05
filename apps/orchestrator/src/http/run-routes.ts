@@ -31,7 +31,7 @@ const RunMessageSchema = Type.Object({
 /** The path of one run. */
 const RunParams = Type.Object({ run_id: Type.String() });
 
-/** An agent's runs: opened, read, talked to, resumed, cancelled, and streamed. */
+/** An agent's runs: opened, read, talked to, resumed, cancelled, streamed, and their wake-ups cancelled. */
 export async function registerRunRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const services: RunOperatorServices = {
@@ -64,7 +64,7 @@ export async function registerRunRoutes(app: RouteApp, deps: AppDeps): Promise<v
 
   app.get("/api/runs/:run_id", { schema: { params: RunParams } }, async (request) => {
     const user = await currentUser(db, request, deps);
-    return loop().runView(await requireVisibleRun(db, request.params.run_id, user.id));
+    return loop().runDetail(await requireVisibleRun(db, request.params.run_id, user.id));
   });
 
   app.get("/api/runs/:run_id/messages", { schema: { params: RunParams } }, async (request) => {
@@ -100,6 +100,17 @@ export async function registerRunRoutes(app: RouteApp, deps: AppDeps): Promise<v
       const run = await requireVisibleRun(db, request.params.run_id, user.id);
       const cancelled = await loop().cancel(run.id);
       return cancelled === null ? reply.code(204).send() : reply.code(202).send(cancelled);
+    },
+  );
+
+  app.delete(
+    "/api/runs/:run_id/wake",
+    { schema: { params: RunParams } },
+    async (request, reply) => {
+      const user = await currentUser(db, request, deps);
+      const run = await requireVisibleRun(db, request.params.run_id, user.id);
+      await loop().cancelWake(run.id);
+      return reply.code(204).send();
     },
   );
 

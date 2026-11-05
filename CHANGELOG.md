@@ -32,7 +32,11 @@ again, still refusing messages; a run continued after a hand-off wakes
 in the chain's latest run. A run that ends on its tool-call,
 input-token, or chain cap cancels its pending wake-up and records
 `wake.cancelled`. `wake_after` is refused once the run's chain fired
-`max_wake_ups` wake-ups.
+`max_wake_ups` wake-ups. `GET /api/runs/:id`, and the run a message,
+a resume, or a cancel answers with, carry `pending_wake`;
+`DELETE /api/runs/:id/wake` cancels it as the operator; and the run's
+stream publishes `run.wake.changed` on every change of it, and the
+wake-up's message as it commits.
 
 **Rebuild.** Agent configs and run snapshots gain `max_wake_ups`, the
 most wake-ups a run may fire: a whole number of 1 or more, 10 by

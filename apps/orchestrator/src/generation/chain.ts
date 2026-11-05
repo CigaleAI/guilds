@@ -2,7 +2,6 @@ import { getAgent } from "../db/agents.js";
 import type { AssistantMessage } from "../db/schema/index.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { completeRun, getRun, listMessages, mergeRunMetadata, type RunMessage, type RunRow } from "../db/runs.js";
-import { movePendingRunWake } from "../db/wakes.js";
 import type { Completion } from "../llm/completion.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/tokens.js";
 import { remainingAfter, stampToolResult } from "../toolbox/index.js";
@@ -11,6 +10,7 @@ import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents } from "./events.js";
 import type { Generation } from "./generate.js";
 import type { Runs } from "./runs.js";
+import type { Wakes } from "../wakes/service.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 
 /**
@@ -72,7 +72,6 @@ export type RunChainsDatabase = {
   listMessages: BoundQuery<typeof listMessages>;
   mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
   completeRun: BoundQuery<typeof completeRun>;
-  movePendingRunWake: BoundQuery<typeof movePendingRunWake>;
 };
 
 /** The db/ functions a chain is followed and handed off through, on `db`. */
@@ -83,7 +82,6 @@ export function runChainsDatabase(db: Queryable): RunChainsDatabase {
     listMessages: bindQuery(db, listMessages),
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
     completeRun: bindQuery(db, completeRun),
-    movePendingRunWake: bindQuery(db, movePendingRunWake),
   };
 }
 
@@ -118,6 +116,8 @@ export type RunChainsServices = {
   events: RunEvents;
   completion: ModelCompletion;
   runs: Pick<Runs, "createContinuation">;
+  /** Where the pending wake-up of a run that hands off moves to its continuation. */
+  wakes: Pick<Wakes, "move">;
 };
 
 /** The run chains of a loop: each hand-off, and the continuation it creates. */
@@ -166,7 +166,7 @@ export class RunChains {
       await events.recordError(gen, "generation.continue", error);
       return;
     }
-    await db.movePendingRunWake(gen.runId, next);
+    await this.services.wakes.move(gen.runId, next);
     await db.mergeRunMetadata(gen.runId, { continued_by_run_id: next }, new Date());
     await db.completeRun(gen.runId, new Date());
     this.continuations.set(gen.runId, next);

@@ -164,6 +164,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     const first = String((await loop.runs.createRun(agentId, null)).id);
     const wake = await setRunWake(db, wakeOf(first, agentId), new Date());
     const continued: string[] = [];
+    const wakeChanges: unknown[] = [];
     const queue = loop.events.subscribe(first);
     await loop.addMessage(first, "start the task");
     await loop.generations.task(first);
@@ -172,7 +173,11 @@ test("a coding run near its input limit hands off and continues in a new run", {
       if (event === "run.continued") {
         continued.push(String(data.run_id));
       }
+      if (event === "run.wake.changed") {
+        wakeChanges.push(data.pending_wake ?? null);
+      }
     }
+    assert.deepEqual(wakeChanges, [null], "the first run's stream learns its wake-up left with the hand-off");
 
     const runA = (await getRun(db, first))!;
     const metaA = runA.metadata as Record<string, unknown>;

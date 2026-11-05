@@ -1,6 +1,15 @@
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
-import { cancelRunWake, countFiredRunWakes, setRunWake, type RunWakeRow } from "../db/wakes.js";
+import {
+  cancelRunWake,
+  countFiredRunWakes,
+  movePendingRunWake,
+  setRunWake,
+  type RunWakeCancelReason,
+  type RunWakeRow,
+} from "../db/wakes.js";
 import { newId } from "../lib/ids.js";
+import type { ToolEvents } from "../toolbox/services.js";
+import { pendingWakeItem } from "./item.js";
 import { wakeUpsLeft } from "./rules.js";
 import { WakeError } from "./validation.js";
 
@@ -15,27 +24,36 @@ export type WakeRequest = { minutes: number; message: string | null; toolCallId:
 /** A wake-up just set: it, the pending one it replaced, and the wake-ups the run has left once it fires. */
 export type WakeSet = { wake: RunWakeRow; replaced: RunWakeRow | null; wakeUpsLeft: number };
 
-/** The db/ functions an agent's wake-ups are set and cancelled through. */
+/** The db/ functions a run's pending wake-up is set, cancelled, and moved through. */
 export type WakesDatabase = {
   setRunWake: BoundQuery<typeof setRunWake>;
   cancelRunWake: BoundQuery<typeof cancelRunWake>;
+  movePendingRunWake: BoundQuery<typeof movePendingRunWake>;
   countFiredRunWakes: BoundQuery<typeof countFiredRunWakes>;
 };
 
-/** The wake-ups an agent sets on its own runs, and cancels. */
+/** What a run's wake-ups are kept with: their database, and the runs' streams their changes are published on. */
+export type WakesDependencies = { db: WakesDatabase; events: ToolEvents };
+
+/**
+ * A run's pending wake-up: set by its agent, cancelled by its agent, the operator, or the run's
+ * end, moved to a continuation, and fired. Every change is published on the run's stream as
+ * `run.wake.changed`, with the pending wake-up it leaves, or null.
+ */
 export class Wakes {
-  constructor(private readonly db: WakesDatabase) {}
+  constructor(private readonly deps: WakesDependencies) {}
 
   /**
    * Sets the run's wake-up `request.minutes` after `now`, replacing its pending one. Refused with
    * `WakeError` when the wake-ups fired across the run's chain reached its cap.
    */
   async set(run: WakingRun, request: WakeRequest, now: Date): Promise<WakeSet> {
-    const left = wakeUpsLeft(run.maxWakeUps, await this.db.countFiredRunWakes(run.rootRunId));
+    const { db } = this.deps;
+    const left = wakeUpsLeft(run.maxWakeUps, await db.countFiredRunWakes(run.rootRunId));
     if (left === 0) {
       throw new WakeError(`this run has no wake-ups left: it fired the ${run.maxWakeUps} it may`);
     }
-    const set = await this.db.setRunWake(
+    const set = await db.setRunWake(
       {
         wakeId: newId("wk"),
         runId: run.runId,
@@ -47,20 +65,51 @@ export class Wakes {
       },
       now,
     );
+    await this.publishPending(run.runId, set.wake);
     return { wake: set.wake, replaced: set.replaced, wakeUpsLeft: left - 1 };
   }
 
-  /** Cancels the run's pending wake-up, as its agent asks; null when it has none. */
-  cancel(runId: string): Promise<RunWakeRow | null> {
-    return this.db.cancelRunWake(runId, "agent");
+  /** Cancels the run's pending wake-up for `reason`; null when it has none, and nothing is published. */
+  async cancel(runId: string, reason: RunWakeCancelReason): Promise<RunWakeRow | null> {
+    const cancelled = await this.deps.db.cancelRunWake(runId, reason);
+    if (cancelled !== null) {
+      await this.publishPending(runId, null);
+    }
+    return cancelled;
+  }
+
+  /** Moves the pending wake-up of `fromRunId` to `toRunId`, the run that continues it; null when there is none. */
+  async move(fromRunId: string, toRunId: string): Promise<RunWakeRow | null> {
+    const moved = await this.deps.db.movePendingRunWake(fromRunId, toRunId);
+    if (moved !== null) {
+      await this.publishPending(fromRunId, null);
+      await this.publishPending(toRunId, moved);
+    }
+    return moved;
+  }
+
+  /** Tells the run's subscribers its wake-up fired, once the firing committed: it has none pending. */
+  async announceFired(runId: string): Promise<void> {
+    await this.publishPending(runId, null);
+  }
+
+  /** Publishes `run.wake.changed` on the run's stream, with the pending wake-up the change left. */
+  private async publishPending(runId: string, pending: RunWakeRow | null): Promise<void> {
+    await this.deps.events.publish(runId, "run.wake.changed", {
+      pending_wake: pending === null ? null : pendingWakeItem(pending),
+    });
   }
 }
 
-/** The wake-ups of the runs on `db`. */
-export function agentWakes(db: Queryable): Wakes {
+/** The wake-ups of the runs on `db`, their changes published on `events`. */
+export function agentWakes(db: Queryable, events: ToolEvents): Wakes {
   return new Wakes({
-    setRunWake: bindQuery(db, setRunWake),
-    cancelRunWake: bindQuery(db, cancelRunWake),
-    countFiredRunWakes: bindQuery(db, countFiredRunWakes),
+    db: {
+      setRunWake: bindQuery(db, setRunWake),
+      cancelRunWake: bindQuery(db, cancelRunWake),
+      movePendingRunWake: bindQuery(db, movePendingRunWake),
+      countFiredRunWakes: bindQuery(db, countFiredRunWakes),
+    },
+    events,
   });
 }
