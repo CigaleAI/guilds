@@ -14,6 +14,10 @@ once per process, instead of loading it again for each count, so the
 count no longer holds the server for the load. The counts are
 unchanged.
 
+**Rebuild.** The browser tab icon of the operator app shows a dot
+while the Inbox has an open issue or an unread tag, and turns plain
+again once it has none.
+
 **Breaking.** A note or a file has an access list, which alone decides
 who reaches it, and no level and no owner. A name is one note or one file across the
 organisation, at `org/<org>/<key>` or `org/<org>/files/<name>`; Memory,

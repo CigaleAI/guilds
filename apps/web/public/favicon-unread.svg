@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- Ring fill is the page colour: sand on a light tab, near-black on a dark one. -->
+  <style>
+    .ring { fill: #d9d5c7; }
+    @media (prefers-color-scheme: dark) {
+      .ring { fill: #120e11; }
+    }
+  </style>
+  <rect x="0" y="9.6" width="31.2" height="31.2" rx="12" fill="#1fafd1"/>
+  <rect x="16.8" y="0" width="31.2" height="31.2" rx="12" fill="#573646"/>
+  <circle class="ring" cx="39" cy="9" r="8" fill="#d9d5c7"/>
+  <circle cx="39" cy="9" r="5" fill="#1fafd1"/>
+</svg>
