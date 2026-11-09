@@ -35,6 +35,7 @@ import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
 import type { CodingRepository } from "../../src/coding/repositories.js";
 import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
+import type { RunWakeRow } from "../../src/db/wakes.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js";
 import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
@@ -564,7 +565,7 @@ export class FakeDB {
     return [...this.due_schedules];
   }
 
-  async cancelRunWake(_runId: string, _reason: string) {
+  async cancelRunWake(_runId: string, _reason: string): Promise<RunWakeRow | null> {
     return null;
   }
 

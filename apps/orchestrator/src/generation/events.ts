@@ -6,11 +6,15 @@ import { EventQueue, type StreamEvent } from "../lib/event.js";
 import { errorMessage, errorName, redactText, writeLog } from "../observability/log.js";
 import type { ToolProgress } from "../toolbox/services.js";
 import type { RunWakeChange } from "../wakes/item.js";
+import type { RunStanding } from "./lifecycle.js";
 
 const EVENT_QUEUE_LIMIT = 4096;
 
-/** A generation of a run starting or finishing: its number. */
-export type GenerationEvent = { generation: number };
+/** A generation of a run starting: its number. */
+export type GenerationStarted = { generation: number };
+
+/** A generation of a run finished, once it no longer holds the run: its number, and where the run stands. */
+export type GenerationFinished = { generation: number; standing: RunStanding };
 
 /** A piece of the model's reply or reasoning as it streams. */
 export type AssistantDelta = { text: string };
@@ -20,14 +24,14 @@ export type RunContinued = { run_id: string };
 
 /** What each event of a run's stream carries. */
 export type RunEvents = {
-  "generation.started": GenerationEvent;
+  "generation.started": GenerationStarted;
   "assistant.delta": AssistantDelta;
   "assistant.reasoning.delta": AssistantDelta;
   "message.committed": MessageView;
   "tool.progress": ToolProgress;
   "run.error": RunError;
   "run.wake.changed": RunWakeChange;
-  "generation.finished": GenerationEvent;
+  "generation.finished": GenerationFinished;
   "run.continued": RunContinued;
 };
 

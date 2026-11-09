@@ -25,7 +25,7 @@ import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesD
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import { GenerationCancelled, logOperationFailure, RunLimitError, type OperationFailure } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
-import { runWasResumed } from "./lifecycle.js";
+import { runStanding, runWasResumed } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
   liveOfferedNames,
@@ -172,13 +172,14 @@ export class RunGenerator {
   async generate(runId: string, generation: number): Promise<void> {
     const turn: RunGeneration = { runId, generation, log: { run_id: runId } };
     let cancelled = false;
+    let ended: RunRow | null = null;
     try {
       cancelled = await this.generateUntilStopped(turn);
     } finally {
       try {
-        await this.finish(turn, cancelled);
+        ended = await this.finish(turn, cancelled);
       } finally {
-        await this.continueOrEnd(runId, cancelled);
+        await this.continueOrEnd(turn, ended, cancelled);
       }
     }
   }
@@ -225,27 +226,28 @@ export class RunGenerator {
   }
 
   /**
-   * Settles a cancel, tells the run's subscribers the generation finished, cancels the pending
-   * wake-up of a run that ended on a terminal cap, and completes a run that completes after this
-   * generation.
+   * Settles a cancel, cancels the pending wake-up of a run that ended on a terminal cap, and
+   * completes a run that completes after this generation. Returns the run as the generation left
+   * it; null when the run is gone.
    */
-  private async finish(turn: RunGeneration, cancelled: boolean): Promise<void> {
-    const { db, events, wakes } = this.services;
+  private async finish(turn: RunGeneration, cancelled: boolean): Promise<RunRow | null> {
+    const { db, wakes } = this.services;
     if (cancelled) {
       logOperationFailure(await this.settleCancel(turn));
     }
-    await events.publish(turn.runId, "generation.finished", { generation: turn.generation });
     const finished = await db.getRun(turn.runId);
     if (finished === null) {
-      return;
+      return null;
     }
     const cap = terminalCapOf(finished);
     if (cap !== null) {
       await wakes.cancelForCap(turn, cap);
     }
-    if (completesAfter(finished, turn.generation)) {
-      await db.completeRun(turn.runId, new Date());
+    if (!completesAfter(finished, turn.generation)) {
+      return finished;
     }
+    await db.completeRun(turn.runId, new Date());
+    return db.getRun(turn.runId);
   }
 
   /**
@@ -265,25 +267,42 @@ export class RunGenerator {
     }
   }
 
-  /** Generates the run's continuation when it handed off and was not cancelled; otherwise ends the generation. */
-  private async continueOrEnd(runId: string, cancelled: boolean): Promise<void> {
-    const next = this.services.chains.takeContinuation(runId);
+  /**
+   * Generates the run's continuation when it handed off and was not cancelled; otherwise ends the
+   * generation and tells the run's subscribers it finished, once it no longer holds the run.
+   */
+  private async continueOrEnd(turn: RunGeneration, ended: RunRow | null, cancelled: boolean): Promise<void> {
+    const next = this.services.chains.takeContinuation(turn.runId);
     if (next !== null && !cancelled) {
-      await this.continueChain(runId, next);
+      await this.continueChain(turn, ended, next);
       return;
     }
-    this.services.starter.endGeneration(runId);
+    this.services.starter.endGeneration(turn.runId);
+    await this.publishFinished(turn, ended);
+  }
+
+  /**
+   * Tells the run's subscribers the generation finished, with where the run it left stands;
+   * nothing when the run is gone.
+   */
+  private async publishFinished(turn: RunGeneration, ended: RunRow | null): Promise<void> {
+    if (ended === null) {
+      return;
+    }
+    const standing = runStanding(ended, this.services.generations.isGenerating(turn.runId));
+    await this.services.events.publish(turn.runId, "generation.finished", { generation: turn.generation, standing });
   }
 
   /**
    * Hands the agent's admission from a run to its continuation without releasing it, tells the
-   * first run's subscribers where the work went, and generates the continuation. The agent
-   * stays busy across the chain.
+   * first run's subscribers its generation finished and where the work went, and generates the
+   * continuation. The agent stays busy across the chain.
    */
-  private async continueChain(fromRunId: string, toRunId: string): Promise<void> {
+  private async continueChain(from: RunGeneration, ended: RunRow | null, toRunId: string): Promise<void> {
     const { generations, events } = this.services;
-    generations.handOver(fromRunId, toRunId);
-    await events.publish(fromRunId, "run.continued", { run_id: toRunId });
+    generations.handOver(from.runId, toRunId);
+    await this.publishFinished(from, ended);
+    await events.publish(from.runId, "run.continued", { run_id: toRunId });
     const task = this.generate(toRunId, 1);
     generations.setTask(toRunId, task);
     await task;

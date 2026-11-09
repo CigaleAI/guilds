@@ -345,7 +345,7 @@ flowchart TD
   Step -->|assistant text| Save["append messages"]
   Step -->|tool_calls| Tools["toolbox / MCP / adapters"]
   Tools --> Step
-  Step -->|stop / limit / cancel| Done["publish generation.finished"]
+  Step -->|stop / limit / cancel| Done["complete the run if it ends here, free the agent, publish generation.finished"]
   Step -->|coding, 70% of input limit| Handoff["hand-off step, next run of the chain"]
   Handoff --> Loop
   Save --> SSE["SSE subscribers"]
@@ -444,7 +444,7 @@ compile.
 |---|---|---|---|
 | `message.committed` | run, Studio, Builder | durable | A message row committed |
 | `generation.started` | run, Studio, Builder | durable | A generation began |
-| `generation.finished` | run, Studio, Builder | durable | A generation ended |
+| `generation.finished` | run, Studio, Builder | durable | A generation ended. On a run, `{ generation, standing }`, published once the run is completed when it ends with this generation and the generation no longer holds it: `standing` is where the run then stands (`open`, `waiting`, `generating`, `completed`, `capped`, `continued`; `runStanding` in `generation/lifecycle.ts`) |
 | `run.error` | run | durable | A run error; cancellation has `operation: "generation.cancelled"` |
 | `run.continued` | run | durable | A coding run continued in the run named by `run_id` |
 | `run.wake.changed` | run | durable | `{ pending_wake }`: the run's pending wake-up after it was set, replaced, cancelled, moved to or from the run on a hand-off, or fired; null when none is left |
@@ -485,6 +485,21 @@ Delivery rules:
   final message and log path.
 - There is no historical replay. After a reconnect the client
   re-reads over REST.
+- A run's generation publishes `generation.started`; then its deltas,
+  `message.committed` and `tool.progress` events as it goes; on a
+  cancel, the interrupted tool results and the cancel's `run.error`;
+  on a terminal cap, `run.wake.changed` and the `run.error` of the
+  cancelled wake-up; then `generation.finished`; and after a hand-off,
+  `run.continued`. A client that re-reads the run on
+  `generation.finished` reads it as the generation left it: not
+  generating, and completed when it completes with that generation.
+  The `standing` it carries is `open` for an active run that takes an
+  operator's message, `waiting` for an active run that takes none (a
+  group or schedule run that was not resumed, or one that continued
+  elsewhere), `completed` for an ended run that can be resumed,
+  `capped` for one that ended on a terminal cap, `continued` for one
+  that handed off, and `generating` for one a generation holds. A run
+  deleted during its generation publishes no `generation.finished`.
 - Headers are `Content-Type: text/event-stream; charset=utf-8`,
   `Cache-Control: no-cache`, `Connection: keep-alive`, and
   `X-Accel-Buffering: no`.

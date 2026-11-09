@@ -50,6 +50,7 @@ import { noteRowAt } from "../helpers/artifacts.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 import { connectionRow, serverRow } from "../helpers/servers.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { RunEvent } from "../../src/generation/events.js";
 import { McpPool, type RemoteCall } from "../../src/mcp/pool.js";
 
 const HOME = "/home/a_1";
@@ -109,6 +110,17 @@ function withoutWorkspaceMeasure(commands: unknown): string[] {
 
 function workspaceMeasureCount(commands: unknown): number {
   return (commands as string[]).filter((command) => command.includes("guilds-code")).length;
+}
+
+/** What the loop publishes, each event with whether its run generates and `r_1`'s status the moment it is published. */
+function publishedWithRunState(loop: generationMod.GenerationLoop, db: FakeDB) {
+  const seen: Array<{ runId: string; event: RunEvent; generating: boolean; status: unknown }> = [];
+  const publish = loop.events.publish.bind(loop.events);
+  loop.events.publish = async (runId, ...event) => {
+    seen.push({ runId, event, generating: loop.generations.isGenerating(runId), status: db.run.status });
+    await publish(runId, ...event);
+  };
+  return seen;
 }
 
 async function waitTask(
@@ -2436,6 +2448,83 @@ describe("generation", { concurrency: 1 }, () => {
       assert.equal(error.message, "embed budget exceeded");
       return true;
     });
+  });
+
+  test("finished_is_published_after_the_run_is_completed_and_released", async () => {
+    restoreBindings();
+    const db = new FakeDB({});
+    db.run.kind = "schedule";
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
+    live.streamCompletion = async function* reply() {
+      yield ["done", completionReply("ok")];
+    };
+    const seen = publishedWithRunState(loop, db);
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
+    await waitTask(loop, "r_1");
+    assert.deepEqual(seen.at(-1), {
+      runId: "r_1",
+      event: ["generation.finished", { generation: 1, standing: "completed" }],
+      generating: false,
+      status: "completed",
+    });
+    restoreBindings();
+  });
+
+  test("a_capped_run_announces_its_cancelled_wake_up_before_it_finishes", async () => {
+    restoreBindings();
+    const db = new FakeDB({});
+    db.run.kind = "schedule";
+    db.run.errors = [
+      { at: "2026-01-01T00:00:00.000Z", generation: 1, operation: "generation.max_tool_calls", error_type: "RunLimitError", message: "limit" },
+    ];
+    db.cancelRunWake = async () => ({
+      id: "wk_1",
+      run_id: "r_1",
+      root_run_id: "r_1",
+      agent_id: "a_1",
+      due_at: "2026-01-01T00:05:00.000Z",
+      message: null,
+      state: "cancelled",
+      cancel_reason: "limit",
+      set_tool_call_id: "call_1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      fired_at: null,
+    });
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
+    live.streamCompletion = async function* reply() {
+      yield ["done", completionReply("ok")];
+    };
+    const seen = publishedWithRunState(loop, db);
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
+    await waitTask(loop, "r_1");
+    assert.deepEqual(
+      seen.slice(-3).map(({ event: [name, data] }) => (name === "run.error" ? `${name} ${data.operation}` : name)),
+      ["run.wake.changed", "run.error wake.cancelled", "generation.finished"],
+    );
+    assert.deepEqual(seen.at(-1)?.event, ["generation.finished", { generation: 1, standing: "capped" }]);
+    restoreBindings();
+  });
+
+  test("a_run_that_hands_off_finishes_released_before_it_names_its_continuation", async () => {
+    restoreBindings();
+    const db = new FakeDB({});
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
+    live.streamCompletion = async function* reply() {
+      yield ["done", completionReply("ok")];
+    };
+    loop.chains.takeContinuation = (runId) => (runId === "r_1" ? "r_2" : null);
+    const seen = publishedWithRunState(loop, db);
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
+    await waitTask(loop, "r_1");
+    const fromFirst = seen.filter(({ runId }) => runId === "r_1").slice(-2);
+    assert.deepEqual(fromFirst, [
+      { runId: "r_1", event: ["generation.finished", { generation: 1, standing: "open" }], generating: false, status: "active" },
+      { runId: "r_1", event: ["run.continued", { run_id: "r_2" }], generating: false, status: "active" },
+    ]);
+    restoreBindings();
   });
 
   test("event bus drops stalled subscribers", async () => {
