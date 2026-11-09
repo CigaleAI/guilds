@@ -40,7 +40,7 @@ import { continuedBy, latestInChain, RunChains, runChainsDatabase } from "./chai
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
 import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
-import { RunEvents, runEventsDatabase } from "./events.js";
+import { RunEventBus, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase } from "./generate.js";
 import { runWasResumed } from "./lifecycle.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
@@ -148,7 +148,7 @@ export type GenerationLoopDeps = Omit<GenerationLoopServices, "artifacts"> & {
   schedules: Schedules;
   scripts: Scripts;
   /** The runs' streams, which the tools publish on too. */
-  events: RunEvents;
+  events: RunEventBus;
   /** What the runs' tools call. */
   tools: ToolServices;
   /** The runs' pending wake-ups, whose changes are published on `events`. */
@@ -174,7 +174,7 @@ export class GenerationLoop implements GroupRunner {
   policy: OrgPolicy;
   credentials: ModelCredentialsProvider;
   generations: ActiveGenerations;
-  events: RunEvents;
+  events: RunEventBus;
   machines: AgentMachines;
   preparation: RunPreparation;
   completion: ModelCompletion;
@@ -628,7 +628,7 @@ export function generationLoop(
     router: groupRouter,
   });
   const database = generationDatabase(db);
-  const events = new RunEvents(database);
+  const events = new RunEventBus(database);
   const issues = guildIssues(db);
   const schedules = agentSchedules(db);
   const scripts = agentScripts(db);

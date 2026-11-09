@@ -26,7 +26,7 @@ import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import type { CodingRuns } from "./coding.js";
 import { GenerationCancelled, logOperationFailure, type OperationFailure } from "./errors.js";
-import type { RunEvents, RunGeneration } from "./events.js";
+import type { RunEventBus, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
 import type { ConnectionTarget } from "./offered-tools.js";
 import type { ConnectorPool } from "./prepare.js";
@@ -212,7 +212,7 @@ type ConnectionAnswer = { ok: true; text: string } | { ok: false; failure: Opera
 export type ToolCallsServices = {
   db: ToolCallsDatabase;
   mcp: ConnectorPool;
-  events: RunEvents;
+  events: RunEventBus;
   generations: ActiveGenerations;
   machines: AgentMachines;
   coding: CodingRuns;

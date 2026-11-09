@@ -7,7 +7,7 @@ import { INPUT_TOKEN_LIMIT_MESSAGE } from "../llm/tokens.js";
 import { remainingAfter, stampToolResult } from "../toolbox/index.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import { GenerationCancelled, RunLimitError } from "./errors.js";
-import type { RunEvents } from "./events.js";
+import type { RunEventBus } from "./events.js";
 import type { Generation } from "./generate.js";
 import type { Runs } from "./runs.js";
 import type { Wakes } from "../wakes/service.js";
@@ -113,7 +113,7 @@ export async function completeIfActive(
 /** What chains are handed off with, built once by the loop. */
 export type RunChainsServices = {
   db: RunChainsDatabase;
-  events: RunEvents;
+  events: RunEventBus;
   completion: ModelCompletion;
   runs: Pick<Runs, "createContinuation">;
   /** Where the pending wake-up of a run that hands off moves to its continuation. */

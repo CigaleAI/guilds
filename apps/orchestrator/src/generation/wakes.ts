@@ -27,7 +27,7 @@ import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
 import { continuedBy, latestInChain } from "./chain.js";
 import { ConflictError, logOperationFailure, type OperationFailure } from "./errors.js";
-import type { RunEvents, RunGeneration } from "./events.js";
+import type { RunEventBus, RunGeneration } from "./events.js";
 import type { GenerationStarter } from "./runs.js";
 
 /** The db/ functions a wake-up fires through in one transaction, on `db`. */
@@ -67,7 +67,7 @@ export function runWakesDatabase(db: Queryable): RunWakesDatabase {
 /** What wake-ups are fired with, built once by the loop. */
 export type RunWakesServices = {
   db: RunWakesDatabase;
-  events: RunEvents;
+  events: RunEventBus;
   generations: ActiveGenerations;
   starter: GenerationStarter;
   /** Where a run's pending wake-up is cancelled, moved, and announced fired. */

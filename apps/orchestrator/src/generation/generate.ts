@@ -24,7 +24,7 @@ import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./c
 import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase, type CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import { GenerationCancelled, logOperationFailure, RunLimitError, type OperationFailure } from "./errors.js";
-import type { RunEvents, RunGeneration } from "./events.js";
+import type { RunEventBus, RunGeneration } from "./events.js";
 import { runWasResumed } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
@@ -144,7 +144,7 @@ async function memoryReplacedBy(db: Pick<RunGeneratorDatabase, "listMessages">, 
 export type RunGeneratorServices = {
   db: RunGeneratorDatabase;
   scripts: Scripts;
-  events: RunEvents;
+  events: RunEventBus;
   generations: ActiveGenerations;
   machines: AgentMachines;
   completion: ModelCompletion;

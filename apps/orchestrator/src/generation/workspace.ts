@@ -10,7 +10,7 @@ import type { SandboxHandle } from "../sandbox/sdk.js";
 import { measureMachine, measureWorkspace } from "../toolbox/code.js";
 import { createToolHooks, createToolRun, type ToolRun } from "../toolbox/index.js";
 import type { OperationFailure } from "./errors.js";
-import type { RunEvents, RunGeneration } from "./events.js";
+import type { RunEventBus, RunGeneration } from "./events.js";
 import { agentSeat } from "./machines.js";
 
 export const DEFAULT_WORKSPACE_MAX_MIB = DEFAULT_MAX_WORKSPACE_MIB;
@@ -71,7 +71,7 @@ type WorkspaceCheck = {
 export class WorkspaceLimits {
   constructor(
     private readonly db: WorkspaceLimitsDatabase,
-    private readonly events: RunEvents,
+    private readonly events: RunEventBus,
   ) {}
 
   /**

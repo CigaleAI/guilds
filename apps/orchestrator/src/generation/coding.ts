@@ -33,7 +33,7 @@ import { createToolHooks, type ToolRun } from "../toolbox/index.js";
 import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
-import type { RunEvents, RunGeneration } from "./events.js";
+import type { RunEventBus, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
 import { lostCodeTask, type GenerationTools, type InterruptedToolRecord, type LostCodeTask } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
@@ -120,7 +120,7 @@ export type CodingRunsServices = {
   db: CodingRunsDatabase;
   generations: ActiveGenerations;
   machines: AgentMachines;
-  events: RunEvents;
+  events: RunEventBus;
   /** The toolbox's services, which a harness check records the agent's logins through. */
   tools: ToolServices;
 };

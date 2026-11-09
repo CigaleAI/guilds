@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { RunWakeRow } from "../../src/db/wakes.js";
 import type { ActiveGenerations } from "../../src/generation/active-generations.js";
 import { ConflictError } from "../../src/generation/errors.js";
-import type { RunEvents } from "../../src/generation/events.js";
+import type { RunEventBus } from "../../src/generation/events.js";
 import {
   RunWakes,
   type RunWakesDatabase,
@@ -85,7 +85,7 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
       publishCommitted: async (row: { run_id: string; seq: number }) => {
         calls.push(`published ${row.run_id} ${row.seq}`);
       },
-    } as unknown as RunEvents,
+    } as unknown as RunEventBus,
     generations: { isAgentBusy: () => false } as unknown as ActiveGenerations,
     wakes: {
       cancel: async () => null,
