@@ -243,8 +243,9 @@ export class ConversationRunner {
     if (session.generation_state !== "generating" && session.generation_state !== "cancelling") {
       return;
     }
-    await this.repair(session.id, Number(session.generation_number || 1), "execution interrupted");
-    await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
+    const generation = Number(session.generation_number || 1);
+    await this.repair(session.id, generation, "execution interrupted");
+    await this.endGeneration(session.id, generation);
   }
 
   private async run<C>(turn: ConversationGeneration<C>): Promise<GenerationEnd> {

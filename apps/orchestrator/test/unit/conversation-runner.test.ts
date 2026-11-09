@@ -290,3 +290,13 @@ test("a_throw_the_database_refuses_to_record_still_finishes_the_stream_without_a
     ["generation.started", "generation.finished"],
   );
 });
+
+test("boot_reconcile_returns_an_interrupted_session_to_idle_and_clears_its_start", async () => {
+  const { db, queries } = emptyDatabase();
+  const runner = new ConversationRunner({ db, kind: "builder", admission: new AdmissionCoordinator(), stubHint: "hint" });
+  await runner.reconcile({ id: "session-1", generation_state: "generating", generation_number: 2 } as never);
+  const reset = queries.filter(({ text }) => text.startsWith("UPDATE builder_sessions"));
+  assert.equal(reset.length, 1);
+  assert.match(String(reset[0]?.text), /generation_token = \$\d+, generation_started_at = \$\d+/);
+  assert.deepEqual(reset[0]?.params.slice(2), ["idle", null, null]);
+});
