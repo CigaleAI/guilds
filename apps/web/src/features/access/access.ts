@@ -27,12 +27,16 @@ export function bindingOrigin(
   return undefined;
 }
 
-/** The login state a server card shows; undefined when there is no login at all. */
-export function connectionStatus(server: McpServerAccess): McpConnectionStatus | undefined {
+/**
+ * The login state a server card shows: the login's status, pending while it waits for its
+ * settings, disconnected when the login it names is gone; undefined when there is no login at all.
+ */
+export function connectionStatus(
+  server: Pick<McpServerAccess, "needs_settings" | "connection_id" | "status">,
+): McpConnectionStatus | undefined {
   if (server.needs_settings) return "pending";
-  if (server.status === "connected" || server.account_hint) return "connected";
   if (!server.connection_id) return undefined;
-  return server.status === "pending" ? "pending" : "disconnected";
+  return server.status ?? "disconnected";
 }
 
 /** Whether a Test call can run on a server's login: one that is connected and lists tools. */
