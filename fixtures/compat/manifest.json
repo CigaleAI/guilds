@@ -119,7 +119,7 @@
       "path": "sse/run-cancel.txt",
       "source": "cancellation as run.error",
       "generator_version": "1",
-      "sha256": "02f676dd5f2bdcbae0b4916594a4e3075b33d87516b82215c8cb2c29d8f2f91a"
+      "sha256": "7ca54c5033b3cfa5c67b89aa300a2fe15789fd4c03a06013b2911808a709f346"
     },
     {
       "path": "sse/run-reconnect.txt",
@@ -131,7 +131,7 @@
       "path": "sse/run.txt",
       "source": "GET /api/runs/{run_id}/stream",
       "generator_version": "1",
-      "sha256": "bad4d45517ef7b6263aec613b3b7b2d038ab58c5f2009e3a48fa1bfcbef530d8"
+      "sha256": "fc9e92e1129275adb11bb5cc1802fd745cb7354afa62e5e907d8be2b28ea979f"
     },
     {
       "path": "state/snapshot.json",
