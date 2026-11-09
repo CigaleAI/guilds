@@ -158,11 +158,6 @@
       "count": 1
     }
   },
-  "src/http/builder-routes.ts": {
-    "limits/silent-catch": {
-      "count": 3
-    }
-  },
   "src/http/error-handler.ts": {
     "limits/silent-catch": {
       "count": 1
