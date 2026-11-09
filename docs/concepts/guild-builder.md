@@ -425,8 +425,13 @@ Whatever ends a generation, the session returns to `idle` with its
 `generation_token` and `generation_started_at` cleared, and the stream
 ends with `generation.finished`. A generation the admission refuses,
 because the box or the organisation is at its generation limit, runs
-no step: the refusal is added to the session's `errors` and published
-as `session.error` before `generation.finished`.
+no step. A failure the runner does not expect, such as a database
+error or an organisation the policy blocks after the generation
+started, ends the generation at that step and leaves the process
+running. Either is added to the session's `errors` and published as
+`session.error` before `generation.finished`. When the database
+refuses that record too, the failure is logged and the stream still
+ends with `generation.finished`.
 
 Usage is charged to the organisation, global, and monthly counters.
 

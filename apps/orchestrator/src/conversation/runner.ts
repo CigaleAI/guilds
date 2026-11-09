@@ -38,7 +38,7 @@ import {
   type ProjectionBudget,
 } from "./projection.js";
 import { parseToolArgs, truncatedToolArguments } from "./tool-args.js";
-import { writeLog } from "../observability/log.js";
+import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import type { UserRow } from "../db/users.js";
 import type { StudioSessionRow } from "../db/studio.js";
 import type { BuilderSessionRow } from "../db/builder.js";
@@ -161,6 +161,12 @@ type GenerationProgress = { toolCalls: number; stubbed: number[] };
 type StepEnd = "next" | "stop";
 
 /**
+ * How a generation's background task ended: its steps ended it, or a throw did and the session
+ * records the throw, or a throw did and the database refused that record too.
+ */
+type GenerationEnd = "ended" | "failure_recorded" | "failure_unrecorded";
+
+/**
  * A coach conversation's history as the model is sent it: the stored rows, the generation they
  * are seen from, the context and system prompt this generation replaces, and how old tool
  * results are stubbed. `stubbed` collects the seqs the projection stubs.
@@ -179,7 +185,7 @@ export type ConversationProjection = {
 export class ConversationRunner {
   private subs = new Map<string, Set<EventQueue<CoachEvent>>>();
   private cancels = new Map<string, CancelEvent>();
-  private tasks = new Map<string, Promise<void>>();
+  private tasks = new Map<string, Promise<GenerationEnd>>();
 
   constructor(public deps: ConversationRunnerDeps) {}
 
@@ -220,13 +226,16 @@ export class ConversationRunner {
     await this.tasks.get(sessionId);
   }
 
+  /** Runs the generation in the background; whatever it throws ends it on the session, never in the process. */
   start<C>(args: ConversationGeneration<C>): void {
     const sessionId = args.session.id;
-    const task = this.run(args).finally(() => {
-      if (this.tasks.get(sessionId) === task) {
-        this.tasks.delete(sessionId);
-      }
-    });
+    const task = this.run(args)
+      .catch((cause: unknown) => this.endThrownGeneration(sessionId, args.generation, errorMessage(cause)))
+      .finally(() => {
+        if (this.tasks.get(sessionId) === task) {
+          this.tasks.delete(sessionId);
+        }
+      });
     this.tasks.set(sessionId, task);
   }
 
@@ -238,7 +247,7 @@ export class ConversationRunner {
     await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
   }
 
-  private async run<C>(turn: ConversationGeneration<C>): Promise<void> {
+  private async run<C>(turn: ConversationGeneration<C>): Promise<GenerationEnd> {
     const sessionId = turn.session.id;
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
@@ -250,7 +259,30 @@ export class ConversationRunner {
       await this.generateAdmitted(turn, cancel);
     } finally {
       this.cancels.delete(sessionId);
-      await this.endGeneration(sessionId, turn.generation);
+    }
+    await this.endGeneration(sessionId, turn.generation);
+    return "ended";
+  }
+
+  /**
+   * Ends a generation a throw cut short: adds the throw to the session's errors, returns the
+   * session to idle, and announces the generation finished. When the database refuses that record
+   * too, the refusal is logged and the generation is announced finished all the same.
+   */
+  private async endThrownGeneration(sessionId: string, generation: number, detail: string): Promise<GenerationEnd> {
+    try {
+      await this.fail(sessionId, detail);
+      await this.endGeneration(sessionId, generation);
+      return "failure_recorded";
+    } catch (cause) {
+      writeLog("error", errorMessage(cause), {
+        source: "backend",
+        operation: `${this.deps.kind}.session`,
+        session_id: sessionId,
+        error_type: errorName(cause),
+      });
+      await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation });
+      return "failure_unrecorded";
     }
   }
 
