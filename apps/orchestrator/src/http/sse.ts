@@ -57,7 +57,11 @@ export const SSE_HEADERS = {
   "X-Accel-Buffering": "no",
 } as const;
 
-/** Streams a subscription's events to the request as SSE until the client goes away. */
+/**
+ * Streams a subscription's events to the request as SSE until the client goes away or the
+ * subscription is dropped; the response is then ended, so a client that is still there
+ * reconnects.
+ */
 export async function pipeSse<Event extends StreamEvent<EventPayloads>>(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -79,12 +83,14 @@ export async function pipeSse<Event extends StreamEvent<EventPayloads>>(
       reply.raw.write(frameSse(event, data));
     }
   } catch (error) {
-    // The queue refuses a read once the client has gone away, which ends the stream.
-    if (!abort.signal.aborted) {
+    // The queue refuses a read once the client has gone away or the queue was dropped, which
+    // ends the stream.
+    if (!abort.signal.aborted && !queue.dropped) {
       throw error;
     }
   } finally {
     request.raw.off("close", onClose);
     unsubscribe(queue);
+    reply.raw.end();
   }
 }

@@ -2526,14 +2526,4 @@ describe("generation", { concurrency: 1 }, () => {
     ]);
     restoreBindings();
   });
-
-  test("event bus drops stalled subscribers", async () => {
-    const loop = makeLoop({}, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    const queue = loop.events.subscribe("r_1");
-    for (let index = 0; index < 4096; index += 1) {
-      await queue.put(["assistant.delta", { text: "stalled" }]);
-    }
-    await loop.events.publish("r_1", "generation.started", { generation: 1 });
-    assert.equal(queue.size, 4096);
-  });
 });

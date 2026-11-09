@@ -504,7 +504,11 @@ Delivery rules:
   `Cache-Control: no-cache`, `Connection: keep-alive`, and
   `X-Accel-Buffering: no`.
 - Slow subscribers do not stall generation. A disconnected
-  subscriber, or one whose queue is full, is dropped.
+  subscriber, or one whose queue is full, is dropped. A run
+  subscriber dropped for a full queue has its response ended, so its
+  client reconnects and re-reads; a full subscriber of a guild,
+  inbox, Studio, or Builder stream stops receiving events while its
+  response stays open.
 
 ## PostgreSQL
 

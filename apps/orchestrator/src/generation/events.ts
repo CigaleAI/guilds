@@ -64,7 +64,8 @@ export type RunGeneration = {
 
 /**
  * What a run's subscribers see: each event as it happens, each message once it is committed,
- * and each error once the run keeps it. A subscriber that falls 4096 events behind is dropped.
+ * and each error once the run keeps it. A subscriber that falls 4096 events behind is dropped,
+ * which ends its stream.
  */
 export class RunEventBus {
   private readonly subscribers = new Map<string, Set<EventQueue<RunEvent>>>();
@@ -92,6 +93,7 @@ export class RunEventBus {
   async publish(runId: string, ...event: RunEvent): Promise<void> {
     for (const queue of [...(this.subscribers.get(runId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
+        queue.drop();
         this.unsubscribe(runId, queue);
         continue;
       }
