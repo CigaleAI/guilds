@@ -13,7 +13,6 @@ import { logWriter } from "../../src/observability/log.js";
 import { wakeUserMessage } from "../../src/wakes/message.js";
 import { wakeUpsLeft } from "../../src/wakes/rules.js";
 import { Wakes } from "../../src/wakes/service.js";
-import { isJsonObject } from "../../src/lib/json.js";
 import { runSnapshot } from "../helpers/generation.js";
 
 const NOW = "2026-11-05T14:12:30.000Z";
@@ -212,11 +211,7 @@ function publishingWakes(row: RunWakeRow | null) {
     events: {
       publish: async (runId, event, data) => {
         assert.equal(event, "run.wake.changed");
-        const pending = data.pending_wake;
-        published.push([
-          runId,
-          isJsonObject(pending) && typeof pending.id === "string" ? pending.id : null,
-        ]);
+        published.push([runId, data.pending_wake?.id ?? null]);
       },
     },
   });

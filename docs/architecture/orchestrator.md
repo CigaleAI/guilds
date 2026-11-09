@@ -433,10 +433,12 @@ sends a `: keepalive\n\n` comment every 15 seconds.
 
 An event is a name and a JSON object (`StreamEvent` in
 `lib/event.ts`), written as the SSE frame's data by `http/sse.ts`.
-The Studio and Builder, guild, and inbox streams each declare their
-events and what each carries, beside the stream: `CoachEvents` in
-`conversation/runner.ts`, `GuildEvents` in `groupchat/index.ts`, and
-`InboxEvents` in `notifications/index.ts`.
+Each stream declares its events and what each carries, beside the
+stream: `RunEvents` in `generation/events.ts`, `CoachEvents` in
+`conversation/runner.ts` for Studio and Builder, `GuildEvents` in
+`groupchat/index.ts`, and `InboxEvents` in `notifications/index.ts`.
+A publish whose data does not match its event's type does not
+compile.
 
 | Event | Stream | Class | What it says |
 |---|---|---|---|

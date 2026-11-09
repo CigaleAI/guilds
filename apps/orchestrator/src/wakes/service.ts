@@ -8,8 +8,7 @@ import {
   type RunWakeRow,
 } from "../db/wakes.js";
 import { newId } from "../lib/ids.js";
-import type { ToolEvents } from "../toolbox/services.js";
-import { pendingWakeItem } from "./item.js";
+import { pendingWakeItem, type RunWakeChange } from "./item.js";
 import { wakeUpsLeft } from "./rules.js";
 import { WakeError } from "./validation.js";
 
@@ -32,8 +31,13 @@ export type WakesDatabase = {
   countFiredRunWakes: BoundQuery<typeof countFiredRunWakes>;
 };
 
+/** The stream a run's subscribers read, which each change of its pending wake-up is published on. */
+export type WakeEvents = {
+  publish(runId: string, event: "run.wake.changed", data: RunWakeChange): Promise<void>;
+};
+
 /** What a run's wake-ups are kept with: their database, and the runs' streams their changes are published on. */
-export type WakesDependencies = { db: WakesDatabase; events: ToolEvents };
+export type WakesDependencies = { db: WakesDatabase; events: WakeEvents };
 
 /**
  * A run's pending wake-up: set by its agent, cancelled by its agent, the operator, or the run's
@@ -102,7 +106,7 @@ export class Wakes {
 }
 
 /** The wake-ups of the runs on `db`, their changes published on `events`. */
-export function agentWakes(db: Queryable, events: ToolEvents): Wakes {
+export function agentWakes(db: Queryable, events: WakeEvents): Wakes {
   return new Wakes({
     db: {
       setRunWake: bindQuery(db, setRunWake),

@@ -2217,9 +2217,9 @@ describe("generation", { concurrency: 1 }, () => {
     };
     const published: Array<[string, Record<string, unknown>]> = [];
     const publish = loop.events.publish.bind(loop.events);
-    loop.events.publish = async (runId, event, data) => {
-      published.push([event, data]);
-      await publish(runId, event, data);
+    loop.events.publish = async (runId, ...event) => {
+      published.push(event);
+      await publish(runId, ...event);
     };
     const created = await loop.runs.createRun("a_1", "hello");
     await waitTask(loop, String(created.id));
@@ -2442,9 +2442,9 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop({}, {}, tempDir("guilds-gen-"), new FakeSandboxes());
     const queue = loop.events.subscribe("r_1");
     for (let index = 0; index < 4096; index += 1) {
-      await queue.put(["stalled", {}]);
+      await queue.put(["assistant.delta", { text: "stalled" }]);
     }
-    await loop.events.publish("r_1", "run.error", { operation: "generation.cancelled" });
+    await loop.events.publish("r_1", "generation.started", { generation: 1 });
     assert.equal(queue.size, 4096);
   });
 });

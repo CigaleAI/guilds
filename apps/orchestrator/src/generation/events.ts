@@ -1,15 +1,38 @@
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { appendRunError, insertMessage, nextSeq, type MessageRow } from "../db/runs.js";
-import type { MessageMetadata, MessagePayload } from "../db/schema/index.js";
-import { messageItem } from "../db/views.js";
-import { EventQueue, type EventPayloads, type StreamEvent } from "../lib/event.js";
-import type { JsonObject } from "../lib/json.js";
+import type { MessageMetadata, MessagePayload, RunError } from "../db/schema/index.js";
+import { messageItem, type MessageView } from "../db/views.js";
+import { EventQueue, type StreamEvent } from "../lib/event.js";
 import { errorMessage, errorName, redactText, writeLog } from "../observability/log.js";
+import type { ToolProgress } from "../toolbox/services.js";
+import type { RunWakeChange } from "../wakes/item.js";
 
 const EVENT_QUEUE_LIMIT = 4096;
 
+/** A generation of a run starting or finishing: its number. */
+export type GenerationEvent = { generation: number };
+
+/** A piece of the model's reply or reasoning as it streams. */
+export type AssistantDelta = { text: string };
+
+/** A run handing its work to its continuation: the continuation. */
+export type RunContinued = { run_id: string };
+
+/** What each event of a run's stream carries. */
+export type RunEvents = {
+  "generation.started": GenerationEvent;
+  "assistant.delta": AssistantDelta;
+  "assistant.reasoning.delta": AssistantDelta;
+  "message.committed": MessageView;
+  "tool.progress": ToolProgress;
+  "run.error": RunError;
+  "run.wake.changed": RunWakeChange;
+  "generation.finished": GenerationEvent;
+  "run.continued": RunContinued;
+};
+
 /** One event on a run's stream: its name and its data. */
-export type RunEvent = StreamEvent<EventPayloads>;
+export type RunEvent = StreamEvent<RunEvents>;
 
 /** The db/ functions a run's messages and errors are written through. */
 export type RunEventsDatabase = {
@@ -62,13 +85,13 @@ export class RunEventBus {
     }
   }
 
-  async publish(runId: string, event: string, data: JsonObject): Promise<void> {
+  async publish(runId: string, ...event: RunEvent): Promise<void> {
     for (const queue of [...(this.subscribers.get(runId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
         this.unsubscribe(runId, queue);
         continue;
       }
-      await queue.put([event, data]);
+      await queue.put(event);
     }
   }
 
