@@ -419,6 +419,15 @@ generation.
 The schema allows `status=archived` and `archived_at`. No route sets
 them: a Builder session is `active`, or `blocked` at the input limit.
 
+The coach runs on the conversation runner Prompt Studio shares
+([Coach loop and usage](prompt-studio.md#coach-loop-and-usage)).
+Whatever ends a generation, the session returns to `idle` with its
+`generation_token` and `generation_started_at` cleared, and the stream
+ends with `generation.finished`. A generation the admission refuses,
+because the box or the organisation is at its generation limit, runs
+no step: the refusal is added to the session's `errors` and published
+as `session.error` before `generation.finished`.
+
 Usage is charged to the organisation, global, and monthly counters.
 
 ### HTTP

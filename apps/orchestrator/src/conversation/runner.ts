@@ -239,13 +239,27 @@ export class ConversationRunner {
 
   private async run<C>(turn: ConversationGeneration<C>): Promise<void> {
     const sessionId = turn.session.id;
-    const orgId = turn.session.org_id;
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
     await this.publish(sessionId, "generation.started", {
       session_id: sessionId,
       generation: turn.generation,
     });
+    try {
+      await this.generateAdmitted(turn, cancel);
+    } finally {
+      this.cancels.delete(sessionId);
+      await this.endGeneration(sessionId, turn.generation);
+    }
+  }
+
+  /**
+   * Takes the session's admission slot, runs the generation's steps in it, and gives the slot
+   * back. A refused slot is recorded as the session's error, and no step runs.
+   */
+  private async generateAdmitted<C>(turn: ConversationGeneration<C>, cancel: CancelEvent): Promise<void> {
+    const sessionId = turn.session.id;
+    const orgId = turn.session.org_id;
     const kind = this.deps.kind;
     try {
       await this.deps.admission.acquire(kind, sessionId, orgId, await this.maxConcurrent(orgId));
@@ -266,11 +280,19 @@ export class ConversationRunner {
         await this.fail(sessionId, "generation step limit reached");
       }
     } finally {
-      this.cancels.delete(sessionId);
       this.deps.admission.release(kind, sessionId);
-      await updateConversationSession(this.deps.db, this.session(sessionId), { generation_state: "idle", generation_token: null, generation_started_at: null }, new Date());
-      await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation: turn.generation });
     }
+  }
+
+  /** Returns the session to idle, clearing its generation's token and start, and announces the generation finished. */
+  private async endGeneration(sessionId: string, generation: number): Promise<void> {
+    await updateConversationSession(
+      this.deps.db,
+      this.session(sessionId),
+      { generation_state: "idle", generation_token: null, generation_started_at: null },
+      new Date(),
+    );
+    await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation });
   }
 
   /**

@@ -678,6 +678,13 @@ step cap and the tools' caps are in
 `apps/orchestrator/src/studio/constants.ts`. A generation past the
 month's `monthlyCoachRuns` is refused with 409.
 
+Whatever ends a generation, the session returns to `idle` with its
+`generation_token` and `generation_started_at` cleared, and the stream
+ends with `generation.finished`. A generation the admission refuses,
+because the box or the organisation is at its generation limit, runs
+no step: the refusal is added to the session's `errors` and published
+as `session.error` before `generation.finished`.
+
 Usage is charged to the global and organisation counters and to
 `org_monthly_usage`. It does not increment the source guild or agent
 lifetime counters.

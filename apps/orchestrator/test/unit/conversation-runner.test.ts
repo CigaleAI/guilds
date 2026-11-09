@@ -190,3 +190,21 @@ test("a completion cancelled while the model answers ends the generation without
     ["generation.started", "generation.finished"],
   );
 });
+
+test("admission_refusal_leaves_the_session_idle_and_publishes_finished", async () => {
+  const { db, queries } = emptyDatabase();
+  const admission = new AdmissionCoordinator(1);
+  await admission.acquire("agent", "run-1", "org-1");
+  const runner = new ConversationRunner({ db, kind: "studio", admission, stubHint: "hint" });
+  const events = await publishedEvents(runner, generation());
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "session.error", "generation.finished"],
+  );
+  assert.match(String(events[1]?.[1].detail), /generation limit/);
+  const reset = queries.filter(
+    ({ text, params }) => text.startsWith("UPDATE studio_sessions") && params.includes("idle"),
+  );
+  assert.equal(reset.length, 1);
+  assert.equal(admission.isBusy("agent", "run-1"), true);
+});
