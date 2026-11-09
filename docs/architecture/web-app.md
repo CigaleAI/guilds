@@ -194,12 +194,19 @@ SSE carries transient deltas and newly committed rows
 | One per open Builder session | `/api/builder/sessions/:id/stream` | The coach chat and the recipe draft |
 
 A dropped stream reconnects after one second, the inbox stream after
-five. Each stream re-reads what it covers on every (re)connect, since
-the server replays nothing, so a reload reconstructs the same chat
-and the same resolved access view.
+five. The server ends a run stream whose subscriber fell too far
+behind, and the client reconnects. Each stream re-reads what it covers
+on every (re)connect, since the server replays nothing, so a reload
+reconstructs the same chat and the same resolved access view; a run
+stream also drops the turn it was streaming and the progress lines of
+running tool calls. Every stream receives a keepalive comment every 15
+seconds.
 
-A run stream marks the run generating when `generation.started`
-arrives, and streams reasoning and text into the transcript. Studio
+A run stream marks the cached run generating when
+`generation.started` arrives, and streams reasoning and text into the
+transcript. On `generation.finished`, which the server sends once the
+run is completed and released, it marks the cached run not generating
+and re-reads it. Studio
 and Builder streams do the same for the coach. While a run or a coach
 generates, its data is also re-read every 2.5 s, in case the stream
 falls silent.
