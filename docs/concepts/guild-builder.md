@@ -153,7 +153,10 @@ for them:
 
 Open questions the coach recorded in the design show as a question
 card above the message box. While a card waits for an answer, the
-message box is disabled.
+message box is disabled. A card's buttons are disabled while its
+reply is on its way, and the card settles once the coach has the
+reply. A reply that fails shows its error and leaves the card open
+to answer again.
 When the session reaches the coach's input limit, a banner says so:
 the session stays readable, its draft stays in Recipes, and a new
 session continues the design.

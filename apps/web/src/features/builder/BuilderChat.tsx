@@ -9,6 +9,7 @@ import { CoachLog, type CoachRow } from "../coach/CoachLog";
 import { answered } from "../coach/coachRows";
 import { ConnectCard, QuestionCard } from "./BuilderWidgets";
 import { pendingQuestions, widgetOf } from "./widgets";
+import type { ReplyOutcome } from "./types";
 
 const coach = { name: "coach", tone: "signal" as const };
 
@@ -43,11 +44,18 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
   );
   const blocked = openRequest(messages ?? []) || pending !== null;
 
-  const send = (content: string) =>
-    post.mutate(content, {
-      onError: (error) =>
-        toast({ kind: "error", title: "Couldn't message the coach", description: error.message }),
-    });
+  const refused = (error: Error) =>
+    toast({ kind: "error", title: "Couldn't message the coach", description: error.message });
+  const send = (content: string) => post.mutate(content, { onError: refused });
+  /** A card's reply: the coach has it once the post succeeds; a refused post shows its error. */
+  const reply = (content: string): Promise<ReplyOutcome> =>
+    post.mutateAsync(content).then(
+      (): ReplyOutcome => "delivered",
+      (error: Error): ReplyOutcome => {
+        refused(error);
+        return "failed";
+      },
+    );
 
   const widgetsAfter = (segment: FlowSegment<CoachRow>, rows: readonly CoachRow[]) =>
     segment.steps.flatMap((step) =>
@@ -55,7 +63,7 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
         const widget = widgetOf(call.result);
         if (!widget || !call.result) return [];
         const key = `${widget.widget}-${call.result.seq}`;
-        const props = { answered: answered(rows, call.result.seq), live: idle, onReply: send };
+        const props = { answered: answered(rows, call.result.seq), live: idle, onReply: reply };
         return [
           widget.widget === "connect" ? (
             <ConnectCard key={key} {...props} widget={widget} />
@@ -91,13 +99,17 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
               kicker="Open questions in the design"
               answered={false}
               live={idle}
-              onReply={(message) => {
-                setAnsweredHere(
-                  (current) =>
-                    new Set([...current, ...pending.questions.map((question) => question.id)]),
-                );
-                send(message);
-              }}
+              onReply={(message) =>
+                reply(message).then((outcome) => {
+                  if (outcome === "delivered") {
+                    setAnsweredHere(
+                      (current) =>
+                        new Set([...current, ...pending.questions.map((question) => question.id)]),
+                    );
+                  }
+                  return outcome;
+                })
+              }
             />
           </div>
         ) : null}
