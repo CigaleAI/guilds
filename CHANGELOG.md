@@ -8,6 +8,29 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A run's stream says the generation finished only once
+the run is completed and its generation released, and the message
+says where the run stands (`open`, `waiting`, `generating`,
+`completed`, `capped` or `continued`), so the operator app leaves
+"Generating" as soon as the generation ends instead of at its next
+poll. Every event stream sends a `: keepalive` comment every 15
+seconds, and a stream whose reader fell too far behind is closed, so
+the browser reconnects instead of waiting on a silent connection.
+
+**Rebuild.** A Studio or Builder session whose generation the box
+refused for being at its limit returns to idle at once, and a failure
+inside a coach generation is recorded on the session instead of
+stopping the orchestrator. Cancelling a session that is not generating
+does nothing and returns the session as it is.
+
+**Rebuild.** A Builder card that asks the operator to connect a tool
+or answer the coach's questions is disabled while its reply is on its
+way and settles only once the coach has it; a reply that fails shows
+its error and leaves the card open to answer again. On the Tools
+screen, a login the server marked disconnected reads as disconnected
+even when it still shows the account it was signed in as, and a
+disconnected GitHub login no longer lists its repositories.
+
 **Rebuild.** A run or a Studio turn counts its input tokens before
 each model call with the `o200k_base` encoding the orchestrator loads
 once per process, instead of loading it again for each count, so the
