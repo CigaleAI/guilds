@@ -25,6 +25,7 @@ import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesD
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import { GenerationCancelled, logOperationFailure, RunLimitError, type OperationFailure } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
+import { runWasResumed } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
   liveOfferedNames,
@@ -59,11 +60,6 @@ class HandoffDue extends Error {
     super("hand-off due");
     this.name = "HandoffDue";
   }
-}
-
-/** Whether an operator resumed the run, which then stays open for their messages. */
-export function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
-  return Boolean(run.metadata.resumed_at);
 }
 
 /**

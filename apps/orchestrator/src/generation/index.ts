@@ -41,7 +41,8 @@ import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
 import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import { RunEvents, runEventsDatabase } from "./events.js";
-import { RunGenerator, runGeneratorDatabase, runWasResumed } from "./generate.js";
+import { RunGenerator, runGeneratorDatabase } from "./generate.js";
+import { runWasResumed } from "./lifecycle.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
 import {
   generationArtifacts,
