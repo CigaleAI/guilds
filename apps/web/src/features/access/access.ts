@@ -69,7 +69,7 @@ export function loginSettingsPanel(
   if (server.settings_schema && (server.status === "connected" || server.needs_settings)) {
     return { kind: "schema", schema: server.settings_schema };
   }
-  if (server.slug === "github" && (server.status === "connected" || server.account_hint)) {
+  if (server.slug === "github" && server.status === "connected") {
     return { kind: "github" };
   }
   return null;

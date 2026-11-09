@@ -389,10 +389,13 @@ test("a login shows its schema's settings once signed in, a github login its rep
   );
   assert.equal(loginSettingsPanel(server({ settings_schema: schema, status: "pending" })), null);
   assert.deepEqual(loginSettingsPanel(server({ slug: "github" })), { kind: "github" });
-  assert.deepEqual(
-    loginSettingsPanel(server({ slug: "github", status: "disconnected", account_hint: "ada" })),
-    { kind: "github" },
-  );
   assert.equal(loginSettingsPanel(server({ slug: "github", connection_id: null })), null);
   assert.equal(loginSettingsPanel(server()), null);
+});
+
+test("a_disconnected_github_login_with_an_account_hint_shows_no_repositories", () => {
+  assert.equal(
+    loginSettingsPanel(server({ slug: "github", status: "disconnected", account_hint: "ada" })),
+    null,
+  );
 });
