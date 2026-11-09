@@ -17,8 +17,10 @@ import {
   initialServerId,
   pendingQuestions,
   pickedServer,
+  reduceWidget,
   serverName,
   widgetOf,
+  widgetRows,
 } from "./widgets";
 
 const tool = (content: unknown): Pick<StudioMessage, "payload"> => ({
@@ -236,4 +238,37 @@ test("access cuts name removed tools and connectors only", () => {
     ]),
     null,
   );
+});
+
+test("an_open_card_takes_a_reply", () => {
+  assert.equal(widgetRows.open.disabled, false);
+  assert.equal(widgetRows.open.badge, null);
+});
+
+test("a_reply_in_flight_disables_the_card", () => {
+  const sending = reduceWidget("open", "send");
+  assert.equal(sending, "sending");
+  assert.equal(widgetRows[sending].disabled, true);
+  assert.deepEqual(widgetRows[sending].badge, { label: "Sending", status: "running" });
+  assert.equal(reduceWidget(sending, "send"), "sending");
+});
+
+test("a_failed_reply_leaves_the_card_open", () => {
+  assert.equal(reduceWidget(reduceWidget("open", "send"), "failed"), "open");
+});
+
+test("a_successful_reply_settles_the_card", () => {
+  const settled = reduceWidget(reduceWidget("open", "send"), "delivered");
+  assert.equal(settled, "settled");
+  assert.equal(widgetRows[settled].disabled, true);
+});
+
+test("a_settled_card_stays_settled_whatever_happens_next", () => {
+  assert.equal(reduceWidget("settled", "send"), "settled");
+  assert.equal(reduceWidget("settled", "failed"), "settled");
+});
+
+test("an_open_card_ignores_an_outcome_it_did_not_send", () => {
+  assert.equal(reduceWidget("open", "delivered"), "open");
+  assert.equal(reduceWidget("open", "failed"), "open");
 });
