@@ -498,8 +498,10 @@ Delivery rules:
   group or schedule run that was not resumed, or one that continued
   elsewhere), `completed` for an ended run that can be resumed,
   `capped` for one that ended on a terminal cap, `continued` for one
-  that handed off, and `generating` for one a generation holds. A run
-  deleted during its generation publishes no `generation.finished`.
+  that handed off, and `generating` for one a generation holds. A
+  generation whose finishing fails, such as a failed completion of its
+  run, still publishes `generation.finished`, with the standing of the
+  run as it is read again; only a run whose row is gone publishes none.
 - Headers are `Content-Type: text/event-stream; charset=utf-8`,
   `Cache-Control: no-cache`, `Connection: keep-alive`, and
   `X-Accel-Buffering: no`.

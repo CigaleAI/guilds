@@ -2526,4 +2526,54 @@ describe("generation", { concurrency: 1 }, () => {
     ]);
     restoreBindings();
   });
+
+  test("a_failed_cancel_settlement_still_finishes_the_stream", async () => {
+    restoreBindings();
+    const db = new FakeDB({});
+    const appendRunError = db.appendRunError.bind(db);
+    db.appendRunError = (runId, entry, now) =>
+      entry.operation === "generation.cancelled"
+        ? Promise.reject(new Error("database went away"))
+        : appendRunError(runId, entry, now);
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
+    const started = deferred();
+    live.streamCompletion = async function* hang(_request: ModelRequest, _endpoint: ModelEndpoint, signal?: AbortSignal) {
+      started.resolve();
+      await hangForever(signal);
+      yield ["done", completionReply("nope")];
+    };
+    const seen = publishedWithRunState(loop, db);
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
+    await started.promise;
+    await loop.cancel("r_1");
+    assert.deepEqual(seen.at(-1), {
+      runId: "r_1",
+      event: ["generation.finished", { generation: 1, standing: "open" }],
+      generating: false,
+      status: "active",
+    });
+    restoreBindings();
+  });
+
+  test("a_failed_run_completion_still_finishes_the_stream_and_throws", async () => {
+    restoreBindings();
+    const db = new FakeDB({});
+    db.run.kind = "schedule";
+    db.completeRun = () => Promise.reject(new Error("database went away"));
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
+    live.streamCompletion = async function* reply() {
+      yield ["done", completionReply("ok")];
+    };
+    const seen = publishedWithRunState(loop, db);
+    await loop.beginGeneration("r_1", "a_1");
+    await assert.rejects(loop.generator.generate("r_1", 1), /database went away/);
+    assert.deepEqual(seen.at(-1), {
+      runId: "r_1",
+      event: ["generation.finished", { generation: 1, standing: "waiting" }],
+      generating: false,
+      status: "active",
+    });
+    restoreBindings();
+  });
 });

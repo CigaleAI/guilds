@@ -282,14 +282,16 @@ export class RunGenerator {
   }
 
   /**
-   * Tells the run's subscribers the generation finished, with where the run it left stands;
-   * nothing when the run is gone.
+   * Tells the run's subscribers the generation finished, with where the run it left stands. The
+   * run is read again when finishing it did not get as far as returning it; nothing is published
+   * when the run is gone.
    */
   private async publishFinished(turn: RunGeneration, ended: RunRow | null): Promise<void> {
-    if (ended === null) {
+    const run = ended ?? (await this.services.db.getRun(turn.runId));
+    if (run === null) {
       return;
     }
-    const standing = runStanding(ended, this.services.generations.isGenerating(turn.runId));
+    const standing = runStanding(run, this.services.generations.isGenerating(turn.runId));
     await this.services.events.publish(turn.runId, "generation.finished", { generation: turn.generation, standing });
   }
 
