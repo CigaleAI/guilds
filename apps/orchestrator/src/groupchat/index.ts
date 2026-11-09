@@ -216,6 +216,7 @@ export class GroupChat {
   async publish(guildId: string, ...event: GuildEvent): Promise<void> {
     for (const queue of [...(this._subs.get(guildId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
+        queue.drop();
         this.unsubscribe(guildId, queue);
         continue;
       }

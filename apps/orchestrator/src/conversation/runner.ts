@@ -211,6 +211,7 @@ export class ConversationRunner {
   async publish(sessionId: string, ...event: CoachEvent): Promise<void> {
     for (const queue of [...(this.subs.get(sessionId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
+        queue.drop();
         this.unsubscribe(sessionId, queue);
         continue;
       }

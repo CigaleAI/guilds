@@ -194,7 +194,7 @@ SSE carries transient deltas and newly committed rows
 | One per open Builder session | `/api/builder/sessions/:id/stream` | The coach chat and the recipe draft |
 
 A dropped stream reconnects after one second, the inbox stream after
-five. The server ends a run stream whose subscriber fell too far
+five. The server ends a stream whose subscriber fell too far
 behind, and the client reconnects. Each stream re-reads what it covers
 on every (re)connect, since the server replays nothing, so a reload
 reconstructs the same chat and the same resolved access view; a run

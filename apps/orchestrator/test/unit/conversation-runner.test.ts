@@ -15,6 +15,7 @@ import type { ToolCall } from "../../src/db/schema/index.js";
 import type { ModelEvent } from "../../src/llm/completion.js";
 import { PolicyError, UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
 import { completionReply } from "../helpers/generation.js";
+import { overflowStream, sseApp } from "../helpers/sse.js";
 
 const live = { ...generationLive };
 
@@ -323,4 +324,28 @@ test("cancel_of_an_idle_session_is_a_noop", async () => {
     events.map(([event]) => event),
     ["generation.started", "message.committed", "generation.finished"],
   );
+});
+
+test("a_slow_coach_subscriber_is_closed_not_silenced", async () => {
+  const { db } = emptyDatabase();
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+  });
+  const { app, opened } = sseApp(
+    () => runner.subscribe("s_1"),
+    (queue) => runner.unsubscribe("s_1", queue),
+  );
+  const { body, queue } = await overflowStream(app, opened, () =>
+    Array.from({ length: 8192 }, () =>
+      runner.publish("s_1", "assistant.delta", { session_id: "s_1", text: "x" }),
+    ),
+  );
+  assert.equal(queue.dropped, true);
+  assert.ok(body.startsWith(": connected\n\n"), body.slice(0, 40));
+  await runner.publish("s_1", "assistant.delta", { session_id: "s_1", text: "after" });
+  assert.equal(queue.size, 0, "the dropped subscriber is no longer sent events");
+  await app.close();
 });
