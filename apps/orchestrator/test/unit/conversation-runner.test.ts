@@ -6,10 +6,10 @@ import {
   ConversationRunner,
   callConversationTool,
   generationLive,
-  recoverPartialToolArgs,
   type ConversationGeneration,
   type ConversationTool,
 } from "../../src/conversation/runner.js";
+import { recoverPartialToolArgs } from "../../src/conversation/tool-args.js";
 import type { Queryable } from "../../src/db/pg.js";
 import type { ToolCall } from "../../src/db/schema/index.js";
 import type { ModelEvent } from "../../src/llm/completion.js";

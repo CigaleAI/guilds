@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseToolArgs, projectConversationHistory, recoverPartialToolArgs } from "../../src/conversation/runner.js";
+import { projectConversationHistory } from "../../src/conversation/runner.js";
+import { parseToolArgs, recoverPartialToolArgs } from "../../src/conversation/tool-args.js";
 import { TOOL_RESULT_STUB_MIN_BYTES, type ProjectedRow } from "../../src/conversation/projection.js";
 import type { MessagePayload, ToolCall } from "../../src/db/schema/index.js";
 import { STUDIO_TOOL_RESULT_STUB_HINT } from "../../src/studio/constants.js";

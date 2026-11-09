@@ -96,7 +96,7 @@ A repository that extends core holds this one as a submodule
 | `studio/` | Prompt Studio: sessions, the coach's tools, drafts and edits, focus pins, the activity ledger, and the runs and routines the inspector reads (`inspector.ts`) ([Prompt Studio](../concepts/prompt-studio.md)) |
 | `builder/` | The guild builder: sessions, tools, widgets, and workspace search ([Guild builder](../concepts/guild-builder.md)) |
 | `recipes/` | The `guilds.recipe` schema, capture, rewrite, validation, and apply ([Recipes](../concepts/recipes.md)) |
-| `conversation/` | The coach runner Studio and Builder share (`runner.ts`), tool-result projection, and the prompt sections both coaches read (`*.md`, `templates.ts`) |
+| `conversation/` | The coach runner Studio and Builder share (`runner.ts`), the parse of the arguments a model writes for a tool call (`tool-args.ts`), tool-result projection, and the prompt sections both coaches read (`*.md`, `templates.ts`) |
 | `admission/` | `AdmissionCoordinator` (`coordinator.ts`): the generation slots that agent runs, Studio, and Builder take under the box's cap and each organisation's plan |
 | `capabilities/` | The catalog facts the builder may name |
 | `guilds/`, `agents/`, `organisations/`, `users/` | One directory per entity: its validation, who sees it (`access.ts`), how the API shows it, and the service it is created, changed, and deleted through (`service.ts`; `directory.ts` for users, with `identity.ts` naming the user a request is from) |
