@@ -72,7 +72,7 @@ import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
 import { insertIssue } from "../../src/db/issues.js";
 import { getSchedule, listSchedules } from "../../src/db/schedules.js";
 import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq, type ConversationMessageRow } from "../../src/db/conversations.js";
-import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
+import { getStudioDraft, getStudioSession, markStudioSessionCancelling, updateStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { getByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
@@ -222,6 +222,19 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.match(String(systemRow?.payload.content ?? ""), /Write notes/);
     assert.match(String(systemRow?.payload.content ?? ""), /a_studio/);
     assert.match(String(systemRow?.payload.content ?? ""), /survey the whole guild/i);
+
+    const idleCancel = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/cancel`,
+      headers: AUTH,
+    });
+    assert.equal(idleCancel.statusCode, 200, idleCancel.body);
+    assert.equal(idleCancel.json().generation_state, "idle");
+    assert.equal((await getStudioSession(db, session.id))?.generation_state, "idle");
+    await updateStudioSession(db, session.id, { generation_state: "generating" }, new Date());
+    assert.equal((await markStudioSessionCancelling(db, session.id, new Date()))?.generation_state, "cancelling");
+    assert.equal(await markStudioSessionCancelling(db, session.id, new Date()), null);
+    await updateStudioSession(db, session.id, { generation_state: "idle" }, new Date());
 
     const denied = await app.inject({
       method: "POST",

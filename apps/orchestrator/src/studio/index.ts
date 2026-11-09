@@ -75,6 +75,7 @@ import {
   listStudioDraftHeads,
   listStudioDrafts,
   listStudioSessions,
+  markStudioSessionCancelling,
   type StudioDraftRow,
   type StudioInventoryRow,
   type StudioSessionRow,
@@ -622,10 +623,14 @@ export class StudioService {
     return conversationUsageByOrg(this.deps.db, "studio");
   }
 
+  /** Stops the generation running on the session; a session no generation runs on is returned as it is. */
   async cancel(session: StudioSessionRow): Promise<StudioSession> {
-    await updateStudioSession(this.deps.db, session.id, { generation_state: "cancelling" }, new Date());
+    const cancelling = await markStudioSessionCancelling(this.deps.db, session.id, new Date());
+    if (cancelling === null) {
+      return this.viewSession(session);
+    }
     this.runner.cancel(session.id);
-    return this.viewSession({ ...session, generation_state: "cancelling" });
+    return this.viewSession(cancelling);
   }
 
   subscribe(sessionId: string): EventQueue<CoachEvent> {

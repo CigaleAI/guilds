@@ -436,6 +436,13 @@ and leaves the process running. Either is added to the session's
 failure is logged and the stream still ends with
 `generation.finished`.
 
+A cancel sets `generation_state` to `cancelling` only while a
+generation runs (`generating`). The runner stops that generation at
+its next step or while the model answers, answers its unanswered tool
+calls `ERROR: execution interrupted`, and the session returns to
+`idle`. A cancel of a session no generation runs on, `idle` or already
+`cancelling`, writes nothing and returns the session as it is.
+
 Usage is charged to the organisation, global, and monthly counters.
 
 ### HTTP

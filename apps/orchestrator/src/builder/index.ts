@@ -1,4 +1,4 @@
-import { getBuilderSession, insertBuilderSession, listBuilderSessions, listGeneratingBuilderSessions, lockBuilderSession, updateBuilderSession, type BuilderSessionRow } from "../db/builder.js";
+import { getBuilderSession, insertBuilderSession, listBuilderSessions, listGeneratingBuilderSessions, lockBuilderSession, markBuilderSessionCancelling, updateBuilderSession, type BuilderSessionRow } from "../db/builder.js";
 import type { RecipeDocument } from "../db/schema/index.js";
 import {
   type ConversationMessageRow,
@@ -375,10 +375,14 @@ export class BuilderService {
     return this.loadSessionView(started.session);
   }
 
+  /** Stops the generation running on the session; a session no generation runs on is returned as it is. */
   async cancel(session: BuilderSessionRow): Promise<BuilderSessionView> {
-    await updateBuilderSession(this.deps.db, session.id, { generation_state: "cancelling" }, new Date());
+    const cancelling = await markBuilderSessionCancelling(this.deps.db, session.id, new Date());
+    if (cancelling === null) {
+      return this.loadSessionView(session);
+    }
     this.runner.cancel(session.id);
-    return { ...sessionState(session), generation_state: "cancelling", recipe: null };
+    return { ...sessionState(cancelling), recipe: null };
   }
 
   /** The session's conversation, in order. */

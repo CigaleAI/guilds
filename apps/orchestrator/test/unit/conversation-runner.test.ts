@@ -14,6 +14,7 @@ import type { Queryable } from "../../src/db/pg.js";
 import type { ToolCall } from "../../src/db/schema/index.js";
 import type { ModelEvent } from "../../src/llm/completion.js";
 import { PolicyError, UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
+import { completionReply } from "../helpers/generation.js";
 
 const live = { ...generationLive };
 
@@ -299,4 +300,27 @@ test("boot_reconcile_returns_an_interrupted_session_to_idle_and_clears_its_start
   assert.equal(reset.length, 1);
   assert.match(String(reset[0]?.text), /generation_token = \$\d+, generation_started_at = \$\d+/);
   assert.deepEqual(reset[0]?.params.slice(2), ["idle", null, null]);
+});
+
+test("cancel_of_an_idle_session_is_a_noop", async () => {
+  const db = {
+    query: async (text: string, params: unknown[] = []) =>
+      text.startsWith("INSERT INTO studio_messages") ? { rows: [{ seq: params[1], payload: params[3] }] } : { rows: [] },
+  } as unknown as Queryable;
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+  });
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield ["done", completionReply("answered")];
+  };
+  runner.cancel("session-1");
+  const events = await publishedEvents(runner, generation());
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "message.committed", "generation.finished"],
+  );
 });

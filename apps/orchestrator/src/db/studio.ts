@@ -220,6 +220,21 @@ export async function updateStudioSession(
   return result.rows[0] ?? null;
 }
 
+/** Marks the session cancelling when a generation runs on it; null when none does, and nothing is written. */
+export async function markStudioSessionCancelling(
+  pool: Queryable,
+  sessionId: StudioSessionRow["id"],
+  now: Date,
+): Promise<StudioSessionRow | null> {
+  const result = await pool.query<StudioSessionRow>(
+    `UPDATE studio_sessions SET generation_state = 'cancelling', updated_at = $2
+      WHERE id = $1 AND generation_state = 'generating'
+      RETURNING ${SESSION_COLUMNS}`,
+    [sessionId, stamp(now)],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function insertStudioDraft(
   pool: Queryable,
   draft: NewStudioDraft,
