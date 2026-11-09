@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import type { RunEvent, RunEventBus } from "../../src/generation/events.js";
 import { pipeSse } from "../../src/http/sse.js";
 import { EventQueue } from "../../src/lib/event.js";
@@ -12,17 +12,20 @@ function runEventBus(): RunEventBus {
   return makeLoop({}, {}, tempDir("guilds-events-"), new FakeSandboxes()).events;
 }
 
-/** An app whose `/stream` pipes run `r_1`'s events from `bus`, and the subscription once the stream opens. */
+/** A stream as it opens: its subscription, and the request it answers with its reply. */
+type OpenedStream = { queue: EventQueue<RunEvent>; request: FastifyRequest; reply: FastifyReply };
+
+/** An app whose `/stream` pipes run `r_1`'s events from `bus`, and the stream once it opens. */
 function runStreamApp(bus: RunEventBus) {
   const app = Fastify();
-  const opened = deferred<EventQueue<RunEvent>>();
+  const opened = deferred<OpenedStream>();
   app.get("/stream", async (request, reply) => {
     await pipeSse(
       request,
       reply,
       () => {
         const queue = bus.subscribe("r_1");
-        opened.resolve(queue);
+        opened.resolve({ queue, request, reply });
         return queue;
       },
       (queue) => bus.unsubscribe("r_1", queue),
@@ -51,7 +54,7 @@ test("a_slow_subscriber_is_closed_not_silenced", async () => {
   const bus = runEventBus();
   const { app, opened } = runStreamApp(bus);
   const response = app.inject({ method: "GET", url: "/stream" });
-  const queue = await opened;
+  const { queue } = await opened;
   // Published without waiting, the events pile up faster than the stream sends them.
   const publishes: Array<Promise<void>> = [];
   for (let index = 0; index < 8192; index += 1) {
@@ -64,5 +67,23 @@ test("a_slow_subscriber_is_closed_not_silenced", async () => {
   assert.ok(ended.body.startsWith(": connected\n\n"), ended.body.slice(0, 40));
   await bus.publish("r_1", "assistant.delta", { text: "after" });
   assert.equal(queue.size, 0, "the dropped subscriber is no longer sent events");
+  await app.close();
+});
+
+test("a_stream_is_sent_a_keepalive_every_15_seconds_until_its_client_goes_away", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const { app, opened } = runStreamApp(runEventBus());
+  const response = app.inject({ method: "GET", url: "/stream" });
+  const { request, reply } = await opened;
+  const writes = t.mock.method(reply.raw, "write");
+  t.mock.timers.tick(14_999);
+  assert.equal(writes.mock.callCount(), 0);
+  t.mock.timers.tick(1);
+  t.mock.timers.tick(15_000);
+  request.raw.emit("close");
+  const ended = await response;
+  t.mock.timers.tick(15_000);
+  assert.equal(writes.mock.callCount(), 2, "nothing is written once the client is gone");
+  assert.equal(ended.body, ": connected\n\n: keepalive\n\n: keepalive\n\n");
   await app.close();
 });

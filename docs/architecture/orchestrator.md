@@ -428,8 +428,8 @@ share one slot count under the organisation policy's
 ## Events
 
 One in-process bus carries every event. Each SSE stream sends
-`: connected\n\n`, then live events only. The Builder stream also
-sends a `: keepalive\n\n` comment every 15 seconds.
+`: connected\n\n`, then live events only, and a `: keepalive\n\n`
+comment every 15 seconds while it is open.
 
 An event is a name and a JSON object (`StreamEvent` in
 `lib/event.ts`), written as the SSE frame's data by `http/sse.ts`.
