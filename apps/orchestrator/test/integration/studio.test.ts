@@ -465,6 +465,24 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       "Write notes and name the artifact.\n",
       "an organisation manager publishes a draft whose session's operator is gone",
     );
+
+    // An active session whose source guild is gone is recorded blocked when it is opened.
+    const orphanable = await app.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: { mode: "optimize", source_guild_id: "guild_other", coach_config: { model: TEST_MODEL } },
+    });
+    assert.equal(orphanable.statusCode, 200, orphanable.body);
+    const orphanableId = (orphanable.json() as { id: string }).id;
+    await db.query("UPDATE studio_sessions SET source_guild_id = NULL WHERE id = $1", [orphanableId]);
+    const opened = await app.inject({ method: "GET", url: `/api/studio/sessions/${orphanableId}`, headers: AUTH });
+    assert.equal(opened.statusCode, 200, opened.body);
+    assert.equal(opened.json().status, "blocked");
+    assert.equal(opened.json().blocked_reason, "source_deleted");
+    const stored = await getStudioSession(db, orphanableId);
+    assert.equal(stored?.status, "blocked");
+    assert.equal(stored?.blocked_reason, "source_deleted");
   } finally {
     await app.close();
     await database.close();

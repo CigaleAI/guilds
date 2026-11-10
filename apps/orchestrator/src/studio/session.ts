@@ -1,6 +1,6 @@
-// A Studio session as every Studio module reads it: whether it is live, how the operator app reads
-// it, the guild it records, the logins its coach holds, its conversation, and what the sessions
-// spent.
+// A Studio session as every Studio module reads it: whose it is, whether it is live, how the
+// operator app reads it, the guild it records, the logins its coach holds, its conversation, and
+// what the sessions spent.
 
 import {
   conversationUsageByOrg,
@@ -8,11 +8,14 @@ import {
   type ConversationMessageRow,
   type ConversationUsageRow,
 } from "../db/conversations.js";
-import type { GuildRow } from "../db/guilds.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import type { CoachSessionConfig, StudioSourceGuild } from "../db/schema/index.js";
-import type { StudioSessionRow } from "../db/studio.js";
-import { StudioConflictError } from "./errors.js";
+import { getStudioSession, updateStudioSession, type StudioSessionRow } from "../db/studio.js";
+import type { UserRow } from "../db/users.js";
+import { canSeeGuild } from "../guilds/operators.js";
+import { StudioConflictError, StudioNotFoundError } from "./errors.js";
 
 /** A session an operator can still work in: not archived or blocked, its source guild still there. */
 export type LiveStudioSession = StudioSessionRow & { source_guild_id: string };
@@ -42,6 +45,38 @@ export type StudioSession = Pick<
   granted_connection_ids: string[];
   coach: Pick<CoachSessionConfig, "model" | "temperature" | "max_tokens" | "max_steps" | "max_tool_calls" | "max_input_tokens">;
 };
+
+/**
+ * The session `sessionId` names when it is `user`'s own in `org` and they can still see its source
+ * guild; StudioNotFoundError otherwise. Seeing the guild is checked on every read, not only at
+ * creation, so a user who can no longer see a private guild loses its sessions too.
+ */
+export async function readOwnedSession(
+  db: Queryable,
+  sessionId: string,
+  user: UserRow,
+  org: OrgMembershipRow,
+): Promise<StudioSessionRow> {
+  const session = await getStudioSession(db, sessionId);
+  if (!session || session.org_id !== org.id || session.created_by_user_id !== user.id) {
+    throw new StudioNotFoundError("studio session not found");
+  }
+  const guild = session.source_guild_id ? await getGuild(db, session.source_guild_id) : null;
+  if (guild && !canSeeGuild(guild, user.id)) {
+    throw new StudioNotFoundError("studio session not found");
+  }
+  return session;
+}
+
+/** Records an active session whose source guild is gone as blocked, and returns it so; any other session as it is. */
+export async function blockOrphanedSession(db: Queryable, session: StudioSessionRow): Promise<StudioSessionRow> {
+  if (session.source_guild_id || session.status !== "active") {
+    return session;
+  }
+  const blocked = { status: "blocked", blocked_reason: "source_deleted" } as const;
+  await updateStudioSession(db, session.id, blocked, new Date());
+  return { ...session, ...blocked };
+}
 
 /** The session's work goes on: StudioConflictError when it is archived, blocked, or its source guild is gone. */
 export function assertLive(session: StudioSessionRow): asserts session is LiveStudioSession {

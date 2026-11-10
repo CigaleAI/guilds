@@ -26,7 +26,14 @@ import {
   readStudioSystemTemplate,
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
-import { assertLive, sourceGuildSnapshot, viewSession, type StudioSession } from "./session.js";
+import {
+  assertLive,
+  blockOrphanedSession,
+  readOwnedSession,
+  sourceGuildSnapshot,
+  viewSession,
+  type StudioSession,
+} from "./session.js";
 import { inventoryItem } from "./inventory.js";
 import { studioToolSchemas } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
@@ -263,31 +270,12 @@ export class StudioService {
       .map((row) => viewSession(row));
   }
 
-  async getOwnedSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
-    const session = await getStudioSession(this.deps.db, sessionId);
-    if (!session || session.org_id !== org.id) {
-      throw new StudioNotFoundError("studio session not found");
-    }
-    if (session.created_by_user_id && session.created_by_user_id !== user.id) {
-      throw new StudioNotFoundError("studio session not found");
-    }
-    if (!session.created_by_user_id) {
-      throw new StudioNotFoundError("studio session not found");
-    }
-    // Seeing the guild is checked on every request, not only at creation: a
-    // user who can no longer see a private guild loses its sessions too.
-    if (session.source_guild_id) {
-      const guild = await getGuild(this.deps.db, session.source_guild_id);
-      if (guild && !canSeeGuild(guild, user.id)) {
-        throw new StudioNotFoundError("studio session not found");
-      }
-    }
-    if (!session.source_guild_id && session.status === "active") {
-      await updateStudioSession(this.deps.db, sessionId, { status: "blocked", blocked_reason: "source_deleted" }, new Date());
-      session.status = "blocked";
-      session.blocked_reason = "source_deleted";
-    }
-    return session;
+  /**
+   * The session `user` opens in `org`: their own, on a guild they can still see. An active session
+   * whose source guild is gone is recorded blocked as it is opened.
+   */
+  async openSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
+    return blockOrphanedSession(this.deps.db, await readOwnedSession(this.deps.db, sessionId, user, org));
   }
 
   async archive(session: StudioSessionRow): Promise<StudioSession> {
