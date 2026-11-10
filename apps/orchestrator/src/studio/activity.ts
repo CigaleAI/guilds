@@ -342,7 +342,8 @@ function errorsOf(errors: RunError[], sinceMs: number): ActivityError[] {
     .map((entry) => ({ operation: entry.operation, message: entry.message, at: entry.at }));
 }
 
-type WakeSteps = { calls: ActivityToolCall[]; count: number; reply: string | null };
+/** A run's tool calls inside the window, how many it made, and the last text it wrote. */
+export type WakeSteps = { calls: ActivityToolCall[]; count: number; reply: string | null };
 
 /** The key a tool result is found by: its run and the call it answers. */
 function resultKey(runId: string, callId: string): string {
@@ -472,9 +473,51 @@ export function wakeOutcome(posts: ActivityWake["posts"], writes: ActivityWrite[
   return writes.some((write) => write.kind !== "memory") ? "wrote" : "silent";
 }
 
+/** When a wake ran inside the window, and whether it still runs. */
+export type WakeSpan = Pick<ActivityWake, "started_at" | "ended_at" | "running">;
+
+/**
+ * When a run was awake inside the window: a direct chat from its first step inside it, any other
+ * run from its start; until its last step, or until `now` while it is among `generating`. Null for
+ * a direct chat whose only activity predates the window.
+ */
+export function wakeSpan(
+  run: GuildActivityRunRow,
+  stats: RunActivityStatsRow | undefined,
+  generating: ReadonlySet<string>,
+  now: Date,
+): WakeSpan | null {
+  const running = generating.has(run.id);
+  const firstAt = stats?.first_at ?? null;
+  if (run.kind === "direct" && firstAt === null && !running) {
+    return null;
+  }
+  return {
+    started_at: run.kind === "direct" && firstAt !== null ? iso(firstAt) : iso(run.created_at),
+    ended_at: running ? now.toISOString() : iso(stats?.last_at ?? run.updated_at),
+    running,
+  };
+}
+
+/** What a wake's transcript shows inside the window: its tool calls, its last text, and a direct chat's opening. */
+export type WakeTranscript = Pick<ActivityWake, "tool_calls" | "tool_call_count" | "reply" | "opening">;
+
+/** A run's transcript from its steps inside the window; only a direct chat has an opening. */
+export function wakeTranscript(
+  run: GuildActivityRunRow,
+  steps: WakeSteps | undefined,
+  opening: string | undefined,
+): WakeTranscript {
+  return {
+    tool_calls: steps?.calls ?? [],
+    tool_call_count: steps?.count ?? 0,
+    reply: steps?.reply ?? null,
+    opening: run.kind === "direct" ? (opening ?? null) : null,
+  };
+}
+
 export function projectActivity(input: ActivityInput): ActivityView {
   const sinceMs = input.since.getTime();
-  const nowIso = input.now.toISOString();
   const agentsById = new Map(input.agents.map((agent) => [agent.id, agent]));
   const statsByRun = new Map(input.stats.map((row) => [row.run_id, row]));
   const deliveryByRun = new Map(input.deliveries.map((row) => [row.run_id, row.metadata]));
@@ -487,43 +530,26 @@ export function projectActivity(input: ActivityInput): ActivityView {
 
   const wakes: ActivityWake[] = [];
   for (const run of input.runs) {
-    const runId = run.id;
-    const agentId = run.agent_id;
-    const agent = agentsById.get(agentId);
-    const kind = run.kind;
-    const stats = statsByRun.get(runId);
-    const running = input.generating.has(runId);
-    const firstAt = stats?.first_at ?? null;
-    if (kind === "direct" && firstAt === null && !running) {
-      // A direct chat whose only activity predates the window.
+    const stats = statsByRun.get(run.id);
+    const span = wakeSpan(run, stats, input.generating, input.now);
+    if (span === null) {
       continue;
     }
-    const startedAt = kind === "direct" && firstAt !== null ? iso(firstAt) : iso(run.created_at);
-    const lastAt = stats?.last_at ?? run.updated_at;
-    const endedAt = running ? nowIso : iso(lastAt);
-    const trigger = wakeTrigger(run, agent, deliveryByRun.get(runId), messagesBySeq);
-    const posts = postsOf.get(runId) ?? [];
-    const writes = [...(writesOf.get(runId) ?? []), ...codeWrites(run, endedAt)];
+    const posts = postsOf.get(run.id) ?? [];
+    const writes = [...(writesOf.get(run.id) ?? []), ...codeWrites(run, span.ended_at)];
     const errors = errorsOf(run.errors, sinceMs);
-    const outcome = wakeOutcome(posts, writes);
-    const steps = stepsOf.get(runId);
     wakes.push({
-      run_id: runId,
-      agent_id: agentId,
-      kind,
-      started_at: startedAt,
-      ended_at: endedAt,
-      running,
-      trigger,
-      outcome,
+      run_id: run.id,
+      agent_id: run.agent_id,
+      kind: run.kind,
+      ...span,
+      trigger: wakeTrigger(run, agentsById.get(run.agent_id), deliveryByRun.get(run.id), messagesBySeq),
+      outcome: wakeOutcome(posts, writes),
       failed: errors.length > 0,
       errors,
       posts,
       writes,
-      tool_calls: steps?.calls ?? [],
-      tool_call_count: steps?.count ?? 0,
-      reply: steps?.reply ?? null,
-      opening: kind === "direct" ? (openingsOf.get(runId) ?? null) : null,
+      ...wakeTranscript(run, stepsOf.get(run.id), openingsOf.get(run.id)),
       last_seq: stats?.last_seq ?? null,
       cost_usd: stats?.cost_usd ?? 0,
     });

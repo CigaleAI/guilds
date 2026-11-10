@@ -16,6 +16,8 @@ import {
   writesByRun,
   toolCallOf,
   wakeOutcome,
+  wakeSpan,
+  wakeTranscript,
   wakeTrigger,
   ACTIVITY_PREVIEW_CHARS,
   ACTIVITY_TOOL_CALLS_MAX,
@@ -563,4 +565,35 @@ test("a wake that posted posted, one that wrote more than its memory wrote, and 
   assert.equal(wakeOutcome([], [write("memory"), write("note")]), "wrote");
   assert.equal(wakeOutcome([], [write("memory")]), "silent");
   assert.equal(wakeOutcome([], []), "silent");
+});
+
+test("a wake spans its run's start to its last step, a direct chat from its first step in the window, and a running run to now", () => {
+  const stats = { run_id: "r_1", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: 0 };
+  const chat = activityRun({ id: "r_1", kind: "direct", created_at: ts("09:00:00"), updated_at: ts("16:00:05") });
+  assert.deepEqual(wakeSpan(chat, stats, new Set(), NOW), {
+    started_at: "2026-09-25T15:58:00.000Z",
+    ended_at: "2026-09-25T16:00:00.000Z",
+    running: false,
+  });
+  assert.equal(wakeSpan(chat, { ...stats, first_at: null }, new Set(), NOW), null);
+  assert.deepEqual(wakeSpan(chat, undefined, new Set(["r_1"]), NOW), {
+    started_at: "2026-09-25T09:00:00.000Z",
+    ended_at: NOW.toISOString(),
+    running: true,
+  });
+  const tick = activityRun({ id: "r_2", kind: "schedule", created_at: ts("14:00:00"), updated_at: ts("14:01:00") });
+  assert.deepEqual(wakeSpan(tick, undefined, new Set(["r_1"]), NOW), {
+    started_at: "2026-09-25T14:00:00.000Z",
+    ended_at: "2026-09-25T14:01:00.000Z",
+    running: false,
+  });
+});
+
+test("a wake's transcript lists its steps, none when it took none, and an opening only for a direct chat", () => {
+  const steps = { calls: [toolCallOf(call("c_1", "note_get", "{}"), undefined, ts("14:00:00"))], count: 3, reply: "Done." };
+  const chat = activityRun({ id: "r_chat", kind: "direct", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.deepEqual(wakeTranscript(chat, steps, "hello"), { tool_calls: steps.calls, tool_call_count: 3, reply: "Done.", opening: "hello" });
+  assert.deepEqual(wakeTranscript(chat, undefined, undefined), { tool_calls: [], tool_call_count: 0, reply: null, opening: null });
+  const group = activityRun({ id: "r_group", kind: "group", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.equal(wakeTranscript(group, steps, "hello").opening, null);
 });
