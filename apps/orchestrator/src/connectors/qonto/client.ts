@@ -367,7 +367,7 @@ export async function readInvoiceFile(
 ): Promise<{ path: string; name: string; mime: string; content: Buffer }> {
   let read: AgentFile;
   try {
-    read = await readAgentFile(workspaceDir, filePath, { maxBytes: MAX_ATTACHMENT_BYTES });
+    read = await readAgentFile(workspaceDir, filePath, MAX_ATTACHMENT_BYTES);
   } catch (error) {
     if (!(error instanceof AgentFileError)) {
       throw error;

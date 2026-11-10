@@ -104,7 +104,7 @@ export const filePut = nativeTool({
   }),
   async handler(services, run, _hooks, call) {
     const { home_path: homePath, description } = call.arguments;
-    const read = await homeFile(readAgentFile(workspace(run), homePath, { maxBytes: FILE_MAX_BYTES }));
+    const read = await homeFile(readAgentFile(workspace(run), homePath, FILE_MAX_BYTES));
     const name = call.arguments.name?.trim() || path.basename(read.path);
     const store = files(services);
     const row = await store.putFile(actor(run, call), {

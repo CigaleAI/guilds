@@ -48,7 +48,7 @@ async function workspaceFile(filePath: string, workspaceDir?: string) {
     throw new DriveFolderError("file_path is only available during an agent run");
   }
   try {
-    return await readAgentFile(workspaceDir, filePath, { maxBytes: MAX_DRIVE_UPLOAD_BYTES });
+    return await readAgentFile(workspaceDir, filePath, MAX_DRIVE_UPLOAD_BYTES);
   } catch (error) {
     if (error instanceof AgentFileError) {
       throw new DriveFolderError(

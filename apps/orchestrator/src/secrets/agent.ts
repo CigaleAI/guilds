@@ -59,7 +59,7 @@ export type StoredSecret = {
 export async function readSecretFile(workspaceDir: string, file: string): Promise<{ value: string; path: string }> {
   let read: AgentFile;
   try {
-    read = await readAgentFile(workspaceDir, file, { maxBytes: SECRET_FILE_MAX_BYTES });
+    read = await readAgentFile(workspaceDir, file, SECRET_FILE_MAX_BYTES);
   } catch (error) {
     if (!(error instanceof AgentFileError)) {
       throw error;

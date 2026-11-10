@@ -96,7 +96,7 @@ export type AgentFile = { path: string; bytes: Buffer };
 export async function readAgentFile(
   workspaceDir: string,
   filePath: string,
-  options: { maxBytes: number },
+  maxBytes: number,
 ): Promise<AgentFile> {
   const resolved = resolveAgentFilePath(workspaceDir, filePath);
   let real: string;
@@ -123,8 +123,8 @@ export async function readAgentFile(
     if (!info.isFile() || !sameFile(info, checked)) {
       throw new AgentFileError(linkOut(workspaceDir));
     }
-    if (info.size > options.maxBytes) {
-      throw new AgentFileError(`file_path is larger than ${options.maxBytes} bytes`, "too_large", info.size);
+    if (info.size > maxBytes) {
+      throw new AgentFileError(`file_path is larger than ${maxBytes} bytes`, "too_large", info.size);
     }
     // One byte past the size it reported shows a file that grew while it was read.
     const buffer = Buffer.alloc(info.size + 1);
@@ -160,7 +160,8 @@ export type AgentFolder = { path: string; files: AgentFolderFile[] };
 export async function readAgentFolder(
   workspaceDir: string,
   folderPath: string,
-  options: { maxFiles: number; maxBytes: number },
+  maxFiles: number,
+  maxBytes: number,
 ): Promise<AgentFolder> {
   const resolved = resolveAgentFilePath(workspaceDir, folderPath);
   const root = await realpath(workspaceDir);
@@ -188,8 +189,8 @@ export async function readAgentFolder(
         continue;
       }
       names.push(name);
-      if (names.length > options.maxFiles) {
-        throw new AgentFileError(`folder_path holds more than ${options.maxFiles} files`, "too_large");
+      if (names.length > maxFiles) {
+        throw new AgentFileError(`folder_path holds more than ${maxFiles} files`, "too_large");
       }
     }
   };
@@ -201,13 +202,13 @@ export async function readAgentFolder(
   for (const name of names) {
     let read: AgentFile;
     try {
-      read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), { maxBytes: options.maxBytes - total });
+      read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), maxBytes - total);
     } catch (error) {
       if (!(error instanceof AgentFileError)) {
         throw error;
       }
       if (error.problem === "too_large") {
-        throw new AgentFileError(`folder_path holds more than ${options.maxBytes} bytes`, "too_large");
+        throw new AgentFileError(`folder_path holds more than ${maxBytes} bytes`, "too_large");
       }
       throw new AgentFileError(`${name}: ${error.message}`, error.problem);
     }
