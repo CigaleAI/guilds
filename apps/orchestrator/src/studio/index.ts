@@ -562,20 +562,6 @@ export class StudioService {
     };
   }
 
-  async getEdit(
-    session: StudioSessionRow,
-    user: UserRow,
-    seq: number,
-  ): Promise<StudioEditView> {
-    const sourceGuildId = session.source_guild_id;
-    if (!sourceGuildId) {
-      throw new StudioUnprocessableError("source guild is gone");
-    }
-    const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    const scope = await this.editScope({ ...session, source_guild_id: sourceGuildId }, user);
-    return viewEdit(this.deps, scope, record);
-  }
-
   // Apply or decline one edit request from the Studio log. The session lock
   // serialises answers, so a request resolves once.
   async resolveEdit(
