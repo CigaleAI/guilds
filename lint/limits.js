@@ -168,7 +168,7 @@ function nameOf(fn) {
 
 // A bump is a conditional or loop statement at the top level of a function's body that holds
 // another; a closure's statements count towards the function that declares it. The function is
-// reported at `max` bumps.
+// reported past `max` bumps.
 const bumpyRoad = {
   meta: {
     type: "problem",
@@ -176,14 +176,14 @@ const bumpyRoad = {
     schema: [
       {
         type: "object",
-        properties: { max: { type: "integer", minimum: 1 } },
+        properties: { max: { type: "integer", minimum: 0 } },
         required: ["max"],
         additionalProperties: false,
       },
     ],
     messages: {
       bumpy:
-        "`{{name}}` has {{count}} blocks of nested conditional logic; the limit is {{limit}}. Each block is a step with a contract of its own: a named function. See docs/contributing/code-guidelines.md, Functions.",
+        "`{{name}}` has {{count}} blocks of nested conditional logic; the limit is {{max}}. Each block is a step with a contract of its own: a named function. See docs/contributing/code-guidelines.md, Functions.",
     },
   },
   create(context) {
@@ -198,8 +198,8 @@ const bumpyRoad = {
     };
     const report = () => {
       for (const [fn, roots] of bumps) {
-        if (roots.size >= max) {
-          const data = { name: nameOf(fn), count: roots.size, limit: max - 1 };
+        if (roots.size > max) {
+          const data = { name: nameOf(fn), count: roots.size, max };
           context.report({ node: fn, messageId: "bumpy", data });
         }
       }

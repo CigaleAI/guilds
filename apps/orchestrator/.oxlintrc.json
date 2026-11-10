@@ -33,7 +33,7 @@
         "max-params": ["warn", 4],
         "max-lines": ["warn", { "max": 800, "skipBlankLines": false, "skipComments": false }],
         "limits/file-lines": ["error", { "max": 1000 }],
-        "limits/bumpy-road": ["error", { "max": 2 }],
+        "limits/bumpy-road": ["error", { "max": 1 }],
         "typescript/consistent-type-assertions": ["error", { "assertionStyle": "never" }],
         "limits/silent-catch": "error",
         "limits/bare-error": "error",

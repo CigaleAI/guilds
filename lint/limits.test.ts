@@ -3,8 +3,8 @@ import { RuleTester } from "oxlint/plugins-dev";
 import limits from "./limits.js";
 
 const tester = new RuleTester({ languageOptions: { parserOptions: { lang: "ts" } } });
-const options = [{ max: 2 }];
-const bumpy = (name: string) => ({ messageId: "bumpy", data: { name, count: 2, limit: 1 } });
+const options = [{ max: 1 }];
+const bumpy = (name: string) => ({ messageId: "bumpy", data: { name, count: 2, max: 1 } });
 
 tester.run("limits/bumpy-road", limits.rules["bumpy-road"], {
   valid: [
