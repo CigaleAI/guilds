@@ -162,3 +162,37 @@ test("readAgentFolder refuses a folder or a file outside the workspace, a folder
   symlinkSync(path.join(workspace, "site"), path.join(workspace, "nested", "site"));
   await refused(() => readAgentFolder(workspace, "nested", 10, 100), "not_file", "a link to a folder inside");
 });
+
+test("readAgentFolder counts the files of every folder under it towards its limit", async () => {
+  const { workspace } = workspaceWithHostFile();
+  mkdirSync(path.join(workspace, "site", "assets", "img"), { recursive: true });
+  writeFileSync(path.join(workspace, "site", "index.html"), "1");
+  writeFileSync(path.join(workspace, "site", "assets", "app.js"), "2");
+  writeFileSync(path.join(workspace, "site", "assets", "img", "logo.svg"), "3");
+  const read = await readAgentFolder(workspace, "site", 3, 100);
+  assert.deepEqual(
+    read.files.map((file) => file.path),
+    ["assets/app.js", "assets/img/logo.svg", "index.html"],
+  );
+  await refusedWith(() => readAgentFolder(workspace, "site", 2, 100), "too_large", "folder_path holds more than 2 files");
+  await refusedWith(() => readAgentFolder(workspace, "site", 1, 100), "too_large", "folder_path holds more than 1 files");
+});
+
+test("readAgentFolder reports a file past the bytes left as the folder past its total, and names a refused file", async () => {
+  const { workspace, host } = workspaceWithHostFile();
+  mkdirSync(path.join(workspace, "one"));
+  writeFileSync(path.join(workspace, "one", "big.bin"), "x".repeat(20));
+  mkdirSync(path.join(workspace, "two"));
+  writeFileSync(path.join(workspace, "two", "a.txt"), "x".repeat(10));
+  writeFileSync(path.join(workspace, "two", "b.txt"), "x".repeat(10));
+  mkdirSync(path.join(workspace, "linked"));
+  symlinkSync(host, path.join(workspace, "linked", "environ"));
+  await refusedWith(() => readAgentFolder(workspace, "one", 10, 15), "too_large", "folder_path holds more than 15 bytes");
+  await refusedWith(() => readAgentFolder(workspace, "two", 10, 15), "too_large", "folder_path holds more than 15 bytes");
+  assert.equal((await readAgentFolder(workspace, "two", 10, 20)).files.length, 2);
+  await refusedWith(
+    () => readAgentFolder(workspace, "linked", 10, 100),
+    "outside",
+    "environ: file_path must be under /home/a_1, not a link out of it",
+  );
+});

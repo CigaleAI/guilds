@@ -162,6 +162,51 @@ export type AgentFolderFile = { path: string; bytes: Buffer };
 export type AgentFolder = { path: string; files: AgentFolderFile[] };
 
 /**
+ * The files under a folder, by their paths in it with `/` between parts, sorted. A link is listed
+ * as a file, never followed. Refuses a folder holding more than `maxFiles` files.
+ */
+async function listFolderFiles(dir: string, maxFiles: number): Promise<string[]> {
+  const names: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      const below = await listFolderFiles(path.join(dir, entry.name), maxFiles);
+      names.push(...below.map((name) => `${entry.name}/${name}`));
+    } else {
+      names.push(entry.name);
+    }
+    if (names.length > maxFiles) {
+      throw new AgentFileError(`folder_path holds more than ${maxFiles} files`, "too_large");
+    }
+  }
+  return names.sort();
+}
+
+/**
+ * One file of a folder an agent named, read as `readAgentFile` reads one within `maxBytes`: `base`
+ * is the folder's path in the workspace and `name` the file's path in the folder. Null when the
+ * file holds more than `maxBytes`; any other refusal names the file.
+ */
+async function readFolderFile(
+  workspaceDir: string,
+  base: string,
+  name: string,
+  maxBytes: number,
+): Promise<AgentFolderFile | null> {
+  try {
+    const read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), maxBytes);
+    return { path: name, bytes: read.bytes };
+  } catch (error) {
+    if (!(error instanceof AgentFileError)) {
+      throw error;
+    }
+    if (error.problem === "too_large") {
+      return null;
+    }
+    throw new AgentFileError(`${name}: ${error.message}`, error.problem);
+  }
+}
+
+/**
  * Reads every file under a folder an agent named in its workspace, sorted by path. The folder has
  * to stay in the workspace once every link is followed, and each file is read as `readAgentFile`
  * reads one. A link to a folder is not followed: it is refused as not a regular file. Refuses a
@@ -185,40 +230,17 @@ export async function readAgentFolder(
   if (!(await lstat(real)).isDirectory()) {
     throw new AgentFileError("folder_path must be a folder", "not_file");
   }
-  const names: string[] = [];
-  const walk = async (dir: string, prefix: string): Promise<void> => {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      const name = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), name);
-        continue;
-      }
-      names.push(name);
-      if (names.length > maxFiles) {
-        throw new AgentFileError(`folder_path holds more than ${maxFiles} files`, "too_large");
-      }
-    }
-  };
-  await walk(real, "");
-  names.sort();
   const base = path.relative(root, real);
   const files: AgentFolderFile[] = [];
   let total = 0;
-  for (const name of names) {
-    let read: AgentFile;
-    try {
-      read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), maxBytes - total);
-    } catch (error) {
-      if (!(error instanceof AgentFileError)) {
-        throw error;
-      }
-      if (error.problem === "too_large") {
-        throw new AgentFileError(`folder_path holds more than ${maxBytes} bytes`, "too_large");
-      }
-      throw new AgentFileError(`${name}: ${error.message}`, error.problem);
+  for (const name of await listFolderFiles(real, maxFiles)) {
+    // A file may hold only the bytes the files before it left, so one past that, even alone, takes the folder past its total.
+    const file = await readFolderFile(workspaceDir, base, name, maxBytes - total);
+    if (file === null) {
+      throw new AgentFileError(`folder_path holds more than ${maxBytes} bytes`, "too_large");
     }
-    total += read.bytes.length;
-    files.push({ path: name, bytes: read.bytes });
+    total += file.bytes.length;
+    files.push(file);
   }
   return { path: resolved, files };
 }
