@@ -55,6 +55,12 @@ export const SYSTEM_PROMPT = "system.md";
 /** A file in a notes folder: its path within the folder, and the Obsidian link that opens it. */
 export type NotesFile = { path: string; obsidian: string };
 
+/**
+ * Who replaces an agent's Memory: the source the archived Memory's file is named after, and how
+ * the archive's header names what replaced it.
+ */
+export type MemoryWriter = { source: string; replacedBy: string };
+
 /** The folders directly inside `dir`; none when `dir` is not a folder. */
 function listFolders(dir: string): string[] {
   if (!isDir(dir)) {
@@ -390,10 +396,10 @@ export class NotesStore {
     guildName: string,
     agentName: string,
     content: string,
-    options: { source: string; replacedBy: string },
+    writer: MemoryWriter,
   ): Promise<string> {
     return this.lock.run(() =>
-      this.writeMemoryUnlocked(orgSlug, guildName, agentName, content, options),
+      this.writeMemoryUnlocked(orgSlug, guildName, agentName, content, writer),
     );
   }
 
@@ -666,7 +672,7 @@ export class NotesStore {
     guildName: string,
     agentName: string,
     content: string,
-    options: { source: string; replacedBy: string },
+    writer: MemoryWriter,
   ): string {
     const agent = this.agentDir(orgSlug, guildName, agentName);
     if (!isDir(agent)) {
@@ -681,9 +687,9 @@ export class NotesStore {
     let archivedName = "";
     if (previous !== null) {
       const started = statSync(filePath).mtime;
-      archivedName = archiveFilename(now, options.source);
+      archivedName = archiveFilename(now, writer.source);
       const archivePath = path.join(this.agentDir(orgSlug, guildName, agentName), MEMORY_DIR, archivedName);
-      const header = archiveHeader({ started, ended: now, replacedBy: options.replacedBy });
+      const header = archiveHeader({ started, ended: now, replacedBy: writer.replacedBy });
       this.writeFile(archivePath, `${header}\n${previous}`);
       this.pruneMemoryArchive(orgSlug, guildName, agentName);
     }

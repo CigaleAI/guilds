@@ -347,9 +347,6 @@
     "limits/bumpy-road": {
       "count": 1
     },
-    "limits/inline-parameter-type": {
-      "count": 2
-    },
     "typescript/consistent-type-assertions": {
       "count": 1
     }
