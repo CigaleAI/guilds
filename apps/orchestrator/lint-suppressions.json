@@ -244,11 +244,6 @@
       "count": 1
     }
   },
-  "src/lib/agent-file.ts": {
-    "limits/bumpy-road": {
-      "count": 1
-    }
-  },
   "src/lib/blob-store.ts": {
     "typescript/consistent-type-assertions": {
       "count": 1

@@ -207,3 +207,16 @@ test("writeAgentFile lets a failure other than a missing path through as it is",
     );
   }
 });
+
+test("writeAgentFile goes only through real folders, creating the missing ones", async () => {
+  const { workspace } = workspaceWithHostFile();
+  mkdirSync(path.join(workspace, "reports"));
+  writeFileSync(path.join(workspace, "notes.txt"), "text");
+  symlinkSync(path.join(workspace, "reports"), path.join(workspace, "latest"));
+  const written = await writeAgentFile(workspace, "reports/2026/q3/brief.txt", Buffer.from("one"));
+  assert.equal(readFileSync(written, "utf8"), "one");
+  const message = "file_path must be under /home/a_1 through folders, not links";
+  await refusedWith(() => writeAgentFile(workspace, "notes.txt/brief.txt", Buffer.from("two")), "outside", message);
+  await refusedWith(() => writeAgentFile(workspace, "latest/brief.txt", Buffer.from("two")), "outside", message);
+  assert.equal(existsSync(path.join(workspace, "reports", "brief.txt")), false);
+});

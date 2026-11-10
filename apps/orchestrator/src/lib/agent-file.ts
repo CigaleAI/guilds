@@ -115,6 +115,23 @@ function throughFolders(workspaceDir: string): string {
   return `file_path must be under ${homeOfDirectory(workspaceDir)} through folders, not links`;
 }
 
+/**
+ * Makes `folder`, a part of a path in an agent's workspace, a real folder: creates it when nothing
+ * is there, and refuses it when it is anything but a folder, a link included.
+ */
+async function ensureWorkspaceFolder(folder: string, workspaceDir: string): Promise<void> {
+  const found = await lstatIfPresent(folder);
+  if (found === null) {
+    await mkdir(folder).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "EEXIST") throw error;
+    });
+  }
+  const checked = found ?? (await lstat(folder));
+  if (!checked.isDirectory()) {
+    throw new AgentFileError(throughFolders(workspaceDir));
+  }
+}
+
 /** A file an agent named, read: its path on the host and its bytes. */
 export type AgentFile = { path: string; bytes: Buffer };
 
@@ -283,18 +300,7 @@ export async function writeAgentFile(workspaceDir: string, filePath: string, byt
   }
   for (const part of parts) {
     current = path.join(current, part);
-    const found = await lstatIfPresent(current);
-    if (found === null) {
-      await mkdir(current).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "EEXIST") throw error;
-      });
-      const made = await lstat(current);
-      if (!made.isDirectory()) {
-        throw new AgentFileError(throughFolders(workspaceDir));
-      }
-    } else if (!found.isDirectory()) {
-      throw new AgentFileError(throughFolders(workspaceDir));
-    }
+    await ensureWorkspaceFolder(current, workspaceDir);
   }
   const target = path.join(current, name);
   const existing = await lstatIfPresent(target);
