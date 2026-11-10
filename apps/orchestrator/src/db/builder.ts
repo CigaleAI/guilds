@@ -110,6 +110,21 @@ export async function updateBuilderSession(
   return result.rows[0] ?? null;
 }
 
+/** Marks the session cancelling when a generation runs on it; null when none does, and nothing is written. */
+export async function markBuilderSessionCancelling(
+  pool: Queryable,
+  sessionId: BuilderSessionRow["id"],
+  now: Date,
+): Promise<BuilderSessionRow | null> {
+  const result = await pool.query<BuilderSessionRow>(
+    `UPDATE builder_sessions SET generation_state = 'cancelling', updated_at = $2
+      WHERE id = $1 AND generation_state = 'generating'
+      RETURNING ${SESSION_COLUMNS}`,
+    [sessionId, stamp(now)],
+  );
+  return result.rows[0] ?? null;
+}
+
 /** The sessions a generation was running or cancelling on when the process stopped. */
 export async function listGeneratingBuilderSessions(pool: Queryable): Promise<BuilderSessionRow[]> {
   const result = await pool.query<BuilderSessionRow>(

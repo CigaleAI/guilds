@@ -33,6 +33,7 @@ import type { GroupRouter } from "../../src/groupchat/router.js";
 import { createTypeSafeClient } from "../../src/typesafe/client.js";
 import { createGroupRouter } from "../../src/typesafe/group.js";
 import { toolFixture } from "../helpers/toolbox.js";
+import { overflowStream, sseApp } from "../helpers/sse.js";
 
 const OPERATOR: MessageAuthor = { id: "user_1", name: "user" };
 
@@ -1410,4 +1411,21 @@ describe("wake message", () => {
     assert.equal(wakeMessage(rows, "a_desk", 1)?.id, 2);
     assert.equal(wakeMessage(rows, "a_desk", 2), null);
   });
+});
+
+test("a_slow_guild_subscriber_is_closed_not_silenced", async () => {
+  const { chat } = seed();
+  const { app, opened } = sseApp(
+    () => chat.subscribe("guild_1"),
+    (queue) => chat.unsubscribe("guild_1", queue),
+  );
+  const { body, queue } = await overflowStream(app, opened, () =>
+    Array.from({ length: 8192 }, () =>
+      chat.publish("guild_1", "guild.issues.changed", { action: "reported" }),
+    ),
+  );
+  assert.equal(queue.dropped, true);
+  assert.ok(body.startsWith(": connected\n\n"), body.slice(0, 40));
+  assert.equal(chat._subs.has("guild_1"), false);
+  await app.close();
 });

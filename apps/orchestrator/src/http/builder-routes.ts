@@ -1,10 +1,9 @@
 import { Type } from "typebox";
-import type { FastifyReply, FastifyRequest } from "fastify";
 import type { BuilderService } from "../builder/index.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
-import { frameSse, SSE_HEADERS } from "./sse.js";
+import { pipeSse } from "./sse.js";
 import { ApplyChoicesSchema } from "../recipes/apply.js";
 import { parseReviewAction, ReviewSchema } from "../recipes/review.js";
 import { parseAccessEdits, parseRecipe } from "../recipes/parse.js";
@@ -183,45 +182,13 @@ export async function registerBuilderSessionRoutes(app: RouteApp, deps: AppDeps)
       const org = await currentOrg(db, request, user);
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(request.params.session_id, user, org);
-      await pipeBuilderSse(request, reply, builder, String(session.id));
+      const sessionId = String(session.id);
+      await pipeSse(
+        request,
+        reply,
+        () => builder.subscribe(sessionId),
+        (queue) => builder.unsubscribe(sessionId, queue),
+      );
     },
   );
-}
-
-async function pipeBuilderSse(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  builder: BuilderService,
-  sessionId: string,
-): Promise<void> {
-  const queue = builder.subscribe(sessionId);
-  reply.hijack();
-  reply.raw.writeHead(200, SSE_HEADERS);
-  reply.raw.write(": connected\n\n");
-  const abort = new AbortController();
-  const onClose = () => abort.abort();
-  request.raw.on("close", onClose);
-  const heartbeat = setInterval(() => {
-    try {
-      reply.raw.write(": keepalive\n\n");
-    } catch {
-      abort.abort();
-    }
-  }, 15_000);
-  try {
-    while (!abort.signal.aborted) {
-      const [event, data] = await queue.get(abort.signal);
-      try {
-        reply.raw.write(frameSse(event, data));
-      } catch {
-        /* skip a bad frame; keep the stream open */
-      }
-    }
-  } catch {
-    /* disconnected */
-  } finally {
-    clearInterval(heartbeat);
-    request.raw.off("close", onClose);
-    builder.unsubscribe(sessionId, queue);
-  }
 }

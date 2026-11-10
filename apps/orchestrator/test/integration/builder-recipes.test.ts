@@ -24,6 +24,7 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
+import { getBuilderSession, markBuilderSessionCancelling, updateBuilderSession } from "../../src/db/builder.js";
 import { getGuild, listGuilds } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
@@ -128,6 +129,18 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     const fetched = await app.inject({ method: "GET", url: `/api/builder/sessions/${session.id}`, headers: AUTH });
     assert.equal(fetched.statusCode, 200, fetched.body);
     assert.deepEqual(fetched.json(), session);
+    const idleCancel = await app.inject({
+      method: "POST",
+      url: `/api/builder/sessions/${session.id}/cancel`,
+      headers: AUTH,
+    });
+    assert.equal(idleCancel.statusCode, 200, idleCancel.body);
+    assert.deepEqual(idleCancel.json(), session);
+    assert.equal((await getBuilderSession(db, session.id))?.generation_state, "idle");
+    await updateBuilderSession(db, session.id, { generation_state: "generating" }, new Date());
+    assert.equal((await markBuilderSessionCancelling(db, session.id, new Date()))?.generation_state, "cancelling");
+    assert.equal(await markBuilderSessionCancelling(db, session.id, new Date()), null);
+    await updateBuilderSession(db, session.id, { generation_state: "idle" }, new Date());
     const listedSessions = await app.inject({ method: "GET", url: "/api/builder/sessions", headers: AUTH });
     assert.equal(listedSessions.statusCode, 200, listedSessions.body);
     const listedRow = (listedSessions.json() as Array<Record<string, unknown>>).find((row) => row.id === session.id);

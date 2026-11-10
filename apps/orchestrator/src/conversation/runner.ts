@@ -8,7 +8,7 @@ import {
   nextConversationSeq,
   updateConversationSession,
 } from "../db/conversations.js";
-import { isJsonObject, type JsonObject } from "../lib/json.js";
+import type { JsonObject } from "../lib/json.js";
 import type { Queryable } from "../db/pg.js";
 import type { CompletionMetadata, MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
 import { incrementOrgUsage } from "../db/usage.js";
@@ -37,7 +37,8 @@ import {
   type ProjectedRow,
   type ProjectionBudget,
 } from "./projection.js";
-import { writeLog } from "../observability/log.js";
+import { parseToolArgs, truncatedToolArguments } from "./tool-args.js";
+import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import type { UserRow } from "../db/users.js";
 import type { StudioSessionRow } from "../db/studio.js";
 import type { BuilderSessionRow } from "../db/builder.js";
@@ -160,6 +161,12 @@ type GenerationProgress = { toolCalls: number; stubbed: number[] };
 type StepEnd = "next" | "stop";
 
 /**
+ * How a generation's background task ended: its steps ended it, or a throw did and the session
+ * records the throw, or a throw did and the database refused that record too.
+ */
+type GenerationEnd = "ended" | "failure_recorded" | "failure_unrecorded";
+
+/**
  * A coach conversation's history as the model is sent it: the stored rows, the generation they
  * are seen from, the context and system prompt this generation replaces, and how old tool
  * results are stubbed. `stubbed` collects the seqs the projection stubs.
@@ -178,7 +185,7 @@ export type ConversationProjection = {
 export class ConversationRunner {
   private subs = new Map<string, Set<EventQueue<CoachEvent>>>();
   private cancels = new Map<string, CancelEvent>();
-  private tasks = new Map<string, Promise<void>>();
+  private tasks = new Map<string, Promise<GenerationEnd>>();
 
   constructor(public deps: ConversationRunnerDeps) {}
 
@@ -204,6 +211,7 @@ export class ConversationRunner {
   async publish(sessionId: string, ...event: CoachEvent): Promise<void> {
     for (const queue of [...(this.subs.get(sessionId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
+        queue.drop();
         this.unsubscribe(sessionId, queue);
         continue;
       }
@@ -219,13 +227,16 @@ export class ConversationRunner {
     await this.tasks.get(sessionId);
   }
 
+  /** Runs the generation in the background; whatever it throws ends it on the session, never in the process. */
   start<C>(args: ConversationGeneration<C>): void {
     const sessionId = args.session.id;
-    const task = this.run(args).finally(() => {
-      if (this.tasks.get(sessionId) === task) {
-        this.tasks.delete(sessionId);
-      }
-    });
+    const task = this.run(args)
+      .catch((cause: unknown) => this.endThrownGeneration(sessionId, args.generation, errorMessage(cause)))
+      .finally(() => {
+        if (this.tasks.get(sessionId) === task) {
+          this.tasks.delete(sessionId);
+        }
+      });
     this.tasks.set(sessionId, task);
   }
 
@@ -233,19 +244,57 @@ export class ConversationRunner {
     if (session.generation_state !== "generating" && session.generation_state !== "cancelling") {
       return;
     }
-    await this.repair(session.id, Number(session.generation_number || 1), "execution interrupted");
-    await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
+    const generation = Number(session.generation_number || 1);
+    await this.repair(session.id, generation, "execution interrupted");
+    await this.endGeneration(session.id, generation);
   }
 
-  private async run<C>(turn: ConversationGeneration<C>): Promise<void> {
+  private async run<C>(turn: ConversationGeneration<C>): Promise<GenerationEnd> {
     const sessionId = turn.session.id;
-    const orgId = turn.session.org_id;
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
     await this.publish(sessionId, "generation.started", {
       session_id: sessionId,
       generation: turn.generation,
     });
+    try {
+      await this.generateAdmitted(turn, cancel);
+    } finally {
+      this.cancels.delete(sessionId);
+    }
+    await this.endGeneration(sessionId, turn.generation);
+    return "ended";
+  }
+
+  /**
+   * Ends a generation a throw cut short: adds the throw to the session's errors, returns the
+   * session to idle, and announces the generation finished. When the database refuses that record
+   * too, the refusal is logged and the generation is announced finished all the same.
+   */
+  private async endThrownGeneration(sessionId: string, generation: number, detail: string): Promise<GenerationEnd> {
+    try {
+      await this.fail(sessionId, detail);
+      await this.endGeneration(sessionId, generation);
+      return "failure_recorded";
+    } catch (cause) {
+      writeLog("error", errorMessage(cause), {
+        source: "backend",
+        operation: `${this.deps.kind}.session`,
+        session_id: sessionId,
+        error_type: errorName(cause),
+      });
+      await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation });
+      return "failure_unrecorded";
+    }
+  }
+
+  /**
+   * Takes the session's admission slot, runs the generation's steps in it, and gives the slot
+   * back. A refused slot is recorded as the session's error, and no step runs.
+   */
+  private async generateAdmitted<C>(turn: ConversationGeneration<C>, cancel: CancelEvent): Promise<void> {
+    const sessionId = turn.session.id;
+    const orgId = turn.session.org_id;
     const kind = this.deps.kind;
     try {
       await this.deps.admission.acquire(kind, sessionId, orgId, await this.maxConcurrent(orgId));
@@ -266,11 +315,19 @@ export class ConversationRunner {
         await this.fail(sessionId, "generation step limit reached");
       }
     } finally {
-      this.cancels.delete(sessionId);
       this.deps.admission.release(kind, sessionId);
-      await updateConversationSession(this.deps.db, this.session(sessionId), { generation_state: "idle", generation_token: null, generation_started_at: null }, new Date());
-      await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation: turn.generation });
     }
+  }
+
+  /** Returns the session to idle, clearing its generation's token and start, and announces the generation finished. */
+  private async endGeneration(sessionId: string, generation: number): Promise<void> {
+    await updateConversationSession(
+      this.deps.db,
+      this.session(sessionId),
+      { generation_state: "idle", generation_token: null, generation_started_at: null },
+      new Date(),
+    );
+    await this.publish(sessionId, "generation.finished", { session_id: sessionId, generation });
   }
 
   /**
@@ -675,68 +732,6 @@ export async function callConversationTool<C>(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "tool failed" };
   }
-}
-
-/** Whether a tool call's arguments, as the model wrote them, are a whole JSON object. */
-export function toolArgsAreJsonObject(raw: ToolCall["function"]["arguments"]): boolean {
-  if (!raw.trim()) {
-    return false;
-  }
-  try {
-    return isJsonObject(JSON.parse(raw));
-  } catch {
-    return false;
-  }
-}
-
-/** Whether the step's output was cut at max_tokens in the middle of the call's arguments. */
-export function truncatedToolArguments(
-  finishReason: CompletionMetadata["finish_reason"],
-  raw: ToolCall["function"]["arguments"],
-): boolean {
-  return finishReason === "length" && !toolArgsAreJsonObject(raw);
-}
-
-/** A tool call's arguments as a JSON object; what can be recovered of them when they are not one. */
-export function parseToolArgs(raw: ToolCall["function"]["arguments"]): JsonObject {
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (isJsonObject(parsed)) {
-      return parsed;
-    }
-  } catch {
-    return recoverPartialToolArgs(raw);
-  }
-  return recoverPartialToolArgs(raw);
-}
-
-export function recoverPartialToolArgs(raw: string): JsonObject {
-  const out: JsonObject = {};
-  const handle = raw.match(/"(?:agent_id|agent_name)"\s*:\s*"((?:\\.|[^"\\])*)"/);
-  if (handle?.[1]) {
-    out.agent_id = decodeJsonStringBody(handle[1]) ?? handle[1];
-  }
-  const rationale = raw.match(/"rationale"\s*:\s*"((?:\\.|[^"\\])*)"/);
-  if (rationale?.[1]) {
-    out.rationale = decodeJsonStringBody(rationale[1]) ?? rationale[1];
-  }
-  return out;
-}
-
-/** The text a JSON string's body between its quotes decodes to; null when its escapes are not JSON. */
-function decodeJsonStringBody(body: string): string | null {
-  try {
-    const decoded: unknown = JSON.parse(`"${body}"`);
-    return isDecodedText(decoded) ? decoded : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Whether what JSON.parse gave back is a string. */
-function isDecodedText(value: unknown): value is string {
-  return typeof value === "string";
 }
 
 function unresolvedCalls(messages: ConversationMessageRow[]): ToolCall[] {

@@ -180,7 +180,8 @@ export type RunStreamState = { live: LiveTurn | null; progress: ToolProgress };
 /**
  * Follows one open run: streamed reasoning and text arrive as `live`, the lines a running tool
  * call reports arrive as `progress` until its result is committed, committed rows go straight
- * into the cached transcript, and the end of a generation refreshes the run. A run that
+ * into the cached transcript, and the end of a generation marks the cached run idle and
+ * refreshes it. Each (re)connect drops what was streamed and re-reads the run. A run that
  * continues in a new one of its chain hands `onContinued` the new run's id.
  */
 export function useRunStream(
@@ -205,26 +206,28 @@ export function useRunStream(
     void client.invalidateQueries({ queryKey: agentKeys.agent(agentId) });
   };
 
-  const showGenerationEnded = () => {
+  /** Drops the streamed turn and the progress lines, and re-reads the run. */
+  const resetToServer = () => {
     setLive(null);
     setProgress(new Map());
     refreshRun();
   };
 
+  /** Writes whether the run generates into its cached view and its agent's cached run list. */
+  const cacheGenerating = (id: string, generating: boolean) => {
+    client.setQueryData<Run>(runKeys.run(id), (run) => (run ? { ...run, generating } : run));
+    client.setQueryData<Run[]>(runKeys.agentRuns(agentId), (runs) =>
+      runs?.map((run) => (run.id === id ? { ...run, generating } : run)),
+    );
+  };
+
   useEventStream(runId ? `/api/runs/${encodeURIComponent(runId)}/stream` : null, {
     events: runEvents,
-    onOpen: refreshRun,
+    onOpen: resetToServer,
     onEvent: (name, data) => {
       if (!runId) return;
       const handlers: LiveEventHandlers<RunEvents> = {
-        "generation.started": () => {
-          client.setQueryData<Run>(runKeys.run(runId), (run) =>
-            run ? { ...run, generating: true } : run,
-          );
-          client.setQueryData<Run[]>(runKeys.agentRuns(agentId), (runs) =>
-            runs?.map((run) => (run.id === runId ? { ...run, generating: true } : run)),
-          );
-        },
+        "generation.started": () => cacheGenerating(runId, true),
         "assistant.reasoning.delta": (delta) =>
           setLive((turn) => applyLiveDelta(turn, "assistant.reasoning.delta", delta)),
         "assistant.delta": (delta) =>
@@ -245,8 +248,11 @@ export function useRunStream(
           }
         },
         "tool.progress": (event) => setProgress((current) => applyToolProgress(current, event)),
-        "run.error": showGenerationEnded,
-        "generation.finished": showGenerationEnded,
+        "run.error": resetToServer,
+        "generation.finished": () => {
+          cacheGenerating(runId, false);
+          resetToServer();
+        },
         "run.continued": (continuation) => {
           refreshRun();
           onContinued?.(continuation.run_id);

@@ -1,7 +1,7 @@
 import { Check, Link2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useIdentity } from "../../app/identity";
-import { Button, Select, TextField, cn, Icon, Tag } from "@guildsrun/ui";
+import { Button, Select, StatusBadge, TextField, cn, Icon, Tag } from "@guildsrun/ui";
 import type {
   ConnectScope,
   ConnectServer,
@@ -16,9 +16,12 @@ import {
   connectReplies,
   initialServerId,
   pickedServer,
+  reduceWidget,
   serverName,
+  widgetRows,
   type Answer,
 } from "./widgets";
+import type { ReplyOutcome, WidgetRow, WidgetState } from "./types";
 
 const scopeLabel: Record<ConnectScope, string> = {
   org: "Organisation · connect now",
@@ -67,7 +70,8 @@ type WidgetProps = {
   answered: boolean;
   /** False while the coach is writing; the reply waits for it. */
   live: boolean;
-  onReply: (message: string) => void;
+  /** Sends the operator's reply to the coach; resolves with how the post ended. */
+  onReply: (message: string) => Promise<ReplyOutcome>;
 };
 
 type ConnectCardProps = WidgetProps & { widget: ConnectWidget };
@@ -77,14 +81,20 @@ export function ConnectCard({ widget, answered, live, onReply }: ConnectCardProp
   const { org } = useIdentity();
   const [picked, setPicked] = useState(initialServerId(widget));
   const [scope, setScope] = useState<ConnectScope>(widget.recommended_scope);
+  const [reply, setReply] = useState<WidgetState>("open");
   const [done, setDone] = useState<string | null>(null);
+  const state: WidgetState = answered ? "settled" : reply;
   const server = pickedServer(widget, picked);
   const name = serverName(server);
   const orgConnected =
     scope === "org" && (widget.already_connected || server?.connection_state === "connected");
-  const settle = (status: string, reply: string) => {
-    setDone(status);
-    onReply(reply);
+  const settle = (status: string, message: string) => {
+    if (state !== "open") return;
+    setReply((current) => reduceWidget(current, "send"));
+    void onReply(message).then((outcome) => {
+      setReply((current) => reduceWidget(current, outcome));
+      if (outcome === "delivered") setDone(status);
+    });
   };
   const connect = useServerConnect({ scope: "org", id: org.id }, () =>
     settle(`${name} is connected. The coach carries on.`, connectReplies.connected(name)),
@@ -133,6 +143,7 @@ export function ConnectCard({ widget, answered, live, onReply }: ConnectCardProp
             name={name}
             scope={scope}
             live={live}
+            row={widgetRows[state]}
             busy={connect.busy}
             onConnect={startConnect}
             onSettle={settle}
@@ -193,10 +204,12 @@ type ConnectActionsProps = {
   name: string;
   scope: ConnectScope;
   live: boolean;
+  /** How the row stands while the card's reply is awaited or on its way. */
+  row: WidgetRow;
   /** A sign-in is under way. */
   busy: boolean;
   onConnect: () => void;
-  /** Settles the request: what the card then says, and the reply the coach gets. */
+  /** Sends the reply the coach gets, and what the card says once it is delivered. */
   onSettle: (status: string, reply: string) => void;
 };
 
@@ -209,11 +222,13 @@ function ConnectActions({
   name,
   scope,
   live,
+  row,
   busy,
   onConnect,
   onSettle,
 }: ConnectActionsProps) {
   const notSetUp = server?.oauth_setup_state === "unsupported";
+  const locked = !live || row.disabled;
   return (
     <>
       {notSetUp ? (
@@ -221,11 +236,11 @@ function ConnectActions({
           Not set up on this server: a platform admin sets it up under Admin → Platform keys.
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {scope === "org" ? (
           <Button
             size="sm"
-            disabled={!live || !server || busy || notSetUp}
+            disabled={locked || !server || busy || notSetUp}
             {...(notSetUp ? { title: "Not set up on this server" } : {})}
             onClick={onConnect}
           >
@@ -235,7 +250,7 @@ function ConnectActions({
         ) : (
           <Button
             size="sm"
-            disabled={!live}
+            disabled={locked}
             onClick={() =>
               onSettle(`${name} is planned at ${scope} scope.`, connectReplies.planned(name, scope))
             }
@@ -246,11 +261,12 @@ function ConnectActions({
         <Button
           variant="ghost"
           size="sm"
-          disabled={!live}
+          disabled={locked}
           onClick={() => onSettle(`Skipped ${name}.`, connectReplies.declined(name, scope))}
         >
           Skip
         </Button>
+        {row.badge ? <StatusBadge status={row.badge.status}>{row.badge.label}</StatusBadge> : null}
       </div>
     </>
   );
@@ -261,8 +277,10 @@ type QuestionCardProps = WidgetProps & { widget: QuestionWidget; kicker?: string
 /** The coach's questions: pick options or write an answer, then send them all at once. */
 export function QuestionCard({ widget, answered, live, onReply, kicker }: QuestionCardProps) {
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
-  const [sent, setSent] = useState(false);
-  const settled = answered || sent;
+  const [reply, setReply] = useState<WidgetState>("open");
+  const state: WidgetState = answered ? "settled" : reply;
+  const settled = state === "settled";
+  const row = widgetRows[state];
   const ready = answeredAll(widget.questions, answers);
 
   const update = (id: string, change: (answer: Answer) => Answer) =>
@@ -272,9 +290,11 @@ export function QuestionCard({ widget, answered, live, onReply, kicker }: Questi
     }));
 
   const send = () => {
-    if (!ready || settled || !live) return;
-    setSent(true);
-    onReply(answerMessage(widget.questions, answers));
+    if (!ready || state !== "open" || !live) return;
+    setReply((current) => reduceWidget(current, "send"));
+    void onReply(answerMessage(widget.questions, answers)).then((outcome) =>
+      setReply((current) => reduceWidget(current, outcome)),
+    );
   };
 
   return (
@@ -291,7 +311,7 @@ export function QuestionCard({ widget, answered, live, onReply, kicker }: Questi
       {widget.questions.map((question) => {
         const answer = answers[question.id] ?? { picked: [], other: "" };
         return (
-          <fieldset key={question.id} disabled={settled} className="flex flex-col gap-2">
+          <fieldset key={question.id} disabled={row.disabled} className="flex flex-col gap-2">
             <legend className="flex flex-col gap-0.5">
               <span className="text-sm font-semibold">{question.header}</span>
               <span className="text-sm text-fg-2">{question.question}</span>
@@ -352,9 +372,14 @@ export function QuestionCard({ widget, answered, live, onReply, kicker }: Questi
         );
       })}
       {!settled ? (
-        <Button size="sm" className="self-start" disabled={!ready || !live} onClick={send}>
-          Send answers
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" disabled={!ready || !live || row.disabled} onClick={send}>
+            Send answers
+          </Button>
+          {row.badge ? (
+            <StatusBadge status={row.badge.status}>{row.badge.label}</StatusBadge>
+          ) : null}
+        </div>
       ) : null}
     </WidgetCard>
   );

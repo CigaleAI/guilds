@@ -153,7 +153,10 @@ for them:
 
 Open questions the coach recorded in the design show as a question
 card above the message box. While a card waits for an answer, the
-message box is disabled.
+message box is disabled. A card's buttons are disabled while its
+reply is on its way, and the card settles once the coach has the
+reply. A reply that fails shows its error and leaves the card open
+to answer again.
 When the session reaches the coach's input limit, a banner says so:
 the session stays readable, its draft stays in Recipes, and a new
 session continues the design.
@@ -415,6 +418,30 @@ generation.
 
 The schema allows `status=archived` and `archived_at`. No route sets
 them: a Builder session is `active`, or `blocked` at the input limit.
+
+The coach runs on the conversation runner Prompt Studio shares
+([Coach loop and usage](prompt-studio.md#coach-loop-and-usage)).
+Whatever ends a generation, the session returns to `idle` with its
+`generation_token` and `generation_started_at` cleared, and the stream
+ends with `generation.finished`. A generation the process stopped
+during ends this way when the orchestrator starts again, after its
+unanswered tool calls are answered `ERROR: execution interrupted`. A
+generation the admission refuses, because the box or the organisation
+is at its generation limit, runs no step. A failure the runner does
+not expect, such as a database error or an organisation the policy
+blocks after the generation started, ends the generation at that step
+and leaves the process running. Either is added to the session's
+`errors` and published as `session.error` before
+`generation.finished`. When the database refuses that record too, the
+failure is logged and the stream still ends with
+`generation.finished`.
+
+A cancel sets `generation_state` to `cancelling` only while a
+generation runs (`generating`). The runner stops that generation at
+its next step or while the model answers, answers its unanswered tool
+calls `ERROR: execution interrupted`, and the session returns to
+`idle`. A cancel of a session no generation runs on, `idle` or already
+`cancelling`, writes nothing and returns the session as it is.
 
 Usage is charged to the organisation, global, and monthly counters.
 

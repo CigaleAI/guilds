@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { RunWakeRow } from "../../src/db/wakes.js";
 import type { ActiveGenerations } from "../../src/generation/active-generations.js";
 import { ConflictError } from "../../src/generation/errors.js";
-import type { RunEvents } from "../../src/generation/events.js";
+import type { RunEventBus } from "../../src/generation/events.js";
 import {
   RunWakes,
   type RunWakesDatabase,
@@ -13,7 +13,6 @@ import { logWriter } from "../../src/observability/log.js";
 import { wakeUserMessage } from "../../src/wakes/message.js";
 import { wakeUpsLeft } from "../../src/wakes/rules.js";
 import { Wakes } from "../../src/wakes/service.js";
-import { isJsonObject } from "../../src/lib/json.js";
 import { runSnapshot } from "../helpers/generation.js";
 
 const NOW = "2026-11-05T14:12:30.000Z";
@@ -85,7 +84,7 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
       publishCommitted: async (row: { run_id: string; seq: number }) => {
         calls.push(`published ${row.run_id} ${row.seq}`);
       },
-    } as unknown as RunEvents,
+    } as unknown as RunEventBus,
     generations: { isAgentBusy: () => false } as unknown as ActiveGenerations,
     wakes: {
       cancel: async () => null,
@@ -212,11 +211,7 @@ function publishingWakes(row: RunWakeRow | null) {
     events: {
       publish: async (runId, event, data) => {
         assert.equal(event, "run.wake.changed");
-        const pending = data.pending_wake;
-        published.push([
-          runId,
-          isJsonObject(pending) && typeof pending.id === "string" ? pending.id : null,
-        ]);
+        published.push([runId, data.pending_wake?.id ?? null]);
       },
     },
   });

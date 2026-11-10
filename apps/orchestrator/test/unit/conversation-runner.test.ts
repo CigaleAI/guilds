@@ -6,13 +6,16 @@ import {
   ConversationRunner,
   callConversationTool,
   generationLive,
-  recoverPartialToolArgs,
   type ConversationGeneration,
   type ConversationTool,
 } from "../../src/conversation/runner.js";
+import { recoverPartialToolArgs } from "../../src/conversation/tool-args.js";
 import type { Queryable } from "../../src/db/pg.js";
 import type { ToolCall } from "../../src/db/schema/index.js";
 import type { ModelEvent } from "../../src/llm/completion.js";
+import { PolicyError, UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
+import { completionReply } from "../helpers/generation.js";
+import { overflowStream, sseApp } from "../helpers/sse.js";
 
 const live = { ...generationLive };
 
@@ -70,6 +73,45 @@ function emptyDatabase(): { db: Queryable; queries: Array<{ text: string; params
     },
   } as unknown as Queryable;
   return { db, queries };
+}
+
+/** A database that refuses every query. */
+function unreachableDatabase(): Queryable {
+  return {
+    query: async () => {
+      throw new Error("connection refused");
+    },
+  } as unknown as Queryable;
+}
+
+/** The generation's events up to `generation.finished`, read from its stream without awaiting its task. */
+async function eventsUntilFinished(
+  runner: ConversationRunner,
+  turn: ConversationGeneration<ProbeContext>,
+): Promise<Array<[string, Record<string, unknown>]>> {
+  const queue = runner.subscribe(turn.session.id);
+  runner.start(turn);
+  const events: Array<[string, Record<string, unknown>]> = [];
+  while (events.at(-1)?.[0] !== "generation.finished") {
+    events.push(await queue.get());
+  }
+  return events;
+}
+
+/** What reaches `unhandledRejection` while `work` runs, and in the moment after it. */
+async function unhandledRejectionsDuring<T>(work: () => Promise<T>): Promise<{ result: T; rejections: unknown[] }> {
+  const rejections: unknown[] = [];
+  const sentinel = (reason: unknown) => {
+    rejections.push(reason);
+  };
+  process.on("unhandledRejection", sentinel);
+  try {
+    const result = await work();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return { result, rejections };
+  } finally {
+    process.off("unhandledRejection", sentinel);
+  }
 }
 
 async function publishedEvents(
@@ -189,4 +231,121 @@ test("a completion cancelled while the model answers ends the generation without
     events.map(([event]) => event),
     ["generation.started", "generation.finished"],
   );
+});
+
+test("admission_refusal_leaves_the_session_idle_and_publishes_finished", async () => {
+  const { db, queries } = emptyDatabase();
+  const admission = new AdmissionCoordinator(1);
+  await admission.acquire("agent", "run-1", "org-1");
+  const runner = new ConversationRunner({ db, kind: "studio", admission, stubHint: "hint" });
+  const events = await publishedEvents(runner, generation());
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "session.error", "generation.finished"],
+  );
+  assert.match(String(events[1]?.[1].detail), /generation limit/);
+  const reset = queries.filter(
+    ({ text, params }) => text.startsWith("UPDATE studio_sessions") && params.includes("idle"),
+  );
+  assert.equal(reset.length, 1);
+  assert.equal(admission.isBusy("agent", "run-1"), true);
+});
+
+test("a_throw_in_the_background_task_is_recorded_not_crashed", { timeout: 5_000 }, async () => {
+  const { db, queries } = emptyDatabase();
+  const suspended: OrgPolicy = {
+    standing: async () => ({ limits: UNLIMITED, blocked: new PolicyError(402, "plan suspended") }),
+  };
+  const admission = new AdmissionCoordinator();
+  const runner = new ConversationRunner({ db, kind: "studio", admission, policy: suspended, stubHint: "hint" });
+  const { result: events, rejections } = await unhandledRejectionsDuring(() =>
+    eventsUntilFinished(runner, generation()),
+  );
+  assert.deepEqual(rejections, []);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "session.error", "generation.finished"],
+  );
+  assert.equal(events[1]?.[1].detail, "plan suspended");
+  const recorded = queries.filter(({ params }) => JSON.stringify(params).includes("plan suspended"));
+  assert.equal(recorded.length, 1);
+  const reset = queries.filter(
+    ({ text, params }) => text.startsWith("UPDATE studio_sessions") && params.includes("idle"),
+  );
+  assert.equal(reset.length, 1);
+  assert.equal(admission.isBusy("studio", "session-1"), false);
+});
+
+test("a_throw_the_database_refuses_to_record_still_finishes_the_stream_without_a_crash", { timeout: 5_000 }, async () => {
+  const runner = new ConversationRunner({
+    db: unreachableDatabase(),
+    kind: "builder",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+  });
+  const { result: events, rejections } = await unhandledRejectionsDuring(() =>
+    eventsUntilFinished(runner, generation()),
+  );
+  assert.deepEqual(rejections, []);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "generation.finished"],
+  );
+});
+
+test("boot_reconcile_returns_an_interrupted_session_to_idle_and_clears_its_start", async () => {
+  const { db, queries } = emptyDatabase();
+  const runner = new ConversationRunner({ db, kind: "builder", admission: new AdmissionCoordinator(), stubHint: "hint" });
+  await runner.reconcile({ id: "session-1", generation_state: "generating", generation_number: 2 } as never);
+  const reset = queries.filter(({ text }) => text.startsWith("UPDATE builder_sessions"));
+  assert.equal(reset.length, 1);
+  assert.match(String(reset[0]?.text), /generation_token = \$\d+, generation_started_at = \$\d+/);
+  assert.deepEqual(reset[0]?.params.slice(2), ["idle", null, null]);
+});
+
+test("cancel_of_an_idle_session_is_a_noop", async () => {
+  const db = {
+    query: async (text: string, params: unknown[] = []) =>
+      text.startsWith("INSERT INTO studio_messages") ? { rows: [{ seq: params[1], payload: params[3] }] } : { rows: [] },
+  } as unknown as Queryable;
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+  });
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield ["done", completionReply("answered")];
+  };
+  runner.cancel("session-1");
+  const events = await publishedEvents(runner, generation());
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "message.committed", "generation.finished"],
+  );
+});
+
+test("a_slow_coach_subscriber_is_closed_not_silenced", async () => {
+  const { db } = emptyDatabase();
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+  });
+  const { app, opened } = sseApp(
+    () => runner.subscribe("s_1"),
+    (queue) => runner.unsubscribe("s_1", queue),
+  );
+  const { body, queue } = await overflowStream(app, opened, () =>
+    Array.from({ length: 8192 }, () =>
+      runner.publish("s_1", "assistant.delta", { session_id: "s_1", text: "x" }),
+    ),
+  );
+  assert.equal(queue.dropped, true);
+  assert.ok(body.startsWith(": connected\n\n"), body.slice(0, 40));
+  await runner.publish("s_1", "assistant.delta", { session_id: "s_1", text: "after" });
+  assert.equal(queue.size, 0, "the dropped subscriber is no longer sent events");
+  await app.close();
 });

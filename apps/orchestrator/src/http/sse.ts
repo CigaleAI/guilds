@@ -4,6 +4,9 @@ import { isObjectNode, type JsonObject, type JsonValue } from "../lib/json.js";
 
 const FLOAT_KEYS = new Set(["cost_usd"]);
 
+/** How often an open stream is sent a comment, so a client and the proxies between see it is alive. */
+const KEEPALIVE_MS = 15_000;
+
 /** A number JSON writes without a fraction or an exponent. */
 const WHOLE_NUMBER = /^-?\d+$/;
 
@@ -57,7 +60,11 @@ export const SSE_HEADERS = {
   "X-Accel-Buffering": "no",
 } as const;
 
-/** Streams a subscription's events to the request as SSE until the client goes away. */
+/**
+ * Streams a subscription's events to the request as SSE until the client goes away or the
+ * subscription is dropped; the response is then ended, so a client that is still there
+ * reconnects. Every 15 seconds the stream is sent a `: keepalive` comment.
+ */
 export async function pipeSse<Event extends StreamEvent<EventPayloads>>(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -73,18 +80,22 @@ export async function pipeSse<Event extends StreamEvent<EventPayloads>>(
     abort.abort();
   };
   request.raw.on("close", onClose);
+  const keepalive = setInterval(() => reply.raw.write(": keepalive\n\n"), KEEPALIVE_MS);
   try {
     while (!abort.signal.aborted) {
       const [event, data] = await queue.get(abort.signal);
       reply.raw.write(frameSse(event, data));
     }
   } catch (error) {
-    // The queue refuses a read once the client has gone away, which ends the stream.
-    if (!abort.signal.aborted) {
+    // The queue refuses a read once the client has gone away or the queue was dropped, which
+    // ends the stream.
+    if (!abort.signal.aborted && !queue.dropped) {
       throw error;
     }
   } finally {
+    clearInterval(keepalive);
     request.raw.off("close", onClose);
     unsubscribe(queue);
+    reply.raw.end();
   }
 }

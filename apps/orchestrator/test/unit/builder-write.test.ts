@@ -8,7 +8,7 @@ import {
   parseToolArgs,
   toolArgsAreJsonObject,
   truncatedToolArguments,
-} from "../../src/conversation/runner.js";
+} from "../../src/conversation/tool-args.js";
 
 const truncatedWrite =
   '{"expected_body_version": 1, "recipe": {   "format": "guilds.recipe",   "version": 1,   "meta": {     "name": "Degen Desk"';

@@ -27,7 +27,7 @@ import { PolicyError, type OrgPolicy } from "../policy/index.js";
 import type { CancelEvent } from "../toolbox/index.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { GenerationCancelled, RunLimitError } from "./errors.js";
-import type { RunEvents, RunGeneration } from "./events.js";
+import type { RunEventBus, RunGeneration } from "./events.js";
 
 export const CANCEL_GRACE_MS = 2_000;
 export const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -56,7 +56,7 @@ export function modelCompletionDatabase(db: Queryable): ModelCompletionDatabase 
 export type ModelCompletionServices = {
   db: ModelCompletionDatabase;
   generations: ActiveGenerations;
-  events: RunEvents;
+  events: RunEventBus;
   policy: OrgPolicy;
   credentials: ModelCredentialsProvider;
   attachments: AttachmentService | null;

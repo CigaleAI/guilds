@@ -198,6 +198,7 @@ export class Notifications {
         continue;
       }
       if (queue.size >= EVENT_QUEUE_LIMIT) {
+        queue.drop();
         this.unsubscribe(userId, queue);
         continue;
       }

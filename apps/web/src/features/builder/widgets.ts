@@ -11,6 +11,7 @@ import type { AccessEdit } from "../../api/types/recipes";
 import { isBuilderWidget, parseJson } from "../../api/wire";
 import { pendingDesignQuestions } from "../recipes/plan/designSystems";
 import type { RecipeDraft } from "../recipes/plan/recipeDraft";
+import type { WidgetEvent, WidgetRow, WidgetState } from "./types";
 
 /**
  * The Builder coach's requests to the operator, read from its tool results: a login to connect or
@@ -129,3 +130,26 @@ export function accessCutMessage(edits: readonly AccessEdit[]): string | null {
     ? `I validated connector access. I removed:\n${lines.join("\n")}\nUpdate standing prompts if they rely on these, or ask me questions.`
     : null;
 }
+
+/** The state a widget card's reply moves to on each event; an event missing here changes nothing. */
+const widgetTransitions: Record<WidgetState, Partial<Record<WidgetEvent, WidgetState>>> = {
+  open: { send: "sending" },
+  sending: { delivered: "settled", failed: "open" },
+  settled: {},
+};
+
+/**
+ * Moves a widget card's reply on: a send takes an open card in flight, a delivered reply settles
+ * it, and a failed one leaves it open to try again. A send while a reply is in flight, or any event
+ * once the card has settled, changes nothing.
+ */
+export function reduceWidget(state: WidgetState, event: WidgetEvent): WidgetState {
+  return widgetTransitions[state][event] ?? state;
+}
+
+/** A widget card's button row, by where its reply stands. */
+export const widgetRows = {
+  open: { disabled: false, badge: null },
+  sending: { disabled: true, badge: { label: "Sending", status: "running" } },
+  settled: { disabled: true, badge: null },
+} as const satisfies Record<WidgetState, WidgetRow>;

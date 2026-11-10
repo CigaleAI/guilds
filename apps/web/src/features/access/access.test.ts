@@ -54,7 +54,7 @@ function server(overrides: Partial<McpServerAccess> = {}): McpServerAccess {
     overlay: null,
     connection_id: "conn_1",
     status: "connected",
-    account_hint: "",
+    account_hint: "ada",
     connection_owner_scope: "guild",
     tools: [
       {
@@ -90,7 +90,25 @@ test("a server's login reads connected, pending, disconnected, or none", () => {
   assert.equal(connectionStatus(server()), "connected");
   assert.equal(connectionStatus(server({ status: "pending" })), "pending");
   assert.equal(connectionStatus(server({ status: "disconnected" })), "disconnected");
-  assert.equal(connectionStatus(server({ connection_id: null, status: null })), undefined);
+  assert.equal(
+    connectionStatus(server({ connection_id: null, status: null, account_hint: "" })),
+    undefined,
+  );
+});
+
+test("a_disconnected_login_with_an_account_hint_reads_disconnected", () => {
+  assert.equal(
+    connectionStatus(server({ status: "disconnected", account_hint: "ada" })),
+    "disconnected",
+  );
+});
+
+test("a_login_waiting_for_its_settings_reads_pending", () => {
+  assert.equal(connectionStatus(server({ status: "pending", needs_settings: true })), "pending");
+});
+
+test("a_login_the_view_names_without_its_status_reads_disconnected", () => {
+  assert.equal(connectionStatus(server({ status: null, account_hint: "" })), "disconnected");
 });
 
 test("only the edited scope's own login can be disconnected", () => {
@@ -371,10 +389,13 @@ test("a login shows its schema's settings once signed in, a github login its rep
   );
   assert.equal(loginSettingsPanel(server({ settings_schema: schema, status: "pending" })), null);
   assert.deepEqual(loginSettingsPanel(server({ slug: "github" })), { kind: "github" });
-  assert.deepEqual(
-    loginSettingsPanel(server({ slug: "github", status: "disconnected", account_hint: "ada" })),
-    { kind: "github" },
-  );
   assert.equal(loginSettingsPanel(server({ slug: "github", connection_id: null })), null);
   assert.equal(loginSettingsPanel(server()), null);
+});
+
+test("a_disconnected_github_login_with_an_account_hint_shows_no_repositories", () => {
+  assert.equal(
+    loginSettingsPanel(server({ slug: "github", status: "disconnected", account_hint: "ada" })),
+    null,
+  );
 });

@@ -10,6 +10,7 @@ import {
 } from "../../src/notifications/index.js";
 import type { GroupChatView } from "../../src/groupchat/index.js";
 import type { GroupMessageView } from "../../src/db/views.js";
+import { overflowStream, sseApp } from "../helpers/sse.js";
 
 type Operator = { user_id: string; name: string; role: string };
 
@@ -230,8 +231,24 @@ test("a stream that nobody drains is dropped once it holds 256 events", async ()
   }
   assert.equal(queue.size, 256);
   await notifications.ping(["user_ada"]);
-  assert.equal(queue.size, 256);
+  assert.equal(queue.dropped, true);
+  assert.equal(queue.size, 0);
   assert.equal(notifications._subs.has("user_ada"), false);
+});
+
+test("a_slow_inbox_subscriber_is_closed_not_silenced", async () => {
+  const notifications = hub([]);
+  const { app, opened } = sseApp(
+    () => notifications.subscribe("user_ada", "org_1"),
+    (queue) => notifications.unsubscribe("user_ada", queue),
+  );
+  const { body, queue } = await overflowStream(app, opened, () =>
+    Array.from({ length: 512 }, () => notifications.ping(["user_ada"])),
+  );
+  assert.equal(queue.dropped, true);
+  assert.ok(body.startsWith(": connected\n\n"), body.slice(0, 40));
+  assert.equal(notifications._subs.has("user_ada"), false);
+  await app.close();
 });
 
 test("the inbox lists how many messages are unread in each guild", async () => {

@@ -1,15 +1,42 @@
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { appendRunError, insertMessage, nextSeq, type MessageRow } from "../db/runs.js";
-import type { MessageMetadata, MessagePayload } from "../db/schema/index.js";
-import { messageItem } from "../db/views.js";
-import { EventQueue, type EventPayloads, type StreamEvent } from "../lib/event.js";
-import type { JsonObject } from "../lib/json.js";
+import type { MessageMetadata, MessagePayload, RunError } from "../db/schema/index.js";
+import { messageItem, type MessageView } from "../db/views.js";
+import { EventQueue, type StreamEvent } from "../lib/event.js";
 import { errorMessage, errorName, redactText, writeLog } from "../observability/log.js";
+import type { ToolProgress } from "../toolbox/services.js";
+import type { RunWakeChange } from "../wakes/item.js";
+import type { RunStanding } from "./lifecycle.js";
 
 const EVENT_QUEUE_LIMIT = 4096;
 
+/** A generation of a run starting: its number. */
+export type GenerationStarted = { generation: number };
+
+/** A generation of a run finished, once it no longer holds the run: its number, and where the run stands. */
+export type GenerationFinished = { generation: number; standing: RunStanding };
+
+/** A piece of the model's reply or reasoning as it streams. */
+export type AssistantDelta = { text: string };
+
+/** A run handing its work to its continuation: the continuation. */
+export type RunContinued = { run_id: string };
+
+/** What each event of a run's stream carries. */
+export type RunEvents = {
+  "generation.started": GenerationStarted;
+  "assistant.delta": AssistantDelta;
+  "assistant.reasoning.delta": AssistantDelta;
+  "message.committed": MessageView;
+  "tool.progress": ToolProgress;
+  "run.error": RunError;
+  "run.wake.changed": RunWakeChange;
+  "generation.finished": GenerationFinished;
+  "run.continued": RunContinued;
+};
+
 /** One event on a run's stream: its name and its data. */
-export type RunEvent = StreamEvent<EventPayloads>;
+export type RunEvent = StreamEvent<RunEvents>;
 
 /** The db/ functions a run's messages and errors are written through. */
 export type RunEventsDatabase = {
@@ -37,9 +64,10 @@ export type RunGeneration = {
 
 /**
  * What a run's subscribers see: each event as it happens, each message once it is committed,
- * and each error once the run keeps it. A subscriber that falls 4096 events behind is dropped.
+ * and each error once the run keeps it. A subscriber that falls 4096 events behind is dropped,
+ * which ends its stream.
  */
-export class RunEvents {
+export class RunEventBus {
   private readonly subscribers = new Map<string, Set<EventQueue<RunEvent>>>();
 
   constructor(private readonly db: RunEventsDatabase) {}
@@ -62,13 +90,14 @@ export class RunEvents {
     }
   }
 
-  async publish(runId: string, event: string, data: JsonObject): Promise<void> {
+  async publish(runId: string, ...event: RunEvent): Promise<void> {
     for (const queue of [...(this.subscribers.get(runId) ?? [])]) {
       if (queue.size >= EVENT_QUEUE_LIMIT) {
+        queue.drop();
         this.unsubscribe(runId, queue);
         continue;
       }
-      await queue.put([event, data]);
+      await queue.put(event);
     }
   }
 

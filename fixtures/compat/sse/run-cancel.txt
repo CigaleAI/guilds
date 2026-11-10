@@ -10,5 +10,5 @@ event: run.error
 data: {"at": "<ts:Z-us>", "generation": 1, "operation": "generation.cancelled", "error_type": "GenerationCancelled", "message": "cancelled"}
 
 event: generation.finished
-data: {"generation": 1}
+data: {"generation": 1, "standing": "open"}
 

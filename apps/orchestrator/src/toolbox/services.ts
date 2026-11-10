@@ -8,7 +8,6 @@ import type { NotesStore } from "../notes/store.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Wakes } from "../wakes/service.js";
-import type { JsonObject } from "../lib/json.js";
 import type { ToolArtifacts } from "./artifacts.js";
 import type { GroupChat } from "./types.js";
 
@@ -61,7 +60,18 @@ export function toolServices(db: Queryable, services: ToolServicesBesideDatabase
   return { ...services, db: toolboxDatabase(db) };
 }
 
+/**
+ * A running tool call's newest output lines, as its run's stream sends them; a coding harness's
+ * also names the harness session, null until the harness reports one.
+ */
+export type ToolProgress = {
+  run_id: string;
+  tool_call_id: string;
+  lines: string[];
+  session_id?: string | null;
+};
+
 /** The stream a run's subscribers read, which a running tool call publishes its progress on. */
 export type ToolEvents = {
-  publish(runId: string, event: string, data: JsonObject): Promise<void>;
+  publish(runId: string, event: "tool.progress", data: ToolProgress): Promise<void>;
 };

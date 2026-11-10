@@ -58,7 +58,18 @@ export class AsyncEvent {
 export class EventQueue<T> {
   private items: T[] = [];
   private waiters: Array<(value: T) => void> = [];
-  dropped = false;
+  private readonly dropping = new AbortController();
+
+  /** Whether the queue was dropped: it then holds nothing and refuses every read. */
+  get dropped(): boolean {
+    return this.dropping.signal.aborted;
+  }
+
+  /** Drops the queue: what it holds is discarded, and every read, waiting or to come, is refused. */
+  drop(): void {
+    this.items = [];
+    this.dropping.abort();
+  }
 
   get size(): number {
     return this.items.length;
@@ -77,8 +88,9 @@ export class EventQueue<T> {
     this.items.push(item);
   }
 
+  /** The next item; refused once `signal` aborts or the queue is dropped. */
   async get(signal?: AbortSignal): Promise<T> {
-    if (signal?.aborted) {
+    if (signal?.aborted || this.dropped) {
       throw new Error("aborted");
     }
     const item = this.items.shift();
@@ -86,11 +98,16 @@ export class EventQueue<T> {
       return item;
     }
     return new Promise((resolve, reject) => {
-      const waiter = (value: T) => {
+      const stopListening = () => {
         signal?.removeEventListener("abort", onAbort);
+        this.dropping.signal.removeEventListener("abort", onAbort);
+      };
+      const waiter = (value: T) => {
+        stopListening();
         resolve(value);
       };
       const onAbort = () => {
+        stopListening();
         const index = this.waiters.indexOf(waiter);
         if (index >= 0) {
           this.waiters.splice(index, 1);
@@ -99,6 +116,7 @@ export class EventQueue<T> {
       };
       this.waiters.push(waiter);
       signal?.addEventListener("abort", onAbort, { once: true });
+      this.dropping.signal.addEventListener("abort", onAbort, { once: true });
     });
   }
 }

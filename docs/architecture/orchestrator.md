@@ -345,7 +345,7 @@ flowchart TD
   Step -->|assistant text| Save["append messages"]
   Step -->|tool_calls| Tools["toolbox / MCP / adapters"]
   Tools --> Step
-  Step -->|stop / limit / cancel| Done["publish generation.finished"]
+  Step -->|stop / limit / cancel| Done["complete the run if it ends here, free the agent, publish generation.finished"]
   Step -->|coding, 70% of input limit| Handoff["hand-off step, next run of the chain"]
   Handoff --> Loop
   Save --> SSE["SSE subscribers"]
@@ -428,21 +428,23 @@ share one slot count under the organisation policy's
 ## Events
 
 One in-process bus carries every event. Each SSE stream sends
-`: connected\n\n`, then live events only. The Builder stream also
-sends a `: keepalive\n\n` comment every 15 seconds.
+`: connected\n\n`, then live events only, and a `: keepalive\n\n`
+comment every 15 seconds while it is open.
 
 An event is a name and a JSON object (`StreamEvent` in
 `lib/event.ts`), written as the SSE frame's data by `http/sse.ts`.
-The Studio and Builder, guild, and inbox streams each declare their
-events and what each carries, beside the stream: `CoachEvents` in
-`conversation/runner.ts`, `GuildEvents` in `groupchat/index.ts`, and
-`InboxEvents` in `notifications/index.ts`.
+Each stream declares its events and what each carries, beside the
+stream: `RunEvents` in `generation/events.ts`, `CoachEvents` in
+`conversation/runner.ts` for Studio and Builder, `GuildEvents` in
+`groupchat/index.ts`, and `InboxEvents` in `notifications/index.ts`.
+A publish whose data does not match its event's type does not
+compile.
 
 | Event | Stream | Class | What it says |
 |---|---|---|---|
 | `message.committed` | run, Studio, Builder | durable | A message row committed |
 | `generation.started` | run, Studio, Builder | durable | A generation began |
-| `generation.finished` | run, Studio, Builder | durable | A generation ended |
+| `generation.finished` | run, Studio, Builder | durable | A generation ended. On a run, `{ generation, standing }`, published once the run is completed when it ends with this generation and the generation no longer holds it: `standing` is where the run then stands (`open`, `waiting`, `generating`, `completed`, `capped`, `continued`; `runStanding` in `generation/lifecycle.ts`) |
 | `run.error` | run | durable | A run error; cancellation has `operation: "generation.cancelled"` |
 | `run.continued` | run | durable | A coding run continued in the run named by `run_id` |
 | `run.wake.changed` | run | durable | `{ pending_wake }`: the run's pending wake-up after it was set, replaced, cancelled, moved to or from the run on a hand-off, or fired; null when none is left |
@@ -483,11 +485,30 @@ Delivery rules:
   final message and log path.
 - There is no historical replay. After a reconnect the client
   re-reads over REST.
+- A run's generation publishes `generation.started`; then its deltas,
+  `message.committed` and `tool.progress` events as it goes; on a
+  cancel, the interrupted tool results and the cancel's `run.error`;
+  on a terminal cap, `run.wake.changed` and the `run.error` of the
+  cancelled wake-up; then `generation.finished`; and after a hand-off,
+  `run.continued`. A client that re-reads the run on
+  `generation.finished` reads it as the generation left it: not
+  generating, and completed when it completes with that generation.
+  The `standing` it carries is `open` for an active run that takes an
+  operator's message, `waiting` for an active run that takes none (a
+  group or schedule run that was not resumed, or one that continued
+  elsewhere), `completed` for an ended run that can be resumed,
+  `capped` for one that ended on a terminal cap, `continued` for one
+  that handed off, and `generating` for one a generation holds. A
+  generation whose finishing fails, such as a failed completion of its
+  run, still publishes `generation.finished`, with the standing of the
+  run as it is read again; only a run whose row is gone publishes none.
 - Headers are `Content-Type: text/event-stream; charset=utf-8`,
   `Cache-Control: no-cache`, `Connection: keep-alive`, and
   `X-Accel-Buffering: no`.
 - Slow subscribers do not stall generation. A disconnected
-  subscriber, or one whose queue is full, is dropped.
+  subscriber, or one whose queue is full, is dropped. A subscriber
+  dropped for a full queue has its response ended, so its client
+  reconnects and re-reads.
 
 ## PostgreSQL
 
