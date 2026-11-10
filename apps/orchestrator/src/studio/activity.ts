@@ -21,7 +21,7 @@ import {
   type RunGroupPostRow,
   type RunOpeningRow,
 } from "../db/activity.js";
-import type { RunError, RunMetadata } from "../db/schema/index.js";
+import type { RunError, RunMetadata, ToolCall } from "../db/schema/index.js";
 import { listSchedulesForGuild } from "../db/schedules.js";
 import type { MessageMetadata } from "../db/schema/index.js";
 import { listGroupMessagesForActivity, type ActivityGroupMessageRow } from "../db/group-chat.js";
@@ -338,42 +338,53 @@ function errorsOf(errors: RunError[], sinceMs: number): ActivityError[] {
 
 type WakeSteps = { calls: ActivityToolCall[]; count: number; reply: string | null };
 
-// Each run's tool calls in order, paired with their results, and its last text.
-function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
-  const resultKey = (runId: string, callId: string) => `${runId}\u0000${callId}`;
+/** The key a tool result is found by: its run and the call it answers. */
+function resultKey(runId: string, callId: string): string {
+  return `${runId}\u0000${callId}`;
+}
+
+/** Each tool result among the steps, by the run and call it answers; a result without a call id is not one. */
+export function resultsByCall(rows: RunActivityStepRow[]): Map<string, RunActivityStepRow> {
   const results = new Map<string, RunActivityStepRow>();
   for (const row of rows) {
     if (row.role === "tool" && row.tool_call_id) {
       results.set(resultKey(row.run_id, row.tool_call_id), row);
     }
   }
+  return results;
+}
+
+/** A tool call made at `at`, with its arguments cut to a preview and its result's error and duration. */
+export function toolCallOf(call: ToolCall, result: RunActivityStepRow | undefined, at: string): ActivityToolCall {
+  return {
+    call_id: call.id || null,
+    name: call.function.name,
+    arguments: previewText(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
+    error: result?.error || null,
+    duration_ms: result?.duration_ms ?? null,
+    at,
+  };
+}
+
+// Each run's tool calls in order, paired with their results, and its last text.
+function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
+  const results = resultsByCall(rows);
   const byRun = new Map<string, WakeSteps>();
   for (const row of rows) {
     if (row.role !== "assistant") {
       continue;
     }
-    const runId = row.run_id;
-    const steps = byRun.get(runId) ?? { calls: [], count: 0, reply: null };
-    for (const call of row.tool_calls ?? []) {
-      steps.count += 1;
-      if (steps.calls.length >= ACTIVITY_TOOL_CALLS_MAX) {
-        continue;
-      }
-      const result = call.id ? results.get(resultKey(runId, call.id)) : undefined;
-      steps.calls.push({
-        call_id: call.id || null,
-        name: call.function.name,
-        arguments: previewText(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
-        error: result?.error || null,
-        duration_ms: result?.duration_ms ?? null,
-        at: iso(row.created_at),
-      });
-    }
+    const steps = byRun.get(row.run_id) ?? { calls: [], count: 0, reply: null };
+    const calls = row.tool_calls ?? [];
+    const listed = calls.slice(0, Math.max(0, ACTIVITY_TOOL_CALLS_MAX - steps.calls.length));
+    const at = iso(row.created_at);
+    steps.calls.push(...listed.map((call) => toolCallOf(call, results.get(resultKey(row.run_id, call.id)), at)));
+    steps.count += calls.length;
     const said = row.text?.trim() ?? "";
     if (said) {
       steps.reply = previewText(said, ACTIVITY_PREVIEW_CHARS);
     }
-    byRun.set(runId, steps);
+    byRun.set(row.run_id, steps);
   }
   return byRun;
 }

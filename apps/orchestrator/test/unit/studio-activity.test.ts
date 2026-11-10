@@ -10,6 +10,9 @@ import {
   messageFloor,
   windowBefore,
   projectActivity,
+  resultsByCall,
+  toolCallOf,
+  ACTIVITY_TOOL_CALLS_MAX,
   type ActivityInput,
 } from "../../src/studio/activity.js";
 import type { GuildActivityRunRow } from "../../src/db/activity.js";
@@ -85,6 +88,18 @@ const message = (
   content: `message ${seq}`,
   tagged_names: tagged,
   created_at: ts(time),
+});
+
+const call = (id: string, name: string, args: string) => ({ id, type: "function" as const, function: { name, arguments: args } }) satisfies ToolCall;
+
+/** A stored step of `row`, with no calls, text, or result unless given. */
+const step = (row: Pick<RunActivityStepRow, "run_id" | "seq" | "created_at" | "role"> & Partial<RunActivityStepRow>): RunActivityStepRow => ({
+  tool_calls: null,
+  text: null,
+  tool_call_id: null,
+  error: null,
+  duration_ms: null,
+  ...row,
 });
 
 test("the window is hours back from until, capped, and never in the future", () => {
@@ -324,15 +339,6 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
 });
 
 test("a wake lists its tool calls with their results, its last text, and a direct chat's opening", () => {
-  const call = (id: string, name: string, args: string) => ({ id, type: "function" as const, function: { name, arguments: args } }) satisfies ToolCall;
-  const step = (row: Pick<RunActivityStepRow, "run_id" | "seq" | "created_at" | "role"> & Partial<RunActivityStepRow>): RunActivityStepRow => ({
-    tool_calls: null,
-    text: null,
-    tool_call_id: null,
-    error: null,
-    duration_ms: null,
-    ...row,
-  });
   const view = projectActivity(
     input({
       runs: [
@@ -416,4 +422,52 @@ test("a coding wake lists what it changed in each repository as code writes", ()
       code: { branch: "agent/desk/refunds", files_changed: 3, insertions: 40, deletions: 2 },
     },
   ]);
+});
+
+test("tool results are found by the run and the call they answer, and a result without a call id is not indexed", () => {
+  const answered = step({ run_id: "r_1", seq: 2, created_at: ts("14:00:01"), role: "tool", tool_call_id: "c_1", duration_ms: 7 });
+  const results = resultsByCall([
+    step({ run_id: "r_1", seq: 1, created_at: ts("14:00:00"), role: "assistant", tool_calls: [call("c_1", "note_get", "{}")] }),
+    answered,
+    step({ run_id: "r_1", seq: 3, created_at: ts("14:00:02"), role: "tool", tool_call_id: null }),
+    step({ run_id: "r_2", seq: 1, created_at: ts("14:00:03"), role: "tool", tool_call_id: "c_1", duration_ms: 9 }),
+  ]);
+  assert.equal(results.size, 2);
+  assert.equal(results.get("r_1\u0000c_1"), answered);
+});
+
+test("a tool call carries its result's error and duration, and none without a result", () => {
+  const at = ts("14:00:00");
+  const result = step({ run_id: "r_1", seq: 2, created_at: ts("14:00:01"), role: "tool", tool_call_id: "c_1", error: "boom", duration_ms: 12 });
+  assert.deepEqual(toolCallOf(call("c_1", "note_get", '{"path":"a"}'), result, at), {
+    call_id: "c_1",
+    name: "note_get",
+    arguments: '{"path":"a"}',
+    error: "boom",
+    duration_ms: 12,
+    at,
+  });
+  const unanswered = toolCallOf(call("", "note_get", "{}"), undefined, at);
+  assert.equal(unanswered.call_id, null);
+  assert.equal(unanswered.error, null);
+  assert.equal(unanswered.duration_ms, null);
+  const cleared = toolCallOf(call("c_1", "note_get", "{}"), { ...result, error: "" }, at);
+  assert.equal(cleared.error, null);
+});
+
+test("a wake lists at most the tool call limit across its steps and counts every call", () => {
+  const calls = (from: number, count: number) => Array.from({ length: count }, (_, at) => call(`c_${from + at}`, "note_get", "{}"));
+  const view = projectActivity(
+    input({
+      runs: [activityRun({ id: "r_busy", kind: "schedule", created_at: ts("14:00:00"), updated_at: ts("14:10:00") })],
+      steps: [
+        step({ run_id: "r_busy", seq: 1, created_at: ts("14:00:10"), role: "assistant", tool_calls: calls(0, ACTIVITY_TOOL_CALLS_MAX - 1) }),
+        step({ run_id: "r_busy", seq: 2, created_at: ts("14:00:20"), role: "assistant", tool_calls: calls(ACTIVITY_TOOL_CALLS_MAX, 3) }),
+      ],
+    }),
+  );
+  const [wake] = view.wakes;
+  assert.equal(wake?.tool_calls.length, ACTIVITY_TOOL_CALLS_MAX);
+  assert.equal(wake?.tool_calls.at(-1)?.call_id, `c_${ACTIVITY_TOOL_CALLS_MAX}`);
+  assert.equal(wake?.tool_call_count, ACTIVITY_TOOL_CALLS_MAX + 2);
 });
