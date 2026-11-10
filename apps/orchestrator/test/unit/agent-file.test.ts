@@ -29,6 +29,15 @@ async function refused(run: () => Promise<unknown>, problem: AgentFileError["pro
   });
 }
 
+async function refusedWith(run: () => Promise<unknown>, problem: AgentFileError["problem"], message: string) {
+  await assert.rejects(run, (error: unknown) => {
+    assert.ok(error instanceof AgentFileError, message);
+    assert.equal(error.problem, problem, message);
+    assert.equal(error.message, message);
+    return true;
+  });
+}
+
 test("readAgentFile reads a regular file, and a link that stays in the workspace", async () => {
   const { workspace } = workspaceWithHostFile();
   mkdirSync(path.join(workspace, "reports"));
@@ -57,6 +66,21 @@ test("readAgentFile refuses links out of the workspace, missing files, and large
   await refused(() => readAgentFile(workspace, "missing.txt", 100), "missing", "missing");
   await refused(() => readAgentFile(workspace, "folder", 100), "not_file", "folder");
   await refused(() => readAgentFile(workspace, "big.bin", 100), "too_large", "large");
+});
+
+test("readAgentFile and readAgentFolder name the path by their own parameter when it is missing or links out", async () => {
+  const { workspace, host, hostDir } = workspaceWithHostFile();
+  symlinkSync(host, path.join(workspace, "report.pdf"));
+  symlinkSync(hostDir, path.join(workspace, "host"));
+  await refusedWith(() => readAgentFile(workspace, "missing.txt", 100), "missing", "file_path was not found in the agent workspace");
+  await refusedWith(() => readAgentFile(workspace, "report.pdf", 100), "outside", "file_path must be under /home/a_1, not a link out of it");
+  await refusedWith(() => readAgentFolder(workspace, "missing", 10, 100), "missing", "folder_path was not found in the agent workspace");
+  await refusedWith(() => readAgentFolder(workspace, "host", 10, 100), "outside", "folder_path must be under /home/a_1, not a link out of it");
+  await refusedWith(
+    () => readAgentFolder(workspace, "/home/a_1", 10, 100),
+    "outside",
+    "folder_path must be a folder under /home/a_1, not the home itself",
+  );
 });
 
 test("readAgentFile refuses a FIFO without waiting for a writer", async () => {

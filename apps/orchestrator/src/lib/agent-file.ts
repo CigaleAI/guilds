@@ -75,8 +75,23 @@ function sameFile(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
-function linkOut(workspaceDir: string): string {
-  return `file_path must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`;
+/** The tool parameter a refusal names an agent's path by. */
+type AgentPathParameter = "file_path" | "folder_path";
+
+function linkOut(workspaceDir: string, parameter: AgentPathParameter): string {
+  return `${parameter} must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`;
+}
+
+/**
+ * Where a path resolved in an agent's workspace leads once every link is followed. Refused as
+ * `missing`, naming the path by `parameter`, when it leads nowhere.
+ */
+async function followAgentPath(resolved: string, parameter: AgentPathParameter): Promise<string> {
+  try {
+    return await realpath(resolved);
+  } catch {
+    throw new AgentFileError(`${parameter} was not found in the agent workspace`, "missing");
+  }
 }
 
 function throughFolders(workspaceDir: string): string {
@@ -99,14 +114,9 @@ export async function readAgentFile(
   maxBytes: number,
 ): Promise<AgentFile> {
   const resolved = resolveAgentFilePath(workspaceDir, filePath);
-  let real: string;
-  try {
-    real = await realpath(resolved);
-  } catch {
-    throw new AgentFileError("file_path was not found in the agent workspace", "missing");
-  }
+  const real = await followAgentPath(resolved, "file_path");
   if (!inside(await realpath(workspaceDir), real)) {
-    throw new AgentFileError(linkOut(workspaceDir));
+    throw new AgentFileError(linkOut(workspaceDir, "file_path"));
   }
   const checked = await lstat(real);
   if (!checked.isFile()) {
@@ -116,12 +126,12 @@ export async function readAgentFile(
   try {
     handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
-    throw new AgentFileError(linkOut(workspaceDir));
+    throw new AgentFileError(linkOut(workspaceDir, "file_path"));
   }
   try {
     const info = await handle.stat();
     if (!info.isFile() || !sameFile(info, checked)) {
-      throw new AgentFileError(linkOut(workspaceDir));
+      throw new AgentFileError(linkOut(workspaceDir, "file_path"));
     }
     if (info.size > maxBytes) {
       throw new AgentFileError(`file_path is larger than ${maxBytes} bytes`, "too_large", info.size);
@@ -165,17 +175,12 @@ export async function readAgentFolder(
 ): Promise<AgentFolder> {
   const resolved = resolveAgentFilePath(workspaceDir, folderPath);
   const root = await realpath(workspaceDir);
-  let real: string;
-  try {
-    real = await realpath(resolved);
-  } catch {
-    throw new AgentFileError("folder_path was not found in the agent workspace", "missing");
-  }
+  const real = await followAgentPath(resolved, "folder_path");
   if (real === root) {
     throw new AgentFileError(`folder_path must be a folder under ${homeOfDirectory(workspaceDir)}, not the home itself`);
   }
   if (!inside(root, real)) {
-    throw new AgentFileError(`folder_path must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`);
+    throw new AgentFileError(linkOut(workspaceDir, "folder_path"));
   }
   if (!(await lstat(real)).isDirectory()) {
     throw new AgentFileError("folder_path must be a folder", "not_file");
