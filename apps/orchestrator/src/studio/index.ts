@@ -27,33 +27,20 @@ import {
   readStudioSystemTemplate,
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
-import { assertLive, sourceGuildSnapshot, viewSession, type LiveStudioSession, type StudioSession } from "./session.js";
+import { assertLive, sourceGuildSnapshot, viewSession, type StudioSession } from "./session.js";
 import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
 import { inspectAgent, type StudioInspector } from "./inspector.js";
 import { studioToolSchemas } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
-import {
-  type StudioMcpClient,
-} from "./connections.js";
+import type { StudioMcpClient } from "./connections.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
 import type { ResolvedFocus } from "./focus-evidence.js";
-import { isAccessTool } from "./access.js";
-import {
-  applyEdit,
-  editStatus,
-  findEditRecord,
-  markEdit,
-  viewEdit,
-  type EditScope,
-  type StudioEditView,
-} from "./edits.js";
 import type { RoutineChange } from "../schedules/operator.js";
 import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
 import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
   insertConversationMessage,
-  listConversationMessages,
   nextConversationSeq,
 } from "../db/conversations.js";
 import {
@@ -550,60 +537,5 @@ export class StudioService {
       ...result,
       target_generating: targetId ? Boolean(this.deps.isAgentBusy?.(targetId)) : false,
     };
-  }
-
-  private async editScope(session: LiveStudioSession, user: UserRow): Promise<EditScope> {
-    return {
-      orgId: session.org_id,
-      sourceGuildId: session.source_guild_id,
-      sessionId: session.id,
-      user,
-      hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
-    };
-  }
-
-  // Apply or decline one edit request from the Studio log. The session lock
-  // serialises answers, so a request resolves once.
-  async resolveEdit(
-    session: StudioSessionRow,
-    user: UserRow,
-    seq: number,
-    decision: "apply" | "decline",
-  ): Promise<StudioEditView> {
-    assertLive(session);
-    const deps = this.deps;
-    const scope = await this.editScope(session, user);
-    const userId = user.id;
-    const outcome = await withLockedSession(this.deps.db, session.id, async () => {
-      const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-      if (editStatus(record) !== "pending") {
-        throw new StudioConflictError(`edit request is already ${editStatus(record)}`);
-      }
-      if (decision === "decline") {
-        await markEdit(this.deps.db, session.id, record, { status: "declined", version: null, userId });
-        return { record, applied: null };
-      }
-      const applied = await applyEdit(deps, scope, record);
-      await markEdit(this.deps.db, session.id, record, {
-        status: "applied",
-        version: applied.version,
-        userId,
-      });
-      return { record, applied };
-    });
-    if (outcome.applied?.guild) {
-      await updateStudioSession(
-        this.deps.db,
-        session.id,
-        { source_guild_snapshot: sourceGuildSnapshot(outcome.applied.guild) },
-        new Date(),
-      );
-    } else if (outcome.applied?.routine) {
-      await this.deps.publishRoutinesChanged?.(session.source_guild_id, outcome.applied.routine);
-    } else if (outcome.applied && !isAccessTool(outcome.record.toolName) && this.deps.publishFilesChanged) {
-      await this.deps.publishFilesChanged(session.source_guild_id);
-    }
-    const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    return viewEdit(deps, scope, record);
   }
 }

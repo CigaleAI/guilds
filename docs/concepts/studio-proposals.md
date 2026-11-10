@@ -407,7 +407,7 @@ request. A login request is read back the same way: its content is a
 | Path | What it holds |
 |---|---|
 | `apps/orchestrator/src/studio/edits.ts` | Memory, note body, and guild requests, and reading and applying every edit request |
-| `apps/orchestrator/src/studio/edit-answers.ts` | An edit request as the operator reads it from a session's log |
+| `apps/orchestrator/src/studio/edit-answers.ts` | An edit request as the operator reads it from a session's log, the apply or decline that answers it once, and what an applied edit announces |
 | `apps/orchestrator/src/studio/edit-request.ts` | The request an edit tool returns instead of writing: its reason, content limit, line counts, and widget, with the widget's schema keyed on `edit.kind` and its parse from a tool row |
 | `apps/orchestrator/src/studio/note-edits.ts` | Note requests: the note a body edit replaces, and notes created or deleted |
 | `apps/orchestrator/src/studio/access.ts` | Access requests |

@@ -36,7 +36,7 @@ import { listGuildInventory } from "../studio/inventory.js";
 import { assertLive, listSessionMessages, viewSession } from "../studio/session.js";
 import { requireGuildAgent } from "../studio/source-guild.js";
 import { listOrphanDrafts, listSessionDrafts, viewDraft } from "../studio/drafts.js";
-import { viewEditRequest } from "../studio/edit-answers.js";
+import { applyEditRequest, declineEditRequest, viewEditRequest } from "../studio/edit-answers.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
 import { isOrgManager } from "../organisations/service.js";
@@ -265,7 +265,9 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       const seq = Number(request.params.seq);
-      return await studio.resolveEdit(session, user, seq, request.body.decision);
+      return request.body.decision === "apply"
+        ? await applyEditRequest(studio.deps, session, user, seq)
+        : await declineEditRequest(studio.deps, session, user, seq);
     },
   );
 
