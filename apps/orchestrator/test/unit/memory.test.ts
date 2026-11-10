@@ -119,7 +119,7 @@ test("create_agent writes empty memory", async () => {
   assert.equal(readFileSync(filePath, "utf8"), EMPTY_MEMORY);
   assert.equal(readFileSync(path.join(templatesRoot(), "memory.md"), "utf8"), EMPTY_MEMORY);
   assert.deepEqual(
-    notes.listAgentFiles("acme", "research", "researcher").map((item) => item.path),
+    notes.listAgentNotesFiles("acme", "research", "researcher").map((item) => item.path),
     ["task.md", "memory.md"],
   );
 });
@@ -197,7 +197,7 @@ test("note_write refuses the memory archive", async () => {
   );
   const relative = (archive ?? "").split("/agents/researcher/")[1] ?? "";
   await assert.rejects(
-    () => notes.writeAgentFile("acme", "research", "researcher", relative, "nope", { actor: "manu" }),
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", relative, "nope", { actor: "manu" }),
     /memory archive notes cannot be overwritten/,
   );
 });
@@ -206,7 +206,7 @@ test("files pane save archives with the user", async () => {
   const notes = notesStore();
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
-  const result = await notes.writeAgentFile(
+  const result = await notes.writeAgentNotesFile(
     "acme",
     "research",
     "researcher",

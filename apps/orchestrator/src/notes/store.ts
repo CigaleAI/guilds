@@ -360,7 +360,7 @@ export class NotesStore {
     });
   }
 
-  async writeAgentFile(
+  async writeAgentNotesFile(
     orgSlug: string,
     guildName: string,
     name: string,
@@ -416,7 +416,7 @@ export class NotesStore {
     );
   }
 
-  async writeSharedFile(
+  async writeSharedNotesFile(
     orgSlug: string,
     guildName: string,
     relative: string,
@@ -432,7 +432,7 @@ export class NotesStore {
     });
   }
 
-  async deleteAgentFile(
+  async deleteAgentNotesFile(
     orgSlug: string,
     guildName: string,
     name: string,
@@ -465,7 +465,7 @@ export class NotesStore {
     });
   }
 
-  async deleteSharedFile(orgSlug: string, guildName: string, relative: string): Promise<void> {
+  async deleteSharedNotesFile(orgSlug: string, guildName: string, relative: string): Promise<void> {
     await this.lock.run(() => {
       const shared = this.sharedDir(orgSlug, guildName);
       if (!isDir(shared)) {
@@ -480,7 +480,7 @@ export class NotesStore {
     });
   }
 
-  listAgentFiles(orgSlug: string, guildName: string, name: string): NotesFile[] {
+  listAgentNotesFiles(orgSlug: string, guildName: string, name: string): NotesFile[] {
     const agent = this.agentDir(orgSlug, guildName, name);
     if (!isDir(agent)) {
       throw new NotesError("agent folder not found");
@@ -505,7 +505,7 @@ export class NotesStore {
     return paths.map((relative) => this.fileItem(path.join(agent, relative), relative));
   }
 
-  readAgentFile(orgSlug: string, guildName: string, name: string, relative: string): string {
+  readAgentNotesFile(orgSlug: string, guildName: string, name: string, relative: string): string {
     const agent = this.agentDir(orgSlug, guildName, name);
     if (!isDir(agent)) {
       throw new NotesError("agent folder not found");
@@ -517,7 +517,7 @@ export class NotesStore {
     return readFileSync(filePath, "utf8");
   }
 
-  listSharedFiles(orgSlug: string, guildName: string): NotesFile[] {
+  listSharedNotesFiles(orgSlug: string, guildName: string): NotesFile[] {
     const shared = this.sharedDir(orgSlug, guildName);
     if (!isDir(shared)) {
       throw new NotesError("shared folder not found");
@@ -533,7 +533,7 @@ export class NotesStore {
     return items;
   }
 
-  readSharedFile(orgSlug: string, guildName: string, relative: string): string {
+  readSharedNotesFile(orgSlug: string, guildName: string, relative: string): string {
     const shared = this.sharedDir(orgSlug, guildName);
     if (!isDir(shared)) {
       throw new NotesError("shared folder not found");

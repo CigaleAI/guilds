@@ -38,7 +38,7 @@ test("create_guild and create_agent layout", async () => {
   assert.ok(statSync(path.join(agent, "routines")).isDirectory());
   assert.ok(statSync(path.join(agent, "history-archive")).isDirectory());
   assert.equal(readFileSync(path.join(agent, "memory.md"), "utf8"), "");
-  const files = notes.listAgentFiles("acme", "research", "researcher");
+  const files = notes.listAgentNotesFiles("acme", "research", "researcher");
   assert.deepEqual(
     files.map((item) => item.path),
     ["task.md", "memory.md"],
@@ -46,19 +46,19 @@ test("create_guild and create_agent layout", async () => {
   const task = files.find((item) => item.path === "task.md");
   const absolute = path.resolve(path.join(agent, "task.md"));
   assert.equal(task?.obsidian, `obsidian://open?path=${pythonQuote(absolute)}`);
-  assert.equal(notes.readAgentFile("acme", "research", "researcher", "task.md"), readFileSync(path.join(agent, "task.md"), "utf8"));
+  assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "task.md"), readFileSync(path.join(agent, "task.md"), "utf8"));
   assert.equal(
-    notes.readAgentFile("acme", "research", "researcher", "task.md"),
+    notes.readAgentNotesFile("acme", "research", "researcher", "task.md"),
     readFileSync(path.join(templatesRoot(), "task.md"), "utf8"),
   );
-  assert.deepEqual(notes.listSharedFiles("acme", "research"), []);
+  assert.deepEqual(notes.listSharedNotesFiles("acme", "research"), []);
 });
 
 test("create_agent uses task as the starting prompt", async () => {
   const notes = notesStore();
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher", "  Watch the inbox.  ");
-  assert.equal(notes.readAgentFile("acme", "research", "researcher", "task.md"), "Watch the inbox.\n");
+  assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "task.md"), "Watch the inbox.\n");
 });
 
 test("delete_agent and delete_guild remove trees", async () => {
@@ -117,18 +117,18 @@ test("shared and private path confinement", async () => {
   writeFileSync(path.join(shared, "note.md"), "hello");
   mkdirSync(path.join(shared, "nested"));
   writeFileSync(path.join(shared, "nested", "deep.md"), "nested");
-  const listed = notes.listSharedFiles("acme", "research");
+  const listed = notes.listSharedNotesFiles("acme", "research");
   assert.deepEqual(
     listed.map((item) => item.path),
     ["nested/deep.md", "note.md"],
   );
-  assert.equal(notes.readSharedFile("acme", "research", "note.md"), confinement.shared_ok);
+  assert.equal(notes.readSharedNotesFile("acme", "research", "note.md"), confinement.shared_ok);
   const cases: Record<string, () => void> = {
-    shared_escape: () => notes.readSharedFile("acme", "research", "../agents/researcher/task.md"),
-    shared_gitkeep: () => notes.readSharedFile("acme", "research", ".gitkeep"),
-    agent_escape: () => notes.readAgentFile("acme", "research", "researcher", "../shared/note.md"),
+    shared_escape: () => notes.readSharedNotesFile("acme", "research", "../agents/researcher/task.md"),
+    shared_gitkeep: () => notes.readSharedNotesFile("acme", "research", ".gitkeep"),
+    agent_escape: () => notes.readAgentNotesFile("acme", "research", "researcher", "../shared/note.md"),
     agent_nested_escape: () =>
-      notes.readAgentFile("acme", "research", "researcher", "notes/../../shared/note.md"),
+      notes.readAgentNotesFile("acme", "research", "researcher", "notes/../../shared/note.md"),
   };
   for (const item of confinement.rejected) {
     const run = cases[item.case];
@@ -182,21 +182,21 @@ test("write existing markdown files", async () => {
   const shared = path.join(notes.root, "orgs", "acme", "guilds", "research", "shared", "note.md");
   writeFileSync(privateFile, "old private");
   writeFileSync(shared, "old shared");
-  const taskRepo = await notes.writeAgentFile("acme", "research", "researcher", "task.md", "updated task");
-  const privateRepo = await notes.writeAgentFile(
+  const taskRepo = await notes.writeAgentNotesFile("acme", "research", "researcher", "task.md", "updated task");
+  const privateRepo = await notes.writeAgentNotesFile(
     "acme",
     "research",
     "researcher",
     "notes/scratch.md",
     "updated private",
   );
-  const sharedRepo = await notes.writeSharedFile("acme", "research", "note.md", "updated shared");
+  const sharedRepo = await notes.writeSharedNotesFile("acme", "research", "note.md", "updated shared");
   assert.equal(taskRepo, "orgs/acme/guilds/research/agents/researcher/task.md");
   assert.equal(privateRepo, "orgs/acme/guilds/research/agents/researcher/notes/scratch.md");
   assert.equal(sharedRepo, "orgs/acme/guilds/research/shared/note.md");
-  assert.equal(notes.readAgentFile("acme", "research", "researcher", "task.md"), "updated task");
-  assert.equal(notes.readAgentFile("acme", "research", "researcher", "notes/scratch.md"), "updated private");
-  assert.equal(notes.readSharedFile("acme", "research", "note.md"), "updated shared");
+  assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "task.md"), "updated task");
+  assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "notes/scratch.md"), "updated private");
+  assert.equal(notes.readSharedNotesFile("acme", "research", "note.md"), "updated shared");
 });
 
 test("operator can edit a routine note through the files pane", async () => {
@@ -204,7 +204,7 @@ test("operator can edit a routine note through the files pane", async () => {
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
   writeFileSync(path.join(notes.agentDir("acme", "research", "researcher"), "routines", "sch_1.md"), "Check Gmail.");
-  const repo = await notes.writeAgentFile(
+  const repo = await notes.writeAgentNotesFile(
     "acme",
     "research",
     "researcher",
@@ -212,7 +212,7 @@ test("operator can edit a routine note through the files pane", async () => {
     "Read shared notes.",
   );
   assert.equal(repo, "orgs/acme/guilds/research/agents/researcher/routines/sch_1.md");
-  assert.equal(notes.readAgentFile("acme", "research", "researcher", "routines/sch_1.md"), "Read shared notes.");
+  assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "routines/sch_1.md"), "Read shared notes.");
   await assert.rejects(
     () => notes.writePrivateNote("acme", "research", "researcher", "routines/sch_1.md", "nope"),
     /cannot be overwritten/,
@@ -224,10 +224,10 @@ test("write markdown creates missing notes and rejects escape", async () => {
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
   await assert.rejects(
-    () => notes.writeAgentFile("acme", "research", "researcher", "prompt.py", "print(1)"),
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", "prompt.py", "print(1)"),
     /path must end in \.md/,
   );
-  const created = await notes.writeAgentFile(
+  const created = await notes.writeAgentNotesFile(
     "acme",
     "research",
     "researcher",
@@ -235,16 +235,16 @@ test("write markdown creates missing notes and rejects escape", async () => {
     "hello",
   );
   assert.equal(created, "orgs/acme/guilds/research/agents/researcher/notes/missing.md");
-  assert.equal(notes.readAgentFile("acme", "research", "researcher", "notes/missing.md"), "hello");
+  assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "notes/missing.md"), "hello");
   await assert.rejects(
-    () => notes.writeAgentFile("acme", "research", "researcher", "../shared/note.md", "nope"),
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", "../shared/note.md", "nope"),
     /invalid path/,
   );
-  const sharedCreated = await notes.writeSharedFile("acme", "research", "missing.md", "shared");
+  const sharedCreated = await notes.writeSharedNotesFile("acme", "research", "missing.md", "shared");
   assert.equal(sharedCreated, "orgs/acme/guilds/research/shared/missing.md");
-  assert.equal(notes.readSharedFile("acme", "research", "missing.md"), "shared");
+  assert.equal(notes.readSharedNotesFile("acme", "research", "missing.md"), "shared");
   await assert.rejects(
-    () => notes.writeSharedFile("acme", "research", "../agents/researcher/task.md", "nope"),
+    () => notes.writeSharedNotesFile("acme", "research", "../agents/researcher/task.md", "nope"),
     /invalid path/,
   );
 });
@@ -270,13 +270,13 @@ test("delete private and shared notes prunes empty parents", async () => {
   const sharedNested = path.join(notes.root, "orgs", "acme", "guilds", "research", "shared", "handoff", "note.md");
   mkdirSync(path.dirname(sharedNested), { recursive: true });
   writeFileSync(sharedNested, "shared");
-  await notes.deleteAgentFile("acme", "research", "researcher", "notes/competitors/acme.md");
-  await notes.deleteSharedFile("acme", "research", "handoff/note.md");
+  await notes.deleteAgentNotesFile("acme", "research", "researcher", "notes/competitors/acme.md");
+  await notes.deleteSharedNotesFile("acme", "research", "handoff/note.md");
   assert.deepEqual(
-    notes.listAgentFiles("acme", "research", "researcher").map((item) => item.path),
+    notes.listAgentNotesFiles("acme", "research", "researcher").map((item) => item.path),
     ["task.md", "memory.md"],
   );
-  assert.deepEqual(notes.listSharedFiles("acme", "research"), []);
+  assert.deepEqual(notes.listSharedNotesFiles("acme", "research"), []);
 });
 
 test("delete rejects protected agent files", async () => {
@@ -292,19 +292,19 @@ test("delete rejects protected agent files", async () => {
   const archive = listed.find((item) => item.endsWith(".md"));
   const archiveRel = (archive ?? "").split("/agents/researcher/")[1] ?? "";
   await assert.rejects(
-    () => notes.deleteAgentFile("acme", "research", "researcher", "task.md"),
+    () => notes.deleteAgentNotesFile("acme", "research", "researcher", "task.md"),
     /cannot delete this file/,
   );
   await assert.rejects(
-    () => notes.deleteAgentFile("acme", "research", "researcher", "memory.md"),
+    () => notes.deleteAgentNotesFile("acme", "research", "researcher", "memory.md"),
     /cannot delete this file/,
   );
   await assert.rejects(
-    () => notes.deleteAgentFile("acme", "research", "researcher", archiveRel),
+    () => notes.deleteAgentNotesFile("acme", "research", "researcher", archiveRel),
     /memory archive notes cannot be deleted/,
   );
   await assert.rejects(
-    () => notes.deleteAgentFile("acme", "research", "researcher", "routines/sch_1.md"),
+    () => notes.deleteAgentNotesFile("acme", "research", "researcher", "routines/sch_1.md"),
     /routine notes cannot be deleted/,
   );
 });
