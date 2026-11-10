@@ -247,9 +247,6 @@
   "src/lib/agent-file.ts": {
     "limits/bumpy-road": {
       "count": 1
-    },
-    "limits/silent-catch": {
-      "count": 2
     }
   },
   "src/lib/blob-store.ts": {

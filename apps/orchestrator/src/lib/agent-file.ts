@@ -94,6 +94,23 @@ async function followAgentPath(resolved: string, parameter: AgentPathParameter):
   }
 }
 
+/** Whether a filesystem call failed because nothing is at its path. */
+function isMissingPath(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+/** What is at a path, without following a link there; null when nothing is. */
+async function lstatIfPresent(target: string): Promise<Stats | null> {
+  try {
+    return await lstat(target);
+  } catch (error) {
+    if (isMissingPath(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 function throughFolders(workspaceDir: string): string {
   return `file_path must be under ${homeOfDirectory(workspaceDir)} through folders, not links`;
 }
@@ -266,7 +283,7 @@ export async function writeAgentFile(workspaceDir: string, filePath: string, byt
   }
   for (const part of parts) {
     current = path.join(current, part);
-    const found = await lstat(current).catch(() => null);
+    const found = await lstatIfPresent(current);
     if (found === null) {
       await mkdir(current).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "EEXIST") throw error;
@@ -280,7 +297,7 @@ export async function writeAgentFile(workspaceDir: string, filePath: string, byt
     }
   }
   const target = path.join(current, name);
-  const existing = await lstat(target).catch(() => null);
+  const existing = await lstatIfPresent(target);
   if (existing !== null && !existing.isFile()) {
     throw new AgentFileError("file_path must name a regular file, not a link or folder", "not_file");
   }

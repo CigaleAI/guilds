@@ -196,3 +196,14 @@ test("readAgentFolder reports a file past the bytes left as the folder past its 
     "environ: file_path must be under /home/a_1, not a link out of it",
   );
 });
+
+test("writeAgentFile lets a failure other than a missing path through as it is", async () => {
+  const { workspace } = workspaceWithHostFile();
+  const tooLong = "x".repeat(300);
+  for (const filePath of [tooLong, `${tooLong}/brief.txt`]) {
+    await assert.rejects(
+      () => writeAgentFile(workspace, filePath, Buffer.from("one")),
+      (error: unknown) => !(error instanceof AgentFileError) && error instanceof Error && "code" in error && error.code === "ENAMETOOLONG",
+    );
+  }
+});
