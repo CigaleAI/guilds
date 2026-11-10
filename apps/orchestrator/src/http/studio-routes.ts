@@ -25,6 +25,7 @@ import {
   parseStateKind,
   type StateDeps,
 } from "../studio/state-data.js";
+import { listSessionConnections } from "../studio/connections.js";
 import { viewDraft } from "../studio/drafts.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
@@ -199,7 +200,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return { connections: await studio.listConnections(session) };
+      return { connections: await listSessionConnections(studio.deps.preview, session) };
     },
   );
 

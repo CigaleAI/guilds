@@ -37,9 +37,7 @@ import {
   answerLoginRequest,
   grantSessionConnection,
   grantedConnectionIds,
-  listSessionConnections,
   withdrawSessionConnection,
-  type StudioConnection,
   type StudioMcpClient,
 } from "./connections.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
@@ -389,10 +387,6 @@ export class StudioService {
       updated_at: row.updated_at,
       archived_at: row.archived_at,
     };
-  }
-
-  async listConnections(session: StudioSessionRow): Promise<StudioConnection[]> {
-    return listSessionConnections(this.deps.preview, session);
   }
 
   /** Lets the coach use one login of the source guild in this session. */
