@@ -17,7 +17,7 @@ import {
   STUDIO_MAX_STEPS,
 } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
-import { StudioDrafts, type DraftPublication } from "./drafts.js";
+import { StudioDrafts } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
 import { withLockedSession } from "./session-lock.js";
 import {
@@ -95,9 +95,6 @@ export type StudioDeps = {
   publishRoutinesChanged?: ((guildId: string, change: RoutineChange) => Promise<void>) | undefined;
   isAgentBusy?: ((agentId: string) => boolean) | undefined;
 };
-
-/** A published or unchanged draft, with whether its target agent is generating now and so reads the new Task on its next run. */
-export type PublishedDraft = DraftPublication & { target_generating: boolean };
 
 /** What an operator opens a Studio session with: its mode, source guild, coach model, and the session it continues. */
 export type StudioSessionRequest = {
@@ -514,28 +511,5 @@ export class StudioService {
       summary,
       selectedTargetAgentId: session.selected_target_agent_id,
     });
-  }
-
-  /** Publishes a draft of the session to its target agent's task, as `user`. */
-  async publishDraft(
-    session: StudioSessionRow,
-    user: UserRow,
-    draftId: string,
-  ): Promise<PublishedDraft> {
-    const result = await this.deps.drafts.publish(this.deps, session, user, draftId);
-    return this.announcePublish(session, result);
-  }
-
-  // Tells the source guild its files changed when the draft was published,
-  // and adds whether the target agent is generating to the outcome.
-  private async announcePublish(session: StudioSessionRow, result: DraftPublication): Promise<PublishedDraft> {
-    if (result.outcome === "published" && this.deps.publishFilesChanged && session.source_guild_id) {
-      await this.deps.publishFilesChanged(session.source_guild_id);
-    }
-    const targetId = result.draft.target_agent_id;
-    return {
-      ...result,
-      target_generating: targetId ? Boolean(this.deps.isAgentBusy?.(targetId)) : false,
-    };
   }
 }

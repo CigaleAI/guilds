@@ -35,7 +35,7 @@ import {
 import { listGuildInventory } from "../studio/inventory.js";
 import { assertLive, listSessionMessages, viewSession } from "../studio/session.js";
 import { requireGuildAgent } from "../studio/source-guild.js";
-import { listOrphanDrafts, listSessionDrafts, viewDraft } from "../studio/drafts.js";
+import { listOrphanDrafts, listSessionDrafts, publishDraft, viewDraft } from "../studio/drafts.js";
 import { applyEditRequest, declineEditRequest, viewEditRequest } from "../studio/edit-answers.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
@@ -437,8 +437,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const loaded = await loadDraftContext(deps, user, org, request.params.draft_id);
-      const studio: StudioService = studioOf(deps);
-      return await studio.publishDraft(loaded.session, loaded.user, loaded.draft.id);
+      return await publishDraft(studioOf(deps).deps, loaded.session, loaded.user, loaded.draft.id);
     },
   );
 
