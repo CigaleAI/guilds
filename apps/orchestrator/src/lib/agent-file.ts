@@ -215,26 +215,30 @@ async function listFolderFiles(dir: string, maxFiles: number): Promise<string[]>
   return names.sort();
 }
 
+/** The bytes a folder an agent named may hold in all, and those its files read so far hold. */
+type FolderByteBudget = { limit: number; used: number };
+
 /**
- * One file of a folder an agent named, read as `readAgentFile` reads one within `maxBytes`: `base`
- * is the folder's path in the workspace and `name` the file's path in the folder. Null when the
- * file holds more than `maxBytes`; any other refusal names the file.
+ * One file of a folder an agent named, read as `readAgentFile` reads one within the bytes the
+ * budget has left: `base` is the folder's path in the workspace and `name` the file's path in the
+ * folder. A file past what is left, even alone, takes the folder past its limit, and is refused as
+ * the folder; any other refusal names the file.
  */
 async function readFolderFile(
   workspaceDir: string,
   base: string,
   name: string,
-  maxBytes: number,
-): Promise<AgentFolderFile | null> {
+  budget: FolderByteBudget,
+): Promise<AgentFolderFile> {
   try {
-    const read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), maxBytes);
+    const read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), budget.limit - budget.used);
     return { path: name, bytes: read.bytes };
   } catch (error) {
     if (!(error instanceof AgentFileError)) {
       throw error;
     }
     if (error.problem === "too_large") {
-      return null;
+      throw new AgentFileError(`folder_path holds more than ${budget.limit} bytes`, "too_large");
     }
     throw new AgentFileError(`${name}: ${error.message}`, error.problem);
   }
@@ -266,14 +270,10 @@ export async function readAgentFolder(
   }
   const base = path.relative(root, real);
   const files: AgentFolderFile[] = [];
-  let total = 0;
+  let used = 0;
   for (const name of await listFolderFiles(real, maxFiles)) {
-    // A file may hold only the bytes the files before it left, so one past that, even alone, takes the folder past its total.
-    const file = await readFolderFile(workspaceDir, base, name, maxBytes - total);
-    if (file === null) {
-      throw new AgentFileError(`folder_path holds more than ${maxBytes} bytes`, "too_large");
-    }
-    total += file.bytes.length;
+    const file = await readFolderFile(workspaceDir, base, name, { limit: maxBytes, used });
+    used += file.bytes.length;
     files.push(file);
   }
   return { path: resolved, files };
