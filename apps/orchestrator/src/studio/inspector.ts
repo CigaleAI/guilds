@@ -12,6 +12,8 @@ import { iso } from "../db/views.js";
 import type { GenerationLoop } from "../generation/index.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import type { Schedules } from "../schedules/service.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import { memoryHistory, type MemoryHistory } from "../memory/history.js";
 import { hiddenGuildsFor } from "../db/guilds.js";
 import type { StudioSessionRow } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
@@ -314,4 +316,21 @@ export async function inspectSessionAgent(
     hidden: await hiddenGuildsFor(deps.db, session.org_id, user.id),
   });
   return inspectAgent(deps, viewer, agent);
+}
+
+/** Every version of the Memory of one agent of a live session's guild, as `user` may read it. */
+export async function readAgentMemoryHistory(
+  deps: Pick<AgentInspectorDeps, "db" | "artifacts">,
+  session: StudioSessionRow,
+  user: UserRow,
+  agentId: string,
+): Promise<MemoryHistory> {
+  assertLive(session);
+  const agent = await requireGuildAgent(deps.db, session.source_guild_id, session.org_id, agentId);
+  const actor = await loadOperatorActor(deps.db, user, {
+    orgId: session.org_id,
+    guildId: session.source_guild_id,
+    agentId,
+  });
+  return memoryHistory(deps, actor, { id: agent.id, name: agent.name });
 }

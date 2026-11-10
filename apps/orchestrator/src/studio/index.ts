@@ -1,5 +1,4 @@
 import type { ArtifactStore } from "../artifacts/store.js";
-import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import {
   assertModelConnected,
@@ -36,7 +35,7 @@ import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from
 import type { ResolvedFocus } from "./focus-evidence.js";
 import type { RoutineChange } from "../schedules/operator.js";
 import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
-import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
+import { findGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
   insertConversationMessage,
@@ -55,7 +54,6 @@ import {
 } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
-import { loadOperatorActor } from "../artifacts/actors.js";
 import type { StudioOperator } from "./actor.js";
 
 export type StudioServiceDeps = {
@@ -331,21 +329,6 @@ export class StudioService {
     assertLive(session);
     const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
     return rows.map((row) => inventoryItem(row));
-  }
-
-  async memoryTimeline(
-    session: StudioSessionRow,
-    user: UserRow,
-    agentId: string,
-  ): ReturnType<typeof memoryHistory> {
-    assertLive(session);
-    const agent = await requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
-    const actor = await loadOperatorActor(this.deps.db, user, {
-      orgId: session.org_id,
-      guildId: session.source_guild_id,
-      agentId,
-    });
-    return memoryHistory(this.deps, actor, { id: agent.id, name: agent.name });
   }
 
   async postMessage(
