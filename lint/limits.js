@@ -114,21 +114,22 @@ const NESTERS = new Set([
   "TryStatement",
 ]);
 
-/** Whether a function is a closure: an arrow function or a function expression, not a method. */
-function isClosure(fn) {
-  return fn.type !== "FunctionDeclaration" && !METHODS.has(fn.parent?.type);
+/** Whether a function is a method, of a class or of an object literal, accessors included. */
+function isMethod(fn) {
+  const parent = fn.parent;
+  return METHODS.has(parent?.type) || (parent?.type === "Property" && (parent.method || parent.kind !== "init"));
 }
 
 /**
- * The function a node counts towards: the nearest function declaration or method around it, a
- * closure counting towards the function that declares it; the outermost closure when no
- * declaration or method holds it; null outside any function.
+ * The function a node counts towards: the nearest method around it, a method being a unit of its
+ * own at any depth; else the outermost function around it, so a function declared inside another
+ * counts towards it; null outside any function.
  */
 function declaringFunction(node) {
   let found = null;
   for (let current = node.parent; current; current = current.parent) {
     if (FUNCTIONS.has(current.type)) {
-      if (!isClosure(current)) {
+      if (isMethod(current)) {
         return current;
       }
       found = current;
@@ -167,8 +168,8 @@ function nameOf(fn) {
 }
 
 // A bump is a conditional or loop statement at the top level of a function's body that holds
-// another; a closure's statements count towards the function that declares it. The function is
-// reported past `max` bumps.
+// another; the statements of a function declared inside it count towards it, a method's towards
+// the method. The function is reported past `max` bumps.
 const bumpyRoad = {
   meta: {
     type: "problem",

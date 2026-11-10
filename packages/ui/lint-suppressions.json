@@ -42,6 +42,11 @@
       "count": 1
     }
   },
+  "src/components/controls/Composer.tsx": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
   "src/components/controls/FormField.tsx": {
     "limits/inline-parameter-type": {
       "count": 1

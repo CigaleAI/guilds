@@ -15,12 +15,22 @@ tester.run("limits/bumpy-road", limits.rules["bumpy-road"], {
       options,
     },
     {
-      code: "function outer(a, b) { function inner() { if (a) { if (b) { go(); } } } if (a) { while (b) { inner(); } } }",
+      code: "function build(a, b) { if (a) { if (b) { go(); } } return { run() { if (a) { if (b) { go(); } } } }; }",
       options,
     },
     { code: "function wrap(a, items) { if (a) { items.forEach((item) => { for (const x of item) { go(x); } }); } }", options },
   ],
   invalid: [
+    {
+      code: "function outer(a, b) { function inner() { if (a) { if (b) { go(); } } } if (a) { while (b) { inner(); } } }",
+      options,
+      errors: [bumpy("outer")],
+    },
+    {
+      code: "function build(a, b) { return { run() { if (a) { if (b) { go(); } } const each = () => { for (const x of b) { if (x) { go(x); } } }; each(); } }; }",
+      options,
+      errors: [bumpy("run")],
+    },
     {
       code: "function two(a, b) { if (a) { if (b) { go(); } } for (const x of b) { while (x) { stop(); } } }",
       options,
