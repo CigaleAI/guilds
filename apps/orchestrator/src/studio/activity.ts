@@ -389,6 +389,56 @@ function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
   return byRun;
 }
 
+/** Each run's `group_post` results inside the window that posted, with the sequence each one posted. */
+export function postsByRun(rows: RunGroupPostRow[], sinceMs: number): Map<string, ActivityWake["posts"]> {
+  const byRun = new Map<string, ActivityWake["posts"]>();
+  for (const row of rows) {
+    const seq = groupPostSeq(row.content);
+    const atMs = timestampMs(row.created_at);
+    if (seq === null || atMs === null || atMs < sinceMs) {
+      continue;
+    }
+    const posts = byRun.get(row.run_id) ?? [];
+    posts.push({ seq, call_id: row.call_id, at: iso(row.created_at) });
+    byRun.set(row.run_id, posts);
+  }
+  return byRun;
+}
+
+/** Each run's file changes inside the window, with what each one touched; a change no run made is left out. */
+export function writesByRun(rows: RunFileChangeRow[], sinceMs: number): Map<string, ActivityWrite[]> {
+  const byRun = new Map<string, ActivityWrite[]>();
+  for (const row of rows) {
+    const atMs = timestampMs(row.created_at);
+    if (row.run_id === null || atMs === null || atMs < sinceMs) {
+      continue;
+    }
+    const writes = byRun.get(row.run_id) ?? [];
+    writes.push({
+      ...classifyWrite(row.display_path, row.tool_name),
+      display_path: row.display_path,
+      operation: row.operation,
+      tool_name: row.tool_name,
+      call_id: row.tool_call_id,
+      at: iso(row.created_at),
+    });
+    byRun.set(row.run_id, writes);
+  }
+  return byRun;
+}
+
+/** Each run's first operator message inside the window as a preview; a run whose opening has no text has none. */
+export function openingsByRun(rows: RunOpeningRow[]): Map<string, string> {
+  const byRun = new Map<string, string>();
+  for (const row of rows) {
+    const said = row.text?.trim() ?? "";
+    if (said) {
+      byRun.set(row.run_id, previewText(said, ACTIVITY_PREVIEW_CHARS));
+    }
+  }
+  return byRun;
+}
+
 export function projectActivity(input: ActivityInput): ActivityView {
   const sinceMs = input.since.getTime();
   const nowIso = input.now.toISOString();
@@ -397,47 +447,10 @@ export function projectActivity(input: ActivityInput): ActivityView {
   const deliveryByRun = new Map(input.deliveries.map((row) => [row.run_id, row.metadata]));
   const messagesBySeq = new Map(input.messages.map((message) => [message.seq, message]));
 
-  const postsByRun = new Map<string, ActivityWake["posts"]>();
-  for (const row of input.posts) {
-    const seq = groupPostSeq(row.content);
-    const atMs = timestampMs(row.created_at);
-    if (seq === null || atMs === null || atMs < sinceMs) {
-      continue;
-    }
-    const posts = postsByRun.get(row.run_id) ?? [];
-    posts.push({ seq, call_id: row.call_id, at: iso(row.created_at) });
-    postsByRun.set(row.run_id, posts);
-  }
-
-  const writesByRun = new Map<string, ActivityWrite[]>();
-  for (const row of input.changes) {
-    const atMs = timestampMs(row.created_at);
-    if (row.run_id === null || atMs === null || atMs < sinceMs) {
-      continue;
-    }
-    const toolName = row.tool_name;
-    const { kind, target } = classifyWrite(row.display_path, toolName);
-    const writes = writesByRun.get(row.run_id) ?? [];
-    writes.push({
-      kind,
-      target,
-      display_path: row.display_path,
-      operation: row.operation,
-      tool_name: toolName,
-      call_id: row.tool_call_id,
-      at: iso(row.created_at),
-    });
-    writesByRun.set(row.run_id, writes);
-  }
-
+  const postsOf = postsByRun(input.posts, sinceMs);
+  const writesOf = writesByRun(input.changes, sinceMs);
   const stepsOf = stepsByRun(input.steps);
-  const openingByRun = new Map<string, string>();
-  for (const row of input.openings) {
-    const said = row.text?.trim() ?? "";
-    if (said) {
-      openingByRun.set(row.run_id, previewText(said, ACTIVITY_PREVIEW_CHARS));
-    }
-  }
+  const openingsOf = openingsByRun(input.openings);
 
   const wakes: ActivityWake[] = [];
   for (const run of input.runs) {
@@ -463,8 +476,8 @@ export function projectActivity(input: ActivityInput): ActivityView {
     } else {
       trigger = { type: "direct", user_id: run.started_by_user_id };
     }
-    const posts = postsByRun.get(runId) ?? [];
-    const writes = [...(writesByRun.get(runId) ?? []), ...codeWrites(run, endedAt)];
+    const posts = postsOf.get(runId) ?? [];
+    const writes = [...(writesOf.get(runId) ?? []), ...codeWrites(run, endedAt)];
     const errors = errorsOf(run.errors, sinceMs);
     const outcome = posts.length ? "posted" : writes.some((write) => write.kind !== "memory") ? "wrote" : "silent";
     const steps = stepsOf.get(runId);
@@ -484,7 +497,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
       tool_calls: steps?.calls ?? [],
       tool_call_count: steps?.count ?? 0,
       reply: steps?.reply ?? null,
-      opening: kind === "direct" ? (openingByRun.get(runId) ?? null) : null,
+      opening: kind === "direct" ? (openingsOf.get(runId) ?? null) : null,
       last_seq: stats?.last_seq ?? null,
       cost_usd: stats?.cost_usd ?? 0,
     });

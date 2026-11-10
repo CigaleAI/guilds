@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { ToolCall } from "../../src/db/schema/index.js";
-import type { RunActivityStepRow } from "../../src/db/activity.js";
+import type { RunActivityStepRow, RunFileChangeRow } from "../../src/db/activity.js";
 import { test } from "node:test";
 import {
   activityWindow,
@@ -9,9 +9,13 @@ import {
   hoursWindow,
   messageFloor,
   windowBefore,
+  openingsByRun,
+  postsByRun,
   projectActivity,
   resultsByCall,
+  writesByRun,
   toolCallOf,
+  ACTIVITY_PREVIEW_CHARS,
   ACTIVITY_TOOL_CALLS_MAX,
   type ActivityInput,
 } from "../../src/studio/activity.js";
@@ -470,4 +474,62 @@ test("a wake lists at most the tool call limit across its steps and counts every
   assert.equal(wake?.tool_calls.length, ACTIVITY_TOOL_CALLS_MAX);
   assert.equal(wake?.tool_calls.at(-1)?.call_id, `c_${ACTIVITY_TOOL_CALLS_MAX}`);
   assert.equal(wake?.tool_call_count, ACTIVITY_TOOL_CALLS_MAX + 2);
+});
+
+test("a run's posts are the group posts inside the window that name the sequence they posted", () => {
+  const posts = postsByRun(
+    [
+      { run_id: "r_1", seq: 3, created_at: ts("13:00:00"), content: "posted id=1 seq=7", call_id: "c_old" },
+      { run_id: "r_1", seq: 5, created_at: ts("14:00:00"), content: "posted id=2 seq=8", call_id: "c_new" },
+      { run_id: "r_1", seq: 6, created_at: ts("14:00:10"), content: "ERROR: limit", call_id: "c_bad" },
+      { run_id: "r_1", seq: 7, created_at: "not a time", content: "posted id=3 seq=9", call_id: "c_when" },
+      { run_id: "r_2", seq: 2, created_at: ts("14:01:00"), content: "posted id=4 seq=10", call_id: null },
+    ],
+    since.getTime(),
+  );
+  assert.deepEqual([...posts.entries()], [
+    ["r_1", [{ seq: 8, call_id: "c_new", at: "2026-09-25T14:00:00.000Z" }]],
+    ["r_2", [{ seq: 10, call_id: null, at: "2026-09-25T14:01:00.000Z" }]],
+  ]);
+});
+
+test("a run's writes are its file changes inside the window, each with what it touched", () => {
+  const change: Pick<RunFileChangeRow, "operation" | "tool_name" | "tool_call_id"> = { operation: "update", tool_name: "note_write", tool_call_id: "c_1" };
+  const writes = writesByRun(
+    [
+      { ...change, run_id: "r_1", display_path: "org/o/guilds/g_1/old.md", created_at: ts("13:00:00") },
+      { ...change, run_id: "r_1", display_path: "org/o/guilds/g_1/plan.md", created_at: ts("14:00:00") },
+      { ...change, run_id: null, display_path: "org/o/guilds/g_1/hand.md", created_at: ts("14:00:00") },
+      { ...change, run_id: "r_1", display_path: "org/o/guilds/g_1/when.md", created_at: "not a time" },
+    ],
+    since.getTime(),
+  );
+  assert.deepEqual([...writes.entries()], [
+    [
+      "r_1",
+      [
+        {
+          kind: "note",
+          target: "plan.md",
+          display_path: "org/o/guilds/g_1/plan.md",
+          operation: "update",
+          tool_name: "note_write",
+          call_id: "c_1",
+          at: "2026-09-25T14:00:00.000Z",
+        },
+      ],
+    ],
+  ]);
+});
+
+test("a run's opening is its first operator text cut to a preview, and an opening with no text is none", () => {
+  const openings = openingsByRun([
+    { run_id: "r_said", text: "  how many likes?  " },
+    { run_id: "r_long", text: "y".repeat(ACTIVITY_PREVIEW_CHARS + 50) },
+    { run_id: "r_blank", text: "   " },
+    { run_id: "r_none", text: null },
+  ]);
+  assert.equal(openings.get("r_said"), "how many likes?");
+  assert.equal(openings.get("r_long")?.length, ACTIVITY_PREVIEW_CHARS + 1);
+  assert.deepEqual([...openings.keys()], ["r_said", "r_long"]);
 });

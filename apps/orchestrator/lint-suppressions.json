@@ -507,11 +507,6 @@
       "count": 1
     }
   },
-  "src/studio/activity.ts": {
-    "limits/bumpy-road": {
-      "count": 1
-    }
-  },
   "src/studio/connections.ts": {
     "limits/inline-parameter-type": {
       "count": 1
