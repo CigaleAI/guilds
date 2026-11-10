@@ -383,3 +383,21 @@ test("list notes at a note, a file that is not one, a missing folder, and the pr
     "orgs/acme/guilds/research/agents/researcher/routines/sch_1.md",
   ]);
 });
+
+test("list agent notes files lists its Task, Memory and the files under its folders, without .gitkeep", async () => {
+  const notes = notesStore();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  const agent = notes.agentDir("acme", "research", "researcher");
+  rmSync(path.join(agent, "task.md"));
+  mkdirSync(path.join(agent, "notes", "ideas"));
+  writeFileSync(path.join(agent, "notes", "ideas", "first.md"), "first");
+  writeFileSync(path.join(agent, "notes", "data.csv"), "a,b");
+  writeFileSync(path.join(agent, "notes", ".gitkeep"), "");
+  writeFileSync(path.join(agent, "routines", "sch_1.md"), "Check Gmail.");
+  rmSync(path.join(agent, "history-archive"), { recursive: true });
+  assert.deepEqual(
+    notes.listAgentNotesFiles("acme", "research", "researcher").map((item) => item.path),
+    ["memory.md", "notes/data.csv", "notes/ideas/first.md", "routines/sch_1.md"],
+  );
+});

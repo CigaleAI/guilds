@@ -108,6 +108,21 @@ function findNoteByName(name: string, roots: string[]): string | null {
   return found.flat()[0] ?? null;
 }
 
+/**
+ * The files under one of an agent's folders, by their posix paths in the agent's folder, sorted
+ * and without `.gitkeep`; none when the folder is missing.
+ */
+function listHostFolderFiles(agent: string, folder: string): string[] {
+  const directory = path.join(agent, folder);
+  if (!isDir(directory)) {
+    return [];
+  }
+  return rglobAll(directory)
+    .sort()
+    .filter((child) => statIfFile(child) && path.basename(child) !== ".gitkeep")
+    .map((child) => posixRel(agent, child));
+}
+
 export class NotesStore {
   root: string;
   templates: string;
@@ -479,15 +494,7 @@ export class NotesStore {
       }
     }
     for (const folder of HOST_FOLDERS) {
-      const directory = path.join(agent, folder);
-      if (!isDir(directory)) {
-        continue;
-      }
-      for (const child of rglobAll(directory).sort()) {
-        if (statIfFile(child) && path.basename(child) !== ".gitkeep") {
-          paths.push(posixRel(agent, child));
-        }
-      }
+      paths.push(...listHostFolderFiles(agent, folder));
     }
     return paths.map((relative) => this.fileItem(path.join(agent, relative), relative));
   }

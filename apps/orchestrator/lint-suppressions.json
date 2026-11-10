@@ -344,9 +344,6 @@
     }
   },
   "src/notes/store.ts": {
-    "limits/bumpy-road": {
-      "count": 1
-    },
     "typescript/consistent-type-assertions": {
       "count": 1
     }
