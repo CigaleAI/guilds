@@ -20,6 +20,7 @@ Oxlint and the import-cycle check
 
 - nesting depth and file length, and a warning on cyclomatic
   complexity and parameter count;
+- a function with more than one block of nested conditional logic;
 - type assertions;
 - a `catch`, or a promise's `.catch()`, that neither throws nor
   returns a value;
@@ -95,7 +96,10 @@ two functions.
 - Nesting goes at most **3 levels** deep. A `try` block counts as
   a level, and Oxlint counts it with the others. Use early returns
   to stay flat. Nesting is what makes a body hard to read, so this
-  limit is the strict one.
+  limit is the strict one. A closure counts towards the function
+  that declares it, and a function holds at most **one block of
+  nested conditional logic**: one conditional or loop statement at
+  the top of its body that holds another.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.
 - A function does not take a flag that selects between behaviours.
