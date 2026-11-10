@@ -12,7 +12,13 @@ import { iso } from "../db/views.js";
 import type { GenerationLoop } from "../generation/index.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import type { Schedules } from "../schedules/service.js";
+import { hiddenGuildsFor } from "../db/guilds.js";
+import type { StudioSessionRow } from "../db/studio.js";
+import type { UserRow } from "../db/users.js";
+import { studioActor } from "./actor.js";
 import { StudioNotFoundError } from "./errors.js";
+import { assertLive } from "./session.js";
+import { requireGuildAgent } from "./source-guild.js";
 import { nextRunTaskHash, previewStateShownTo, projectOfferedToolSchemas, type PreviewDeps, type StatePreview } from "./preview.js";
 
 /** What the Studio inspector reads a guild's runs and routines through, built once from the app's services. */
@@ -290,4 +296,22 @@ export async function inspectAgent(deps: AgentInspectorDeps, viewer: ArtifactAct
     },
     generating: deps.isAgentBusy?.(agent.id) ?? false,
   };
+}
+
+/** One agent of a live session's guild as the inspector shows it to `user`, without what is hidden from them. */
+export async function inspectSessionAgent(
+  deps: AgentInspectorDeps,
+  session: StudioSessionRow,
+  user: UserRow,
+  agentId: string,
+): Promise<StudioInspector> {
+  assertLive(session);
+  const agent = await requireGuildAgent(deps.db, session.source_guild_id, session.org_id, agentId);
+  const viewer = studioActor({
+    orgId: session.org_id,
+    sourceGuildId: agent.guild_id,
+    user,
+    hidden: await hiddenGuildsFor(deps.db, session.org_id, user.id),
+  });
+  return inspectAgent(deps, viewer, agent);
 }

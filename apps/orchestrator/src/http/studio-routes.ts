@@ -41,6 +41,7 @@ import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
 import { isOrgManager } from "../organisations/service.js";
 import {
+  inspectSessionAgent,
   listAgentRoutines,
   listAgentRunHeaders,
   readGuildRun,
@@ -313,7 +314,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.inspector(session, user, request.params.agent_id);
+      return await inspectSessionAgent(studio.deps, session, user, request.params.agent_id);
     },
   );
 

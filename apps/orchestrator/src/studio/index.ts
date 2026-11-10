@@ -29,7 +29,6 @@ import {
 import { refreshSystemMessage } from "./system-message.js";
 import { assertLive, sourceGuildSnapshot, viewSession, type StudioSession } from "./session.js";
 import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
-import { inspectAgent, type StudioInspector } from "./inspector.js";
 import { studioToolSchemas } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
 import type { StudioMcpClient } from "./connections.js";
@@ -57,7 +56,7 @@ import {
 import type { UserRow } from "../db/users.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
-import { studioActor, type StudioOperator } from "./actor.js";
+import type { StudioOperator } from "./actor.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -332,19 +331,6 @@ export class StudioService {
     assertLive(session);
     const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
     return rows.map((row) => inventoryItem(row));
-  }
-
-  /** One agent of the session's guild as the inspector shows it to `user`, without what is hidden from them. */
-  async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<StudioInspector> {
-    assertLive(session);
-    const agent = await requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
-    const viewer = studioActor({
-      orgId: session.org_id,
-      sourceGuildId: agent.guild_id,
-      user,
-      hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
-    });
-    return inspectAgent(this.deps, viewer, agent);
   }
 
   async memoryTimeline(
