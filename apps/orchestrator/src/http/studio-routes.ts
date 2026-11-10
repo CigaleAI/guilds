@@ -27,6 +27,7 @@ import {
 } from "../studio/state-data.js";
 import { listSessionConnections } from "../studio/connections.js";
 import { listGuildInventory } from "../studio/inventory.js";
+import { listSessionMessages } from "../studio/session.js";
 import { viewDraft } from "../studio/drafts.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
@@ -312,7 +313,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.messages(session);
+      return await listSessionMessages(studio.deps.db, session.id);
     },
   );
 

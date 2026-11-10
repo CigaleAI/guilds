@@ -55,7 +55,6 @@ import { getGuild, hiddenGuildsFor, type GuildRow } from "../db/guilds.js";
 import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
-  type ConversationMessageRow,
   type ConversationUsageRow,
   conversationUsageByOrg,
   insertConversationMessage,
@@ -584,11 +583,6 @@ export class StudioService {
       { ...operator, session: started.session },
     );
     return this.viewSession(started.session);
-  }
-
-  /** The session's conversation, in order. */
-  messages(session: StudioSessionRow): Promise<ConversationMessageRow[]> {
-    return listConversationMessages(this.deps.db, "studio", session.id);
   }
 
   /** Every draft of the session, newest first. */
