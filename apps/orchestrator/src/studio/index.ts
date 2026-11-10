@@ -8,8 +8,6 @@ import {
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
-import { EventQueue } from "../lib/event.js";
-import type { CoachEvent } from "../conversation/runner.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
@@ -638,14 +636,6 @@ export class StudioService {
     }
     this.runner.cancel(session.id);
     return this.viewSession(cancelling);
-  }
-
-  subscribe(sessionId: string): EventQueue<CoachEvent> {
-    return this.runner.subscribe(sessionId);
-  }
-
-  unsubscribe(sessionId: string, queue: EventQueue<CoachEvent>): void {
-    this.runner.unsubscribe(sessionId, queue);
   }
 
   async continueSession(

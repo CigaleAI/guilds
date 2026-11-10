@@ -366,8 +366,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       await pipeSse(
         request,
         reply,
-        () => studio.subscribe(sessionId),
-        (queue) => studio.unsubscribe(sessionId, queue),
+        () => studio.runner.subscribe(sessionId),
+        (queue) => studio.runner.unsubscribe(sessionId, queue),
       );
     },
   );
