@@ -42,7 +42,8 @@ import {
   type StudioConnection,
   type StudioMcpClient,
 } from "./connections.js";
-import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type ResolvedFocus, type StudioFocusRequest } from "./focus.js";
+import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
+import type { ResolvedFocus } from "./focus-evidence.js";
 import { isAccessTool } from "./access.js";
 import {
   applyEdit,

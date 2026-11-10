@@ -927,6 +927,8 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/paging.ts`, `source-guild.ts` | What the tools share: paging and byte caps, and the source-guild agent a handle names |
 | `apps/orchestrator/src/studio/actor.ts` | The operator every tool, pin, and edit reads and writes as: the session's user with the private guilds hidden from them |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
+| `apps/orchestrator/src/studio/focus-file.ts` | File focus pins: the file a display path names, its changes, and the block the coach reads |
+| `apps/orchestrator/src/studio/focus-evidence.ts` | What every focus pin's stored focus and evidence block are built from |
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
 | `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |
 | `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |
