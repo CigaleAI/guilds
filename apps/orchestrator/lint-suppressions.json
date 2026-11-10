@@ -248,9 +248,6 @@
     "limits/bumpy-road": {
       "count": 2
     },
-    "limits/inline-parameter-type": {
-      "count": 2
-    },
     "limits/silent-catch": {
       "count": 2
     }

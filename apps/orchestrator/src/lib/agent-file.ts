@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 
@@ -71,7 +71,7 @@ function inside(root: string, candidate: string): boolean {
   return candidate.startsWith(`${root}${path.sep}`);
 }
 
-function sameFile(left: { dev: number; ino: number }, right: { dev: number; ino: number }): boolean {
+function sameFile(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
