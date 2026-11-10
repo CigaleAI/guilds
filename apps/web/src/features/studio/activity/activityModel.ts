@@ -580,28 +580,13 @@ function agentInputs(
   sources: readonly MapNode[],
   wakes: readonly ChainStep[],
 ): AgentInput[] {
-  const inputs = new Map<string, AgentInput>();
-  for (const source of sources) {
-    if (source.kind === "routine" && source.agentId === agentId) {
-      inputs.set(source.id, {
-        id: source.id,
-        kind: "routine",
-        count: 0,
-        counts: emptyCounts(),
-        cost: 0,
-        reasons: {},
-      });
-    }
-  }
+  const inputs = new Map(
+    sources
+      .filter((source) => source.kind === "routine" && source.agentId === agentId)
+      .map((source) => [source.id, idleInput(source.id)] as const),
+  );
   for (const item of wakes) {
-    const input = inputs.get(item.from) ?? {
-      id: item.from,
-      kind: nodeKind(item.from),
-      count: 0,
-      counts: emptyCounts(),
-      cost: 0,
-      reasons: {},
-    };
+    const input = inputs.get(item.from) ?? idleInput(item.from);
     input.count += 1;
     input.counts[wakeBucket(item.wake)] += 1;
     input.cost += item.wake.cost_usd || 0;
@@ -614,6 +599,11 @@ function agentInputs(
   return [...inputs.values()].sort(
     (left, right) => inputOrder[left.kind] - inputOrder[right.kind] || right.count - left.count,
   );
+}
+
+/** An input from the map node `id` that woke the agent no times yet. */
+function idleInput(id: string): AgentInput {
+  return { id, kind: nodeKind(id), count: 0, counts: emptyCounts(), cost: 0, reasons: {} };
 }
 
 /** What an agent's wakes produced, added up; `counts` are its wakes by outcome. */

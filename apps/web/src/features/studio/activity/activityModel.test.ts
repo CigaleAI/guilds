@@ -373,3 +373,18 @@ test("the map's sources leave out a routine of an agent off the map unless it st
     ],
   );
 });
+
+test("a routine that fired is one input with its wakes, and only a message wake names a reason", () => {
+  const data = pipeline();
+  const chains = buildChains(data);
+  const activity = agentActivity(data, chains, buildActivityMap(data, chains));
+  const editor = activity.find((item) => item.agent.id === "a_editor");
+  assert.deepEqual(
+    editor?.inputs.map((input) => [input.id, input.kind, input.count, input.reasons]),
+    [
+      [routineNode("sch_1"), "routine", 1, {}],
+      ["a_writer", "agent", 1, { tag: 1 }],
+    ],
+  );
+  assert.deepEqual(editor?.inputs[0]?.counts, { posted: 0, wrote: 1, silent: 0, failed: 0, running: 0 });
+});
