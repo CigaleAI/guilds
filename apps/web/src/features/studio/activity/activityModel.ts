@@ -193,13 +193,9 @@ export function buildChains(
   const seen = new Set<string>();
   const step = (wake: ActivityWake, from: string, post: ActivityPost | null): ChainStep => {
     seen.add(wake.run_id);
-    const next: ChainStep[] = [];
-    for (const posted of wake.posts) {
-      for (const run of index.wokenBy.get(posted.seq) ?? []) {
-        const woken = index.wakes.get(run);
-        if (woken && !seen.has(run)) next.push(step(woken, wake.agent_id, posted));
-      }
-    }
+    const next = wokenByPosts(wake, index).flatMap((woken) =>
+      seen.has(woken.wake.run_id) ? [] : [step(woken.wake, wake.agent_id, woken.post)],
+    );
     return { wake, from, post, next };
   };
   const parentOf = (wake: ActivityWake): string | null => {
@@ -233,6 +229,19 @@ export function buildChains(
     if (seq !== null) byMessage.set(seq, chain);
   }
   return chains.map(withTotals).sort((left, right) => right.start.at - left.start.at);
+}
+
+/** A wake in the window that a post woke, with that post. */
+export type PostWake = { post: ActivityPost; wake: ActivityWake };
+
+/** The wakes in the window that a wake's posts woke, in the order of its posts. */
+export function wokenByPosts(wake: ActivityWake, index: ActivityIndex): PostWake[] {
+  return wake.posts.flatMap((post) =>
+    (index.wokenBy.get(post.seq) ?? []).flatMap((run) => {
+      const woken = index.wakes.get(run);
+      return woken ? [{ post, wake: woken }] : [];
+    }),
+  );
 }
 
 /** What started the chain a wake begins, and the map node it starts from. */

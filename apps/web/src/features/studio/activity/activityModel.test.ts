@@ -26,6 +26,7 @@ import {
   toMs,
   wakeBucket,
   windowLabel,
+  wokenByPosts,
   type Chain,
   type MapSelection,
 } from "./activityModel";
@@ -289,4 +290,58 @@ test("a reason key names why a message woke an agent only when it is one of the 
   assert.equal(isActivityTriggerReason("jev"), true);
   assert.equal(isActivityTriggerReason("fallback"), true);
   assert.equal(isActivityTriggerReason("routine"), false);
+});
+
+test("a wake's posts woke the wakes they started, in post order, and none the window does not hold", () => {
+  const data = view({
+    agents: [agent("a_scout"), agent("a_desk"), agent("a_risk")],
+    messages: [row(1, 1, null), row(2, 3, "a_scout", "w_scout"), row(3, 4, "a_scout", "w_scout")],
+    wakes: [
+      wake("w_scout", "a_scout", [1, 4], {
+        trigger: byRow(1),
+        outcome: "posted",
+        posts: [
+          { seq: 3, call_id: "c_late", at: at(4) },
+          { seq: 2, call_id: "c_early", at: at(3) },
+          { seq: 9, call_id: "c_none", at: at(4) },
+        ],
+      }),
+      wake("w_desk", "a_desk", [3, 5], { trigger: byRow(2) }),
+      wake("w_risk", "a_risk", [4, 6], { trigger: byRow(3) }),
+    ],
+  });
+  const index = indexActivity(data);
+  const scout = index.wakes.get("w_scout");
+  const woken = scout ? wokenByPosts(scout, index) : [];
+  assert.deepEqual(
+    woken.map((item) => [item.post.call_id, item.wake.run_id]),
+    [
+      ["c_late", "w_risk"],
+      ["c_early", "w_desk"],
+    ],
+  );
+  const missing = { ...index, wokenBy: new Map([[2, ["w_gone"]]]) };
+  assert.deepEqual(scout ? wokenByPosts(scout, missing) : null, []);
+});
+
+test("a chain follows a wake once even when its posts reach it twice", () => {
+  const data = view({
+    agents: [agent("a_scout"), agent("a_desk")],
+    messages: [row(1, 1, null), row(2, 3, "a_scout", "w_scout")],
+    wakes: [
+      wake("w_scout", "a_scout", [1, 3], {
+        trigger: byRow(1),
+        outcome: "posted",
+        posts: [
+          { seq: 2, call_id: "c_1", at: at(3) },
+          { seq: 2, call_id: "c_2", at: at(3) },
+        ],
+      }),
+      wake("w_desk", "a_desk", [3, 5], { trigger: byRow(2) }),
+    ],
+  });
+  const [chain] = buildChains(data);
+  assert.deepEqual(agentsOf(chain), [["a_scout", "a_desk"]]);
+  assert.equal(chain?.wakes, 2);
+  assert.equal(chain?.steps[0]?.next[0]?.post?.call_id, "c_1");
 });
