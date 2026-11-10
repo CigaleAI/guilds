@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { pythonQuote } from "../../src/lib/contain.js";
@@ -240,6 +240,14 @@ test("write markdown creates missing notes and rejects escape", async () => {
     () => notes.writeAgentNotesFile("acme", "research", "researcher", "../shared/note.md", "nope"),
     /invalid path/,
   );
+  rmSync(path.join(notes.agentDir("acme", "research", "researcher"), "task.md"));
+  for (const relative of ["task.md", "routines/missing.md", "notes/routines/missing.md"]) {
+    await assert.rejects(
+      () => notes.writeAgentNotesFile("acme", "research", "researcher", relative, "nope"),
+      /file not found/,
+      relative,
+    );
+  }
   const sharedCreated = await notes.writeSharedNotesFile("acme", "research", "missing.md", "shared");
   assert.equal(sharedCreated, "orgs/acme/guilds/research/shared/missing.md");
   assert.equal(notes.readSharedNotesFile("acme", "research", "missing.md"), "shared");

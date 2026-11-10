@@ -378,15 +378,8 @@ export class NotesStore {
         });
       }
       const filePath = resolveAgentFile(agent, posix);
-      if (!statIfFile(filePath)) {
-        if (
-          !posix.startsWith("notes/") ||
-          !posix.endsWith(".md") ||
-          isRelativeMemoryArchivePath(posix) ||
-          isRoutineRel(posix)
-        ) {
-          throw new NotesError("file not found");
-        }
+      if (!statIfFile(filePath) && (!posix.startsWith("notes/") || isRoutineRel(posix))) {
+        throw new NotesError("file not found");
       }
       return this.writeFile(filePath, content);
     });
