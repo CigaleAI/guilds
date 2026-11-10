@@ -343,11 +343,6 @@
       "count": 2
     }
   },
-  "src/notes/store.ts": {
-    "typescript/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/observability/client-errors.ts": {
     "limits/silent-catch": {
       "count": 1

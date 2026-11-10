@@ -446,7 +446,7 @@ export class NotesStore {
         throw new NotesError("agent folder not found");
       }
       const posix = relativePosix(relative);
-      if ((FIXED_AGENT_FILES as readonly string[]).includes(posix)) {
+      if (FIXED_AGENT_FILES.some((file) => file === posix)) {
         throw new NotesError("cannot delete this file");
       }
       if (isRelativeMemoryArchivePath(posix)) {
