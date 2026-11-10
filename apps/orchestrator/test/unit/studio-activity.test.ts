@@ -15,6 +15,8 @@ import {
   resultsByCall,
   writesByRun,
   toolCallOf,
+  wakeOutcome,
+  wakeTrigger,
   ACTIVITY_PREVIEW_CHARS,
   ACTIVITY_TOOL_CALLS_MAX,
   type ActivityInput,
@@ -532,4 +534,33 @@ test("a run's opening is its first operator text cut to a preview, and an openin
   assert.equal(openings.get("r_said"), "how many likes?");
   assert.equal(openings.get("r_long")?.length, ACTIVITY_PREVIEW_CHARS + 1);
   assert.deepEqual([...openings.keys()], ["r_said", "r_long"]);
+});
+
+test("a run's trigger is its waking row, its routine, or who opened its chat, by the run's kind", () => {
+  const messages = new Map([[4, message(4, "14:00:00", null, ["desk"])]]);
+  const group = activityRun({ id: "r_group", kind: "group", group_chat_through_seq: 4, previous_through_seq: 3, created_at: ts("14:00:01"), updated_at: ts("14:00:02") });
+  const desk = { id: "a_desk", name: "desk", avatar_color: "#fbbf24", avatar_shape: "critters" };
+  assert.deepEqual(wakeTrigger(group, desk, { source: "group_chat", you_were_tagged: true }, messages), {
+    type: "message",
+    seq: 4,
+    through_seq: 4,
+    reason: "tag",
+    routing: null,
+    inferred: true,
+  });
+  const untold = wakeTrigger(group, undefined, undefined, messages);
+  assert.equal(untold.type === "message" && untold.reason, "rules");
+  const routine = activityRun({ id: "r_tick", kind: "schedule", schedule_id: "sch_1", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.deepEqual(wakeTrigger(routine, desk, undefined, messages), { type: "routine", schedule_id: "sch_1" });
+  const chat = activityRun({ id: "r_chat", kind: "direct", started_by_user_id: "user_ada", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.deepEqual(wakeTrigger(chat, desk, undefined, messages), { type: "direct", user_id: "user_ada" });
+});
+
+test("a wake that posted posted, one that wrote more than its memory wrote, and any other was silent", () => {
+  const write = (kind: "note" | "memory") => ({ kind, target: "t", display_path: "p", operation: "update", tool_name: null, call_id: null, at: ts("14:00:00") });
+  const post = { seq: 1, call_id: null, at: ts("14:00:00") };
+  assert.equal(wakeOutcome([post], [write("note")]), "posted");
+  assert.equal(wakeOutcome([], [write("memory"), write("note")]), "wrote");
+  assert.equal(wakeOutcome([], [write("memory")]), "silent");
+  assert.equal(wakeOutcome([], []), "silent");
 });

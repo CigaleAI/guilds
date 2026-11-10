@@ -439,6 +439,33 @@ export function openingsByRun(rows: RunOpeningRow[]): Map<string, string> {
   return byRun;
 }
 
+/**
+ * What started a run: the public row that woke a group run, the routine that fired a scheduled
+ * one, or the person who opened a direct chat. `delivery` is the group delivery the run opened with.
+ */
+export function wakeTrigger(
+  run: GuildActivityRunRow,
+  agent: ActivityAgent | undefined,
+  delivery: MessageMetadata | undefined,
+  messagesBySeq: Map<number, ActivityGroupMessageRow>,
+): ActivityTrigger {
+  if (run.kind === "group") {
+    return messageTrigger(run, agent?.name ?? "", delivery ?? {}, messagesBySeq);
+  }
+  if (run.kind === "schedule") {
+    return { type: "routine", schedule_id: run.schedule_id };
+  }
+  return { type: "direct", user_id: run.started_by_user_id };
+}
+
+/** What a wake produced: a post, else a write other than its memory, else nothing. */
+export function wakeOutcome(posts: ActivityWake["posts"], writes: ActivityWrite[]): ActivityWake["outcome"] {
+  if (posts.length) {
+    return "posted";
+  }
+  return writes.some((write) => write.kind !== "memory") ? "wrote" : "silent";
+}
+
 export function projectActivity(input: ActivityInput): ActivityView {
   const sinceMs = input.since.getTime();
   const nowIso = input.now.toISOString();
@@ -468,18 +495,11 @@ export function projectActivity(input: ActivityInput): ActivityView {
     const startedAt = kind === "direct" && firstAt !== null ? iso(firstAt) : iso(run.created_at);
     const lastAt = stats?.last_at ?? run.updated_at;
     const endedAt = running ? nowIso : iso(lastAt);
-    let trigger: ActivityTrigger;
-    if (kind === "group") {
-      trigger = messageTrigger(run, agent?.name ?? "", deliveryByRun.get(runId) ?? {}, messagesBySeq);
-    } else if (kind === "schedule") {
-      trigger = { type: "routine", schedule_id: run.schedule_id };
-    } else {
-      trigger = { type: "direct", user_id: run.started_by_user_id };
-    }
+    const trigger = wakeTrigger(run, agent, deliveryByRun.get(runId), messagesBySeq);
     const posts = postsOf.get(runId) ?? [];
     const writes = [...(writesOf.get(runId) ?? []), ...codeWrites(run, endedAt)];
     const errors = errorsOf(run.errors, sinceMs);
-    const outcome = posts.length ? "posted" : writes.some((write) => write.kind !== "memory") ? "wrote" : "silent";
+    const outcome = wakeOutcome(posts, writes);
     const steps = stepsOf.get(runId);
     wakes.push({
       run_id: runId,
