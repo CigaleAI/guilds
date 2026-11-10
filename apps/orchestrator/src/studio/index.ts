@@ -32,6 +32,7 @@ import {
   readOwnedSession,
   sourceGuildSnapshot,
   viewSession,
+  type LiveStudioSession,
   type StudioSession,
 } from "./session.js";
 import { inventoryItem } from "./inventory.js";
@@ -55,6 +56,7 @@ import {
   listStudioDraftHeads,
   listStudioSessions,
   markStudioSessionCancelling,
+  type StudioInventoryRow,
   type StudioSessionRow,
   studioInventory,
   updateStudioSession,
@@ -108,6 +110,17 @@ export function parseStudioMode(value: string): StudioOpenMode {
   }
   return value;
 }
+
+/**
+ * An operator's turn as it is recorded under the session's lock: the session as it now generates,
+ * the generation's number, the system message it runs under, and the roster read for it.
+ */
+export type StudioTurn = {
+  session: StudioSessionRow;
+  generation: number;
+  systemContent: string;
+  rows: StudioInventoryRow[];
+};
 
 /** What an operator opens a Studio session with: its mode, source guild, coach model, and the session it continues. */
 export type StudioSessionRequest = {
@@ -340,11 +353,27 @@ export class StudioService {
       hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
     };
     // Resolve the pin before taking the lock: it reads guild data only.
-    const focus: ResolvedFocus | null =
-      focusInput === undefined || focusInput === null
-        ? null
-        : await resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts }, operator, focusInput, new Date());
-    const started = await withLockedSession(this.deps.db, session.id, async (client, locked) => {
+    const focus = await this.resolvePin(operator, focusInput ?? null);
+    const turn = await this.recordTurn(session, content, focus);
+    await this.startGeneration(turn, operator);
+    return viewSession(turn.session);
+  }
+
+  /** The evidence `request` pins a turn to, read as `operator`; null when the turn pins none. */
+  private async resolvePin(operator: StudioOperator, request: StudioFocusRequest | null): Promise<ResolvedFocus | null> {
+    if (request === null) {
+      return null;
+    }
+    return resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts }, operator, request, new Date());
+  }
+
+  /**
+   * Records the operator's turn on an active, idle session under its lock: claims a coach run,
+   * refreshes the system message from the live roster, stores the pin and the message, and marks
+   * the session generating.
+   */
+  private async recordTurn(session: LiveStudioSession, content: string, focus: ResolvedFocus | null): Promise<StudioTurn> {
+    return withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot generate");
       }
@@ -400,27 +429,30 @@ export class StudioService {
       );
       return { session: updated ?? locked, generation, systemContent, rows };
     });
-    const drafts = await listStudioDraftHeads(this.deps.db, started.session.id);
+  }
+
+  /** Starts the coach's generation of a recorded turn under the organisation's coach limits now, its tools reading as `operator`. */
+  private async startGeneration(turn: StudioTurn, operator: StudioOperator): Promise<void> {
+    const drafts = await listStudioDraftHeads(this.deps.db, turn.session.id);
     const generationContext = composeGenerationContext(
-      session.source_guild_id,
-      started.rows.map((row) => inventoryItem(row)),
+      operator.sourceGuildId,
+      turn.rows.map((row) => inventoryItem(row)),
       drafts[0] ?? null,
     );
-    const limits = (await this.policy.standing(started.session.org_id)).limits.coach.studio;
+    const limits = (await this.policy.standing(turn.session.org_id)).limits.coach.studio;
     this.runner.start(
       this.deps,
       {
         session: {
-          ...started.session,
-          config_snapshot: { ...started.session.config_snapshot, ...limits },
+          ...turn.session,
+          config_snapshot: { ...turn.session.config_snapshot, ...limits },
         },
-        generation: started.generation,
+        generation: turn.generation,
         generationContext,
-        systemContent: started.systemContent,
+        systemContent: turn.systemContent,
       },
-      { ...operator, session: started.session },
+      { ...operator, session: turn.session },
     );
-    return viewSession(started.session);
   }
 
   /** Stops the generation running on the session; a session no generation runs on is returned as it is. */
