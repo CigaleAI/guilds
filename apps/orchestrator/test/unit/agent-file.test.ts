@@ -197,15 +197,19 @@ test("readAgentFolder reports a file past the bytes left as the folder past its 
   );
 });
 
-test("writeAgentFile lets a failure other than a missing path through as it is", async () => {
+test("writeAgentFile refuses a path it cannot look up for a reason other than nothing being there", async () => {
   const { workspace } = workspaceWithHostFile();
   const tooLong = "x".repeat(300);
-  for (const filePath of [tooLong, `${tooLong}/brief.txt`]) {
-    await assert.rejects(
-      () => writeAgentFile(workspace, filePath, Buffer.from("one")),
-      (error: unknown) => !(error instanceof AgentFileError) && error instanceof Error && "code" in error && error.code === "ENAMETOOLONG",
-    );
-  }
+  await refusedWith(
+    () => writeAgentFile(workspace, tooLong, Buffer.from("one")),
+    "not_file",
+    "file_path must name a regular file, not a link or folder",
+  );
+  await refusedWith(
+    () => writeAgentFile(workspace, `${tooLong}/brief.txt`, Buffer.from("one")),
+    "not_file",
+    "file_path must be under /home/a_1 through folders, not links",
+  );
 });
 
 test("writeAgentFile goes only through real folders, creating the missing ones", async () => {

@@ -99,15 +99,18 @@ function isMissingPath(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-/** What is at a path, without following a link there; null when nothing is. */
-async function lstatIfPresent(target: string): Promise<Stats | null> {
+/**
+ * What is at a path, without following a link there; null when nothing is. Any other failure to
+ * look is refused as `not_file` with `refusal`.
+ */
+async function lstatIfPresent(target: string, refusal: string): Promise<Stats | null> {
   try {
     return await lstat(target);
   } catch (error) {
     if (isMissingPath(error)) {
       return null;
     }
-    throw error;
+    throw new AgentFileError(refusal, "not_file");
   }
 }
 
@@ -120,7 +123,7 @@ function throughFolders(workspaceDir: string): string {
  * is there, and refuses it when it is anything but a folder, a link included.
  */
 async function ensureWorkspaceFolder(folder: string, workspaceDir: string): Promise<void> {
-  const found = await lstatIfPresent(folder);
+  const found = await lstatIfPresent(folder, throughFolders(workspaceDir));
   if (found === null) {
     await mkdir(folder).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "EEXIST") throw error;
@@ -303,9 +306,10 @@ export async function writeAgentFile(workspaceDir: string, filePath: string, byt
     await ensureWorkspaceFolder(current, workspaceDir);
   }
   const target = path.join(current, name);
-  const existing = await lstatIfPresent(target);
+  const notRegularFile = "file_path must name a regular file, not a link or folder";
+  const existing = await lstatIfPresent(target, notRegularFile);
   if (existing !== null && !existing.isFile()) {
-    throw new AgentFileError("file_path must name a regular file, not a link or folder", "not_file");
+    throw new AgentFileError(notRegularFile, "not_file");
   }
   let handle: FileHandle;
   try {
