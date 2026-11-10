@@ -210,7 +210,7 @@ export function hoursWindow(hours: string | undefined, now: Date): ActivityWindo
 }
 
 /** A stored timestamp as milliseconds, or null when it is not a time. */
-function ms(value: string): number | null {
+function timestampMs(value: string): number | null {
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? null : time;
 }
@@ -224,7 +224,7 @@ function num(value: string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function preview(content: string, chars: number): string {
+function previewText(content: string, chars: number): string {
   return content.length > chars ? `${content.slice(0, chars).trimEnd()}…` : content;
 }
 
@@ -372,7 +372,7 @@ function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
       steps.calls.push({
         call_id: call.id || null,
         name: call.function.name,
-        arguments: preview(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
+        arguments: previewText(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
         error: result?.error || null,
         duration_ms: num(result?.duration_ms),
         at: iso(row.created_at),
@@ -380,7 +380,7 @@ function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
     }
     const said = row.text?.trim() ?? "";
     if (said) {
-      steps.reply = preview(said, ACTIVITY_PREVIEW_CHARS);
+      steps.reply = previewText(said, ACTIVITY_PREVIEW_CHARS);
     }
     byRun.set(runId, steps);
   }
@@ -398,7 +398,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
   const postsByRun = new Map<string, ActivityWake["posts"]>();
   for (const row of input.posts) {
     const seq = groupPostSeq(row.content);
-    const atMs = ms(row.created_at);
+    const atMs = timestampMs(row.created_at);
     if (seq === null || atMs === null || atMs < sinceMs) {
       continue;
     }
@@ -409,7 +409,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
 
   const writesByRun = new Map<string, ActivityWrite[]>();
   for (const row of input.changes) {
-    const atMs = ms(row.created_at);
+    const atMs = timestampMs(row.created_at);
     if (row.run_id === null || atMs === null || atMs < sinceMs) {
       continue;
     }
@@ -433,7 +433,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
   for (const row of input.openings) {
     const said = row.text?.trim() ?? "";
     if (said) {
-      openingByRun.set(row.run_id, preview(said, ACTIVITY_PREVIEW_CHARS));
+      openingByRun.set(row.run_id, previewText(said, ACTIVITY_PREVIEW_CHARS));
     }
   }
 
@@ -487,7 +487,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
       cost_usd: num(stats?.cost_usd) ?? 0,
     });
   }
-  wakes.sort((left, right) => (ms(left.started_at) ?? 0) - (ms(right.started_at) ?? 0));
+  wakes.sort((left, right) => (timestampMs(left.started_at) ?? 0) - (timestampMs(right.started_at) ?? 0));
 
   const messages: ActivityMessage[] = input.messages.map((row) => ({
     seq: row.seq,
@@ -498,7 +498,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
     author_user_id: row.author_user_id,
     source_run_id: row.source_run_id,
     tagged: row.tagged_names,
-    preview: preview(row.content, ACTIVITY_PREVIEW_CHARS),
+    preview: previewText(row.content, ACTIVITY_PREVIEW_CHARS),
     length: row.content.length,
   }));
 
