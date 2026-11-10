@@ -68,7 +68,6 @@ import {
   listGeneratingStudioSessions,
   listOrphanStudioDrafts,
   listStudioDraftHeads,
-  listStudioDrafts,
   listStudioSessions,
   markStudioSessionCancelling,
   type StudioDraftRow,
@@ -583,11 +582,6 @@ export class StudioService {
       { ...operator, session: started.session },
     );
     return this.viewSession(started.session);
-  }
-
-  /** Every draft of the session, newest first. */
-  sessionDrafts(session: StudioSessionRow): Promise<StudioDraftRow[]> {
-    return listStudioDrafts(this.deps.db, session.id);
   }
 
   /** The organisation's open drafts whose session's user is gone. */

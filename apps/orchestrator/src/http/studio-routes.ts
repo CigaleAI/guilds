@@ -28,7 +28,7 @@ import {
 import { listSessionConnections } from "../studio/connections.js";
 import { listGuildInventory } from "../studio/inventory.js";
 import { listSessionMessages } from "../studio/session.js";
-import { viewDraft } from "../studio/drafts.js";
+import { listSessionDrafts, viewDraft } from "../studio/drafts.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
 import { isOrgManager } from "../organisations/service.js";
@@ -380,7 +380,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return (await studio.sessionDrafts(session)).map(viewDraft);
+      return await listSessionDrafts(studio.deps.db, session.id);
     },
   );
 

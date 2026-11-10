@@ -24,7 +24,16 @@ import { excerptBytes } from "./system.js";
 import { getAgent, getAgentTask, listAgents, type AgentRow } from "../db/agents.js";
 import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
-import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioDraftRow, type StudioSessionRow } from "../db/studio.js";
+import {
+  getStudioDraft,
+  insertStudioDraft,
+  listStudioDraftHeads,
+  listStudioDrafts,
+  lockStudioDraft,
+  updateStudioDraft,
+  type StudioDraftRow,
+  type StudioSessionRow,
+} from "../db/studio.js";
 import { listConversationMessages, type ConversationMessageRow } from "../db/conversations.js";
 import {
   EVIDENCE_REF_KINDS,
@@ -443,6 +452,11 @@ export function viewDraft(row: StudioDraftRow): StudioDraft {
     size_delta_bytes: proposedBytes - baseBytes,
     large_deletion: deletionRatio >= STUDIO_LARGE_DELETION_RATIO || deleted > 8 * 1024,
   };
+}
+
+/** Every draft of the session as the operator app reads it, newest first. */
+export async function listSessionDrafts(db: Queryable, sessionId: StudioSessionRow["id"]): Promise<StudioDraft[]> {
+  return (await listStudioDrafts(db, sessionId)).map(viewDraft);
 }
 
 function isEvidenceRefKind(value: string): value is EvidenceRefKind {
