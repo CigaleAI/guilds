@@ -483,23 +483,21 @@ function mapSources(
   started: ReadonlyMap<string, number>,
   onMap: ReadonlySet<string>,
 ): MapNode[] {
-  const sources: MapNode[] = [];
-  const addSource = (id: string, agentId: string | null) =>
-    sources.push({
-      id,
-      kind: nodeKind(id),
-      count: started.get(id) ?? 0,
-      counts: emptyCounts(),
-      agentId,
-    });
-  for (const routine of routines) {
-    if (onMap.has(routine.agent_id)) addSource(routineNode(routine.id), routine.agent_id);
-  }
-  for (const id of started.keys()) {
-    if (onMap.has(id) || sources.some((source) => source.id === id)) continue;
-    addSource(id, null);
-  }
-  return sources;
+  const source = (id: string, agentId: string | null): MapNode => ({
+    id,
+    kind: nodeKind(id),
+    count: started.get(id) ?? 0,
+    counts: emptyCounts(),
+    agentId,
+  });
+  const routineSources = routines
+    .filter((routine) => onMap.has(routine.agent_id))
+    .map((routine) => source(routineNode(routine.id), routine.agent_id));
+  const listed = new Set(routineSources.map((node) => node.id));
+  const otherSources = [...started.keys()]
+    .filter((id) => !onMap.has(id) && !listed.has(id))
+    .map((id) => source(id, null));
+  return [...routineSources, ...otherSources];
 }
 
 /* ---------- Each agent's inputs and outputs ---------- */

@@ -345,3 +345,31 @@ test("a chain follows a wake once even when its posts reach it twice", () => {
   assert.equal(chain?.wakes, 2);
   assert.equal(chain?.steps[0]?.next[0]?.post?.call_id, "c_1");
 });
+
+test("the map's sources leave out a routine of an agent off the map unless it started a chain, and an agent on the map", () => {
+  const routine = (id: string, agentId: string) => ({
+    id,
+    agent_id: agentId,
+    description: id,
+    label: "Every hour (UTC)",
+    instruction: "Check.",
+  });
+  const data = view({
+    agents: [agent("a_desk"), agent("a_scout")],
+    routines: [routine("sch_desk", "a_desk"), routine("sch_gone", "a_gone"), routine("sch_idle", "a_idle")],
+    messages: [row(1, -30, "a_scout", "w_before")],
+    wakes: [
+      wake("w_tick", "a_desk", [1, 2], { kind: "schedule", trigger: { type: "routine", schedule_id: "sch_desk" } }),
+      wake("w_gone", "a_gone", [3, 4], { kind: "schedule", trigger: { type: "routine", schedule_id: "sch_gone" } }),
+      wake("w_desk", "a_desk", [5, 6], { trigger: byRow(1) }),
+    ],
+  });
+  const map = buildActivityMap(data, buildChains(data));
+  assert.deepEqual(
+    map.sources.map((node) => [node.id, node.kind, node.count, node.agentId]),
+    [
+      [routineNode("sch_desk"), "routine", 1, "a_desk"],
+      [routineNode("sch_gone"), "routine", 1, null],
+    ],
+  );
+});
