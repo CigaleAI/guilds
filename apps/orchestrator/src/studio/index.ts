@@ -95,9 +95,9 @@ export type StudioDeps = {
   mcp: StudioMcpClient | null;
   drafts: StudioDrafts;
   preview: PreviewDeps;
-  publishFilesChanged?: ((guildId: string) => Promise<void>) | undefined;
-  publishRoutinesChanged?: ((guildId: string, change: RoutineChange) => Promise<void>) | undefined;
-  isAgentBusy?: ((agentId: string) => boolean) | undefined;
+  publishFilesChanged?: StudioServiceDeps["publishFilesChanged"];
+  publishRoutinesChanged?: StudioServiceDeps["publishRoutinesChanged"];
+  isAgentBusy?: StudioServiceDeps["isAgentBusy"];
 };
 
 /** The mode Studio opens a session in; a session's other mode, `create`, is not available. */
