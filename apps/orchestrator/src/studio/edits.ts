@@ -488,39 +488,71 @@ export type StudioEditView = {
   applied_version?: number | null;
 };
 
-// What the operator reviews: the live content, the proposal, and whether the
-// live content still matches the base the proposal was built on.
-export async function viewEdit(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<StudioEditView> {
-  const { edit } = record.widget;
+/** Which request an edit view shows, what it asks for, and when the operator answered it. */
+type EditRequestView = Pick<StudioEditView, "seq" | "tool" | "status" | "title" | "reason" | "edit" | "resolved_at">;
+
+/** The request `record` holds as every edit view shows it: what its widget asks for, and when the operator answered it. */
+function editRequestView(record: EditRecord): EditRequestView {
   const status = editStatus(record);
-  const reviewer = reviewerOf(deps, scope, record);
-  if (reviewer) {
-    return viewReviewedEdit(record, status, reviewer);
-  }
-  let live: EditBase | null = null;
-  let error: string | null = null;
-  try {
-    live = await loadBaseFor(deps, scope, edit);
-  } catch (caught) {
-    if (!(caught instanceof StudioError)) throw caught;
-    error = caught.message;
-  }
-  const proposed = live ? proposedFor(live, record.args) : null;
   return {
     seq: record.seq,
     tool: record.toolName,
     status,
     title: record.widget.title,
     reason: record.widget.reason,
-    edit,
-    live: live ? liveContent(live) : null,
-    live_version: live && live.kind !== "guild" ? live.version : null,
-    proposed,
-    stale: live ? baseHash(live) !== edit.base_hash : true,
-    ...(error ? { error } : {}),
+    edit: record.widget.edit,
     ...(status !== "pending" ? { resolved_at: record.metadata.edit_resolved_at ?? null } : {}),
-    ...(status === "applied" ? { applied_version: record.metadata.edit_version ?? null } : {}),
   };
+}
+
+/**
+ * The live content a Memory, note body, or guild text edit replaces, read now with the proposal
+ * laid over it, or the refusal that stopped the read.
+ */
+export type LiveEditBase =
+  | { state: "read"; base: EditBase; proposed: string | GuildText }
+  | { state: "refused"; error: string };
+
+/** The live content the edit `record` replaces, read whatever the request's status. */
+async function readLiveEditBase(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<LiveEditBase> {
+  let base: EditBase;
+  try {
+    base = await loadBaseFor(deps, scope, record.widget.edit);
+  } catch (caught) {
+    if (!(caught instanceof StudioError)) throw caught;
+    return { state: "refused", error: caught.message };
+  }
+  return { state: "read", base, proposed: proposedFor(base, record.args) };
+}
+
+/**
+ * A Memory, note body, or guild text edit as the operator reviews it: the live content read for it
+ * beside the proposal, and whether that content still matches the base the proposal was built on.
+ */
+export function formatContentEditView(record: EditRecord, live: LiveEditBase): StudioEditView {
+  const request = editRequestView(record);
+  const applied = request.status === "applied" ? { applied_version: record.metadata.edit_version ?? null } : {};
+  if (live.state === "refused") {
+    return { ...request, live: null, live_version: null, proposed: null, stale: true, error: live.error, ...applied };
+  }
+  const { base } = live;
+  return {
+    ...request,
+    live: liveContent(base),
+    live_version: base.kind === "guild" ? null : base.version,
+    proposed: live.proposed,
+    stale: baseHash(base) !== request.edit.base_hash,
+    ...applied,
+  };
+}
+
+/** An edit request as the operator reviews it, with its live target read or reviewed now. */
+export async function viewEdit(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<StudioEditView> {
+  const reviewer = reviewerOf(deps, scope, record);
+  if (reviewer) {
+    return viewReviewedEdit(record, editStatus(record), reviewer);
+  }
+  return formatContentEditView(record, await readLiveEditBase(deps, scope, record));
 }
 
 // A table, note create or delete, routine, or access edit rendered as text on both
