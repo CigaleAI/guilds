@@ -367,24 +367,39 @@ function callById(messages: ConversationMessageRow[], callId: string): ToolCall 
   return undefined;
 }
 
+/** A recorded call of an edit tool: the tool, and its arguments as an object. */
+type EditToolCall = { name: StudioEditTool; args: JsonObject };
+
+/**
+ * The edit tool call of an assistant message in `messages` with the id `callId`; null when there is
+ * none, it calls another tool, or its arguments are not an object.
+ */
+function findEditCall(messages: ConversationMessageRow[], callId: string): EditToolCall | null {
+  const call = callById(messages, callId);
+  const args = call ? parseArguments(call.function.arguments) : null;
+  if (!call || !args || !isEditTool(call.function.name)) {
+    return null;
+  }
+  return { name: call.function.name, args };
+}
+
+/** The edit request the tool message at `seq` holds, beside the edit tool call it answers. */
 export function findEditRecord(messages: ConversationMessageRow[], seq: number): EditRecord {
   const message = messages.find((row) => row.seq === seq);
   const payload = message?.payload;
-  const widget = payload?.role === "tool" ? parseEditWidget(payload.content) : null;
-  if (!message || payload?.role !== "tool" || !widget) {
+  if (!message || payload?.role !== "tool") {
     throw new StudioNotFoundError("edit request not found");
   }
-  const toolCallId = payload.tool_call_id;
-  const call = callById(messages, toolCallId);
-  const args = call ? parseArguments(call.function.arguments) : null;
-  if (!call || !args || !isEditTool(call.function.name)) {
+  const widget = parseEditWidget(payload.content);
+  const call = findEditCall(messages, payload.tool_call_id);
+  if (!widget || !call) {
     throw new StudioNotFoundError("edit request not found");
   }
   return {
-    ...recordedEdit(widget.edit, args),
+    ...recordedEdit(widget.edit, call.args),
     seq,
-    toolName: call.function.name,
-    toolCallId,
+    toolName: call.name,
+    toolCallId: payload.tool_call_id,
     widget,
     metadata: message.metadata,
   };
