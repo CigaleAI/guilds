@@ -247,16 +247,16 @@ test("studio lists the guild's tools with who is offered each and how their call
     // A tool pin quotes how the agents called it and its latest failures.
     const deps = { db, artifacts };
     const operator = { orgId: "org_home", sourceGuildId: "guild_tl", hidden: NO_HIDDEN_GUILDS, user: userRow() };
-    const pinned = await resolveStudioFocus(deps, operator, { kind: "tool", tool_name: "note_get" });
+    const pinned = await resolveStudioFocus(deps, operator, { kind: "tool", tool_name: "note_get" }, new Date());
     assert.equal(pinned.focus.kind, "tool");
     assert.equal(pinned.focus.tool_name, "note_get");
     assert.equal(pinned.focus.label, "Tool · note_get");
     assert.match(pinned.content, /source="studio.focus.tool"/);
     assert.match(pinned.content, /a_scout: 2 calls, 1 failed/);
     assert.match(pinned.content, /run r_scout, call c2 \(a_scout\): note not found/);
-    const quiet = await resolveStudioFocus(deps, operator, { kind: "tool", tool_name: "schedule_list" });
+    const quiet = await resolveStudioFocus(deps, operator, { kind: "tool", tool_name: "schedule_list" }, new Date());
     assert.match(quiet.content, /no agent called it/);
-    await assert.rejects(resolveStudioFocus(deps, operator, { kind: "tool", tool_name: "not a tool!" }), /tool_name must be a tool name/);
+    await assert.rejects(resolveStudioFocus(deps, operator, { kind: "tool", tool_name: "not a tool!" }, new Date()), /tool_name must be a tool name/);
   } finally {
     await app.close();
     await database.close();

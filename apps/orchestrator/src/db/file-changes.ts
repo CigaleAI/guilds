@@ -71,7 +71,7 @@ export type FileChangeView = {
     agent_id: string | null;
     guild_id: string | null;
     org_id: string;
-    kind: string | null;
+    kind: FileChangeRow["run_kind"];
     status: string | null;
     schedule_id: string | null;
     created_at: string | null;

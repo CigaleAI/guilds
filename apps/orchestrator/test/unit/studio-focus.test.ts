@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { MemoryTimelineEntry } from "../../src/artifacts/memory.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { NO_HIDDEN_GUILDS } from "../../src/artifacts/types.js";
@@ -12,10 +13,25 @@ import type { MessageRow, RunRow } from "../../src/db/runs.js";
 import type { ScheduleRow } from "../../src/db/schedules.js";
 import type { StudioOperator } from "../../src/studio/actor.js";
 import { StudioNotFoundError, StudioUnprocessableError } from "../../src/studio/errors.js";
-import { resolveStudioFocus, type StudioFocusRequest } from "../../src/studio/focus.js";
+import type { FileChangeView } from "../../src/db/file-changes.js";
+import { issueItem } from "../../src/issues/index.js";
+import { scheduleItem } from "../../src/schedules/item.js";
+import {
+  formatFileFocus,
+  formatIssueFocus,
+  formatMemoryVersionFocus,
+  formatRoutineFocus,
+  formatRunFocus,
+  formatToolFocus,
+  resolveStudioFocus,
+  type FocusFile,
+  type StudioFocusRequest,
+} from "../../src/studio/focus.js";
 import { artifactRow } from "../helpers/artifacts.js";
 import { agentRow, scheduleRow } from "../helpers/generation.js";
 import { userRow } from "../helpers/users.js";
+
+const NOW = new Date("2026-11-10T12:00:00.000Z");
 
 /** What the fake database holds: the rows each query of a focus pin reads. */
 type FocusTables = {
@@ -119,7 +135,7 @@ const operator: StudioOperator = {
 
 function resolve(data: FocusTables, request: StudioFocusRequest) {
   const db = focusDatabase(data);
-  return resolveStudioFocus({ db, artifacts: artifactStore(db) }, operator, request);
+  return resolveStudioFocus({ db, artifacts: artifactStore(db) }, operator, request, NOW);
 }
 
 function run(overrides: Partial<RunRow> = {}): RunRow {
@@ -499,6 +515,7 @@ test("a tool pin with no calls says no agent called it", async () => {
   assert.equal(resolved.focus.label, "Tool · web_fetch");
   assert.match(resolved.content, /- no agent called it/);
   assert.doesNotMatch(resolved.content, /Latest failed calls/);
+  assert.match(resolved.content, /since="2026-11-03T12:00:00\.000Z" until="2026-11-10T12:00:00\.000Z"/);
 });
 
 test("a tool pin lists each agent's calls and the latest failures", async () => {
@@ -530,3 +547,179 @@ test("a tool pin refuses a name that is not a tool name", async () => {
 function unprocessable(message: string): (error: unknown) => boolean {
   return (error) => error instanceof StudioUnprocessableError && error.message === message;
 }
+
+const curator = agentRow({ id: "a_1", guild_id: "guild_1", org_id: "org_1", name: "curator" });
+
+test("format_run_focus_quotes_a_call_whose_result_is_missing_and_names_it_from_the_request", () => {
+  const request = callMessages[1]!;
+  const call = request.payload.role === "assistant" ? request.payload.tool_calls![0]! : null;
+  const resolved = formatRunFocus({
+    run: run(),
+    agent: curator,
+    focused: { callId: "call_1", target: undefined, request: { row: request, call: call! } },
+  });
+  assert.equal(resolved.focus.seq, 1);
+  assert.equal(resolved.focus.tool_name, "memory_write");
+  assert.equal(resolved.focus.label, "Schedule wake-up · memory_write · seq 1");
+  assert.match(resolved.content, /Requested at seq 1: memory_write with arguments\n\{"content":"kept"\}/);
+  assert.doesNotMatch(resolved.content, /Tool result/);
+  assert.match(resolved.content, /call_id="call_1" tool_name="memory_write"/);
+});
+
+test("format_run_focus_says_when_the_focused_step_failed", () => {
+  const failed = message(2, { role: "tool", tool_call_id: "call_1", content: "boom" }, { tool_name: "memory_write", error: "too long" });
+  const resolved = formatRunFocus({ run: run(), agent: curator, focused: { callId: null, target: failed, request: undefined } });
+  assert.match(resolved.content, /Tool result at seq 2 \(error: too long\):\nboom/);
+  assert.equal(resolved.focus.call_id, null);
+});
+
+test("format_run_focus_leaves_the_start_out_when_the_run_has_no_time", () => {
+  const resolved = formatRunFocus({ run: run({ created_at: null } as never), agent: curator, focused: null });
+  assert.match(resolved.content, /Schedule wake-up r_1 by curator \(completed\)\./);
+});
+
+/** A Memory version as the timeline lists it. */
+function entry(overrides: Partial<MemoryTimelineEntry> = {}): MemoryTimelineEntry {
+  return {
+    index: 2,
+    revision_id: "rev_2",
+    archive_display_path: "org/org_1/agents/a_1/memory/history/v2.md",
+    written_at: "2026-11-09T08:00:00.000Z",
+    actor: { type: "run", id: "r_1", name: "curator", detail: null },
+    run_id: "r_1",
+    content: "same line",
+    content_hash: "h",
+    previous_content: "same line",
+    stats: { added: 0, removed: 0 },
+    ...overrides,
+  };
+}
+
+test("format_memory_version_focus_points_at_the_run_that_wrote_it_and_quotes_no_empty_diff", () => {
+  const resolved = formatMemoryVersionFocus({ agent: curator, entry: entry() });
+  assert.equal(resolved.focus.run_id, "r_1");
+  assert.equal(resolved.focus.label, "Memory v2");
+  assert.match(resolved.content, /Written by: run curator at 2026-11-09T08:00:00\.000Z\./);
+  assert.match(resolved.content, /Change versus the previous version: \+0 −0 lines\./);
+  assert.doesNotMatch(resolved.content, /Changes versus the previous version:/);
+  assert.match(resolved.content, /studio_get_run\(run_id="r_1", tool_name="memory_write"\)/);
+});
+
+test("format_memory_version_focus_names_the_writer_by_its_detail_and_leaves_out_an_unknown_time", () => {
+  const resolved = formatMemoryVersionFocus({
+    agent: curator,
+    entry: entry({ actor: { type: "user", id: "u", name: "operator", detail: "user operator (Files pane)" }, written_at: null, run_id: null }),
+  });
+  assert.match(resolved.content, /Written by: user operator \(Files pane\)\./);
+  assert.doesNotMatch(resolved.content, /The run that wrote it/);
+});
+
+test("format_routine_focus_names_a_paused_window_routine_by_its_timing", () => {
+  const item = scheduleItem(scheduleRow({ id: "sch_1", agent_id: "a_1", description: "", instruction: "", paused: true }));
+  const windowed = { ...item, cron: null, window: { timezone: "UTC", start: "09:00", end: "17:00", max_wakes: 2 }, label: "Weekdays 9–17" } as never;
+  const resolved = formatRoutineFocus({ agent: curator, routine: windowed });
+  assert.equal(resolved.focus.label, "Routine · Weekdays 9–17");
+  assert.match(resolved.content, /Routine sch_1 of curator: Weekdays 9–17, paused\./);
+  assert.match(resolved.content, /Last fire: never\./);
+  assert.match(resolved.content, /window="\{&quot;timezone&quot;:&quot;UTC&quot;/);
+});
+
+/** A recorded change as the file-change history shows it. */
+function fileChange(overrides: Partial<FileChangeView> = {}): FileChangeView {
+  return {
+    id: "fc_1",
+    artifact_id: "art_1",
+    task_agent_id: null,
+    display_path: "org/org_1/brief.md",
+    operation: "update",
+    version: 2,
+    actor: { type: "run", id: "r_1", name: "curator" },
+    run: null,
+    tool: null,
+    studio: null,
+    created_at: "2026-11-10T09:30:00.000Z",
+    ...overrides,
+  };
+}
+
+const note: FocusFile = { agent: null, kind: "note", deleted: false, version: 2, content: "Cite the source." };
+
+test("format_file_focus_on_no_agent_stores_no_agent", () => {
+  const resolved = formatFileFocus({ displayPath: "org/org_1/brief.md", file: note, agent: null, changes: [], pinnedChange: null });
+  assert.equal(resolved.focus.agent_id, null);
+  assert.equal(resolved.focus.agent_name, null);
+  assert.equal(resolved.focus.change_id, null);
+  assert.equal(resolved.focus.run_id, null);
+  assert.equal(resolved.focus.label, "File · brief.md");
+  assert.match(resolved.content, /note org\/org_1\/brief\.md \(v2\)\.\nNo recorded change history for this path\.\n\nContent:/);
+  assert.match(resolved.content, /Full change history: studio_list_file_changes\(display_path="org\/org_1\/brief\.md"\)\.$/);
+  assert.doesNotMatch(resolved.content, /change_id=/);
+});
+
+test("format_file_focus_says_a_deleted_file_is_deleted_and_leaves_out_a_missing_version", () => {
+  const resolved = formatFileFocus({
+    displayPath: "org/org_1/brief.md",
+    file: { ...note, deleted: true, version: null },
+    agent: curator,
+    changes: [],
+    pinnedChange: null,
+  });
+  assert.equal(resolved.focus.agent_id, "a_1");
+  assert.match(resolved.content, /note \(deleted\) org\/org_1\/brief\.md\./);
+  assert.match(resolved.content, /kind="note \(deleted\)"/);
+});
+
+test("format_file_focus_names_a_run_change_without_a_tool_by_its_actor", () => {
+  const resolved = formatFileFocus({
+    displayPath: "org/org_1/brief.md",
+    file: note,
+    agent: null,
+    changes: [fileChange()],
+    pinnedChange: null,
+  });
+  assert.match(resolved.content, /Latest change: update to v2 by run r_1 at 2026-11-10T09:30:00\.000Z\./);
+  assert.doesNotMatch(resolved.content, /recorded changes in total/);
+});
+
+test("format_file_focus_points_at_the_writing_run_without_a_tool_call", () => {
+  const run = { id: "r_2", agent_id: "a_1", guild_id: "guild_1", org_id: "org_1", kind: "group" as const, status: "completed", schedule_id: null, created_at: null };
+  const resolved = formatFileFocus({
+    displayPath: "org/org_1/brief.md",
+    file: note,
+    agent: null,
+    changes: [fileChange({ run })],
+    pinnedChange: null,
+  });
+  assert.equal(resolved.focus.run_id, "r_2");
+  assert.equal(resolved.focus.call_id, null);
+  assert.match(resolved.content, /by run r_2 \(group delivery\) at /);
+  assert.match(resolved.content, /The writing run: studio_get_run\(run_id="r_2"\)\.$/);
+  assert.match(resolved.content, /change_run_kind="group"/);
+});
+
+test("format_issue_focus_takes_the_live_agent_name_when_the_agent_is_in_the_guild", () => {
+  const resolved = formatIssueFocus({ issue: issueItem(issue({ agent_name: "old name" })), agent: curator });
+  assert.equal(resolved.focus.agent_id, "a_1");
+  assert.equal(resolved.focus.agent_name, "curator");
+  assert.match(resolved.content, /reported by old name at /);
+  assert.match(resolved.content, /agent_id="a_1" agent_name="old name"/);
+});
+
+test("format_issue_focus_quotes_an_issue_without_detail", () => {
+  const resolved = formatIssueFocus({ issue: issueItem(issue({ detail: "", tool_name: null })), agent: null });
+  assert.equal(resolved.focus.tool_name, null);
+  assert.match(resolved.content, /Summary: Digest feed returned 401\n\nDetail:\n/);
+});
+
+test("format_tool_focus_quotes_the_window_it_counted_over", () => {
+  const window = { since: new Date("2026-11-03T12:00:00.000Z"), until: NOW };
+  const resolved = formatToolFocus({
+    name: "web_fetch",
+    window,
+    stats: [{ tool_name: "web_fetch", agent_id: "a_1", calls: 2, errors: 0, median_ms: null, last_at: null }],
+    failures: [],
+  });
+  assert.equal(resolved.focus.agent_id, null);
+  assert.match(resolved.content, /in the last 7 days:\n- a_1: 2 calls, 0 failed\n<\/evidence>/);
+  assert.match(resolved.content, /since="2026-11-03T12:00:00\.000Z" until="2026-11-10T12:00:00\.000Z"/);
+});
