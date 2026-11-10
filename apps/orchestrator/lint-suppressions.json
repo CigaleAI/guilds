@@ -512,11 +512,6 @@
       "count": 1
     }
   },
-  "src/studio/edits.ts": {
-    "limits/bumpy-road": {
-      "count": 1
-    }
-  },
   "src/studio/errors.ts": {
     "limits/erased-return-type": {
       "count": 1

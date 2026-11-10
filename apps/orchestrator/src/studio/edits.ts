@@ -139,6 +139,10 @@ function guildTextPatch(args: TextEditArguments): GuildTextPatch {
 
 type GuildBase = Extract<EditBase, { kind: "guild" }>;
 
+type MemoryBase = Extract<EditBase, { kind: "memory" }>;
+
+type NoteBase = Extract<EditBase, { kind: "note" }>;
+
 const GUILD_TEXT_FIELDS = ["about", "description"] as const;
 
 /** The guild text a studio_edit_guild call asks for, validated and laid over the live text. */
@@ -606,46 +610,88 @@ async function applyReviewed(deps: EditDeps, scope: EditScope, recorded: Recorde
   }
 }
 
-/** Writes the replacement a Memory, note body, or guild text edit proposes, over the base it was built on. */
-async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<AppliedEdit> {
-  const { edit } = record.widget;
-  const base = await loadBaseFor(deps, scope, edit);
-  if (baseHash(base) !== edit.base_hash) {
-    throw new StudioConflictError("the live content changed since this edit was proposed");
-  }
-  if (base.kind === "guild") {
-    if (guildTextHash(proposedGuildText(base, record.args)) !== edit.proposed_hash) {
-      throw new StudioConflictError("the proposal no longer matches its request");
-    }
-    const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), studioActor(scope));
-    if (!row) {
-      throw new StudioUnprocessableError("source guild not found");
-    }
-    return { version: null, guild: row };
-  }
-  const proposed = proposedContent(record.args);
-  if (hashArtifactContent(proposed) !== edit.proposed_hash) {
+/** Writes the guild text an edit proposes, refused when the proposal no longer matches its request. */
+async function applyGuildText(
+  deps: EditDeps,
+  scope: EditScope,
+  base: GuildBase,
+  record: EditRecord,
+): Promise<AppliedEdit> {
+  if (guildTextHash(proposedGuildText(base, record.args)) !== record.widget.edit.proposed_hash) {
     throw new StudioConflictError("the proposal no longer matches its request");
   }
+  const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), studioActor(scope));
+  if (!row) {
+    throw new StudioUnprocessableError("source guild not found");
+  }
+  return { version: null, guild: row };
+}
+
+/** The complete text a Memory or note body edit proposes, refused when it no longer matches its request. */
+function boundContent(record: EditRecord): string {
+  const proposed = proposedContent(record.args);
+  if (hashArtifactContent(proposed) !== record.widget.edit.proposed_hash) {
+    throw new StudioConflictError("the proposal no longer matches its request");
+  }
+  return proposed;
+}
+
+/** Writes the Memory an edit proposes over the version it was built on, linked to the call that proposed it. */
+async function applyMemory(
+  deps: EditDeps,
+  scope: EditScope,
+  base: MemoryBase,
+  record: EditRecord,
+): Promise<AppliedEdit> {
+  const content = boundContent(record);
   const toolCall = { id: record.toolCallId, name: record.toolName };
   try {
-    if (base.kind === "memory") {
-      const actor = { ...studioActor(scope, { agentId: base.agentId }), toolCall };
-      const { row } = await writeMemory(deps.artifacts, actor, base.agentId, {
-        content: proposed,
-        detail: record.toolName,
-        ...(base.version > 0 ? { expectedVersion: base.version } : {}),
-      });
-      return { version: row.version };
-    }
+    const actor = { ...studioActor(scope, { agentId: base.agentId }), toolCall };
+    const { row } = await writeMemory(deps.artifacts, actor, base.agentId, {
+      content,
+      detail: record.toolName,
+      ...(base.version > 0 ? { expectedVersion: base.version } : {}),
+    });
+    return { version: row.version };
+  } catch (error) {
+    throw artifactRefusal(error);
+  }
+}
+
+/** Writes the note body an edit proposes over the version it was built on, linked to the call that proposed it. */
+async function applyNoteBody(
+  deps: EditDeps,
+  scope: EditScope,
+  base: NoteBase,
+  record: EditRecord,
+): Promise<AppliedEdit> {
+  const content = boundContent(record);
+  const toolCall = { id: record.toolCallId, name: record.toolName };
+  try {
     const actor = { ...studioActor(scope, { guildId: base.guildId }), toolCall };
     const written = await writeNoteAt(deps.artifacts, actor, base.displayPath, {
-      content: proposed,
+      content,
       expectedVersion: base.version,
     });
     return { version: written.row.version };
   } catch (error) {
     throw artifactRefusal(error);
+  }
+}
+
+/** Writes the replacement a Memory, note body, or guild text edit proposes, over the base it was built on. */
+async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<AppliedEdit> {
+  const base = await loadBaseFor(deps, scope, record.widget.edit);
+  if (baseHash(base) !== record.widget.edit.base_hash) {
+    throw new StudioConflictError("the live content changed since this edit was proposed");
+  }
+  switch (base.kind) {
+    case "guild":
+      return applyGuildText(deps, scope, base, record);
+    case "memory":
+      return applyMemory(deps, scope, base, record);
+    case "note":
+      return applyNoteBody(deps, scope, base, record);
   }
 }
 
