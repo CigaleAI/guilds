@@ -1,4 +1,9 @@
 {
+  "src/access/index.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
   "src/agents/service.ts": {
     "limits/bare-error": {
       "count": 1
@@ -6,6 +11,21 @@
   },
   "src/app.ts": {
     "boundary/no-reexport-modules": {
+      "count": 1
+    }
+  },
+  "src/artifacts/access-lists.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/artifacts/columns.ts": {
+    "limits/bumpy-road": {
+      "count": 2
+    }
+  },
+  "src/artifacts/search.ts": {
+    "limits/bumpy-road": {
       "count": 1
     }
   },
@@ -27,6 +47,14 @@
   "src/avatars/index.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
+    },
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/avatars/looks.ts": {
+    "limits/bumpy-road": {
+      "count": 2
     }
   },
   "src/capabilities/index.ts": {
@@ -42,6 +70,9 @@
     "limits/bare-error": {
       "count": 1
     },
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "typescript/consistent-type-assertions": {
       "count": 1
     }
@@ -55,7 +86,15 @@
     }
   },
   "src/coding/git.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/inline-parameter-type": {
+      "count": 1
+    }
+  },
+  "src/coding/guild-repositories.ts": {
+    "limits/bumpy-road": {
       "count": 1
     }
   },
@@ -69,8 +108,26 @@
       "count": 1
     }
   },
+  "src/connectors/settings.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/conversation/runner.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
   "src/credentials/visibility.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/inline-parameter-type": {
+      "count": 1
+    }
+  },
+  "src/db/collections.ts": {
+    "limits/bumpy-road": {
       "count": 1
     }
   },
@@ -99,7 +156,15 @@
       "count": 1
     }
   },
+  "src/generation/coding.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
   "src/generation/completion.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/silent-catch": {
       "count": 2
     }
@@ -110,6 +175,9 @@
     }
   },
   "src/generation/machines.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/erased-return-type": {
       "count": 2
     },
@@ -135,6 +203,9 @@
   "src/groupchat/index.ts": {
     "limits/bare-error": {
       "count": 5
+    },
+    "limits/bumpy-road": {
+      "count": 1
     },
     "limits/inline-parameter-type": {
       "count": 2
@@ -174,6 +245,9 @@
     }
   },
   "src/lib/agent-file.ts": {
+    "limits/bumpy-road": {
+      "count": 2
+    },
     "limits/inline-parameter-type": {
       "count": 4
     },
@@ -201,18 +275,31 @@
       "count": 1
     }
   },
+  "src/lib/tool-schema.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
   "src/machines/index.ts": {
     "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/machines/layout.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/inline-parameter-type": {
       "count": 1
     }
   },
   "src/machines/placement.ts": {
     "limits/inline-parameter-type": {
+      "count": 1
+    }
+  },
+  "src/mcp/catalog.ts": {
+    "limits/bumpy-road": {
       "count": 1
     }
   },
@@ -228,6 +315,11 @@
   },
   "src/mcp/operator-call.ts": {
     "limits/inline-parameter-type": {
+      "count": 1
+    }
+  },
+  "src/mcp/pool.ts": {
+    "limits/bumpy-road": {
       "count": 1
     }
   },
@@ -250,6 +342,9 @@
     }
   },
   "src/net/http.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/erased-return-type": {
       "count": 1
     }
@@ -260,6 +355,9 @@
     }
   },
   "src/notes/store.ts": {
+    "limits/bumpy-road": {
+      "count": 3
+    },
     "limits/inline-parameter-type": {
       "count": 3
     },
@@ -307,6 +405,9 @@
     }
   },
   "src/prompts/index.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/inline-parameter-type": {
       "count": 2
     }
@@ -325,6 +426,9 @@
     }
   },
   "src/recipes/checklist.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/inline-parameter-type": {
       "count": 2
     }
@@ -369,9 +473,24 @@
       "count": 1
     }
   },
+  "src/registry/code.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/registry/install.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
   "src/run.ts": {
     "limits/inline-parameter-type": {
       "count": 1
+    }
+  },
+  "src/schedules/describe.ts": {
+    "limits/bumpy-road": {
+      "count": 2
     }
   },
   "src/scripts/catalog.ts": {
@@ -380,11 +499,17 @@
     }
   },
   "src/scripts/materialise.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/silent-catch": {
       "count": 1
     }
   },
   "src/secrets/agent.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    },
     "limits/silent-catch": {
       "count": 1
     }
@@ -400,12 +525,25 @@
     }
   },
   "src/studio/access.ts": {
+    "limits/bumpy-road": {
+      "count": 2
+    },
     "typescript/consistent-type-assertions": {
       "count": 1
     }
   },
+  "src/studio/activity.ts": {
+    "limits/bumpy-road": {
+      "count": 2
+    }
+  },
   "src/studio/connections.ts": {
     "limits/inline-parameter-type": {
+      "count": 1
+    }
+  },
+  "src/studio/edits.ts": {
+    "limits/bumpy-road": {
       "count": 1
     }
   },
@@ -415,6 +553,9 @@
     }
   },
   "src/studio/preview.ts": {
+    "limits/bumpy-road": {
+      "count": 2
+    },
     "typescript/explicit-module-boundary-types": {
       "count": 1
     }
@@ -455,6 +596,11 @@
     },
     "max-depth": {
       "count": 2
+    }
+  },
+  "src/typesafe/client.ts": {
+    "limits/bumpy-road": {
+      "count": 1
     }
   },
   "src/usage/index.ts": {
