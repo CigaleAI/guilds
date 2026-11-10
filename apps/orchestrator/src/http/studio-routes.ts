@@ -38,7 +38,7 @@ import { requireGuildAgent } from "../studio/source-guild.js";
 import { findOrgDraft, listOrphanDrafts, listSessionDrafts, publishDraft, viewDraft } from "../studio/drafts.js";
 import { applyEditRequest, declineEditRequest, viewEditRequest } from "../studio/edit-answers.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
-import type { StudioService } from "../studio/index.js";
+import { parseStudioMode, type StudioService } from "../studio/index.js";
 import { isOrgManager } from "../organisations/service.js";
 import {
   inspectSessionAgent,
@@ -172,7 +172,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     const temperature = body.coach_config?.temperature;
     const parentSessionId = body.parent_session_id?.trim() ?? "";
     return await studioOf(deps).createSession(user, org, {
-      mode: body.mode ?? "optimize",
+      mode: parseStudioMode(body.mode ?? "optimize"),
       sourceGuildId: body.source_guild_id ?? "",
       model: body.coach_config?.model ?? body.model ?? "",
       ...(temperature !== undefined ? { temperature } : {}),

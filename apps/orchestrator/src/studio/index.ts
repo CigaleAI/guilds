@@ -98,9 +98,20 @@ export type StudioDeps = {
   isAgentBusy?: ((agentId: string) => boolean) | undefined;
 };
 
+/** The mode Studio opens a session in; a session's other mode, `create`, is not available. */
+export type StudioOpenMode = Extract<StudioSessionRow["mode"], "optimize">;
+
+/** The mode a create request names, when Studio opens sessions in it; StudioUnprocessableError for any other. */
+export function parseStudioMode(value: string): StudioOpenMode {
+  if (value !== "optimize") {
+    throw new StudioUnprocessableError("create mode is not available");
+  }
+  return value;
+}
+
 /** What an operator opens a Studio session with: its mode, source guild, coach model, and the session it continues. */
 export type StudioSessionRequest = {
-  mode: string;
+  mode: StudioOpenMode;
   sourceGuildId: string;
   model: string;
   temperature?: number;
@@ -152,9 +163,6 @@ export class StudioService {
     org: OrgMembershipRow,
     request: StudioSessionRequest,
   ): Promise<StudioSession> {
-    if (request.mode !== "optimize") {
-      throw new StudioUnprocessableError("create mode is not available");
-    }
     const guild = await getGuild(this.deps.db, request.sourceGuildId);
     if (
       !guild ||
@@ -185,7 +193,7 @@ export class StudioService {
     };
     const sourceGuild = sourceGuildSnapshot(guild);
     const members = (await studioInventory(this.deps.db, guild.id, null)).map((row) => hydrateStudioMember(row));
-    const system = composeStudioSystemMessage(template, { mode: "optimize", config: coachConfig }, { sourceGuild, members });
+    const system = composeStudioSystemMessage(template, { mode: request.mode, config: coachConfig }, { sourceGuild, members });
     const now = new Date();
     const session = await insertStudioSession(
       this.deps.db,
@@ -194,7 +202,7 @@ export class StudioService {
         org_id: org.id,
         created_by_user_id: user.id,
         created_by_name: user.name,
-        mode: "optimize",
+        mode: request.mode,
         source_guild_id: guild.id,
         source_guild_snapshot: sourceGuild,
         config_snapshot: {
