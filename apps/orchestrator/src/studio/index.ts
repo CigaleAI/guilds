@@ -33,7 +33,6 @@ import { inspectAgent, type StudioInspector } from "./inspector.js";
 import { studioToolSchemas } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
 import {
-  answerLoginRequest,
   type StudioMcpClient,
 } from "./connections.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
@@ -310,19 +309,6 @@ export class StudioService {
       session.blocked_reason = "source_deleted";
     }
     return session;
-  }
-
-  // Grant or decline one login request from the Studio log. The answer and
-  // who gave it are kept on the request's tool message; a grant also adds the
-  // login to the session. The session lock serialises answers.
-  async resolveLogin(
-    session: StudioSessionRow,
-    user: UserRow,
-    seq: number,
-    decision: "grant" | "decline",
-  ): Promise<StudioSession> {
-    assertLive(session);
-    return viewSession(await answerLoginRequest(this.deps.db, session, { user, seq, decision }));
   }
 
   async archive(session: StudioSessionRow): Promise<StudioSession> {

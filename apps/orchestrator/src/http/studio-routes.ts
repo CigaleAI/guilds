@@ -26,6 +26,8 @@ import {
   type StateDeps,
 } from "../studio/state-data.js";
 import {
+  declineLoginRequest,
+  grantLoginRequest,
   grantSessionConnection,
   listSessionConnections,
   withdrawSessionConnection,
@@ -235,7 +237,9 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       const seq = Number(request.params.seq);
-      return await studio.resolveLogin(session, user, seq, request.body.decision);
+      return request.body.decision === "grant"
+        ? await grantLoginRequest(studio.deps.db, session, user, seq)
+        : await declineLoginRequest(studio.deps.db, session, user, seq);
     },
   );
 

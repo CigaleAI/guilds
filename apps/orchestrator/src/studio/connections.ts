@@ -1,3 +1,4 @@
+import type pg from "pg";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
@@ -12,7 +13,7 @@ import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import { projectGuildConnections, type PreviewDeps, type ProjectedConnection } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
-import { grantedConnectionIds, viewSession, type LiveStudioSession, type StudioSession } from "./session.js";
+import { assertLive, grantedConnectionIds, viewSession, type LiveStudioSession, type StudioSession } from "./session.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
@@ -288,43 +289,74 @@ export async function grantedWith(
   return current.includes(connectionId) ? current : [...current, connectionId];
 }
 
-/** An operator's answer to the login request at `seq` of a session's log. */
+/** How an operator answered a login request, and who answered it. */
 export type LoginAnswer = {
+  status: Exclude<StudioLoginStatus, "pending">;
   user: UserRow;
-  seq: number;
-  decision: "grant" | "decline";
 };
 
-// Grant or decline one login request from the Studio log. The answer and
-// who gave it are kept on the request's tool message; a grant also adds the
-// login to the session. The session lock serialises answers.
-export async function answerLoginRequest(
-  db: Queryable,
-  session: LiveStudioSession,
-  { user, seq, decision }: LoginAnswer,
-): Promise<StudioSessionRow> {
-  const sessionId = session.id;
-  return withLockedSession(db, sessionId, async (client, locked) => {
-    const record = findLoginRecord(await getConversationMessage(client, "studio", sessionId, seq), seq);
-    const status = loginStatus(record);
-    if (status !== "pending") {
-      throw new StudioConflictError(`login request is already ${status}`);
-    }
-    const now = new Date();
-    await updateConversationMessage(
-      client,
-      "studio",
-      { session_id: sessionId, seq, payload: record.payload, metadata: {
+/**
+ * The login request at `seq` of the session's log, read in `client` under the session's lock, which
+ * serialises answers so a request is answered once; StudioConflictError when it is already answered.
+ */
+async function readPendingLogin(client: pg.PoolClient, sessionId: string, seq: number): Promise<LoginRecord> {
+  const record = findLoginRecord(await getConversationMessage(client, "studio", sessionId, seq), seq);
+  const status = loginStatus(record);
+  if (status !== "pending") {
+    throw new StudioConflictError(`login request is already ${status}`);
+  }
+  return record;
+}
+
+/** Keeps the answer, when it was given, and who gave it on the request's tool message. */
+async function markLogin(
+  client: pg.PoolClient,
+  sessionId: string,
+  record: LoginRecord,
+  answer: LoginAnswer,
+): Promise<void> {
+  await updateConversationMessage(client, "studio", {
+    session_id: sessionId,
+    seq: record.seq,
+    payload: record.payload,
+    metadata: {
       ...record.metadata,
-      access_status: decision === "grant" ? "granted" : "declined",
-      access_resolved_at: now.toISOString(),
-      resolved_by_user_id: user.id ?? null,
-    } },
-    );
-    if (decision === "decline") {
-      return locked;
-    }
-    const next = await grantedWith(db, locked, record.connectionId);
-    return (await updateStudioSession(client, sessionId, { granted_connection_ids: next }, now)) ?? locked;
+      access_status: answer.status,
+      access_resolved_at: new Date().toISOString(),
+      resolved_by_user_id: answer.user.id ?? null,
+    },
   });
+}
+
+/** Grants the login request at `seq` of a live session's log as `user`, and adds its login to the session. */
+export async function grantLoginRequest(
+  db: Queryable,
+  session: StudioSessionRow,
+  user: UserRow,
+  seq: number,
+): Promise<StudioSession> {
+  assertLive(session);
+  const granted = await withLockedSession(db, session.id, async (client, locked) => {
+    const record = await readPendingLogin(client, session.id, seq);
+    await markLogin(client, session.id, record, { status: "granted", user });
+    const next = await grantedWith(db, locked, record.connectionId);
+    return (await updateStudioSession(client, session.id, { granted_connection_ids: next }, new Date())) ?? locked;
+  });
+  return viewSession(granted);
+}
+
+/** Declines the login request at `seq` of a live session's log as `user`; the session's logins stay as they are. */
+export async function declineLoginRequest(
+  db: Queryable,
+  session: StudioSessionRow,
+  user: UserRow,
+  seq: number,
+): Promise<StudioSession> {
+  assertLive(session);
+  const declined = await withLockedSession(db, session.id, async (client, locked) => {
+    const record = await readPendingLogin(client, session.id, seq);
+    await markLogin(client, session.id, record, { status: "declined", user });
+    return locked;
+  });
+  return viewSession(declined);
 }
