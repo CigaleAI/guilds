@@ -55,8 +55,6 @@ import { getGuild, hiddenGuildsFor, type GuildRow } from "../db/guilds.js";
 import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
-  type ConversationUsageRow,
-  conversationUsageByOrg,
   insertConversationMessage,
   listConversationMessages,
   nextConversationSeq,
@@ -593,11 +591,6 @@ export class StudioService {
       return null;
     }
     return { draft, session: await getStudioSession(this.deps.db, draft.session_id) };
-  }
-
-  /** What Studio sessions spent, per organisation. */
-  usageByOrg(): Promise<Map<string, ConversationUsageRow>> {
-    return conversationUsageByOrg(this.deps.db, "studio");
   }
 
   /** Stops the generation running on the session; a session no generation runs on is returned as it is. */

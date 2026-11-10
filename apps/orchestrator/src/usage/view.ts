@@ -5,6 +5,7 @@ import type { Queryable } from "../db/pg.js";
 import { listOrgs, type OrgRow } from "../db/orgs.js";
 import { getUsage, listUsageCounters } from "../db/usage.js";
 import { canSeeGuild } from "../guilds/operators.js";
+import { studioUsageByOrg } from "../studio/session.js";
 import {
   orgUsage,
   usageCounterKey,
@@ -22,14 +23,13 @@ import {
 /** A coach whose conversations spend tokens, by organisation. */
 type CoachUsage = { usageByOrg(): Promise<UsageRows> };
 
-/** What usage is read through: the database, and the Studio and Builder coaches a box runs. */
+/** What usage is read through: the database, and the Builder coach a box runs. */
 export type UsageServices = {
   db: Queryable;
-  studio?: CoachUsage | undefined;
   builder?: CoachUsage | undefined;
 };
 
-/** The usage the box has recorded: its counters, and what the Studio and Builder coaches spent per organisation. */
+/** The usage the box has recorded: its counters, and what Studio sessions and the Builder coach spent per organisation. */
 async function recordedUsage(services: UsageServices): Promise<RecordedUsage> {
   const counters = new Map<string, UsageSource>();
   for (const row of await listUsageCounters(services.db)) {
@@ -37,7 +37,7 @@ async function recordedUsage(services: UsageServices): Promise<RecordedUsage> {
   }
   return {
     counters,
-    studioByOrg: services.studio ? await services.studio.usageByOrg() : new Map(),
+    studioByOrg: await studioUsageByOrg(services.db),
     builderByOrg: services.builder ? await services.builder.usageByOrg() : new Map(),
   };
 }
