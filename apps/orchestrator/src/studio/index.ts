@@ -27,7 +27,7 @@ import {
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
 import { assertLive, sourceGuildSnapshot, viewSession, type StudioSession } from "./session.js";
-import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
+import { inventoryItem } from "./inventory.js";
 import { studioToolSchemas } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
 import type { StudioMcpClient } from "./connections.js";
@@ -323,12 +323,6 @@ export class StudioService {
       );
       return viewSession(updated ?? locked);
     });
-  }
-
-  async inventory(session: StudioSessionRow): Promise<StudioInventoryItem[]> {
-    assertLive(session);
-    const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
-    return rows.map((row) => inventoryItem(row));
   }
 
   async postMessage(

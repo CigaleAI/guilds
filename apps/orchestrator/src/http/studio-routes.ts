@@ -32,7 +32,7 @@ import {
   listSessionConnections,
   withdrawSessionConnection,
 } from "../studio/connections.js";
-import { listGuildInventory } from "../studio/inventory.js";
+import { listGuildInventory, listSessionInventory } from "../studio/inventory.js";
 import { assertLive, listSessionMessages, viewSession } from "../studio/session.js";
 import { requireGuildAgent } from "../studio/source-guild.js";
 import { findOrgDraft, listOrphanDrafts, listSessionDrafts, publishDraft, viewDraft } from "../studio/drafts.js";
@@ -303,7 +303,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.inventory(session);
+      return await listSessionInventory(studio.deps.db, session);
     },
   );
 
