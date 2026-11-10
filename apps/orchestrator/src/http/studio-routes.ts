@@ -28,7 +28,7 @@ import {
 import { listSessionConnections } from "../studio/connections.js";
 import { listGuildInventory } from "../studio/inventory.js";
 import { listSessionMessages } from "../studio/session.js";
-import { listSessionDrafts, viewDraft } from "../studio/drafts.js";
+import { listOrphanDrafts, listSessionDrafts, viewDraft } from "../studio/drafts.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
 import { isOrgManager } from "../organisations/service.js";
@@ -390,7 +390,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     if (!(await isOrgManager(db, org.id, user.id))) {
       throw new HttpError(403, "forbidden");
     }
-    return (await studioOf(deps).orphanDrafts(org.id)).map(viewDraft);
+    return await listOrphanDrafts(studioOf(deps).deps.db, org.id);
   });
 
   app.get("/api/studio/drafts/:draft_id", { schema: { params: DraftParams } }, async (request) => {

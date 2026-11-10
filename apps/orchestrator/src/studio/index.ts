@@ -66,7 +66,6 @@ import {
   getStudioSession,
   insertStudioSession,
   listGeneratingStudioSessions,
-  listOrphanStudioDrafts,
   listStudioDraftHeads,
   listStudioSessions,
   markStudioSessionCancelling,
@@ -582,11 +581,6 @@ export class StudioService {
       { ...operator, session: started.session },
     );
     return this.viewSession(started.session);
-  }
-
-  /** The organisation's open drafts whose session's user is gone. */
-  orphanDrafts(orgId: string): Promise<StudioDraftRow[]> {
-    return listOrphanStudioDrafts(this.deps.db, orgId);
   }
 
   /** The draft and its session when the draft belongs to the organisation, otherwise null. */

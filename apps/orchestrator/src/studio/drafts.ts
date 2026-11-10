@@ -27,6 +27,7 @@ import type { Queryable } from "../db/pg.js";
 import {
   getStudioDraft,
   insertStudioDraft,
+  listOrphanStudioDrafts,
   listStudioDraftHeads,
   listStudioDrafts,
   lockStudioDraft,
@@ -457,6 +458,11 @@ export function viewDraft(row: StudioDraftRow): StudioDraft {
 /** Every draft of the session as the operator app reads it, newest first. */
 export async function listSessionDrafts(db: Queryable, sessionId: StudioSessionRow["id"]): Promise<StudioDraft[]> {
   return (await listStudioDrafts(db, sessionId)).map(viewDraft);
+}
+
+/** The organisation's open drafts whose session's user is gone, as the operator app reads them. */
+export async function listOrphanDrafts(db: Queryable, orgId: string): Promise<StudioDraft[]> {
+  return (await listOrphanStudioDrafts(db, orgId)).map(viewDraft);
 }
 
 function isEvidenceRefKind(value: string): value is EvidenceRefKind {
