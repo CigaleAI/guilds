@@ -83,6 +83,9 @@ function throughFolders(workspaceDir: string): string {
   return `file_path must be under ${homeOfDirectory(workspaceDir)} through folders, not links`;
 }
 
+/** A file an agent named, read: its path on the host and its bytes. */
+export type AgentFile = { path: string; bytes: Buffer };
+
 /**
  * Reads a file an agent named in its workspace. The workspace is the agent's folder on this
  * host, which its machine mounts at /home/<agent id>, so a link the agent planted there resolves
@@ -94,7 +97,7 @@ export async function readAgentFile(
   workspaceDir: string,
   filePath: string,
   options: { maxBytes: number },
-): Promise<{ path: string; bytes: Buffer }> {
+): Promise<AgentFile> {
   const resolved = resolveAgentFilePath(workspaceDir, filePath);
   let real: string;
   try {
@@ -145,6 +148,9 @@ export async function readAgentFile(
 /** One file of a folder an agent named: its path in the folder, with `/` between parts, and its bytes. */
 export type AgentFolderFile = { path: string; bytes: Buffer };
 
+/** A folder an agent named, read: its path on the host and its files. */
+export type AgentFolder = { path: string; files: AgentFolderFile[] };
+
 /**
  * Reads every file under a folder an agent named in its workspace, sorted by path. The folder has
  * to stay in the workspace once every link is followed, and each file is read as `readAgentFile`
@@ -155,7 +161,7 @@ export async function readAgentFolder(
   workspaceDir: string,
   folderPath: string,
   options: { maxFiles: number; maxBytes: number },
-): Promise<{ path: string; files: AgentFolderFile[] }> {
+): Promise<AgentFolder> {
   const resolved = resolveAgentFilePath(workspaceDir, folderPath);
   const root = await realpath(workspaceDir);
   let real: string;
@@ -193,7 +199,7 @@ export async function readAgentFolder(
   const files: AgentFolderFile[] = [];
   let total = 0;
   for (const name of names) {
-    let read: { bytes: Buffer };
+    let read: AgentFile;
     try {
       read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), { maxBytes: options.maxBytes - total });
     } catch (error) {

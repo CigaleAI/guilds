@@ -1,6 +1,6 @@
 import { unlink } from "node:fs/promises";
 import { SecretNameTaken } from "../db/errors.js";
-import { AgentFileError, homeOfDirectory, readAgentFile } from "../lib/agent-file.js";
+import { type AgentFile, AgentFileError, homeOfDirectory, readAgentFile } from "../lib/agent-file.js";
 import { CredentialError, secretPayload, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
@@ -57,7 +57,7 @@ export type StoredSecret = {
  * stripped; a value of only whitespace is refused.
  */
 export async function readSecretFile(workspaceDir: string, file: string): Promise<{ value: string; path: string }> {
-  let read: { path: string; bytes: Buffer };
+  let read: AgentFile;
   try {
     read = await readAgentFile(workspaceDir, file, { maxBytes: SECRET_FILE_MAX_BYTES });
   } catch (error) {

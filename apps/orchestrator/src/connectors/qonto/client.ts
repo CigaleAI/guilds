@@ -1,7 +1,7 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Static, TSchema } from "typebox";
-import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
+import { type AgentFile, AgentFileError, readAgentFile } from "../../lib/agent-file.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { clipRows, fmtNum, joinParts } from "../format.js";
 import { decodeBody, failureMessage, type ConnectorApi } from "../response.js";
@@ -365,7 +365,7 @@ export async function readInvoiceFile(
   workspaceDir: string,
   filePath: string,
 ): Promise<{ path: string; name: string; mime: string; content: Buffer }> {
-  let read: { path: string; bytes: Buffer };
+  let read: AgentFile;
   try {
     read = await readAgentFile(workspaceDir, filePath, { maxBytes: MAX_ATTACHMENT_BYTES });
   } catch (error) {
