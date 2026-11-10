@@ -1,7 +1,8 @@
 // The Studio inventory: each agent of the source guild as the roster lists it.
 
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
-import type { StudioInventoryRow } from "../db/studio.js";
+import type { Queryable } from "../db/pg.js";
+import { studioInventory, type StudioInventoryRow } from "../db/studio.js";
 import { hydrateStudioMember, type RosterAgent, type StudioMemberHydration } from "./system.js";
 
 /** An agent as the Studio inventory lists it: its roster header's fields, its avatar, excerpt, and latest run. */
@@ -61,4 +62,9 @@ export function inventoryItem(row: StudioInventoryRow): StudioInventoryItem {
     draft_status: row.draft_status,
     warnings,
   };
+}
+
+/** The guild's agents as the Studio inventory lists them, outside any session. */
+export async function listGuildInventory(db: Queryable, guildId: string): Promise<StudioInventoryItem[]> {
+  return (await studioInventory(db, guildId, null)).map((row) => inventoryItem(row));
 }

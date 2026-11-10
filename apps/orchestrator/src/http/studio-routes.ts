@@ -26,6 +26,7 @@ import {
   type StateDeps,
 } from "../studio/state-data.js";
 import { listSessionConnections } from "../studio/connections.js";
+import { listGuildInventory } from "../studio/inventory.js";
 import { viewDraft } from "../studio/drafts.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
@@ -275,9 +276,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
-      const studio: StudioService = studioOf(deps);
-      const rows = await studio.guildInventory(String(guild.id));
-      return rows.map((row) => studio.inventoryItem(row));
+      return await listGuildInventory(studioOf(deps).deps.db, guild.id);
     },
   );
 

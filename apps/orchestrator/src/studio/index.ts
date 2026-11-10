@@ -73,7 +73,6 @@ import {
   listStudioSessions,
   markStudioSessionCancelling,
   type StudioDraftRow,
-  type StudioInventoryRow,
   type StudioSessionRow,
   studioInventory,
   updateStudioSession,
@@ -457,10 +456,6 @@ export class StudioService {
     return rows.map((row) => inventoryItem(row));
   }
 
-  inventoryItem(row: StudioInventoryRow): StudioInventoryItem {
-    return inventoryItem(row);
-  }
-
   /** One agent of the session's guild as the inspector shows it to `user`, without what is hidden from them. */
   async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<StudioInspector> {
     this.assertLive(session);
@@ -589,11 +584,6 @@ export class StudioService {
       { ...operator, session: started.session },
     );
     return this.viewSession(started.session);
-  }
-
-  /** The guild's agents as the coach sees them, outside any session. */
-  guildInventory(guildId: string): Promise<StudioInventoryRow[]> {
-    return studioInventory(this.deps.db, guildId, null);
   }
 
   /** The session's conversation, in order. */
