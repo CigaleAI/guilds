@@ -351,8 +351,8 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
         artifacts,
         db,
         schedules,
-        drafts: studio.drafts,
-        preview: studio.previewDeps(),
+        drafts: studio.deps.drafts,
+        preview: studio.deps.preview,
         notesSystemPath: notes.systemPath(),
       },
       {
@@ -399,7 +399,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     const after = await getAgentTask(db, "org_home", "a_studio");
     assert.equal(after?.content_text, "Write concise notes and stop when the artifact exists.\n");
 
-    const second = await studio.drafts.createFromTool(
+    const second = await studio.deps.drafts.createFromTool(
       db,
       {
         session: (await getStudioSession(db, session.id))!,
@@ -435,7 +435,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.equal(otherSession.statusCode, 404);
     assert.deepEqual(otherSession.json(), { detail: "studio session not found" });
 
-    const orphaned = await studio.drafts.createFromTool(
+    const orphaned = await studio.deps.drafts.createFromTool(
       db,
       {
         session: (await getStudioSession(db, session.id))!,
@@ -599,8 +599,8 @@ test("studio reads agent access, script source, and granted connections", { time
       artifacts,
       db,
       schedules,
-      drafts: studio.drafts,
-      preview: studio.previewDeps(),
+      drafts: studio.deps.drafts,
+      preview: studio.deps.preview,
       notesSystemPath: notes.systemPath(),
       mcp,
     };
@@ -1007,8 +1007,8 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       artifacts,
       db,
       schedules,
-      drafts: studio.drafts,
-      preview: studio.previewDeps(),
+      drafts: studio.deps.drafts,
+      preview: studio.deps.preview,
       notesSystemPath: notes.systemPath(),
     };
     const toolCtx = (): StudioToolCall => ({
@@ -1314,8 +1314,8 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       artifacts,
       db,
       schedules,
-      drafts: studio.drafts,
-      preview: studio.previewDeps(),
+      drafts: studio.deps.drafts,
+      preview: studio.deps.preview,
       notesSystemPath: notes.systemPath(),
     };
     const ctx = async (): Promise<StudioToolCall> => ({
@@ -1577,8 +1577,8 @@ test("studio proposes tables to create, change, and delete that the operator app
       artifacts,
       db,
       schedules,
-      drafts: studio.drafts,
-      preview: studio.previewDeps(),
+      drafts: studio.deps.drafts,
+      preview: studio.deps.preview,
       notesSystemPath: notes.systemPath(),
     };
     const ctx = async (): Promise<StudioToolCall> => ({
@@ -1950,8 +1950,8 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       artifacts,
       db,
       schedules,
-      drafts: studio.drafts,
-      preview: studio.previewDeps(),
+      drafts: studio.deps.drafts,
+      preview: studio.deps.preview,
       notesSystemPath: notes.systemPath(),
     };
     const ctx = async (): Promise<StudioToolCall> => ({
@@ -2213,8 +2213,8 @@ test("studio proposes routines to create, change, and delete that the operator a
       artifacts,
       db,
       schedules,
-      drafts: studio.drafts,
-      preview: studio.previewDeps(),
+      drafts: studio.deps.drafts,
+      preview: studio.deps.preview,
       notesSystemPath: notes.systemPath(),
     };
     const ctx = async (): Promise<StudioToolCall> => ({

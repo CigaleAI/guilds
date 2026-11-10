@@ -175,14 +175,12 @@ export type StudioSessionRequest = {
 
 export class StudioService {
   deps: StudioDeps;
-  drafts: StudioDrafts;
   runner: StudioRunner;
   admission: AdmissionCoordinator;
   policy: OrgPolicy;
   credentials: ModelCredentialsProvider;
 
   constructor(services: StudioServiceDeps) {
-    this.drafts = new StudioDrafts(services.db, services.artifacts);
     this.deps = {
       db: services.db,
       artifacts: services.artifacts,
@@ -190,7 +188,7 @@ export class StudioService {
       schedules: services.schedules,
       notesSystemPath: services.notesSystemPath,
       mcp: services.mcp ?? null,
-      drafts: this.drafts,
+      drafts: new StudioDrafts(services.db, services.artifacts),
       preview: { db: previewDatabase(services.db), artifacts: services.artifacts, scripts: services.scripts },
       publishFilesChanged: services.publishFilesChanged,
       publishRoutinesChanged: services.publishRoutinesChanged,
@@ -205,10 +203,6 @@ export class StudioService {
       policy: this.policy,
       credentials: this.credentials,
     });
-  }
-
-  previewDeps(): PreviewDeps {
-    return this.deps.preview;
   }
 
   async reconcile(): Promise<void> {
@@ -691,7 +685,7 @@ export class StudioService {
     user: UserRow,
     draftId: string,
   ): Promise<PublishedDraft> {
-    const result = await this.drafts.publish(this.deps, session, user, draftId);
+    const result = await this.deps.drafts.publish(this.deps, session, user, draftId);
     return this.announcePublish(session, result);
   }
 

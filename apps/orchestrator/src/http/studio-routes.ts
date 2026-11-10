@@ -407,7 +407,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const body = request.body;
       const loaded = await loadDraftContext(deps, user, org, request.params.draft_id);
-      return await studioOf(deps).drafts.revise(
+      return await studioOf(deps).deps.drafts.revise(
         loaded.session,
         user,
         loaded.draft.id,
@@ -439,7 +439,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       if (loaded.orphan) {
         throw new HttpError(403, "orphan recovery cannot discard");
       }
-      return await studioOf(deps).drafts.discard(loaded.session, loaded.user, loaded.draft.id);
+      return await studioOf(deps).deps.drafts.discard(loaded.session, loaded.user, loaded.draft.id);
     },
   );
 
@@ -529,7 +529,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       studio.assertLive(session);
       const window = activityWindow(request.query, new Date());
-      const services = { db, preview: studio.previewDeps() };
+      const services = { db, preview: studio.deps.preview };
       return await loadGuildTools(services, session.source_guild_id, window);
     },
   );

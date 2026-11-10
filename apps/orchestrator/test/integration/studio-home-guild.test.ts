@@ -98,8 +98,8 @@ test(
         artifacts,
         db,
         schedules,
-        drafts: studio.drafts,
-        preview: studio.previewDeps(),
+        drafts: studio.deps.drafts,
+        preview: studio.deps.preview,
         notesSystemPath: notes.systemPath(),
       };
       const succeeds = (pending: Promise<unknown>) => pending.then(() => true, () => false);
