@@ -175,7 +175,8 @@ export type ActivityInput = {
   openings: RunOpeningRow[];
   messages: ActivityGroupMessageRow[];
   schedules: ScheduleRow[];
-  generating: (runId: string) => boolean;
+  /** The ids of the runs among `runs` still generating. */
+  generating: ReadonlySet<string>;
 };
 
 /** The window a Studio query asks for: how many hours back, and until when, both as query text. */
@@ -491,7 +492,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
     const agent = agentsById.get(agentId);
     const kind = run.kind;
     const stats = statsByRun.get(runId);
-    const running = input.generating(runId);
+    const running = input.generating.has(runId);
     const firstAt = stats?.first_at ?? null;
     if (kind === "direct" && firstAt === null && !running) {
       // A direct chat whose only activity predates the window.
@@ -641,6 +642,6 @@ export async function loadGuildActivity(
     openings,
     messages,
     schedules,
-    generating: (runId) => services.generation?.isGenerating(runId) ?? false,
+    generating: new Set(runIds.filter((runId) => services.generation?.isGenerating(runId))),
   });
 }

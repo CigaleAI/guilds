@@ -72,7 +72,7 @@ function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
     openings: [],
     messages: [],
     schedules: [],
-    generating: () => false,
+    generating: new Set(),
     ...overrides,
   };
 }
@@ -334,7 +334,7 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
         { run_id: "r_old", last_seq: 20, first_at: null, last_at: ts("13:30:00"), cost_usd: 0 },
         { run_id: "r_chat", last_seq: 40, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: 0.3 },
       ],
-      generating: (runId) => runId === "r_live",
+      generating: new Set(["r_live"]),
     }),
   );
   assert.deepEqual(view.wakes.map((wake) => wake.run_id), ["r_chat", "r_live"]);
