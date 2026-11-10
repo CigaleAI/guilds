@@ -414,11 +414,6 @@
       "count": 1
     }
   },
-  "src/studio/focus.ts": {
-    "limits/silent-catch": {
-      "count": 2
-    }
-  },
   "src/studio/preview.ts": {
     "typescript/explicit-module-boundary-types": {
       "count": 1

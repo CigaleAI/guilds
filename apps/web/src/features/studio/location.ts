@@ -163,7 +163,7 @@ function fileLocation(focus: StudioFocus): StudioSearch {
   const path = focus.display_path ?? "";
   return compact({
     section: "state",
-    agent: focus.agent_id,
+    agent: focus.agent_id ?? undefined,
     tab: "list",
     item: (path && tablePathOf(path)) || path || undefined,
   });

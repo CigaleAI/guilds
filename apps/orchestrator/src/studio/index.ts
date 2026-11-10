@@ -42,7 +42,8 @@ import {
   type StudioConnection,
   type StudioMcpClient,
 } from "./connections.js";
-import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type ResolvedFocus, type StudioFocusRequest } from "./focus.js";
+import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
+import type { ResolvedFocus } from "./focus-evidence.js";
 import { isAccessTool } from "./access.js";
 import {
   applyEdit,
@@ -56,7 +57,7 @@ import {
 } from "./edits.js";
 import type { RoutineChange } from "../schedules/operator.js";
 import { getGuild, hiddenGuildsFor, type GuildRow } from "../db/guilds.js";
-import { getAgent } from "../db/agents.js";
+import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
   type ConversationMessageRow,
@@ -420,11 +421,11 @@ export class StudioService {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot change inspector");
       }
-      if (agentId) {
-        const agent = await getAgent(this.deps.db, agentId);
-        if (!agent || agent.guild_id !== locked.source_guild_id) {
-          throw new StudioUnprocessableError("agent is not in the source guild");
-        }
+      if (
+        agentId &&
+        (!locked.source_guild_id || !(await findGuildAgent(this.deps.db, locked.source_guild_id, locked.org_id, agentId)))
+      ) {
+        throw new StudioUnprocessableError("agent is not in the source guild");
       }
       const updated = await updateStudioSession(
         client,
@@ -506,7 +507,7 @@ export class StudioService {
     const focus: ResolvedFocus | null =
       focusInput === undefined || focusInput === null
         ? null
-        : await resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts }, operator, focusInput);
+        : await resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts }, operator, focusInput, new Date());
     const started = await withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot generate");
@@ -646,7 +647,7 @@ export class StudioService {
     user: UserRow,
     org: OrgMembershipRow,
   ): Promise<StudioSession> {
-    if (session.blocked_reason !== "input_token_limit" && session.status !== "blocked") {
+    if (session.status !== "blocked" || session.blocked_reason !== "input_token_limit") {
       throw new StudioUnprocessableError("session is not blocked on input tokens");
     }
     if (!session.source_guild_id) {
@@ -788,11 +789,8 @@ export class StudioService {
     }
   }
 
-  async requireGuildAgent(session: StudioSessionRow, agentId: string): Promise<AgentRow> {
-    const agent = await getAgent(this.deps.db, agentId);
-    if (!agent || agent.guild_id !== session.source_guild_id) {
-      throw new StudioNotFoundError("agent not found");
-    }
-    return agent;
+  /** The agent `agentId` names in the session's source guild; StudioNotFoundError when it names none there. */
+  async requireGuildAgent(session: LiveStudioSession, agentId: string): Promise<AgentRow> {
+    return requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
   }
 }

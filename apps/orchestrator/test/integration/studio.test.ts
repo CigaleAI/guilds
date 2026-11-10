@@ -1100,7 +1100,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       headers: AUTH,
       payload: { content: "Why?", focus: { kind: "run", run_id: "r_far" } },
     });
-    assert.equal(foreign.statusCode, 422, foreign.body);
+    assert.equal(foreign.statusCode, 404, foreign.body);
     await insertIssue(db,
       {
         issueId: "iss_far",
@@ -1131,6 +1131,17 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       payload: { content: "Why?", focus: { kind: "draft" } },
     });
     assert.equal(badKind.statusCode, 422, badKind.body);
+    const digitStep = await app.inject({
+      method: "POST",
+      url: `/api/studio/sessions/${session.id}/messages`,
+      headers: AUTH,
+      payload: { content: "Why?", focus: { kind: "run", run_id: "r_ev_wake", seq: "1" } },
+    });
+    assert.equal(digitStep.statusCode, 422, digitStep.body);
+    assert.ok(
+      (digitStep.json() as { detail: Array<{ loc: string[] }> }).detail.some((problem) => problem.loc.join(".") === "body.focus.seq"),
+      digitStep.body,
+    );
 
     // A pinned question can start a new session that records its parent.
     const child = await app.inject({

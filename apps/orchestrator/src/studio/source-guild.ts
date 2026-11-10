@@ -1,10 +1,36 @@
-// The source guild a Studio tool call acts on: its agent a handle names, and the scope its edits take.
+// The source guild a Studio session acts on: its agent an id or a handle names, and the scope a
+// tool call's edits take.
 
 import { getAgent, listAgents, type AgentRow } from "../db/agents.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { EditScope } from "./edits.js";
-import { StudioUnprocessableError } from "./errors.js";
+import { StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import type { StudioToolCall, StudioToolDeps } from "./tools.js";
+
+/** The agent `agentId` names, when it is an agent of the source guild in the organisation; null otherwise. */
+export async function findGuildAgent(
+  db: Queryable,
+  sourceGuildId: string,
+  orgId: string,
+  agentId: string,
+): Promise<AgentRow | null> {
+  const agent = await getAgent(db, agentId);
+  return agent && agent.guild_id === sourceGuildId && agent.org_id === orgId ? agent : null;
+}
+
+/** The agent `agentId` names in the source guild of the organisation; StudioNotFoundError when it names none there. */
+export async function requireGuildAgent(
+  db: Queryable,
+  sourceGuildId: string,
+  orgId: string,
+  agentId: string,
+): Promise<AgentRow> {
+  const agent = await findGuildAgent(db, sourceGuildId, orgId, agentId);
+  if (!agent) {
+    throw new StudioNotFoundError("agent not found");
+  }
+  return agent;
+}
 
 export async function resolveHandle(
   deps: StudioToolDeps,

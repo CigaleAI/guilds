@@ -8,6 +8,7 @@ import {
   groupPostSeq,
   hoursWindow,
   messageFloor,
+  windowBefore,
   projectActivity,
   type ActivityInput,
 } from "../../src/studio/activity.js";
@@ -96,6 +97,12 @@ test("the window is hours back from until, capped, and never in the future", () 
   assert.throws(() => activityWindow({ hours: "0" }, NOW), StudioUnprocessableError);
   assert.throws(() => activityWindow({ hours: "soon" }, NOW), StudioUnprocessableError);
   assert.throws(() => activityWindow({ until: "yesterday" }, NOW), StudioUnprocessableError);
+});
+
+test("a window before a time spans the hours that end at it", () => {
+  const window = windowBefore(NOW, 6);
+  assert.equal(window.since.toISOString(), "2026-09-25T11:40:00.000Z");
+  assert.equal(window.until, NOW);
 });
 
 test("an hours window ends now and takes the default when it names no hours", () => {

@@ -208,11 +208,19 @@ test("isStudioMessageCommit admits a pinned row whose focus is the one the serve
   assert.equal(isStudioMessageCommit(pinned(runFocus)), true);
 });
 
+test("isStudioMessageCommit admits a pinned row whose focus names no agent", () => {
+  assert.equal(
+    isStudioMessageCommit(pinned({ ...runFocus, kind: "tool", agent_id: null, agent_name: null })),
+    true,
+  );
+});
+
 test("isStudioMessageCommit refuses a pinned row whose focus is not a focus", () => {
   assert.equal(isStudioMessageCommit(pinned([])), false);
   assert.equal(isStudioMessageCommit(pinned({ ...runFocus, kind: 4 })), false);
   assert.equal(isStudioMessageCommit(pinned({ ...runFocus, kind: "focus" })), false);
   assert.equal(isStudioMessageCommit(pinned({ ...runFocus, call_id: 9 })), false);
+  assert.equal(isStudioMessageCommit(pinned({ ...runFocus, agent_id: 9 })), false);
   assert.equal(isStudioMessageCommit(pinned({ kind: "run", label: "Group run" })), false);
 });
 

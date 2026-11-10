@@ -170,11 +170,11 @@ export type MessageMetadata = { generation?: number } & Partial<RunInputMetadata
 
 export type StudioFocusKind = "run" | "memory_version" | "routine" | "file" | "issue" | "tool";
 
-/** The piece of evidence a Studio focus pin names. */
+/** The piece of evidence a Studio focus pin names, and its agent; null for a pin on no agent. */
 export type StudioFocus = {
   kind: StudioFocusKind;
-  agent_id: string;
-  agent_name: string;
+  agent_id: string | null;
+  agent_name: string | null;
   label: string;
   run_id: string | null;
   seq: number | null;

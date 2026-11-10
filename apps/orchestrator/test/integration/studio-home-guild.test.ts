@@ -130,7 +130,7 @@ test(
           read: await succeeds(studioGetArtifact.handler(toolDeps, toolCall, { display_path: homedPath })),
           changes: changes.changes.length > 0,
           pinned: await succeeds(
-            resolveStudioFocus({ db, artifacts }, operator, { kind: "file", display_path: homedPath }),
+            resolveStudioFocus({ db, artifacts }, operator, { kind: "file", display_path: homedPath }, new Date()),
           ),
         };
       };

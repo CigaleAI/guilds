@@ -477,11 +477,14 @@ A stale base returns 409.
 ### Focus pins
 
 `POST …/messages` takes the pin as `focus`. The server resolves the
-ids against the source guild (422 otherwise). It inserts two user rows
-in the same generation:
+ids against the source guild: an agent outside it is 404, and any other
+id it cannot resolve is 422. It inserts two user rows in the same
+generation:
 
 1. an evidence block with `source: studio_focus` and the resolved pin
-   in `metadata.focus`
+   in `metadata.focus`; its `agent_id` and `agent_name` are null for a
+   tool pin, and for a file or issue pin that names no agent of the
+   source guild
 2. the question
 
 The block is `<evidence source="studio.focus.<kind>">`. It carries:
@@ -837,8 +840,9 @@ Message body: `{ "content", "focus"? }` where `content` is a string and
 `focus` is null or `{ kind: run | memory_version | routine | file |
 issue | tool, agent_id?, run_id?, seq?, call_id?, revision_id?,
 version_index?, schedule_id?, display_path?, change_id?, issue_id?,
-tool_name? }`. `kind` is a string, each id and path a string or null,
-and `seq` and `version_index` a number, its digits, or null.
+tool_name? }`. Each id and path is a non-empty string or null, and
+`seq` and `version_index` a non-negative integer or null; any other
+value is refused with 422 before the pin is resolved.
 
 Revise body: `{ "proposed_content", "expected_head_id"? }`, both
 strings; `expected_head_id` is the draft itself when left out. Target
@@ -923,6 +927,8 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/paging.ts`, `source-guild.ts` | What the tools share: paging and byte caps, and the source-guild agent a handle names |
 | `apps/orchestrator/src/studio/actor.ts` | The operator every tool, pin, and edit reads and writes as: the session's user with the private guilds hidden from them |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
+| `apps/orchestrator/src/studio/focus-file.ts` | File focus pins: the file a display path names, its changes, and the block the coach reads |
+| `apps/orchestrator/src/studio/focus-evidence.ts` | What every focus pin's stored focus and evidence block are built from |
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
 | `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |
 | `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |

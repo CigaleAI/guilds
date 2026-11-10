@@ -3,11 +3,11 @@ import { test } from "node:test";
 import type { StudioFocus } from "../../api/types/studio";
 import { agentTab, focusLocation, parseStudioSearch, revealedStep, tablePathOf } from "./location";
 
-/** A pin of `kind` naming only the ids given; an empty agent id names no agent. */
+/** A pin of `kind` naming only the ids given, on no agent unless they name one. */
 function pin(fields: Pick<StudioFocus, "kind"> & Partial<StudioFocus>): StudioFocus {
   return {
-    agent_id: "",
-    agent_name: "",
+    agent_id: null,
+    agent_name: null,
     label: "",
     run_id: null,
     seq: null,
@@ -84,6 +84,14 @@ test("a file pin opens State with the file selected, and a record its table", ()
     section: "state",
     agent: "a_1",
     tab: "list",
+  });
+});
+
+test("a file pin on no agent opens State without an agent", () => {
+  assert.deepEqual(focusLocation(pin({ kind: "file", display_path: "org/o/notes/brief.md" })), {
+    section: "state",
+    tab: "list",
+    item: "org/o/notes/brief.md",
   });
 });
 
