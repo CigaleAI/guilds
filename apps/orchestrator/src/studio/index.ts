@@ -646,7 +646,7 @@ export class StudioService {
     user: UserRow,
     org: OrgMembershipRow,
   ): Promise<StudioSession> {
-    if (session.blocked_reason !== "input_token_limit" && session.status !== "blocked") {
+    if (session.status !== "blocked" || session.blocked_reason !== "input_token_limit") {
       throw new StudioUnprocessableError("session is not blocked on input tokens");
     }
     if (!session.source_guild_id) {

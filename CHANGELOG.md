@@ -8,6 +8,10 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** `POST /api/studio/sessions/:id/continue` refuses, with
+a 422, a Studio session that is not blocked at its input-token limit,
+including one blocked because its source guild was deleted.
+
 **Rebuild.** A run's stream says the generation finished only once
 the run is completed and its generation released, and the message
 says where the run stands (`open`, `waiting`, `generating`,
