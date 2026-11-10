@@ -9,7 +9,9 @@ import { agentRow } from "../helpers/generation.js";
 /** A database whose agents table holds `agents`, read by id. */
 function agentsDatabase(agents: AgentRow[]): Queryable {
   return {
-    query: async (_text: string, params: unknown[] = []) => ({ rows: agents.filter((agent) => agent.id === params[0]) }),
+    query: async (_text: string, params: unknown[] = []) => ({
+      rows: agents.filter((agent) => agent.id === params[0]),
+    }),
   } as unknown as Queryable;
 }
 

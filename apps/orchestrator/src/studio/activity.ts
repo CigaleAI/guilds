@@ -196,6 +196,11 @@ export function activityWindow(query: ActivityWindowQuery, now: Date): ActivityW
     }
     until = parsed.getTime() > now.getTime() ? now : parsed;
   }
+  return windowBefore(until, hours);
+}
+
+/** The `hours` that end at `until`. */
+export function windowBefore(until: Date, hours: number): ActivityWindow {
   return { since: new Date(until.getTime() - hours * 3_600_000), until };
 }
 

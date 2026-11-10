@@ -28,7 +28,13 @@ function studioSession(
   status: StudioSessionRow["status"],
   blockedReason: StudioSessionRow["blocked_reason"],
 ): StudioSessionRow {
-  return { id: "session-1", org_id: "org-1", source_guild_id: "guild-1", status, blocked_reason: blockedReason } as never;
+  return {
+    id: "session-1",
+    org_id: "org-1",
+    source_guild_id: "guild-1",
+    status,
+    blocked_reason: blockedReason,
+  } as never;
 }
 
 const user = userRow({ id: "user-1", name: "operator" });
@@ -44,7 +50,9 @@ for (const [named, status, blockedReason] of refused) {
   test(`continue_refuses_${named}`, async () => {
     await assert.rejects(
       studioService().continueSession(studioSession(status, blockedReason), user, org),
-      (error) => error instanceof StudioUnprocessableError && error.message === "session is not blocked on input tokens",
+      (error) =>
+        error instanceof StudioUnprocessableError &&
+        error.message === "session is not blocked on input tokens",
     );
   });
 }

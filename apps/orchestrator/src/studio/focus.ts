@@ -10,7 +10,7 @@ import { issueItem, type IssueItem } from "../issues/index.js";
 import { scheduleItem, type ScheduleItem } from "../schedules/item.js";
 import { capBytes } from "../lib/bytes.js";
 import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
-import { ACTIVITY_MAX_HOURS, hoursWindow, type ActivityWindow } from "./activity.js";
+import { ACTIVITY_MAX_HOURS, windowBefore, type ActivityWindow } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { studioChangeTarget, studioReachesParsed, type StudioReachDeps } from "./reach.js";
 import { getAgentTask, type AgentRow } from "../db/agents.js";
@@ -107,7 +107,12 @@ function emptyFocus(kind: StudioFocusKind, agent: AgentRow | null): StudioFocus 
   };
 }
 
-function evidenceBlock(source: string, coordinates: EvidenceAttributes, body: string, tail: string): string {
+function evidenceBlock(
+  source: string,
+  coordinates: EvidenceAttributes,
+  body: string,
+  tail: string,
+): string {
   return `${wrapEvidence({ source, coordinates, body })}\n\n${tail}`;
 }
 
@@ -122,7 +127,6 @@ async function requirePinnedAgent(
   }
   return requireGuildAgent(deps.db, operator.sourceGuildId, operator.orgId, input.agent_id);
 }
-
 
 /** Where in a run a focus points: a step by its sequence, or a tool call by its id. */
 type RunPoint = { seq: number | null; callId: string | null };
@@ -146,7 +150,10 @@ export type RunEvidence = { run: RunRow; agent: AgentRow; focused: FocusedMessag
 /** The assistant message of `rows` that made the call `callId`, and the call. */
 function callRequest(rows: MessageRow[], callId: string): CallRequest | undefined {
   for (const row of rows) {
-    const call = row.payload.role === "assistant" ? row.payload.tool_calls?.find((item) => item.id === callId) : undefined;
+    const call =
+      row.payload.role === "assistant"
+        ? row.payload.tool_calls?.find((item) => item.id === callId)
+        : undefined;
     if (call) {
       return { row, call };
     }
@@ -161,7 +168,9 @@ function callRequest(rows: MessageRow[], callId: string): CallRequest | undefine
 function focusedMessages(rows: MessageRow[], at: RunPoint): FocusedMessages {
   const { callId } = at;
   if (callId !== null) {
-    const target = rows.find((row) => row.payload.role === "tool" && row.payload.tool_call_id === callId);
+    const target = rows.find(
+      (row) => row.payload.role === "tool" && row.payload.tool_call_id === callId,
+    );
     const request = callRequest(rows, callId);
     if (!target && !request) {
       throw new StudioUnprocessableError("focus tool call not found in that run");
@@ -185,7 +194,12 @@ async function loadRunEvidence(
   if (!run) {
     throw new StudioUnprocessableError("focus run not found");
   }
-  const agent = await requireGuildAgent(deps.db, operator.sourceGuildId, operator.orgId, run.agent_id);
+  const agent = await requireGuildAgent(
+    deps.db,
+    operator.sourceGuildId,
+    operator.orgId,
+    run.agent_id,
+  );
   const at: RunPoint = { seq: input.seq ?? null, callId: input.call_id ?? null };
   if (at.seq === null && at.callId === null) {
     return { run, agent, focused: null };
@@ -213,8 +227,15 @@ function focusedMessageLines({ target, request }: FocusedMessages): string[] {
   }
   const { payload, metadata } = target;
   const label =
-    payload.role === "tool" ? `Tool result at seq ${target.seq}` : `${payload.role} message at seq ${target.seq}`;
-  return [...requested, "", `${label}${metadata.error ? ` (error: ${metadata.error})` : ""}:`, excerpt(payload.content)];
+    payload.role === "tool"
+      ? `Tool result at seq ${target.seq}`
+      : `${payload.role} message at seq ${target.seq}`;
+  return [
+    ...requested,
+    "",
+    `${label}${metadata.error ? ` (error: ${metadata.error})` : ""}:`,
+    excerpt(payload.content),
+  ];
 }
 
 /** A run pin as the coach reads it: the run, its errors, and the step or call it points at. */
@@ -271,12 +292,14 @@ export function formatRunFocus({ run, agent, focused }: RunEvidence): ResolvedFo
   };
 }
 
-
 /** A version of an agent's Memory a pin names, and the agent. */
 export type MemoryVersionEvidence = { agent: AgentRow; entry: MemoryTimelineEntry };
 
 /** The version a pin names: by revision id, else by index, else the live one. */
-function findEntry(entries: MemoryTimelineEntry[], input: StudioFocusRequest): MemoryTimelineEntry | undefined {
+function findEntry(
+  entries: MemoryTimelineEntry[],
+  input: StudioFocusRequest,
+): MemoryTimelineEntry | undefined {
   const revisionId = input.revision_id;
   if (revisionId && revisionId !== "live") {
     return entries.find((entry) => entry.revision_id === revisionId);
@@ -295,7 +318,11 @@ async function loadMemoryVersionEvidence(
   input: StudioFocusRequest,
 ): Promise<MemoryVersionEvidence> {
   const agent = await requirePinnedAgent(deps, operator, input);
-  const { entries } = await memoryTimeline(deps.artifacts, studioActor(operator, { agentId: agent.id }), agent.id);
+  const { entries } = await memoryTimeline(
+    deps.artifacts,
+    studioActor(operator, { agentId: agent.id }),
+    agent.id,
+  );
   const entry = findEntry(entries, input);
   if (!entry) {
     throw new StudioUnprocessableError("focus memory version not found");
@@ -332,7 +359,9 @@ export function formatMemoryVersionFocus({ agent, entry }: MemoryVersionEvidence
     `Written by: ${writer}${entry.written_at ? ` at ${entry.written_at}` : ""}.`,
     ...memoryChangeLines(entry),
   ];
-  const versionRef = entry.revision_id ? `revision_id="${entry.revision_id}"` : `version_index=${entry.index}`;
+  const versionRef = entry.revision_id
+    ? `revision_id="${entry.revision_id}"`
+    : `version_index=${entry.index}`;
   const tail = [
     `Load the full version with studio_get_memory_version(agent_id="${agent.id}", ${versionRef}).`,
     ...(entry.run_id
@@ -366,7 +395,6 @@ export function formatMemoryVersionFocus({ agent, entry }: MemoryVersionEvidence
     ),
   };
 }
-
 
 /** A routine a pin names, and the agent it wakes. */
 export type RoutineEvidence = { agent: AgentRow; routine: ScheduleItem };
@@ -420,13 +448,15 @@ export function formatRoutineFocus({ agent, routine }: RoutineEvidence): Resolve
   };
 }
 
-
 /** What a file pin's path holds: an agent's Task, an archived Memory revision, or an artifact of its kind. */
 export type FocusFileKind = "task" | "memory_revision" | ArtifactRow["kind"];
 
-/** A file as a pin quotes it: whose it is, what it is, whether it is deleted, its version, and its text. */
+/**
+ * A file as a pin quotes it: the agent whose file the path names (null for an organisation file),
+ * what it is, whether it is deleted, its version, and its text.
+ */
 export type FocusFile = {
-  agent: AgentRow | null;
+  owner: AgentRow | null;
   kind: FocusFileKind;
   deleted: boolean;
   version: number | null;
@@ -465,19 +495,32 @@ async function requireFileAgent(
 }
 
 /** An agent's Task as a file pin quotes it. */
-async function loadTaskFile(deps: StudioReachDeps, operator: StudioOperator, agent: AgentRow): Promise<FocusFile> {
-  const task = await getAgentTask(deps.db, operator.orgId, agent.id);
-  return { agent, kind: "task", deleted: false, version: task?.version ?? null, content: task?.content_text ?? "" };
+async function loadTaskFile(
+  deps: StudioReachDeps,
+  operator: StudioOperator,
+  owner: AgentRow,
+): Promise<FocusFile> {
+  const task = await getAgentTask(deps.db, operator.orgId, owner.id);
+  return {
+    owner,
+    kind: "task",
+    deleted: false,
+    version: task?.version ?? null,
+    content: task?.content_text ?? "",
+  };
 }
 
 /** What an artifact view holds as a file pin quotes it: an object's fields as JSON, any other row's text. */
-function focusFileOfView(view: ArtifactView, agent: AgentRow | null): FocusFile {
+function focusFileOfView(view: ArtifactView, owner: AgentRow | null): FocusFile {
   if (view.kind === "revision") {
-    return { agent, kind: "memory_revision", deleted: false, version: null, content: view.content };
+    return { owner, kind: "memory_revision", deleted: false, version: null, content: view.content };
   }
   const { row } = view;
-  const content = row.kind === "object" ? JSON.stringify(row.content_json ?? {}, null, 2) : (row.content_text ?? "");
-  return { agent, kind: row.kind, deleted: view.deleted, version: row.version, content };
+  const content =
+    row.kind === "object"
+      ? JSON.stringify(row.content_json ?? {}, null, 2)
+      : (row.content_text ?? "");
+  return { owner, kind: row.kind, deleted: view.deleted, version: row.version, content };
 }
 
 /** The file at `displayPath` as the session's operator reads it, refused outside what the session reaches. */
@@ -492,11 +535,11 @@ async function loadFileForFocus(
     if (parsed.kind === "collection") {
       throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
     }
-    const agent = await requireFileAgent(deps, operator, parsed);
-    if (agent && parsed.kind === "artifact" && parsed.path === "" && parsed.key === TASK_KEY) {
-      return await loadTaskFile(deps, operator, agent);
+    const owner = await requireFileAgent(deps, operator, parsed);
+    if (owner && parsed.kind === "artifact" && parsed.path === "" && parsed.key === TASK_KEY) {
+      return await loadTaskFile(deps, operator, owner);
     }
-    return focusFileOfView(await artifactAt(deps.artifacts, actor, displayPath), agent);
+    return focusFileOfView(await artifactAt(deps.artifacts, actor, displayPath), owner);
   } catch (error) {
     if (error instanceof ArtifactError) {
       throw new StudioUnprocessableError(error.message);
@@ -520,8 +563,10 @@ async function loadFileEvidence(
   }
   const file = await loadFileForFocus(deps, operator, displayPath);
   const agent =
-    file.agent ??
-    (input.agent_id ? await findGuildAgent(deps.db, operator.sourceGuildId, operator.orgId, input.agent_id) : null);
+    file.owner ??
+    (input.agent_id
+      ? await findGuildAgent(deps.db, operator.sourceGuildId, operator.orgId, input.agent_id)
+      : null);
   const target = await studioChangeTarget(deps, operator, parseDisplayPath(displayPath));
   const changes = await listFileChanges(deps.db, operator.orgId, target);
   const changeId = input.change_id;
@@ -547,7 +592,9 @@ function changeSummary(change: FileChangeView): string {
 }
 
 /** The ids a file focus takes from the change it quotes: the change, and the run and tool call that made it. */
-function changeFocusIds(change: FileChangeView | null): Pick<StudioFocus, "change_id" | "run_id" | "call_id" | "tool_name"> {
+function changeFocusIds(
+  change: FileChangeView | null,
+): Pick<StudioFocus, "change_id" | "run_id" | "call_id" | "tool_name"> {
   if (!change) {
     return { change_id: null, run_id: null, call_id: null, tool_name: null };
   }
@@ -589,7 +636,13 @@ function fileTail(displayPath: string, change: FileChangeView | null): string {
 }
 
 /** A file pin as the coach reads it: the file, the change the pin names or its latest, and its text. */
-export function formatFileFocus({ displayPath, file, agent, changes, pinnedChange }: FileEvidence): ResolvedFocus {
+export function formatFileFocus({
+  displayPath,
+  file,
+  agent,
+  changes,
+  pinnedChange,
+}: FileEvidence): ResolvedFocus {
   const change = pinnedChange ?? changes[0] ?? null;
   const kind = `${file.kind}${file.deleted ? " (deleted)" : ""}`;
   const changeLine = change
@@ -619,7 +672,6 @@ export function formatFileFocus({ displayPath, file, agent, changes, pinnedChang
   };
 }
 
-
 /** An issue a pin names, and its reporting agent while that agent is in the source guild. */
 export type IssueEvidence = { issue: IssueItem; agent: AgentRow | null };
 
@@ -629,7 +681,9 @@ async function loadIssueEvidence(
   operator: StudioOperator,
   input: StudioFocusRequest,
 ): Promise<IssueEvidence> {
-  const row = input.issue_id ? await getIssue(deps.db, operator.sourceGuildId, input.issue_id) : null;
+  const row = input.issue_id
+    ? await getIssue(deps.db, operator.sourceGuildId, input.issue_id)
+    : null;
   if (!row) {
     throw new StudioUnprocessableError("focus issue not found");
   }
@@ -682,7 +736,6 @@ export function formatIssueFocus({ issue, agent }: IssueEvidence): ResolvedFocus
   };
 }
 
-
 // A tool name as runs record it: a native, script, or namespaced connection tool.
 const TOOL_NAME = /^[A-Za-z0-9_.:-]{1,128}$/;
 // The latest failed calls a tool pin quotes.
@@ -707,8 +760,13 @@ async function loadToolEvidence(
   if (!name || !TOOL_NAME.test(name)) {
     throw new StudioUnprocessableError("focus tool_name must be a tool name");
   }
-  const window = hoursWindow(String(ACTIVITY_MAX_HOURS), now);
-  const stats = await listGuildToolCallStats(deps.db, operator.sourceGuildId, window.since, window.until);
+  const window = windowBefore(now, ACTIVITY_MAX_HOURS);
+  const stats = await listGuildToolCallStats(
+    deps.db,
+    operator.sourceGuildId,
+    window.since,
+    window.until,
+  );
   const failures = await listGuildToolCalls(deps.db, operator.sourceGuildId, name, {
     ...window,
     errorsOnly: true,
@@ -721,10 +779,13 @@ async function loadToolEvidence(
 /** A tool pin as the coach reads it: each agent's calls and failures, and the latest failed calls. */
 export function formatToolFocus({ name, window, stats, failures }: ToolEvidence): ResolvedFocus {
   const usage = stats.flatMap((stat) =>
-    stat.agent_id === null ? [] : [`- ${stat.agent_id}: ${stat.calls} calls, ${stat.errors} failed`],
+    stat.agent_id === null
+      ? []
+      : [`- ${stat.agent_id}: ${stat.calls} calls, ${stat.errors} failed`],
   );
   const failureLines = failures.map(
-    (row) => `- run ${row.run_id}, call ${row.call_id ?? "?"} (${row.agent_id}): ${excerpt(row.error ?? "")}`,
+    (row) =>
+      `- run ${row.run_id}, call ${row.call_id ?? "?"} (${row.agent_id}): ${excerpt(row.error ?? "")}`,
   );
   const body = [
     `Tool ${name}, called by the guild's agents in the last ${ACTIVITY_MAX_HOURS / 24} days:`,
