@@ -477,8 +477,9 @@ A stale base returns 409.
 ### Focus pins
 
 `POST …/messages` takes the pin as `focus`. The server resolves the
-ids against the source guild (422 otherwise). It inserts two user rows
-in the same generation:
+ids against the source guild: an agent outside it is 404, and any other
+id it cannot resolve is 422. It inserts two user rows in the same
+generation:
 
 1. an evidence block with `source: studio_focus` and the resolved pin
    in `metadata.focus`

@@ -8,6 +8,10 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** `POST /api/studio/sessions/:id/messages` refuses a focus
+pin on an agent outside the session's source guild with a 404, as the
+other Studio routes that name an agent do, instead of a 422.
+
 **Rebuild.** `POST /api/studio/sessions/:id/continue` refuses, with
 a 422, a Studio session that is not blocked at its input-token limit,
 including one blocked because its source guild was deleted.

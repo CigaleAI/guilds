@@ -56,7 +56,7 @@ import {
 } from "./edits.js";
 import type { RoutineChange } from "../schedules/operator.js";
 import { getGuild, hiddenGuildsFor, type GuildRow } from "../db/guilds.js";
-import { getAgent } from "../db/agents.js";
+import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
   type ConversationMessageRow,
@@ -420,11 +420,11 @@ export class StudioService {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot change inspector");
       }
-      if (agentId) {
-        const agent = await getAgent(this.deps.db, agentId);
-        if (!agent || agent.guild_id !== locked.source_guild_id) {
-          throw new StudioUnprocessableError("agent is not in the source guild");
-        }
+      if (
+        agentId &&
+        (!locked.source_guild_id || !(await findGuildAgent(this.deps.db, locked.source_guild_id, locked.org_id, agentId)))
+      ) {
+        throw new StudioUnprocessableError("agent is not in the source guild");
       }
       const updated = await updateStudioSession(
         client,
@@ -788,11 +788,8 @@ export class StudioService {
     }
   }
 
-  async requireGuildAgent(session: StudioSessionRow, agentId: string): Promise<AgentRow> {
-    const agent = await getAgent(this.deps.db, agentId);
-    if (!agent || agent.guild_id !== session.source_guild_id) {
-      throw new StudioNotFoundError("agent not found");
-    }
-    return agent;
+  /** The agent `agentId` names in the session's source guild; StudioNotFoundError when it names none there. */
+  async requireGuildAgent(session: LiveStudioSession, agentId: string): Promise<AgentRow> {
+    return requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
   }
 }

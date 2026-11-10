@@ -1100,7 +1100,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       headers: AUTH,
       payload: { content: "Why?", focus: { kind: "run", run_id: "r_far" } },
     });
-    assert.equal(foreign.statusCode, 422, foreign.body);
+    assert.equal(foreign.statusCode, 404, foreign.body);
     await insertIssue(db,
       {
         issueId: "iss_far",
