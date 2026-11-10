@@ -26,6 +26,7 @@ import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
 import {
   getStudioDraft,
+  getStudioSession,
   insertStudioDraft,
   listOrphanStudioDrafts,
   listStudioDraftHeads,
@@ -484,6 +485,18 @@ export function viewDraft(row: StudioDraftRow): StudioDraft {
     size_delta_bytes: proposedBytes - baseBytes,
     large_deletion: deletionRatio >= STUDIO_LARGE_DELETION_RATIO || deleted > 8 * 1024,
   };
+}
+
+/** A draft of an organisation, and the session it was drafted in when that session is still there. */
+export type OrgDraft = { draft: StudioDraftRow; session: StudioSessionRow | null };
+
+/** The draft and its session when the draft belongs to the organisation, otherwise null. */
+export async function findOrgDraft(db: Queryable, orgId: string, draftId: string): Promise<OrgDraft | null> {
+  const draft = await getStudioDraft(db, draftId);
+  if (!draft || draft.org_id !== orgId) {
+    return null;
+  }
+  return { draft, session: await getStudioSession(db, draft.session_id) };
 }
 
 /** Every draft of the session as the operator app reads it, newest first. */

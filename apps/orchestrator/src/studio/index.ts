@@ -44,14 +44,12 @@ import {
   nextConversationSeq,
 } from "../db/conversations.js";
 import {
-  getStudioDraft,
   getStudioSession,
   insertStudioSession,
   listGeneratingStudioSessions,
   listStudioDraftHeads,
   listStudioSessions,
   markStudioSessionCancelling,
-  type StudioDraftRow,
   type StudioSessionRow,
   studioInventory,
   updateStudioSession,
@@ -464,18 +462,6 @@ export class StudioService {
       { ...operator, session: started.session },
     );
     return viewSession(started.session);
-  }
-
-  /** The draft and its session when the draft belongs to the organisation, otherwise null. */
-  async orgDraft(
-    orgId: string,
-    draftId: string,
-  ): Promise<{ draft: StudioDraftRow; session: StudioSessionRow | null } | null> {
-    const draft = await getStudioDraft(this.deps.db, draftId);
-    if (!draft || draft.org_id !== orgId) {
-      return null;
-    }
-    return { draft, session: await getStudioSession(this.deps.db, draft.session_id) };
   }
 
   /** Stops the generation running on the session; a session no generation runs on is returned as it is. */

@@ -35,7 +35,7 @@ import {
 import { listGuildInventory } from "../studio/inventory.js";
 import { assertLive, listSessionMessages, viewSession } from "../studio/session.js";
 import { requireGuildAgent } from "../studio/source-guild.js";
-import { listOrphanDrafts, listSessionDrafts, publishDraft, viewDraft } from "../studio/drafts.js";
+import { findOrgDraft, listOrphanDrafts, listSessionDrafts, publishDraft, viewDraft } from "../studio/drafts.js";
 import { applyEditRequest, declineEditRequest, viewEditRequest } from "../studio/edit-answers.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
@@ -625,8 +625,7 @@ async function loadDraftContext(
   org: OrgMembershipRow,
   draftId: string,
 ): Promise<{ session: StudioSessionRow; draft: StudioDraftRow; user: UserRow; orphan: boolean }> {
-  const studio: StudioService = studioOf(deps);
-  const found = await studio.orgDraft(org.id, draftId);
+  const found = await findOrgDraft(studioOf(deps).deps.db, org.id, draftId);
   if (!found) {
     throw new HttpError(404, "draft not found");
   }
