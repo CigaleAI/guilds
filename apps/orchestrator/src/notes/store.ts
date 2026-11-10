@@ -55,6 +55,16 @@ export const SYSTEM_PROMPT = "system.md";
 /** A file in a notes folder: its path within the folder, and the Obsidian link that opens it. */
 export type NotesFile = { path: string; obsidian: string };
 
+/** The folders directly inside `dir`; none when `dir` is not a folder. */
+function listFolders(dir: string): string[] {
+  if (!isDir(dir)) {
+    return [];
+  }
+  return readdirSync(dir)
+    .map((name) => path.join(dir, name))
+    .filter((child) => isDir(child));
+}
+
 export class NotesStore {
   root: string;
   templates: string;
@@ -108,34 +118,21 @@ export class NotesStore {
 
   async ensureMemoryFiles(): Promise<void> {
     await this.lock.run(() => {
-      const orgs = path.join(this.root, "orgs");
-      if (!isDir(orgs)) {
-        return;
-      }
-      for (const orgName of readdirSync(orgs)) {
-        const guilds = path.join(orgs, orgName, "guilds");
-        if (!isDir(guilds)) {
-          continue;
-        }
-        for (const guildName of readdirSync(guilds)) {
-          const agents = path.join(guilds, guildName, "agents");
-          if (!isDir(agents)) {
-            continue;
-          }
-          for (const agentName of readdirSync(agents)) {
-            const agentDir = path.join(agents, agentName);
-            if (!isDir(agentDir)) {
-              continue;
-            }
-            migrateAgentLayout(agentDir);
-            const filePath = path.join(agentDir, MEMORY_FILE);
-            if (!statIfFile(filePath)) {
-              writeFileSync(filePath, EMPTY_MEMORY, "utf8");
-            }
-          }
+      for (const agentDir of this.listAgentDirs()) {
+        migrateAgentLayout(agentDir);
+        const filePath = path.join(agentDir, MEMORY_FILE);
+        if (!statIfFile(filePath)) {
+          writeFileSync(filePath, EMPTY_MEMORY, "utf8");
         }
       }
     });
+  }
+
+  /** The folder of every agent in the repository, across its organisations and guilds. */
+  private listAgentDirs(): string[] {
+    return listFolders(path.join(this.root, "orgs"))
+      .flatMap((org) => listFolders(path.join(org, "guilds")))
+      .flatMap((guild) => listFolders(path.join(guild, "agents")));
   }
 
   systemPath(): string {

@@ -238,3 +238,28 @@ test("memory archive keeps the newest fifty", async () => {
     .filter((item) => item.endsWith(".md"));
   assert.equal(listed.length, MEMORY_ARCHIVE_KEEP);
 });
+
+test("ensure_memory_files reaches the agents of every organisation and guild, past stray files", async () => {
+  const notes = notesStore();
+  await notes.ensureMemoryFiles();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  await notes.createGuild("globex", "ops");
+  await notes.createAgent("globex", "ops", "operator");
+  const orgs = path.join(notes.root, "orgs");
+  writeFileSync(path.join(orgs, "stray.md"), "");
+  writeFileSync(path.join(orgs, "acme", "guilds", "stray.md"), "");
+  writeFileSync(path.join(orgs, "acme", "guilds", "research", "agents", "stray.md"), "");
+  mkdirSync(path.join(orgs, "acme", "guilds", "empty"));
+  const memories = [
+    path.join(notes.agentDir("acme", "research", "researcher"), "memory.md"),
+    path.join(notes.agentDir("globex", "ops", "operator"), "memory.md"),
+  ];
+  for (const memory of memories) {
+    unlinkSync(memory);
+  }
+  await notes.ensureMemoryFiles();
+  for (const memory of memories) {
+    assert.equal(readFileSync(memory, "utf8"), EMPTY_MEMORY);
+  }
+});
