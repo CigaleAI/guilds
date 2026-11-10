@@ -73,7 +73,6 @@ import {
   updateStudioSession,
 } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
-import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { CoachSessionConfig, StudioSourceGuild } from "../db/schema/index.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
@@ -454,7 +453,7 @@ export class StudioService {
   /** One agent of the session's guild as the inspector shows it to `user`, without what is hidden from them. */
   async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<StudioInspector> {
     this.assertLive(session);
-    const agent = await this.requireGuildAgent(session, agentId);
+    const agent = await requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
     const viewer = studioActor({
       orgId: session.org_id,
       sourceGuildId: agent.guild_id,
@@ -470,7 +469,7 @@ export class StudioService {
     agentId: string,
   ): ReturnType<typeof memoryHistory> {
     this.assertLive(session);
-    const agent = await this.requireGuildAgent(session, agentId);
+    const agent = await requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
     const actor = await loadOperatorActor(this.deps.db, user, {
       orgId: session.org_id,
       guildId: session.source_guild_id,
@@ -727,10 +726,5 @@ export class StudioService {
     if (!session.source_guild_id || session.status === "blocked") {
       throw new StudioConflictError("session source is not live");
     }
-  }
-
-  /** The agent `agentId` names in the session's source guild; StudioNotFoundError when it names none there. */
-  async requireGuildAgent(session: LiveStudioSession, agentId: string): Promise<AgentRow> {
-    return requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
   }
 }

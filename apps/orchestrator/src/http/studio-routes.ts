@@ -28,6 +28,7 @@ import {
 import { listSessionConnections } from "../studio/connections.js";
 import { listGuildInventory } from "../studio/inventory.js";
 import { listSessionMessages } from "../studio/session.js";
+import { requireGuildAgent } from "../studio/source-guild.js";
 import { listOrphanDrafts, listSessionDrafts, viewDraft } from "../studio/drafts.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
 import type { StudioService } from "../studio/index.js";
@@ -453,7 +454,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       studio.assertLive(session);
-      const agent = await studio.requireGuildAgent(session, request.params.agent_id);
+      const agent = await requireGuildAgent(studio.deps.db, session.source_guild_id, session.org_id, request.params.agent_id);
       return await listAgentRunHeaders(inspector, String(agent.id), request.query);
     },
   );
@@ -590,7 +591,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       studio.assertLive(session);
-      const agent = await studio.requireGuildAgent(session, request.params.agent_id);
+      const agent = await requireGuildAgent(studio.deps.db, session.source_guild_id, session.org_id, request.params.agent_id);
       return await listAgentRoutines(inspector, String(agent.id));
     },
   );
