@@ -182,13 +182,14 @@ test("write existing markdown files", async () => {
   const shared = path.join(notes.root, "orgs", "acme", "guilds", "research", "shared", "note.md");
   writeFileSync(privateFile, "old private");
   writeFileSync(shared, "old shared");
-  const taskRepo = await notes.writeAgentNotesFile("acme", "research", "researcher", "task.md", "updated task");
+  const taskRepo = await notes.writeAgentNotesFile("acme", "research", "researcher", "task.md", "updated task", null);
   const privateRepo = await notes.writeAgentNotesFile(
     "acme",
     "research",
     "researcher",
     "notes/scratch.md",
     "updated private",
+    null,
   );
   const sharedRepo = await notes.writeSharedNotesFile("acme", "research", "note.md", "updated shared");
   assert.equal(taskRepo, "orgs/acme/guilds/research/agents/researcher/task.md");
@@ -210,6 +211,7 @@ test("operator can edit a routine note through the files pane", async () => {
     "researcher",
     "routines/sch_1.md",
     "Read shared notes.",
+    null,
   );
   assert.equal(repo, "orgs/acme/guilds/research/agents/researcher/routines/sch_1.md");
   assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "routines/sch_1.md"), "Read shared notes.");
@@ -224,7 +226,7 @@ test("write markdown creates missing notes and rejects escape", async () => {
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
   await assert.rejects(
-    () => notes.writeAgentNotesFile("acme", "research", "researcher", "prompt.py", "print(1)"),
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", "prompt.py", "print(1)", null),
     /path must end in \.md/,
   );
   const created = await notes.writeAgentNotesFile(
@@ -233,17 +235,18 @@ test("write markdown creates missing notes and rejects escape", async () => {
     "researcher",
     "notes/missing.md",
     "hello",
+    null,
   );
   assert.equal(created, "orgs/acme/guilds/research/agents/researcher/notes/missing.md");
   assert.equal(notes.readAgentNotesFile("acme", "research", "researcher", "notes/missing.md"), "hello");
   await assert.rejects(
-    () => notes.writeAgentNotesFile("acme", "research", "researcher", "../shared/note.md", "nope"),
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", "../shared/note.md", "nope", null),
     /invalid path/,
   );
   rmSync(path.join(notes.agentDir("acme", "research", "researcher"), "task.md"));
   for (const relative of ["task.md", "routines/missing.md", "notes/routines/missing.md"]) {
     await assert.rejects(
-      () => notes.writeAgentNotesFile("acme", "research", "researcher", relative, "nope"),
+      () => notes.writeAgentNotesFile("acme", "research", "researcher", relative, "nope", null),
       /file not found/,
       relative,
     );

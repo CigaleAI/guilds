@@ -197,8 +197,18 @@ test("note_write refuses the memory archive", async () => {
   );
   const relative = (archive ?? "").split("/agents/researcher/")[1] ?? "";
   await assert.rejects(
-    () => notes.writeAgentNotesFile("acme", "research", "researcher", relative, "nope", { actor: "manu" }),
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", relative, "nope", "manu"),
     /memory archive notes cannot be overwritten/,
+  );
+});
+
+test("files pane save of the memory needs the user who saves it", async () => {
+  const notes = notesStore();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  await assert.rejects(
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", "memory.md", "keep", null),
+    /memory writes require an actor/,
   );
 });
 
@@ -212,7 +222,7 @@ test("files pane save archives with the user", async () => {
     "researcher",
     "memory.md",
     "keep the inbox clean",
-    { actor: "manu" },
+    "manu",
   );
   assert.ok(result.startsWith("memory.md written; previous archived as history-archive/"));
   const listed = notes

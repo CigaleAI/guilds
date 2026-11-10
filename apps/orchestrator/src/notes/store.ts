@@ -354,7 +354,7 @@ export class NotesStore {
     name: string,
     relative: string,
     content: string,
-    options: { actor?: string | null } = {},
+    actor: string | null,
   ): Promise<string> {
     return this.lock.run(() => {
       const agent = this.agentDir(orgSlug, guildName, name);
@@ -369,12 +369,12 @@ export class NotesStore {
         throw new NotesError("memory archive notes cannot be overwritten");
       }
       if (posix === MEMORY_FILE) {
-        if (!options.actor) {
+        if (!actor) {
           throw new NotesError("memory writes require an actor");
         }
         return this.writeMemoryUnlocked(orgSlug, guildName, name, content, {
-          source: options.actor,
-          replacedBy: `user ${options.actor} (Files pane)`,
+          source: actor,
+          replacedBy: `user ${actor} (Files pane)`,
         });
       }
       const filePath = resolveAgentFile(agent, posix);
