@@ -7,6 +7,7 @@ import { awaitOperator, type StudioEdit } from "../../src/studio/edit-request.js
 import {
   findEditRecord,
   formatContentEditView,
+  formatReviewedEditView,
   guildTextHash,
   type EditBase,
   type EditRecord,
@@ -261,5 +262,99 @@ test("a declined content edit shows when it was answered and no applied version"
   });
   assert.equal(view.status, "declined");
   assert.equal(view.resolved_at, "2026-11-10T10:00:00.000Z");
+  assert.ok(!("applied_version" in view));
+});
+
+const COLLECTION_EDIT: StudioEdit = {
+  kind: "collection",
+  action: "create",
+  target: {
+    collection_id: null,
+    name: "leads",
+    scope: "guild",
+    display_path: "guild/g_1/collections/leads",
+  },
+  base_hash: "empty",
+  proposed_hash: "leads",
+  lines: { added: 2, removed: 0 },
+  effects: ["Creates the table."],
+};
+
+const COLLECTION_ARGS = {
+  action: "create",
+  name: "leads",
+  purpose: "One lead per row.",
+  reason: "Track leads.",
+};
+
+const COLLECTION_REVIEW = {
+  live: "",
+  proposed: "leads\npurpose",
+  effects: ["Creates the table."],
+  baseHash: "empty",
+};
+
+test("a pending reviewed edit shows its target before and after, and what applying does", () => {
+  const record = recordOf("studio_edit_collection", COLLECTION_EDIT, COLLECTION_ARGS);
+  const view = formatReviewedEditView(record, { state: "reviewed", review: COLLECTION_REVIEW });
+  assert.deepEqual(view, {
+    seq: 2,
+    tool: "studio_edit_collection",
+    status: "pending",
+    title: "Edit",
+    reason: "Because.",
+    edit: COLLECTION_EDIT,
+    live: "",
+    live_version: null,
+    proposed: "leads\npurpose",
+    effects: ["Creates the table."],
+    stale: false,
+  });
+});
+
+test("a reviewed edit is stale when its target no longer hashes to its base", () => {
+  const record = recordOf("studio_edit_collection", COLLECTION_EDIT, COLLECTION_ARGS);
+  const view = formatReviewedEditView(record, {
+    state: "reviewed",
+    review: { ...COLLECTION_REVIEW, baseHash: "moved" },
+  });
+  assert.equal(view.stale, true);
+});
+
+test("a reviewed edit whose review was refused is stale, shows nothing, and says why", () => {
+  const record = recordOf("studio_edit_collection", COLLECTION_EDIT, COLLECTION_ARGS);
+  const view = formatReviewedEditView(record, { state: "refused", error: "table already exists" });
+  assert.equal(view.live, null);
+  assert.equal(view.proposed, null);
+  assert.deepEqual(view.effects, []);
+  assert.equal(view.stale, true);
+  assert.equal(view.error, "table already exists");
+});
+
+test("a resolved reviewed edit is not stale and shows no target", () => {
+  const record = recordOf("studio_edit_collection", COLLECTION_EDIT, COLLECTION_ARGS, DECLINED);
+  const view = formatReviewedEditView(record, { state: "resolved" });
+  assert.equal(view.status, "declined");
+  assert.equal(view.resolved_at, "2026-11-10T10:00:00.000Z");
+  assert.equal(view.live, null);
+  assert.deepEqual(view.effects, []);
+  assert.equal(view.stale, false);
+  assert.ok(!("error" in view));
+  assert.ok(!("applied_version" in view));
+});
+
+test("an applied reviewed edit that wrote a version shows it", () => {
+  const record = recordOf("studio_edit_collection", COLLECTION_EDIT, COLLECTION_ARGS, APPLIED);
+  const view = formatReviewedEditView(record, { state: "resolved" });
+  assert.equal(view.applied_version, 3);
+});
+
+test("an applied reviewed edit that wrote no version shows no applied version", () => {
+  const record = recordOf("studio_edit_collection", COLLECTION_EDIT, COLLECTION_ARGS, {
+    ...APPLIED,
+    edit_version: null,
+  });
+  const view = formatReviewedEditView(record, { state: "resolved" });
+  assert.equal(view.status, "applied");
   assert.ok(!("applied_version" in view));
 });

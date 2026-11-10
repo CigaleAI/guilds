@@ -491,7 +491,7 @@ export type StudioEditView = {
 /** Which request an edit view shows, what it asks for, and when the operator answered it. */
 type EditRequestView = Pick<StudioEditView, "seq" | "tool" | "status" | "title" | "reason" | "edit" | "resolved_at">;
 
-/** The request `record` holds as every edit view shows it: what its widget asks for, and when the operator answered it. */
+/** The request `record` holds as every edit view shows it: what its widget asks for, and when it was answered. */
 function editRequestView(record: EditRecord): EditRequestView {
   const status = editStatus(record);
   return {
@@ -550,46 +550,69 @@ export function formatContentEditView(record: EditRecord, live: LiveEditBase): S
 export async function viewEdit(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<StudioEditView> {
   const reviewer = reviewerOf(deps, scope, record);
   if (reviewer) {
-    return viewReviewedEdit(record, editStatus(record), reviewer);
+    return formatReviewedEditView(record, await reviewPendingEdit(record, reviewer));
   }
   return formatContentEditView(record, await readLiveEditBase(deps, scope, record));
 }
 
-// A table, note create or delete, routine, or access edit rendered as text on both
-// sides, with what applying does. A resolved request is not reviewed again:
-// its target has moved on.
-async function viewReviewedEdit(
-  record: EditRecord,
-  status: StudioEditStatus,
-  review: () => Promise<ReviewedEdit>,
-): Promise<StudioEditView> {
-  const { edit } = record.widget;
-  let reviewed = null;
-  let error: string | null = null;
-  if (status === "pending") {
-    try {
-      reviewed = await review();
-    } catch (caught) {
-      if (!(caught instanceof StudioError)) throw caught;
-      error = caught.message;
-    }
+/**
+ * What the view of a table, routine, access, or note create or delete edit found: the review of a
+ * pending request against its live target, the refusal that stopped it, or nothing for a resolved
+ * request, whose target has moved on.
+ */
+export type LiveEditReview =
+  | { state: "reviewed"; review: ReviewedEdit }
+  | { state: "refused"; error: string }
+  | { state: "resolved" };
+
+/** The edit `record` reviewed by `review` while it is pending; a resolved request is not reviewed again. */
+async function reviewPendingEdit(record: EditRecord, review: () => Promise<ReviewedEdit>): Promise<LiveEditReview> {
+  if (editStatus(record) !== "pending") {
+    return { state: "resolved" };
   }
-  return {
-    seq: record.seq,
-    tool: record.toolName,
-    status,
-    title: record.widget.title,
-    reason: record.widget.reason,
-    edit,
-    live: reviewed?.live ?? null,
-    live_version: null,
-    proposed: reviewed?.proposed ?? null,
-    effects: reviewed?.effects ?? [],
-    stale: status === "pending" && (reviewed ? reviewed.baseHash !== edit.base_hash : true),
-    ...(error ? { error } : {}),
-    ...(status !== "pending" ? { resolved_at: record.metadata.edit_resolved_at ?? null } : {}),
-    ...(status === "applied" && record.metadata.edit_version ? { applied_version: record.metadata.edit_version } : {}),
-  };
+  try {
+    return { state: "reviewed", review: await review() };
+  } catch (caught) {
+    if (!(caught instanceof StudioError)) throw caught;
+    return { state: "refused", error: caught.message };
+  }
+}
+
+/**
+ * A table, routine, access, or note create or delete edit as the operator reviews it: its target
+ * before and after as text, what applying does, and whether the target moved on since the request.
+ */
+export function formatReviewedEditView(record: EditRecord, found: LiveEditReview): StudioEditView {
+  const request = editRequestView(record);
+  const version = record.metadata.edit_version;
+  const applied = request.status === "applied" && version ? { applied_version: version } : {};
+  switch (found.state) {
+    case "reviewed": {
+      const { review } = found;
+      return {
+        ...request,
+        live: review.live,
+        live_version: null,
+        proposed: review.proposed,
+        effects: review.effects,
+        stale: review.baseHash !== request.edit.base_hash,
+        ...applied,
+      };
+    }
+    case "refused":
+      return {
+        ...request,
+        live: null,
+        live_version: null,
+        proposed: null,
+        effects: [],
+        stale: true,
+        error: found.error,
+        ...applied,
+      };
+    case "resolved":
+      return { ...request, live: null, live_version: null, proposed: null, effects: [], stale: false, ...applied };
+  }
 }
 
 /** A review's hashes: of the live target it read, and of the proposal. */
