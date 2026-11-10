@@ -348,3 +348,27 @@ test("resolve_wikilink finds a note by its path or its name in the agent's priva
     assert.equal(resolve(target), null, target);
   }
 });
+
+test("list notes at a note, a file that is not one, a missing folder, and the private root", async () => {
+  const notes = notesStore();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  const agent = notes.agentDir("acme", "research", "researcher");
+  const shared = path.join(notes.root, "orgs", "acme", "guilds", "research", "shared");
+  writeFileSync(path.join(agent, "notes", "first.md"), "first");
+  writeFileSync(path.join(agent, "notes", "data.csv"), "a,b");
+  writeFileSync(path.join(shared, "data.csv"), "a,b");
+  writeFileSync(path.join(agent, "routines", "sch_1.md"), "Check Gmail.");
+  assert.deepEqual(notes.listPrivateNotes("acme", "research", "researcher", "first.md"), [
+    "orgs/acme/guilds/research/agents/researcher/notes/first.md",
+  ]);
+  assert.throws(() => notes.listPrivateNotes("acme", "research", "researcher", "data.csv"), /invalid path/);
+  assert.throws(() => notes.listSharedNotes("acme", "research", "data.csv"), /invalid path/);
+  assert.deepEqual(notes.listPrivateNotes("acme", "research", "researcher", "missing/"), []);
+  assert.deepEqual(notes.listSharedNotes("acme", "research", "missing/"), []);
+  assert.deepEqual(notes.listPrivateNotes("acme", "research", "researcher", ""), [
+    "orgs/acme/guilds/research/agents/researcher/notes/first.md",
+    "orgs/acme/guilds/research/agents/researcher/routines/",
+    "orgs/acme/guilds/research/agents/researcher/routines/sch_1.md",
+  ]);
+});

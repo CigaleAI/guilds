@@ -308,39 +308,17 @@ export class NotesStore {
    */
   listPrivateNotes(orgSlug: string, guildName: string, agentName: string, prefix: string): string[] {
     const posix = prefixPosix(prefix);
-    const base = this.resolvePrivatePath(orgSlug, guildName, agentName, posix);
-    if (statIfFile(base)) {
-      if (path.extname(base) !== ".md") {
-        throw new NotesError("invalid path");
-      }
-      return [this.repoPath(base)];
+    const items = this.listNotesAt(this.resolvePrivatePath(orgSlug, guildName, agentName, posix));
+    if (posix !== "") {
+      return items;
     }
-    const items = this.collectTree(base);
-    if (posix === "") {
-      const agent = this.agentDir(orgSlug, guildName, agentName);
-      for (const name of [ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR]) {
-        const special = path.join(agent, name);
-        const children = this.collectTree(special);
-        if (children.length) {
-          items.push(`${this.repoPath(special)}/`);
-          items.push(...children);
-        }
-      }
-      items.sort();
-    }
-    return items;
+    items.push(...this.collectFoldersBesideNotes(this.agentDir(orgSlug, guildName, agentName)));
+    return items.sort();
   }
 
   /** The repository paths of the guild's shared notes under a prefix, folders ending in `/`. */
   listSharedNotes(orgSlug: string, guildName: string, prefix: string): string[] {
-    const base = this.resolveSharedPath(orgSlug, guildName, prefixPosix(prefix));
-    if (statIfFile(base)) {
-      if (path.extname(base) !== ".md") {
-        throw new NotesError("invalid path");
-      }
-      return [this.repoPath(base)];
-    }
-    return this.collectTree(base);
+    return this.listNotesAt(this.resolveSharedPath(orgSlug, guildName, prefixPosix(prefix)));
   }
 
   /**
@@ -735,6 +713,32 @@ export class NotesStore {
     for (const old of files.slice(0, Math.max(0, files.length - MEMORY_ARCHIVE_KEEP))) {
       unlinkSync(old);
     }
+  }
+
+  /**
+   * The repository paths a listing at `base` answers: `base` itself when it is a note, else the
+   * tree under it. Throws when `base` is a file other than a note.
+   */
+  private listNotesAt(base: string): string[] {
+    if (!statIfFile(base)) {
+      return this.collectTree(base);
+    }
+    if (path.extname(base) !== ".md") {
+      throw new NotesError("invalid path");
+    }
+    return [this.repoPath(base)];
+  }
+
+  /**
+   * The agent's routines and Memory archive folders, each followed by its tree, as the root of its
+   * private notes lists them; a folder that holds nothing is left out.
+   */
+  private collectFoldersBesideNotes(agent: string): string[] {
+    return [ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR].flatMap((name) => {
+      const folder = path.join(agent, name);
+      const children = this.collectTree(folder);
+      return children.length ? [`${this.repoPath(folder)}/`, ...children] : [];
+    });
   }
 
   private collectTree(base: string): string[] {
