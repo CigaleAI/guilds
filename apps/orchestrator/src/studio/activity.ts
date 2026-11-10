@@ -26,6 +26,7 @@ import { listSchedulesForGuild } from "../db/schedules.js";
 import type { MessageMetadata } from "../db/schema/index.js";
 import { listGroupMessagesForActivity, type ActivityGroupMessageRow } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
+import type { GenerationLoop } from "../generation/index.js";
 
 // The guild activity ledger: one row per wake (a run of any kind) with what
 // started it, how it was routed, the tools it called, and what it produced,
@@ -46,8 +47,12 @@ const TRIGGER_SCAN_MAX = 500;
 
 export type ActivityWindow = { since: Date; until: Date };
 
-/** The window a guild's activity is read over, the time it counts as now, and which runs are still generating. */
-export type GuildActivityWindow = ActivityWindow & { now?: Date; generating?: (runId: string) => boolean };
+/** What the ledger reads a guild's activity through, built once from the app's services. */
+export type ActivityServices = {
+  db: Queryable;
+  /** The generation loop that marks a run while it generates; absent on a box without one. */
+  generation: Pick<GenerationLoop, "isGenerating"> | null;
+};
 
 export type ActivityAgent = Pick<AgentSummaryRow, "id" | "name" | "avatar_color" | "avatar_shape">;
 
@@ -593,11 +598,14 @@ export function messageFloor(run: GuildActivityRunRow): number | null {
   return stored !== null ? stored - 1 : scanFloor(run, throughSeq);
 }
 
+/** A guild's activity over `window`, a run still generating at `now` drawn up to it. */
 export async function loadGuildActivity(
-  db: Queryable,
+  services: ActivityServices,
   guildId: string,
-  window: GuildActivityWindow,
+  window: ActivityWindow,
+  now: Date,
 ): Promise<ActivityView> {
+  const { db } = services;
   const { since, until } = window;
   const [agents, runs, schedules] = await Promise.all([
     listAgents(db, guildId),
@@ -622,7 +630,7 @@ export async function loadGuildActivity(
     guildId,
     since,
     until,
-    now: window.now ?? new Date(),
+    now,
     agents,
     runs,
     stats,
@@ -633,6 +641,6 @@ export async function loadGuildActivity(
     openings,
     messages,
     schedules,
-    generating: window.generating ?? (() => false),
+    generating: (runId) => services.generation?.isGenerating(runId) ?? false,
   });
 }

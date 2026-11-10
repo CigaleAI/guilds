@@ -13,6 +13,7 @@ import {
   ActivityWindowQuerySchema,
   hoursWindow,
   loadGuildActivity,
+  type ActivityServices,
 } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
 import { loadGuildReferences } from "../studio/references.js";
@@ -143,6 +144,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     schedules: deps.schedules,
     generation: deps.generation ?? null,
   };
+  const activity: ActivityServices = { db, generation: deps.generation ?? null };
 
   app.get("/api/studio/sessions", async (request) => {
     const user = await currentUser(db, request, deps);
@@ -465,12 +467,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       studio.assertLive(session);
       const now = new Date();
-      const window = activityWindow(request.query, now);
-      return await loadGuildActivity(db, session.source_guild_id, {
-        ...window,
-        now,
-        generating: (runId) => (deps.generation ? deps.generation.isGenerating(runId) : false),
-      });
+      return await loadGuildActivity(activity, session.source_guild_id, activityWindow(request.query, now), now);
     },
   );
 
