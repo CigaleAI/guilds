@@ -27,6 +27,7 @@ import {
   readStudioSystemTemplate,
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
+import { assertLive, sourceGuildSnapshot, viewSession, type LiveStudioSession, type StudioSession } from "./session.js";
 import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
 import { inspectAgent, type StudioInspector } from "./inspector.js";
 import { studioToolSchemas } from "./tools.js";
@@ -34,7 +35,6 @@ import { previewDatabase, type PreviewDeps } from "./preview.js";
 import {
   answerLoginRequest,
   grantSessionConnection,
-  grantedConnectionIds,
   withdrawSessionConnection,
   type StudioMcpClient,
 } from "./connections.js";
@@ -51,7 +51,7 @@ import {
   type StudioEditView,
 } from "./edits.js";
 import type { RoutineChange } from "../schedules/operator.js";
-import { getGuild, hiddenGuildsFor, type GuildRow } from "../db/guilds.js";
+import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
 import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
@@ -74,7 +74,6 @@ import {
 } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
-import type { CoachSessionConfig, StudioSourceGuild } from "../db/schema/index.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { studioActor, type StudioOperator } from "./actor.js";
 
@@ -111,41 +110,6 @@ export type StudioDeps = {
   publishFilesChanged?: ((guildId: string) => Promise<void>) | undefined;
   publishRoutinesChanged?: ((guildId: string, change: RoutineChange) => Promise<void>) | undefined;
   isAgentBusy?: ((agentId: string) => boolean) | undefined;
-};
-
-/** A session an operator can still work in: not archived or blocked, its source guild still there. */
-export type LiveStudioSession = StudioSessionRow & { source_guild_id: string };
-
-/** The guild as a session records it; its description is the coach's objective. */
-function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "description">): StudioSourceGuild {
-  const objective = guild.description.trim();
-  return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
-}
-
-/**
- * A Studio session as the operator app reads it: where it stands, its guild as the session recorded
- * it, the logins its coach may read through, and its coach's model and limits.
- */
-export type StudioSession = Pick<
-  StudioSessionRow,
-  | "id"
-  | "org_id"
-  | "mode"
-  | "status"
-  | "blocked_reason"
-  | "generation_state"
-  | "generation_number"
-  | "source_guild_id"
-  | "selected_target_agent_id"
-  | "parent_session_id"
-  | "created_by_name"
-  | "created_at"
-  | "updated_at"
-  | "archived_at"
-> & {
-  source_guild: StudioSessionRow["source_guild_snapshot"];
-  granted_connection_ids: string[];
-  coach: Pick<CoachSessionConfig, "model" | "temperature" | "max_tokens" | "max_steps" | "max_tool_calls" | "max_input_tokens">;
 };
 
 /** A published or unchanged draft, with whether its target agent is generating now and so reads the new Task on its next run. */
@@ -287,7 +251,7 @@ export class StudioService {
         now,
       );
     }
-    return this.viewSession(session);
+    return viewSession(session);
   }
 
   /** The coach's model: a marketplace model whose provider the organisation has connected. */
@@ -320,7 +284,7 @@ export class StudioService {
     }
     return rows
       .filter((row) => !hidden.has(row.source_guild_id ?? ""))
-      .map((row) => this.viewSession(row));
+      .map((row) => viewSession(row));
   }
 
   async getOwnedSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
@@ -350,42 +314,12 @@ export class StudioService {
     return session;
   }
 
-  viewSession(row: StudioSessionRow): StudioSession {
-    const config = row.config_snapshot;
-    return {
-      id: row.id,
-      org_id: row.org_id,
-      mode: row.mode,
-      status: row.status,
-      blocked_reason: row.blocked_reason,
-      generation_state: row.generation_state,
-      generation_number: row.generation_number,
-      source_guild_id: row.source_guild_id,
-      source_guild: row.source_guild_snapshot,
-      selected_target_agent_id: row.selected_target_agent_id,
-      parent_session_id: row.parent_session_id,
-      granted_connection_ids: grantedConnectionIds(row),
-      coach: {
-        model: config.model,
-        temperature: config.temperature,
-        max_tokens: config.max_tokens,
-        max_steps: config.max_steps,
-        max_tool_calls: config.max_tool_calls,
-        max_input_tokens: config.max_input_tokens,
-      },
-      created_by_name: row.created_by_name,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      archived_at: row.archived_at,
-    };
-  }
-
   /** Lets the coach use one login of the source guild in this session. */
   async grantConnection(
     session: StudioSessionRow,
     connectionId: string,
   ): Promise<StudioSession> {
-    return this.viewSession(await grantSessionConnection(this.deps.db, session, connectionId));
+    return viewSession(await grantSessionConnection(this.deps.db, session, connectionId));
   }
 
   /** Takes one login back from the coach in this session. */
@@ -393,7 +327,7 @@ export class StudioService {
     session: StudioSessionRow,
     connectionId: string,
   ): Promise<StudioSession> {
-    return this.viewSession(await withdrawSessionConnection(this.deps.db, session, connectionId));
+    return viewSession(await withdrawSessionConnection(this.deps.db, session, connectionId));
   }
 
   // Grant or decline one login request from the Studio log. The answer and
@@ -405,8 +339,8 @@ export class StudioService {
     seq: number,
     decision: "grant" | "decline",
   ): Promise<StudioSession> {
-    this.assertLive(session);
-    return this.viewSession(await answerLoginRequest(this.deps.db, session, { user, seq, decision }));
+    assertLive(session);
+    return viewSession(await answerLoginRequest(this.deps.db, session, { user, seq, decision }));
   }
 
   async archive(session: StudioSessionRow): Promise<StudioSession> {
@@ -420,7 +354,7 @@ export class StudioService {
       { status: "archived", archived_at: now, generation_state: "idle" },
       now,
     );
-    return this.viewSession(updated ?? session);
+    return viewSession(updated ?? session);
   }
 
   async setTarget(session: StudioSessionRow, agentId: string | null): Promise<StudioSession> {
@@ -440,19 +374,19 @@ export class StudioService {
         { selected_target_agent_id: agentId },
         new Date(),
       );
-      return this.viewSession(updated ?? locked);
+      return viewSession(updated ?? locked);
     });
   }
 
   async inventory(session: StudioSessionRow): Promise<StudioInventoryItem[]> {
-    this.assertLive(session);
+    assertLive(session);
     const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
     return rows.map((row) => inventoryItem(row));
   }
 
   /** One agent of the session's guild as the inspector shows it to `user`, without what is hidden from them. */
   async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<StudioInspector> {
-    this.assertLive(session);
+    assertLive(session);
     const agent = await requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
     const viewer = studioActor({
       orgId: session.org_id,
@@ -468,7 +402,7 @@ export class StudioService {
     user: UserRow,
     agentId: string,
   ): ReturnType<typeof memoryHistory> {
-    this.assertLive(session);
+    assertLive(session);
     const agent = await requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
     const actor = await loadOperatorActor(this.deps.db, user, {
       orgId: session.org_id,
@@ -484,7 +418,7 @@ export class StudioService {
     content: string,
     focusInput?: StudioFocusRequest | null,
   ): Promise<StudioSession> {
-    this.assertLive(session);
+    assertLive(session);
     if (!content.trim()) {
       throw new StudioUnprocessableError("content must not be empty");
     }
@@ -577,7 +511,7 @@ export class StudioService {
       },
       { ...operator, session: started.session },
     );
-    return this.viewSession(started.session);
+    return viewSession(started.session);
   }
 
   /** The draft and its session when the draft belongs to the organisation, otherwise null. */
@@ -596,10 +530,10 @@ export class StudioService {
   async cancel(session: StudioSessionRow): Promise<StudioSession> {
     const cancelling = await markStudioSessionCancelling(this.deps.db, session.id, new Date());
     if (cancelling === null) {
-      return this.viewSession(session);
+      return viewSession(session);
     }
     this.runner.cancel(session.id);
-    return this.viewSession(cancelling);
+    return viewSession(cancelling);
   }
 
   async continueSession(
@@ -682,7 +616,7 @@ export class StudioService {
     seq: number,
     decision: "apply" | "decline",
   ): Promise<StudioEditView> {
-    this.assertLive(session);
+    assertLive(session);
     const deps = this.deps;
     const scope = await this.editScope(session, user);
     const userId = user.id;
@@ -717,14 +651,5 @@ export class StudioService {
     }
     const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
     return viewEdit(deps, scope, record);
-  }
-
-  assertLive(session: StudioSessionRow): asserts session is LiveStudioSession {
-    if (session.status === "archived") {
-      throw new StudioConflictError("session is archived");
-    }
-    if (!session.source_guild_id || session.status === "blocked") {
-      throw new StudioConflictError("session source is not live");
-    }
   }
 }

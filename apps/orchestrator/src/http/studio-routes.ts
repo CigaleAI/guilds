@@ -27,7 +27,7 @@ import {
 } from "../studio/state-data.js";
 import { listSessionConnections } from "../studio/connections.js";
 import { listGuildInventory } from "../studio/inventory.js";
-import { listSessionMessages } from "../studio/session.js";
+import { assertLive, listSessionMessages, viewSession } from "../studio/session.js";
 import { requireGuildAgent } from "../studio/source-guild.js";
 import { listOrphanDrafts, listSessionDrafts, viewDraft } from "../studio/drafts.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
@@ -179,7 +179,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return studio.viewSession(session);
+      return viewSession(session);
     },
   );
 
@@ -453,7 +453,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      assertLive(session);
       const agent = await requireGuildAgent(studio.deps.db, session.source_guild_id, session.org_id, request.params.agent_id);
       return await listAgentRunHeaders(inspector, String(agent.id), request.query);
     },
@@ -467,7 +467,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      assertLive(session);
       const now = new Date();
       return await loadGuildActivity(activity, session.source_guild_id, activityWindow(request.query, now), now);
     },
@@ -483,7 +483,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     const org = await currentOrg(db, request, user);
     const studio: StudioService = studioOf(deps);
     const session = await studio.getOwnedSession(sessionId, user, org);
-    studio.assertLive(session);
+    assertLive(session);
     const guildId = session.source_guild_id;
     const actor = await loadOperatorActor(db, user, { orgId: session.org_id, guildId });
     return { actor, guildId, deps: { db, artifacts: studio.deps.artifacts } };
@@ -529,7 +529,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      assertLive(session);
       const window = activityWindow(request.query, new Date());
       const services = { db, preview: studio.deps.preview };
       return await loadGuildTools(services, session.source_guild_id, window);
@@ -545,7 +545,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const query = request.query;
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      assertLive(session);
       return await loadToolCalls(db, session.source_guild_id, request.params.name, {
         ...hoursWindow(query.hours, new Date()),
         errorsOnly: query.errors === "true" || query.errors === "1",
@@ -562,7 +562,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      assertLive(session);
       const guildId = session.source_guild_id;
       const actor = await loadOperatorActor(db, user, { orgId: session.org_id, guildId });
       return await loadGuildReferences({ db, artifacts: studio.deps.artifacts }, actor, guildId);
@@ -577,7 +577,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      assertLive(session);
       return await readGuildRun(inspector, session.source_guild_id, request.params.run_id);
     },
   );
@@ -590,7 +590,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      assertLive(session);
       const agent = await requireGuildAgent(studio.deps.db, session.source_guild_id, session.org_id, request.params.agent_id);
       return await listAgentRoutines(inspector, String(agent.id));
     },

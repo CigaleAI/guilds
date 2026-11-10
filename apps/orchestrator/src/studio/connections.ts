@@ -12,7 +12,7 @@ import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import { projectGuildConnections, type PreviewDeps, type ProjectedConnection } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
-import type { LiveStudioSession } from "./index.js";
+import { grantedConnectionIds, type LiveStudioSession } from "./session.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
@@ -112,11 +112,6 @@ export async function reachableConnection(
     return null;
   }
   return { connection, server };
-}
-
-export function grantedConnectionIds(session: StudioSessionRow): string[] {
-  const raw = session.granted_connection_ids;
-  return Array.isArray(raw) ? raw.map((id) => String(id)) : [];
 }
 
 /** A login as a Studio tool result names it: its server, whose it is, the account, and whether it is connected. */
