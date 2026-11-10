@@ -137,7 +137,7 @@ test("a tagged wake points at the latest row that tagged it, not the snapshot's 
           updated_at: ts("14:01:00"),
         }),
       ],
-      stats: [{ run_id: "r_desk", last_seq: 6, first_at: ts("14:00:31"), last_at: ts("14:01:00"), cost_usd: "0.012" }],
+      stats: [{ run_id: "r_desk", last_seq: 6, first_at: ts("14:00:31"), last_at: ts("14:01:00"), cost_usd: 0.012 }],
       deliveries: [{ run_id: "r_desk", metadata: { source: "group_chat", you_were_tagged: true } }],
     }),
   );
@@ -226,7 +226,7 @@ test("a direct chat nobody is recorded as starting has no user", () => {
   const view = projectActivity(
     input({
       runs: [activityRun({ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("16:00:00") })],
-      stats: [{ run_id: "r_chat", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: "0" }],
+      stats: [{ run_id: "r_chat", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: 0 }],
     }),
   );
   assert.deepEqual(view.wakes[0]?.trigger, { type: "direct", user_id: null });
@@ -310,8 +310,8 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
         activityRun({ id: "r_live", agent_id: "a_scout", kind: "group", errors: [], metadata: {}, group_chat_through_seq: 3, created_at: ts("17:39:00"), updated_at: ts("17:39:30") }),
       ],
       stats: [
-        { run_id: "r_old", last_seq: 20, first_at: null, last_at: ts("13:30:00"), cost_usd: "0" },
-        { run_id: "r_chat", last_seq: 40, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: "0.3" },
+        { run_id: "r_old", last_seq: 20, first_at: null, last_at: ts("13:30:00"), cost_usd: 0 },
+        { run_id: "r_chat", last_seq: 40, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: 0.3 },
       ],
       generating: (runId) => runId === "r_live",
     }),
@@ -339,11 +339,11 @@ test("a wake lists its tool calls with their results, its last text, and a direc
         activityRun({ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("15:00:00") }),
         activityRun({ id: "r_tick", agent_id: "a_scout", kind: "schedule", schedule_id: "sch_1", errors: [], metadata: {}, created_at: ts("14:00:00"), updated_at: ts("14:01:00") }),
       ],
-      stats: [{ run_id: "r_chat", last_seq: 12, first_at: ts("14:58:00"), last_at: ts("15:00:00"), cost_usd: "0" }],
+      stats: [{ run_id: "r_chat", last_seq: 12, first_at: ts("14:58:00"), last_at: ts("15:00:00"), cost_usd: 0 }],
       steps: [
         step({ run_id: "r_tick", seq: 1, created_at: ts("14:00:10"), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" }),
-        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11"), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" }),
-        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12"), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" }),
+        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11"), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: 98 }),
+        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12"), role: "tool", tool_call_id: "c_note", error: null, duration_ms: 4 }),
         step({ run_id: "r_tick", seq: 4, created_at: ts("14:00:40"), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " }),
         step({ run_id: "r_chat", seq: 11, created_at: ts("14:59:00"), role: "assistant", tool_calls: [], text: "Here are the likes." }),
       ],

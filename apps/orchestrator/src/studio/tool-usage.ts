@@ -62,10 +62,6 @@ export const TOOL_CALLS_PAGE = 50;
 // Enough of a call's arguments to recognise it; the run keeps them all.
 export const TOOL_ARGUMENT_CHARS = 240;
 
-/** A numeric column the driver returns as text, as a number; null when it holds none. */
-const num = (value: string | null): number | null =>
-  value === null || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
-
 /** A native tool's group: the family its name starts with, such as `note` or `record`. */
 export function nativeGroup(name: string): string {
   return name.split("_")[0] || name;
@@ -247,7 +243,7 @@ export function viewToolCall(row: GuildToolCallRow): ToolCallView {
     arguments: argumentsPreview(row.arguments),
     status: error ? "error" : "ok",
     error,
-    duration_ms: num(row.duration_ms),
+    duration_ms: row.duration_ms,
   };
 }
 

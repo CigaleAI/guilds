@@ -215,15 +215,6 @@ function timestampMs(value: string): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
-/** A numeric column the driver returns as text, as a number, or null when it holds none. */
-function num(value: string | null | undefined): number | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function previewText(content: string, chars: number): string {
   return content.length > chars ? `${content.slice(0, chars).trimEnd()}…` : content;
 }
@@ -374,7 +365,7 @@ function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
         name: call.function.name,
         arguments: previewText(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
         error: result?.error || null,
-        duration_ms: num(result?.duration_ms),
+        duration_ms: result?.duration_ms ?? null,
         at: iso(row.created_at),
       });
     }
@@ -484,7 +475,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
       reply: steps?.reply ?? null,
       opening: kind === "direct" ? (openingByRun.get(runId) ?? null) : null,
       last_seq: stats?.last_seq ?? null,
-      cost_usd: num(stats?.cost_usd) ?? 0,
+      cost_usd: stats?.cost_usd ?? 0,
     });
   }
   wakes.sort((left, right) => (timestampMs(left.started_at) ?? 0) - (timestampMs(right.started_at) ?? 0));
