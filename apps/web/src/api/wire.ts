@@ -370,9 +370,9 @@ function isFocusText(value: unknown): value is string | null | undefined {
   return value === undefined || isStringOrNull(value);
 }
 
-/** A step or version a focus pin names, as a number or its digits; null or left out for none. */
-function isFocusIndex(value: unknown): value is number | string | null | undefined {
-  return value === undefined || isNumberOrNull(value) || isString(value);
+/** A step or version a focus pin names, a number; null or left out for none. */
+function isFocusIndex(value: unknown): value is number | null | undefined {
+  return value === undefined || isNumberOrNull(value);
 }
 
 /** Whether a value is the evidence a Studio message is pinned to: a kind the server resolves, and ids that are text or null. */
@@ -404,11 +404,13 @@ export function isStudioFocus(value: unknown): value is StudioFocus {
   return (
     isJsonObject(value) &&
     STUDIO_FOCUS_KINDS.some((kind) => kind === value.kind) &&
-    hasFields(value, ["agent_id", "agent_name", "label"], isString) &&
+    isString(value.label) &&
     hasFields(value, ["seq", "version_index"], isNumberOrNull) &&
     hasFields(
       value,
       [
+        "agent_id",
+        "agent_name",
         "run_id",
         "call_id",
         "tool_name",

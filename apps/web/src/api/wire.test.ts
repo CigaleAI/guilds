@@ -138,9 +138,14 @@ test("parseStudioConnection keeps the text fields of the connection and its serv
 });
 
 test("isStudioFocusRequest admits a pin of a kind the server resolves and refuses another", () => {
-  assert.equal(isStudioFocusRequest({ kind: "issue", issue_id: "iss_1", seq: "3" }), true);
+  assert.equal(isStudioFocusRequest({ kind: "issue", issue_id: "iss_1", seq: 3 }), true);
   assert.equal(isStudioFocusRequest({ kind: "focus", issue_id: "iss_1" }), false);
   assert.equal(isStudioFocusRequest({ kind: "run", run_id: 7 }), false);
+});
+
+test("isStudioFocusRequest refuses a step or version written as digits", () => {
+  assert.equal(isStudioFocusRequest({ kind: "run", run_id: "r_1", seq: "3" }), false);
+  assert.equal(isStudioFocusRequest({ kind: "memory_version", agent_id: "a_1", version_index: "2" }), false);
 });
 
 test("a tool call's arguments pass their tool's check when each parameter has its schema's type", () => {

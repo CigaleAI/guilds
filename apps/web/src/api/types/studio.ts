@@ -49,16 +49,16 @@ export type NewStudioSession = {
 
 /**
  * The evidence an operator pins to a Studio message: its kind and the ids that name it, null for
- * one it names none of. A step or version is a number or its digits.
+ * one it names none of. A step or version is a non-negative integer.
  */
 export type StudioFocusRequest = {
   kind: StudioFocusKind;
   agent_id?: string | null;
   run_id?: string | null;
-  seq?: number | string | null;
+  seq?: number | null;
   call_id?: string | null;
   revision_id?: string | null;
-  version_index?: number | string | null;
+  version_index?: number | null;
   schedule_id?: string | null;
   display_path?: string | null;
   change_id?: string | null;
@@ -193,8 +193,8 @@ export type StudioFocusKind = "run" | "memory_version" | "routine" | "file" | "i
  */
 export type StudioFocus = {
   kind: StudioFocusKind;
-  agent_id: string;
-  agent_name: string;
+  agent_id: string | null;
+  agent_name: string | null;
   label: string;
   run_id: string | null;
   seq: number | null;

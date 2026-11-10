@@ -482,7 +482,9 @@ id it cannot resolve is 422. It inserts two user rows in the same
 generation:
 
 1. an evidence block with `source: studio_focus` and the resolved pin
-   in `metadata.focus`
+   in `metadata.focus`; its `agent_id` and `agent_name` are null for a
+   tool pin, and for a file or issue pin that names no agent of the
+   source guild
 2. the question
 
 The block is `<evidence source="studio.focus.<kind>">`. It carries:
@@ -838,8 +840,9 @@ Message body: `{ "content", "focus"? }` where `content` is a string and
 `focus` is null or `{ kind: run | memory_version | routine | file |
 issue | tool, agent_id?, run_id?, seq?, call_id?, revision_id?,
 version_index?, schedule_id?, display_path?, change_id?, issue_id?,
-tool_name? }`. `kind` is a string, each id and path a string or null,
-and `seq` and `version_index` a number, its digits, or null.
+tool_name? }`. Each id and path is a non-empty string or null, and
+`seq` and `version_index` a non-negative integer or null; any other
+value is refused with 422 before the pin is resolved.
 
 Revise body: `{ "proposed_content", "expected_head_id"? }`, both
 strings; `expected_head_id` is the draft itself when left out. Target

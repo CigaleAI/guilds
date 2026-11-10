@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A Studio focus pin's `seq` and `version_index` are
+non-negative integers, no longer their digits as text, and its ids
+are non-empty strings; any other value is refused with a 422 before
+the pin is resolved. A stored pin on a tool, or on a file or issue
+without an agent of the source guild, records its `agent_id` and
+`agent_name` as null instead of empty text.
+
 **Rebuild.** `POST /api/studio/sessions/:id/messages` refuses a focus
 pin on an agent outside the session's source guild with a 404, as the
 other Studio routes that name an agent do, instead of a 422.
