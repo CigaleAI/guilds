@@ -25,7 +25,11 @@ import {
   parseStateKind,
   type StateDeps,
 } from "../studio/state-data.js";
-import { listSessionConnections } from "../studio/connections.js";
+import {
+  grantSessionConnection,
+  listSessionConnections,
+  withdrawSessionConnection,
+} from "../studio/connections.js";
 import { listGuildInventory } from "../studio/inventory.js";
 import { assertLive, listSessionMessages, viewSession } from "../studio/session.js";
 import { requireGuildAgent } from "../studio/source-guild.js";
@@ -217,8 +221,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const session = await studio.getOwnedSession(request.params.session_id, user, org);
       const connectionId = request.params.connection_id;
       return request.body.granted === false
-        ? await studio.withdrawConnection(session, connectionId)
-        : await studio.grantConnection(session, connectionId);
+        ? await withdrawSessionConnection(studio.deps.db, session, connectionId)
+        : await grantSessionConnection(studio.deps.db, session, connectionId);
     },
   );
 

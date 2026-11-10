@@ -34,8 +34,6 @@ import { studioToolSchemas } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
 import {
   answerLoginRequest,
-  grantSessionConnection,
-  withdrawSessionConnection,
   type StudioMcpClient,
 } from "./connections.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
@@ -312,22 +310,6 @@ export class StudioService {
       session.blocked_reason = "source_deleted";
     }
     return session;
-  }
-
-  /** Lets the coach use one login of the source guild in this session. */
-  async grantConnection(
-    session: StudioSessionRow,
-    connectionId: string,
-  ): Promise<StudioSession> {
-    return viewSession(await grantSessionConnection(this.deps.db, session, connectionId));
-  }
-
-  /** Takes one login back from the coach in this session. */
-  async withdrawConnection(
-    session: StudioSessionRow,
-    connectionId: string,
-  ): Promise<StudioSession> {
-    return viewSession(await withdrawSessionConnection(this.deps.db, session, connectionId));
   }
 
   // Grant or decline one login request from the Studio log. The answer and

@@ -12,7 +12,7 @@ import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
 import { projectGuildConnections, type PreviewDeps, type ProjectedConnection } from "./preview.js";
 import { withLockedSession } from "./session-lock.js";
-import { grantedConnectionIds, type LiveStudioSession } from "./session.js";
+import { grantedConnectionIds, viewSession, type LiveStudioSession, type StudioSession } from "./session.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
@@ -221,12 +221,12 @@ export async function listSessionConnections(
   }));
 }
 
-/** Lets the coach use one login of the source guild in this session; the session row as it stands after. */
+/** Lets the coach use one login of the source guild in this session; the session as it stands after. */
 export async function grantSessionConnection(
   db: Queryable,
   session: StudioSessionRow,
   connectionId: string,
-): Promise<StudioSessionRow> {
+): Promise<StudioSession> {
   const next = await grantedWith(db, session, connectionId);
   const updated = await updateStudioSession(
     db,
@@ -234,15 +234,15 @@ export async function grantSessionConnection(
     { granted_connection_ids: next },
     new Date(),
   );
-  return updated ?? { ...session, granted_connection_ids: next };
+  return viewSession(updated ?? { ...session, granted_connection_ids: next });
 }
 
-/** Takes one login back from the coach in this session; the session row as it stands after. */
+/** Takes one login back from the coach in this session; the session as it stands after. */
 export async function withdrawSessionConnection(
   db: Queryable,
   session: StudioSessionRow,
   connectionId: string,
-): Promise<StudioSessionRow> {
+): Promise<StudioSession> {
   assertTakesGrants(session);
   const next = grantedConnectionIds(session).filter((id) => id !== connectionId);
   const updated = await updateStudioSession(
@@ -251,7 +251,7 @@ export async function withdrawSessionConnection(
     { granted_connection_ids: next },
     new Date(),
   );
-  return updated ?? { ...session, granted_connection_ids: next };
+  return viewSession(updated ?? { ...session, granted_connection_ids: next });
 }
 
 /** A session takes grants while it is active and its source guild is there. */
