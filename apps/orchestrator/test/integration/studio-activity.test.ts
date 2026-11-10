@@ -192,6 +192,15 @@ test("studio activity lists each wake with what started it and what it produced"
     toolCall: { id: "call_note", name: "note_write" },
   };
   await writeNote(artifacts, deskActor, { key: "leads.md", content: "- one\n", title: "Leads" });
+  await insertMessage(db,
+    {
+      runId: "r_desk",
+      seq: 50,
+      payload: { role: "assistant", content: "" },
+      metadata: { generation: 1, usage: { input_tokens: 100, output_tokens: 20, cache_read_tokens: 0 }, cost_usd: 0.0125 },
+    },
+    now,
+  );
   await appendRunError(
     db,
     "r_desk",
@@ -282,6 +291,8 @@ test("studio activity lists each wake with what started it and what it produced"
     assert.equal(desk?.failed, true);
     assert.deepEqual(desk?.errors.map((error) => error.operation), ["generation.max_tool_calls"]);
     assert.deepEqual(desk?.writes.map((write) => [write.kind, write.target, write.call_id]), [["note", "leads.md", "call_note"]]);
+    assert.equal(desk?.cost_usd, 0.0125);
+    assert.equal(desk?.last_seq, 50);
 
     const chat = byRun.get("r_chat");
     assert.deepEqual(chat?.trigger, { type: "direct", user_id: "user_operator" });
