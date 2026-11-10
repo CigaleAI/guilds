@@ -65,6 +65,43 @@ function listFolders(dir: string): string[] {
     .filter((child) => isDir(child));
 }
 
+/**
+ * The note a wikilink target names, as a posix path without `.md`; null when the target is empty
+ * or absolute, or holds an empty, `.` or `..` part.
+ */
+function wikilinkNotePath(target: string): string | null {
+  let value = target.trim().replaceAll("\\", "/");
+  if (value.endsWith(".md")) {
+    value = value.slice(0, -".md".length);
+  }
+  if (!value || value.startsWith("/") || path.isAbsolute(value)) {
+    return null;
+  }
+  const parts = posixParts(value);
+  if (!parts.length || parts.some((part) => part === "" || part === "." || part === "..")) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * The note named `name` (a file `<name>.md`) in the first of `roots` that holds one; null when
+ * none does, or when any of them holds more than one.
+ */
+function findNoteByName(name: string, roots: string[]): string | null {
+  const found = roots
+    .filter((root) => isDir(root))
+    .map((root) =>
+      rglobFiles(root)
+        .filter((child) => path.basename(child) === `${name}.md`)
+        .filter((child) => isRelativeTo(resolved(child), root)),
+    );
+  if (found.some((notes) => notes.length > 1)) {
+    return null;
+  }
+  return found.flat()[0] ?? null;
+}
+
 export class NotesStore {
   root: string;
   templates: string;
@@ -236,15 +273,8 @@ export class NotesStore {
     agentName: string,
     target: string,
   ): string | null {
-    let value = target.trim().replaceAll("\\", "/");
-    if (value.endsWith(".md")) {
-      value = value.slice(0, -".md".length);
-    }
-    if (!value || value.startsWith("/") || path.isAbsolute(value)) {
-      return null;
-    }
-    const parts = posixParts(value);
-    if (!parts.length || parts.some((part) => part === "" || part === "." || part === "..")) {
+    const value = wikilinkNotePath(target);
+    if (value === null) {
       return null;
     }
     const privateRoot = this.privateNotesRoot(orgSlug, guildName, agentName);
@@ -259,25 +289,8 @@ export class NotesStore {
     if (value.includes("/")) {
       return null;
     }
-    const matches: string[] = [];
-    for (const root of [privateRoot, shared]) {
-      if (!isDir(root)) {
-        continue;
-      }
-      const found = rglobFiles(root)
-        .filter((child) => path.basename(child) === `${path.posix.basename(value)}.md`)
-        .filter((child) => isRelativeTo(resolved(child), root));
-      if (found.length > 1) {
-        return null;
-      }
-      if (found.length === 1 && found[0]) {
-        matches.push(found[0]);
-      }
-    }
-    if (!matches.length) {
-      return null;
-    }
-    return this.repoPath(matches[0]!).replace(/\.md$/, "");
+    const found = findNoteByName(value, [privateRoot, shared]);
+    return found === null ? null : this.repoPath(found).replace(/\.md$/, "");
   }
 
   /** A note of the agent's private notes: its repository path and its text. */

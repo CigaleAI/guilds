@@ -308,3 +308,43 @@ test("delete rejects protected agent files", async () => {
     /routine notes cannot be deleted/,
   );
 });
+
+test("resolve_wikilink finds a note by its path or its name in the agent's private notes, then its guild's shared notes", async () => {
+  const notes = notesStore();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  await notes.createAgent("acme", "research", "analyst");
+  const agentNotes = path.join(notes.agentDir("acme", "research", "researcher"), "notes");
+  const shared = path.join(notes.root, "orgs", "acme", "guilds", "research", "shared");
+  for (const file of [
+    path.join(agentNotes, "ideas", "first.md"),
+    path.join(agentNotes, "both.md"),
+    path.join(agentNotes, "one", "same.md"),
+    path.join(agentNotes, "two", "same.md"),
+    path.join(shared, "handoff.md"),
+    path.join(shared, "both.md"),
+    path.join(shared, "one", "twice.md"),
+    path.join(shared, "two", "twice.md"),
+    path.join(notes.agentDir("acme", "research", "analyst"), "notes", "secret.md"),
+  ]) {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "note");
+  }
+  const resolve = (target: string) => notes.resolveWikilink("acme", "research", "researcher", target);
+  const first = "orgs/acme/guilds/research/agents/researcher/notes/ideas/first";
+  const handoff = "orgs/acme/guilds/research/shared/handoff";
+  assert.equal(resolve("first"), first);
+  assert.equal(resolve(" first.md "), first);
+  assert.equal(resolve(first), first);
+  assert.equal(resolve("orgs\\acme\\guilds\\research\\shared\\handoff.md"), handoff);
+  assert.equal(resolve("guilds/research/shared/handoff"), handoff);
+  assert.equal(resolve("handoff"), handoff);
+  assert.equal(resolve("both"), "orgs/acme/guilds/research/agents/researcher/notes/both");
+  assert.equal(notes.resolveWikilink("acme", "research", "nobody", "handoff"), handoff);
+  for (const target of ["same", "twice", "missing", "ideas/missing", "orgs/acme/guilds/research/agents/analyst/notes/secret"]) {
+    assert.equal(resolve(target), null, target);
+  }
+  for (const target of ["", ".md", "/etc/passwd", "ideas/../first", "./first", "ideas//first"]) {
+    assert.equal(resolve(target), null, target);
+  }
+});
