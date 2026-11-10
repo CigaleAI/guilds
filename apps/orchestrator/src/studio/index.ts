@@ -31,7 +31,7 @@ import {
 import { refreshSystemMessage } from "./system-message.js";
 import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
 import { inspectAgent, type StudioInspector } from "./inspector.js";
-import { studioToolSchemas, type StudioToolDeps } from "./tools.js";
+import { studioToolSchemas } from "./tools.js";
 import { previewDatabase, type PreviewDeps } from "./preview.js";
 import {
   answerLoginRequest,
@@ -51,7 +51,6 @@ import {
   findEditRecord,
   markEdit,
   viewEdit,
-  type EditDeps,
   type EditScope,
   type StudioEditView,
 } from "./edits.js";
@@ -106,6 +105,25 @@ export type StudioServiceDeps = {
   isAgentBusy?: (agentId: string) => boolean;
 };
 
+/**
+ * What the Studio's modules read and write through, built once from the service's own: the stores,
+ * the drafts, the projection of an agent's next run, the coach's logins, and the channels a change
+ * is announced on.
+ */
+export type StudioDeps = {
+  db: Queryable;
+  artifacts: ArtifactStore;
+  scripts: Scripts;
+  schedules: Schedules;
+  notesSystemPath: string;
+  mcp: StudioMcpClient | null;
+  drafts: StudioDrafts;
+  preview: PreviewDeps;
+  publishFilesChanged?: ((guildId: string) => Promise<void>) | undefined;
+  publishRoutinesChanged?: ((guildId: string, change: RoutineChange) => Promise<void>) | undefined;
+  isAgentBusy?: ((agentId: string) => boolean) | undefined;
+};
+
 /** A session an operator can still work in: not archived or blocked, its source guild still there. */
 export type LiveStudioSession = StudioSessionRow & { source_guild_id: string };
 
@@ -156,19 +174,33 @@ export type StudioSessionRequest = {
 };
 
 export class StudioService {
+  deps: StudioDeps;
   drafts: StudioDrafts;
   runner: StudioRunner;
   admission: AdmissionCoordinator;
   policy: OrgPolicy;
   credentials: ModelCredentialsProvider;
 
-  constructor(public deps: StudioServiceDeps) {
-    this.drafts = new StudioDrafts(deps.db, deps.artifacts);
-    this.admission = deps.admission ?? new AdmissionCoordinator();
-    this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(deps.db);
+  constructor(services: StudioServiceDeps) {
+    this.drafts = new StudioDrafts(services.db, services.artifacts);
+    this.deps = {
+      db: services.db,
+      artifacts: services.artifacts,
+      scripts: services.scripts,
+      schedules: services.schedules,
+      notesSystemPath: services.notesSystemPath,
+      mcp: services.mcp ?? null,
+      drafts: this.drafts,
+      preview: { db: previewDatabase(services.db), artifacts: services.artifacts, scripts: services.scripts },
+      publishFilesChanged: services.publishFilesChanged,
+      publishRoutinesChanged: services.publishRoutinesChanged,
+      isAgentBusy: services.isAgentBusy,
+    };
+    this.admission = services.admission ?? new AdmissionCoordinator();
+    this.policy = services.policy ?? OPEN_POLICY;
+    this.credentials = services.credentials ?? coreModelCredentials(services.db);
     this.runner = new StudioRunner({
-      db: deps.db,
+      db: services.db,
       admission: this.admission,
       policy: this.policy,
       credentials: this.credentials,
@@ -176,11 +208,7 @@ export class StudioService {
   }
 
   previewDeps(): PreviewDeps {
-    return {
-      db: previewDatabase(this.deps.db),
-      artifacts: this.deps.artifacts,
-      scripts: this.deps.scripts,
-    };
+    return this.deps.preview;
   }
 
   async reconcile(): Promise<void> {
@@ -370,7 +398,7 @@ export class StudioService {
   }
 
   async listConnections(session: StudioSessionRow): Promise<StudioConnection[]> {
-    return listSessionConnections(this.previewDeps(), session);
+    return listSessionConnections(this.deps.preview, session);
   }
 
   /** Lets the coach use one login of the source guild in this session. */
@@ -457,17 +485,7 @@ export class StudioService {
       user,
       hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
     });
-    return inspectAgent(
-      {
-        db: this.deps.db,
-        artifacts: this.deps.artifacts,
-        preview: this.previewDeps(),
-        notesSystemPath: this.deps.notesSystemPath,
-        isAgentBusy: this.deps.isAgentBusy,
-      },
-      viewer,
-      agent,
-    );
+    return inspectAgent(this.deps, viewer, agent);
   }
 
   async memoryTimeline(
@@ -572,7 +590,7 @@ export class StudioService {
     );
     const limits = (await this.policy.standing(started.session.org_id)).limits.coach.studio;
     this.runner.start(
-      this.toolDeps(),
+      this.deps,
       {
         session: {
           ...started.session,
@@ -673,12 +691,7 @@ export class StudioService {
     user: UserRow,
     draftId: string,
   ): Promise<PublishedDraft> {
-    const result = await this.drafts.publish(
-      { db: this.deps.db, preview: this.previewDeps(), notesSystemPath: this.deps.notesSystemPath },
-      session,
-      user,
-      draftId,
-    );
+    const result = await this.drafts.publish(this.deps, session, user, draftId);
     return this.announcePublish(session, result);
   }
 
@@ -693,22 +706,6 @@ export class StudioService {
       ...result,
       target_generating: targetId ? Boolean(this.deps.isAgentBusy?.(targetId)) : false,
     };
-  }
-
-  private toolDeps(): StudioToolDeps {
-    return {
-      artifacts: this.deps.artifacts,
-      db: this.deps.db,
-      schedules: this.deps.schedules,
-      drafts: this.drafts,
-      preview: this.previewDeps(),
-      notesSystemPath: this.deps.notesSystemPath,
-      mcp: this.deps.mcp ?? null,
-    };
-  }
-
-  private editDeps(): EditDeps {
-    return { db: this.deps.db, artifacts: this.deps.artifacts, schedules: this.deps.schedules };
   }
 
   private async editScope(session: LiveStudioSession, user: UserRow): Promise<EditScope> {
@@ -732,7 +729,7 @@ export class StudioService {
     }
     const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
     const scope = await this.editScope({ ...session, source_guild_id: sourceGuildId }, user);
-    return viewEdit(this.editDeps(), scope, record);
+    return viewEdit(this.deps, scope, record);
   }
 
   // Apply or decline one edit request from the Studio log. The session lock
@@ -744,7 +741,7 @@ export class StudioService {
     decision: "apply" | "decline",
   ): Promise<StudioEditView> {
     this.assertLive(session);
-    const deps = this.editDeps();
+    const deps = this.deps;
     const scope = await this.editScope(session, user);
     const userId = user.id;
     const outcome = await withLockedSession(this.deps.db, session.id, async () => {
