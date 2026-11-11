@@ -21,11 +21,12 @@ import {
   type RunGroupPostRow,
   type RunOpeningRow,
 } from "../db/activity.js";
-import type { RunError, RunMetadata } from "../db/schema/index.js";
+import type { RunError, RunMetadata, ToolCall } from "../db/schema/index.js";
 import { listSchedulesForGuild } from "../db/schedules.js";
 import type { MessageMetadata } from "../db/schema/index.js";
 import { listGroupMessagesForActivity, type ActivityGroupMessageRow } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
+import type { GenerationLoop } from "../generation/index.js";
 
 // The guild activity ledger: one row per wake (a run of any kind) with what
 // started it, how it was routed, the tools it called, and what it produced,
@@ -46,8 +47,12 @@ const TRIGGER_SCAN_MAX = 500;
 
 export type ActivityWindow = { since: Date; until: Date };
 
-/** The window a guild's activity is read over, the time it counts as now, and which runs are still generating. */
-export type GuildActivityWindow = ActivityWindow & { now?: Date; generating?: (runId: string) => boolean };
+/** What the ledger reads a guild's activity through, built once from the app's services. */
+export type ActivityServices = {
+  db: Queryable;
+  /** The generation loop that marks a run while it generates; absent on a box without one. */
+  generation: Pick<GenerationLoop, "isGenerating"> | null;
+};
 
 export type ActivityAgent = Pick<AgentSummaryRow, "id" | "name" | "avatar_color" | "avatar_shape">;
 
@@ -170,7 +175,8 @@ export type ActivityInput = {
   openings: RunOpeningRow[];
   messages: ActivityGroupMessageRow[];
   schedules: ScheduleRow[];
-  generating: (runId: string) => boolean;
+  /** The ids of the runs among `runs` still generating. */
+  generating: ReadonlySet<string>;
 };
 
 /** The window a Studio query asks for: how many hours back, and until when, both as query text. */
@@ -210,21 +216,12 @@ export function hoursWindow(hours: string | undefined, now: Date): ActivityWindo
 }
 
 /** A stored timestamp as milliseconds, or null when it is not a time. */
-function ms(value: string): number | null {
+function timestampMs(value: string): number | null {
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? null : time;
 }
 
-/** A numeric column the driver returns as text, as a number, or null when it holds none. */
-function num(value: string | null | undefined): number | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function preview(content: string, chars: number): string {
+function previewText(content: string, chars: number): string {
   return content.length > chars ? `${content.slice(0, chars).trimEnd()}…` : content;
 }
 
@@ -345,149 +342,219 @@ function errorsOf(errors: RunError[], sinceMs: number): ActivityError[] {
     .map((entry) => ({ operation: entry.operation, message: entry.message, at: entry.at }));
 }
 
-type WakeSteps = { calls: ActivityToolCall[]; count: number; reply: string | null };
+/** A run's tool calls inside the window, how many it made, and the last text it wrote. */
+export type WakeSteps = { calls: ActivityToolCall[]; count: number; reply: string | null };
 
-// Each run's tool calls in order, paired with their results, and its last text.
-function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
-  const resultKey = (runId: string, callId: string) => `${runId}\u0000${callId}`;
+/** The key a tool result is found by: its run and the call it answers. */
+function resultKey(runId: string, callId: string): string {
+  return `${runId}\u0000${callId}`;
+}
+
+/** Each tool result among the steps, by the run and call it answers; a result without a call id is not one. */
+export function resultsByCall(rows: RunActivityStepRow[]): Map<string, RunActivityStepRow> {
   const results = new Map<string, RunActivityStepRow>();
   for (const row of rows) {
     if (row.role === "tool" && row.tool_call_id) {
       results.set(resultKey(row.run_id, row.tool_call_id), row);
     }
   }
+  return results;
+}
+
+/** A tool call made at `at`, with its arguments cut to a preview and its result's error and duration. */
+export function toolCallOf(call: ToolCall, result: RunActivityStepRow | undefined, at: string): ActivityToolCall {
+  return {
+    call_id: call.id || null,
+    name: call.function.name,
+    arguments: previewText(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
+    error: result?.error || null,
+    duration_ms: result?.duration_ms ?? null,
+    at,
+  };
+}
+
+// Each run's tool calls in order, paired with their results, and its last text.
+function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
+  const results = resultsByCall(rows);
   const byRun = new Map<string, WakeSteps>();
   for (const row of rows) {
     if (row.role !== "assistant") {
       continue;
     }
-    const runId = row.run_id;
-    const steps = byRun.get(runId) ?? { calls: [], count: 0, reply: null };
-    for (const call of row.tool_calls ?? []) {
-      steps.count += 1;
-      if (steps.calls.length >= ACTIVITY_TOOL_CALLS_MAX) {
-        continue;
-      }
-      const result = call.id ? results.get(resultKey(runId, call.id)) : undefined;
-      steps.calls.push({
-        call_id: call.id || null,
-        name: call.function.name,
-        arguments: preview(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
-        error: result?.error || null,
-        duration_ms: num(result?.duration_ms),
-        at: iso(row.created_at),
-      });
-    }
+    const steps = byRun.get(row.run_id) ?? { calls: [], count: 0, reply: null };
+    const calls = row.tool_calls ?? [];
+    const listed = calls.slice(0, Math.max(0, ACTIVITY_TOOL_CALLS_MAX - steps.calls.length));
+    const at = iso(row.created_at);
+    steps.calls.push(...listed.map((call) => toolCallOf(call, results.get(resultKey(row.run_id, call.id)), at)));
+    steps.count += calls.length;
     const said = row.text?.trim() ?? "";
     if (said) {
-      steps.reply = preview(said, ACTIVITY_PREVIEW_CHARS);
+      steps.reply = previewText(said, ACTIVITY_PREVIEW_CHARS);
     }
-    byRun.set(runId, steps);
+    byRun.set(row.run_id, steps);
   }
   return byRun;
 }
 
+/** Each run's `group_post` results inside the window that posted, with the sequence each one posted. */
+export function postsByRun(rows: RunGroupPostRow[], sinceMs: number): Map<string, ActivityWake["posts"]> {
+  const byRun = new Map<string, ActivityWake["posts"]>();
+  for (const row of rows) {
+    const seq = groupPostSeq(row.content);
+    const atMs = timestampMs(row.created_at);
+    if (seq === null || atMs === null || atMs < sinceMs) {
+      continue;
+    }
+    const posts = byRun.get(row.run_id) ?? [];
+    posts.push({ seq, call_id: row.call_id, at: iso(row.created_at) });
+    byRun.set(row.run_id, posts);
+  }
+  return byRun;
+}
+
+/** Each run's file changes inside the window, with what each one touched; a change no run made is left out. */
+export function writesByRun(rows: RunFileChangeRow[], sinceMs: number): Map<string, ActivityWrite[]> {
+  const byRun = new Map<string, ActivityWrite[]>();
+  for (const row of rows) {
+    const atMs = timestampMs(row.created_at);
+    if (row.run_id === null || atMs === null || atMs < sinceMs) {
+      continue;
+    }
+    const writes = byRun.get(row.run_id) ?? [];
+    writes.push({
+      ...classifyWrite(row.display_path, row.tool_name),
+      display_path: row.display_path,
+      operation: row.operation,
+      tool_name: row.tool_name,
+      call_id: row.tool_call_id,
+      at: iso(row.created_at),
+    });
+    byRun.set(row.run_id, writes);
+  }
+  return byRun;
+}
+
+/** Each run's first operator message inside the window as a preview; a run whose opening has no text has none. */
+export function openingsByRun(rows: RunOpeningRow[]): Map<string, string> {
+  const byRun = new Map<string, string>();
+  for (const row of rows) {
+    const said = row.text?.trim() ?? "";
+    if (said) {
+      byRun.set(row.run_id, previewText(said, ACTIVITY_PREVIEW_CHARS));
+    }
+  }
+  return byRun;
+}
+
+/**
+ * What started a run: the public row that woke a group run, the routine that fired a scheduled
+ * one, or the person who opened a direct chat. `delivery` is the group delivery the run opened with.
+ */
+export function wakeTrigger(
+  run: GuildActivityRunRow,
+  agent: ActivityAgent | undefined,
+  delivery: MessageMetadata | undefined,
+  messagesBySeq: Map<number, ActivityGroupMessageRow>,
+): ActivityTrigger {
+  if (run.kind === "group") {
+    return messageTrigger(run, agent?.name ?? "", delivery ?? {}, messagesBySeq);
+  }
+  if (run.kind === "schedule") {
+    return { type: "routine", schedule_id: run.schedule_id };
+  }
+  return { type: "direct", user_id: run.started_by_user_id };
+}
+
+/** What a wake produced: a post, else a write other than its memory, else nothing. */
+export function wakeOutcome(posts: ActivityWake["posts"], writes: ActivityWrite[]): ActivityWake["outcome"] {
+  if (posts.length) {
+    return "posted";
+  }
+  return writes.some((write) => write.kind !== "memory") ? "wrote" : "silent";
+}
+
+/** When a wake ran inside the window, and whether it still runs. */
+export type WakeSpan = Pick<ActivityWake, "started_at" | "ended_at" | "running">;
+
+/**
+ * When a run was awake inside the window: a direct chat from its first step inside it, any other
+ * run from its start; until its last step, or until `now` while it is among `generating`. Null for
+ * a direct chat whose only activity predates the window.
+ */
+export function wakeSpan(
+  run: GuildActivityRunRow,
+  stats: RunActivityStatsRow | undefined,
+  generating: ReadonlySet<string>,
+  now: Date,
+): WakeSpan | null {
+  const running = generating.has(run.id);
+  const firstAt = stats?.first_at ?? null;
+  if (run.kind === "direct" && firstAt === null && !running) {
+    return null;
+  }
+  return {
+    started_at: run.kind === "direct" && firstAt !== null ? iso(firstAt) : iso(run.created_at),
+    ended_at: running ? now.toISOString() : iso(stats?.last_at ?? run.updated_at),
+    running,
+  };
+}
+
+/** What a wake's transcript shows inside the window: its tool calls, its last text, and a direct chat's opening. */
+export type WakeTranscript = Pick<ActivityWake, "tool_calls" | "tool_call_count" | "reply" | "opening">;
+
+/** A run's transcript from its steps inside the window; only a direct chat has an opening. */
+export function wakeTranscript(
+  run: GuildActivityRunRow,
+  steps: WakeSteps | undefined,
+  opening: string | undefined,
+): WakeTranscript {
+  return {
+    tool_calls: steps?.calls ?? [],
+    tool_call_count: steps?.count ?? 0,
+    reply: steps?.reply ?? null,
+    opening: run.kind === "direct" ? (opening ?? null) : null,
+  };
+}
+
 export function projectActivity(input: ActivityInput): ActivityView {
   const sinceMs = input.since.getTime();
-  const nowIso = input.now.toISOString();
   const agentsById = new Map(input.agents.map((agent) => [agent.id, agent]));
   const statsByRun = new Map(input.stats.map((row) => [row.run_id, row]));
   const deliveryByRun = new Map(input.deliveries.map((row) => [row.run_id, row.metadata]));
   const messagesBySeq = new Map(input.messages.map((message) => [message.seq, message]));
 
-  const postsByRun = new Map<string, ActivityWake["posts"]>();
-  for (const row of input.posts) {
-    const seq = groupPostSeq(row.content);
-    const atMs = ms(row.created_at);
-    if (seq === null || atMs === null || atMs < sinceMs) {
-      continue;
-    }
-    const posts = postsByRun.get(row.run_id) ?? [];
-    posts.push({ seq, call_id: row.call_id, at: iso(row.created_at) });
-    postsByRun.set(row.run_id, posts);
-  }
-
-  const writesByRun = new Map<string, ActivityWrite[]>();
-  for (const row of input.changes) {
-    const atMs = ms(row.created_at);
-    if (row.run_id === null || atMs === null || atMs < sinceMs) {
-      continue;
-    }
-    const toolName = row.tool_name;
-    const { kind, target } = classifyWrite(row.display_path, toolName);
-    const writes = writesByRun.get(row.run_id) ?? [];
-    writes.push({
-      kind,
-      target,
-      display_path: row.display_path,
-      operation: row.operation,
-      tool_name: toolName,
-      call_id: row.tool_call_id,
-      at: iso(row.created_at),
-    });
-    writesByRun.set(row.run_id, writes);
-  }
-
+  const postsOf = postsByRun(input.posts, sinceMs);
+  const writesOf = writesByRun(input.changes, sinceMs);
   const stepsOf = stepsByRun(input.steps);
-  const openingByRun = new Map<string, string>();
-  for (const row of input.openings) {
-    const said = row.text?.trim() ?? "";
-    if (said) {
-      openingByRun.set(row.run_id, preview(said, ACTIVITY_PREVIEW_CHARS));
-    }
-  }
+  const openingsOf = openingsByRun(input.openings);
 
   const wakes: ActivityWake[] = [];
   for (const run of input.runs) {
-    const runId = run.id;
-    const agentId = run.agent_id;
-    const agent = agentsById.get(agentId);
-    const kind = run.kind;
-    const stats = statsByRun.get(runId);
-    const running = input.generating(runId);
-    const firstAt = stats?.first_at ?? null;
-    if (kind === "direct" && firstAt === null && !running) {
-      // A direct chat whose only activity predates the window.
+    const stats = statsByRun.get(run.id);
+    const span = wakeSpan(run, stats, input.generating, input.now);
+    if (span === null) {
       continue;
     }
-    const startedAt = kind === "direct" && firstAt !== null ? iso(firstAt) : iso(run.created_at);
-    const lastAt = stats?.last_at ?? run.updated_at;
-    const endedAt = running ? nowIso : iso(lastAt);
-    let trigger: ActivityTrigger;
-    if (kind === "group") {
-      trigger = messageTrigger(run, agent?.name ?? "", deliveryByRun.get(runId) ?? {}, messagesBySeq);
-    } else if (kind === "schedule") {
-      trigger = { type: "routine", schedule_id: run.schedule_id };
-    } else {
-      trigger = { type: "direct", user_id: run.started_by_user_id };
-    }
-    const posts = postsByRun.get(runId) ?? [];
-    const writes = [...(writesByRun.get(runId) ?? []), ...codeWrites(run, endedAt)];
+    const posts = postsOf.get(run.id) ?? [];
+    const writes = [...(writesOf.get(run.id) ?? []), ...codeWrites(run, span.ended_at)];
     const errors = errorsOf(run.errors, sinceMs);
-    const outcome = posts.length ? "posted" : writes.some((write) => write.kind !== "memory") ? "wrote" : "silent";
-    const steps = stepsOf.get(runId);
     wakes.push({
-      run_id: runId,
-      agent_id: agentId,
-      kind,
-      started_at: startedAt,
-      ended_at: endedAt,
-      running,
-      trigger,
-      outcome,
+      run_id: run.id,
+      agent_id: run.agent_id,
+      kind: run.kind,
+      ...span,
+      trigger: wakeTrigger(run, agentsById.get(run.agent_id), deliveryByRun.get(run.id), messagesBySeq),
+      outcome: wakeOutcome(posts, writes),
       failed: errors.length > 0,
       errors,
       posts,
       writes,
-      tool_calls: steps?.calls ?? [],
-      tool_call_count: steps?.count ?? 0,
-      reply: steps?.reply ?? null,
-      opening: kind === "direct" ? (openingByRun.get(runId) ?? null) : null,
+      ...wakeTranscript(run, stepsOf.get(run.id), openingsOf.get(run.id)),
       last_seq: stats?.last_seq ?? null,
-      cost_usd: num(stats?.cost_usd) ?? 0,
+      cost_usd: stats?.cost_usd ?? 0,
     });
   }
-  wakes.sort((left, right) => (ms(left.started_at) ?? 0) - (ms(right.started_at) ?? 0));
+  wakes.sort((left, right) => (timestampMs(left.started_at) ?? 0) - (timestampMs(right.started_at) ?? 0));
 
   const messages: ActivityMessage[] = input.messages.map((row) => ({
     seq: row.seq,
@@ -498,7 +565,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
     author_user_id: row.author_user_id,
     source_run_id: row.source_run_id,
     tagged: row.tagged_names,
-    preview: preview(row.content, ACTIVITY_PREVIEW_CHARS),
+    preview: previewText(row.content, ACTIVITY_PREVIEW_CHARS),
     length: row.content.length,
   }));
 
@@ -558,11 +625,14 @@ export function messageFloor(run: GuildActivityRunRow): number | null {
   return stored !== null ? stored - 1 : scanFloor(run, throughSeq);
 }
 
+/** A guild's activity over `window`, a run still generating at `now` drawn up to it. */
 export async function loadGuildActivity(
-  db: Queryable,
+  services: ActivityServices,
   guildId: string,
-  window: GuildActivityWindow,
+  window: ActivityWindow,
+  now: Date,
 ): Promise<ActivityView> {
+  const { db } = services;
   const { since, until } = window;
   const [agents, runs, schedules] = await Promise.all([
     listAgents(db, guildId),
@@ -587,7 +657,7 @@ export async function loadGuildActivity(
     guildId,
     since,
     until,
-    now: window.now ?? new Date(),
+    now,
     agents,
     runs,
     stats,
@@ -598,6 +668,6 @@ export async function loadGuildActivity(
     openings,
     messages,
     schedules,
-    generating: window.generating ?? (() => false),
+    generating: new Set(runIds.filter((runId) => services.generation?.isGenerating(runId))),
   });
 }

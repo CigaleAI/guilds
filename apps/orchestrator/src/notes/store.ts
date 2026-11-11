@@ -55,6 +55,74 @@ export const SYSTEM_PROMPT = "system.md";
 /** A file in a notes folder: its path within the folder, and the Obsidian link that opens it. */
 export type NotesFile = { path: string; obsidian: string };
 
+/**
+ * Who replaces an agent's Memory: the source the archived Memory's file is named after, and how
+ * the archive's header names what replaced it.
+ */
+export type MemoryWriter = { source: string; replacedBy: string };
+
+/** The folders directly inside `dir`; none when `dir` is not a folder. */
+function listFolders(dir: string): string[] {
+  if (!isDir(dir)) {
+    return [];
+  }
+  return readdirSync(dir)
+    .map((name) => path.join(dir, name))
+    .filter((child) => isDir(child));
+}
+
+/**
+ * The note a wikilink target names, as a posix path without `.md`; null when the target is empty
+ * or absolute, or holds an empty, `.` or `..` part.
+ */
+function wikilinkNotePath(target: string): string | null {
+  let value = target.trim().replaceAll("\\", "/");
+  if (value.endsWith(".md")) {
+    value = value.slice(0, -".md".length);
+  }
+  if (!value || value.startsWith("/") || path.isAbsolute(value)) {
+    return null;
+  }
+  const parts = posixParts(value);
+  if (!parts.length || parts.some((part) => part === "" || part === "." || part === "..")) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * The note named `name` (a file `<name>.md`) in the first of `roots` that holds one; null when
+ * none does, or when any of them holds more than one.
+ */
+function findNoteByName(name: string, roots: string[]): string | null {
+  const found = roots
+    .filter((root) => isDir(root))
+    .map((root) =>
+      rglobFiles(root)
+        .filter((child) => path.basename(child) === `${name}.md`)
+        .filter((child) => isRelativeTo(resolved(child), root)),
+    );
+  if (found.some((notes) => notes.length > 1)) {
+    return null;
+  }
+  return found.flat()[0] ?? null;
+}
+
+/**
+ * The files under one of an agent's folders, by their posix paths in the agent's folder, sorted
+ * and without `.gitkeep`; none when the folder is missing.
+ */
+function listHostFolderFiles(agent: string, folder: string): string[] {
+  const directory = path.join(agent, folder);
+  if (!isDir(directory)) {
+    return [];
+  }
+  return rglobAll(directory)
+    .sort()
+    .filter((child) => statIfFile(child) && path.basename(child) !== ".gitkeep")
+    .map((child) => posixRel(agent, child));
+}
+
 export class NotesStore {
   root: string;
   templates: string;
@@ -108,34 +176,21 @@ export class NotesStore {
 
   async ensureMemoryFiles(): Promise<void> {
     await this.lock.run(() => {
-      const orgs = path.join(this.root, "orgs");
-      if (!isDir(orgs)) {
-        return;
-      }
-      for (const orgName of readdirSync(orgs)) {
-        const guilds = path.join(orgs, orgName, "guilds");
-        if (!isDir(guilds)) {
-          continue;
-        }
-        for (const guildName of readdirSync(guilds)) {
-          const agents = path.join(guilds, guildName, "agents");
-          if (!isDir(agents)) {
-            continue;
-          }
-          for (const agentName of readdirSync(agents)) {
-            const agentDir = path.join(agents, agentName);
-            if (!isDir(agentDir)) {
-              continue;
-            }
-            migrateAgentLayout(agentDir);
-            const filePath = path.join(agentDir, MEMORY_FILE);
-            if (!statIfFile(filePath)) {
-              writeFileSync(filePath, EMPTY_MEMORY, "utf8");
-            }
-          }
+      for (const agentDir of this.listAgentDirs()) {
+        migrateAgentLayout(agentDir);
+        const filePath = path.join(agentDir, MEMORY_FILE);
+        if (!statIfFile(filePath)) {
+          writeFileSync(filePath, EMPTY_MEMORY, "utf8");
         }
       }
     });
+  }
+
+  /** The folder of every agent in the repository, across its organisations and guilds. */
+  private listAgentDirs(): string[] {
+    return listFolders(path.join(this.root, "orgs"))
+      .flatMap((org) => listFolders(path.join(org, "guilds")))
+      .flatMap((guild) => listFolders(path.join(guild, "agents")));
   }
 
   systemPath(): string {
@@ -239,15 +294,8 @@ export class NotesStore {
     agentName: string,
     target: string,
   ): string | null {
-    let value = target.trim().replaceAll("\\", "/");
-    if (value.endsWith(".md")) {
-      value = value.slice(0, -".md".length);
-    }
-    if (!value || value.startsWith("/") || path.isAbsolute(value)) {
-      return null;
-    }
-    const parts = posixParts(value);
-    if (!parts.length || parts.some((part) => part === "" || part === "." || part === "..")) {
+    const value = wikilinkNotePath(target);
+    if (value === null) {
       return null;
     }
     const privateRoot = this.privateNotesRoot(orgSlug, guildName, agentName);
@@ -262,25 +310,8 @@ export class NotesStore {
     if (value.includes("/")) {
       return null;
     }
-    const matches: string[] = [];
-    for (const root of [privateRoot, shared]) {
-      if (!isDir(root)) {
-        continue;
-      }
-      const found = rglobFiles(root)
-        .filter((child) => path.basename(child) === `${path.posix.basename(value)}.md`)
-        .filter((child) => isRelativeTo(resolved(child), root));
-      if (found.length > 1) {
-        return null;
-      }
-      if (found.length === 1 && found[0]) {
-        matches.push(found[0]);
-      }
-    }
-    if (!matches.length) {
-      return null;
-    }
-    return this.repoPath(matches[0]!).replace(/\.md$/, "");
+    const found = findNoteByName(value, [privateRoot, shared]);
+    return found === null ? null : this.repoPath(found).replace(/\.md$/, "");
   }
 
   /** A note of the agent's private notes: its repository path and its text. */
@@ -298,39 +329,17 @@ export class NotesStore {
    */
   listPrivateNotes(orgSlug: string, guildName: string, agentName: string, prefix: string): string[] {
     const posix = prefixPosix(prefix);
-    const base = this.resolvePrivatePath(orgSlug, guildName, agentName, posix);
-    if (statIfFile(base)) {
-      if (path.extname(base) !== ".md") {
-        throw new NotesError("invalid path");
-      }
-      return [this.repoPath(base)];
+    const items = this.listNotesAt(this.resolvePrivatePath(orgSlug, guildName, agentName, posix));
+    if (posix !== "") {
+      return items;
     }
-    const items = this.collectTree(base);
-    if (posix === "") {
-      const agent = this.agentDir(orgSlug, guildName, agentName);
-      for (const name of [ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR]) {
-        const special = path.join(agent, name);
-        const children = this.collectTree(special);
-        if (children.length) {
-          items.push(`${this.repoPath(special)}/`);
-          items.push(...children);
-        }
-      }
-      items.sort();
-    }
-    return items;
+    items.push(...this.collectFoldersBesideNotes(this.agentDir(orgSlug, guildName, agentName)));
+    return items.sort();
   }
 
   /** The repository paths of the guild's shared notes under a prefix, folders ending in `/`. */
   listSharedNotes(orgSlug: string, guildName: string, prefix: string): string[] {
-    const base = this.resolveSharedPath(orgSlug, guildName, prefixPosix(prefix));
-    if (statIfFile(base)) {
-      if (path.extname(base) !== ".md") {
-        throw new NotesError("invalid path");
-      }
-      return [this.repoPath(base)];
-    }
-    return this.collectTree(base);
+    return this.listNotesAt(this.resolveSharedPath(orgSlug, guildName, prefixPosix(prefix)));
   }
 
   /**
@@ -360,13 +369,13 @@ export class NotesStore {
     });
   }
 
-  async writeAgentFile(
+  async writeAgentNotesFile(
     orgSlug: string,
     guildName: string,
     name: string,
     relative: string,
     content: string,
-    options: { actor?: string | null } = {},
+    actor: string | null,
   ): Promise<string> {
     return this.lock.run(() => {
       const agent = this.agentDir(orgSlug, guildName, name);
@@ -381,24 +390,17 @@ export class NotesStore {
         throw new NotesError("memory archive notes cannot be overwritten");
       }
       if (posix === MEMORY_FILE) {
-        if (!options.actor) {
+        if (!actor) {
           throw new NotesError("memory writes require an actor");
         }
         return this.writeMemoryUnlocked(orgSlug, guildName, name, content, {
-          source: options.actor,
-          replacedBy: `user ${options.actor} (Files pane)`,
+          source: actor,
+          replacedBy: `user ${actor} (Files pane)`,
         });
       }
       const filePath = resolveAgentFile(agent, posix);
-      if (!statIfFile(filePath)) {
-        if (
-          !posix.startsWith("notes/") ||
-          !posix.endsWith(".md") ||
-          isRelativeMemoryArchivePath(posix) ||
-          isRoutineRel(posix)
-        ) {
-          throw new NotesError("file not found");
-        }
+      if (!statIfFile(filePath) && (!posix.startsWith("notes/") || isRoutineRel(posix))) {
+        throw new NotesError("file not found");
       }
       return this.writeFile(filePath, content);
     });
@@ -409,14 +411,14 @@ export class NotesStore {
     guildName: string,
     agentName: string,
     content: string,
-    options: { source: string; replacedBy: string },
+    writer: MemoryWriter,
   ): Promise<string> {
     return this.lock.run(() =>
-      this.writeMemoryUnlocked(orgSlug, guildName, agentName, content, options),
+      this.writeMemoryUnlocked(orgSlug, guildName, agentName, content, writer),
     );
   }
 
-  async writeSharedFile(
+  async writeSharedNotesFile(
     orgSlug: string,
     guildName: string,
     relative: string,
@@ -432,7 +434,7 @@ export class NotesStore {
     });
   }
 
-  async deleteAgentFile(
+  async deleteAgentNotesFile(
     orgSlug: string,
     guildName: string,
     name: string,
@@ -444,7 +446,7 @@ export class NotesStore {
         throw new NotesError("agent folder not found");
       }
       const posix = relativePosix(relative);
-      if ((FIXED_AGENT_FILES as readonly string[]).includes(posix)) {
+      if (FIXED_AGENT_FILES.some((file) => file === posix)) {
         throw new NotesError("cannot delete this file");
       }
       if (isRelativeMemoryArchivePath(posix)) {
@@ -465,7 +467,7 @@ export class NotesStore {
     });
   }
 
-  async deleteSharedFile(orgSlug: string, guildName: string, relative: string): Promise<void> {
+  async deleteSharedNotesFile(orgSlug: string, guildName: string, relative: string): Promise<void> {
     await this.lock.run(() => {
       const shared = this.sharedDir(orgSlug, guildName);
       if (!isDir(shared)) {
@@ -480,7 +482,7 @@ export class NotesStore {
     });
   }
 
-  listAgentFiles(orgSlug: string, guildName: string, name: string): NotesFile[] {
+  listAgentNotesFiles(orgSlug: string, guildName: string, name: string): NotesFile[] {
     const agent = this.agentDir(orgSlug, guildName, name);
     if (!isDir(agent)) {
       throw new NotesError("agent folder not found");
@@ -492,20 +494,12 @@ export class NotesStore {
       }
     }
     for (const folder of HOST_FOLDERS) {
-      const directory = path.join(agent, folder);
-      if (!isDir(directory)) {
-        continue;
-      }
-      for (const child of rglobAll(directory).sort()) {
-        if (statIfFile(child) && path.basename(child) !== ".gitkeep") {
-          paths.push(posixRel(agent, child));
-        }
-      }
+      paths.push(...listHostFolderFiles(agent, folder));
     }
     return paths.map((relative) => this.fileItem(path.join(agent, relative), relative));
   }
 
-  readAgentFile(orgSlug: string, guildName: string, name: string, relative: string): string {
+  readAgentNotesFile(orgSlug: string, guildName: string, name: string, relative: string): string {
     const agent = this.agentDir(orgSlug, guildName, name);
     if (!isDir(agent)) {
       throw new NotesError("agent folder not found");
@@ -517,7 +511,7 @@ export class NotesStore {
     return readFileSync(filePath, "utf8");
   }
 
-  listSharedFiles(orgSlug: string, guildName: string): NotesFile[] {
+  listSharedNotesFiles(orgSlug: string, guildName: string): NotesFile[] {
     const shared = this.sharedDir(orgSlug, guildName);
     if (!isDir(shared)) {
       throw new NotesError("shared folder not found");
@@ -533,7 +527,7 @@ export class NotesStore {
     return items;
   }
 
-  readSharedFile(orgSlug: string, guildName: string, relative: string): string {
+  readSharedNotesFile(orgSlug: string, guildName: string, relative: string): string {
     const shared = this.sharedDir(orgSlug, guildName);
     if (!isDir(shared)) {
       throw new NotesError("shared folder not found");
@@ -685,7 +679,7 @@ export class NotesStore {
     guildName: string,
     agentName: string,
     content: string,
-    options: { source: string; replacedBy: string },
+    writer: MemoryWriter,
   ): string {
     const agent = this.agentDir(orgSlug, guildName, agentName);
     if (!isDir(agent)) {
@@ -700,9 +694,9 @@ export class NotesStore {
     let archivedName = "";
     if (previous !== null) {
       const started = statSync(filePath).mtime;
-      archivedName = archiveFilename(now, options.source);
+      archivedName = archiveFilename(now, writer.source);
       const archivePath = path.join(this.agentDir(orgSlug, guildName, agentName), MEMORY_DIR, archivedName);
-      const header = archiveHeader({ started, ended: now, replacedBy: options.replacedBy });
+      const header = archiveHeader({ started, ended: now, replacedBy: writer.replacedBy });
       this.writeFile(archivePath, `${header}\n${previous}`);
       this.pruneMemoryArchive(orgSlug, guildName, agentName);
     }
@@ -725,6 +719,32 @@ export class NotesStore {
     for (const old of files.slice(0, Math.max(0, files.length - MEMORY_ARCHIVE_KEEP))) {
       unlinkSync(old);
     }
+  }
+
+  /**
+   * The repository paths a listing at `base` answers: `base` itself when it is a note, else the
+   * tree under it. Throws when `base` is a file other than a note.
+   */
+  private listNotesAt(base: string): string[] {
+    if (!statIfFile(base)) {
+      return this.collectTree(base);
+    }
+    if (path.extname(base) !== ".md") {
+      throw new NotesError("invalid path");
+    }
+    return [this.repoPath(base)];
+  }
+
+  /**
+   * The agent's routines and Memory archive folders, each followed by its tree, as the root of its
+   * private notes lists them; a folder that holds nothing is left out.
+   */
+  private collectFoldersBesideNotes(agent: string): string[] {
+    return [ROUTINES_DIR, MEMORY_DIR, LEGACY_MEMORY_DIR].flatMap((name) => {
+      const folder = path.join(agent, name);
+      const children = this.collectTree(folder);
+      return children.length ? [`${this.repoPath(folder)}/`, ...children] : [];
+    });
   }
 
   private collectTree(base: string): string[] {

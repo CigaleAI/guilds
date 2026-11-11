@@ -407,6 +407,7 @@ request. A login request is read back the same way: its content is a
 | Path | What it holds |
 |---|---|
 | `apps/orchestrator/src/studio/edits.ts` | Memory, note body, and guild requests, and reading and applying every edit request |
+| `apps/orchestrator/src/studio/edit-answers.ts` | An edit request as the operator reads it from a session's log, the apply or decline that answers it once, and what an applied edit announces |
 | `apps/orchestrator/src/studio/edit-request.ts` | The request an edit tool returns instead of writing: its reason, content limit, line counts, and widget, with the widget's schema keyed on `edit.kind` and its parse from a tool row |
 | `apps/orchestrator/src/studio/note-edits.ts` | Note requests: the note a body edit replaces, and notes created or deleted |
 | `apps/orchestrator/src/studio/access.ts` | Access requests |
@@ -414,7 +415,7 @@ request. A login request is read back the same way: its content is a
 | `apps/orchestrator/src/artifacts/guild-tables.ts` | `planGuildTableChange`: the rules a collection request follows and what it writes; `guildTableEditEffects`: what a collection edit does to its records and readers |
 | `apps/orchestrator/src/artifacts/access-lists.ts` | `planGuildAccess`: the access rows a collection request changes |
 | `apps/orchestrator/src/studio/routines.ts` | Routine requests |
-| `apps/orchestrator/src/studio/connections.ts` | Connection grants and the read-only proxy |
+| `apps/orchestrator/src/studio/connections.ts` | Connection grants, the answers to login requests, and the read-only proxy |
 | `apps/orchestrator/src/connectors/servers.ts` | `isReadOnlyRemote` |
 | `apps/web/src/api/types/studio.ts`, `apps/web/src/api/wire.ts` | Each request as the app reads it from its tool result, and `parseStudioWidget`, which reads it from the result's text |
 | `apps/web/src/features/studio/pendingModel.ts` | The turn's requests: where each lands and what was answered |

@@ -5,6 +5,7 @@ import type { BuilderSessionRow } from "../../src/db/builder.js";
 import type { Queryable } from "../../src/db/pg.js";
 import type { StudioSessionRow } from "../../src/db/studio.js";
 import { StudioService } from "../../src/studio/index.js";
+import { viewSession } from "../../src/studio/session.js";
 
 /** A query the fake database was sent. */
 type SentQuery = { text: string; params: unknown[] };
@@ -81,7 +82,7 @@ for (const [named, state] of [["an_idle", "idle"], ["a_cancelling", "cancelling"
       cancelled.push(sessionId);
     };
     const view = await studio.cancel(session);
-    assert.deepEqual(view, studio.viewSession(session));
+    assert.deepEqual(view, viewSession(session));
     assert.ok(writesOnlyAGeneratingSession(queries));
     assert.deepEqual(cancelled, []);
   });

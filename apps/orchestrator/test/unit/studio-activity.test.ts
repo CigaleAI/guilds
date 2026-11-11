@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { ToolCall } from "../../src/db/schema/index.js";
-import type { RunActivityStepRow } from "../../src/db/activity.js";
+import type { RunActivityStepRow, RunFileChangeRow } from "../../src/db/activity.js";
 import { test } from "node:test";
 import {
   activityWindow,
@@ -9,7 +9,18 @@ import {
   hoursWindow,
   messageFloor,
   windowBefore,
+  openingsByRun,
+  postsByRun,
   projectActivity,
+  resultsByCall,
+  writesByRun,
+  toolCallOf,
+  wakeOutcome,
+  wakeSpan,
+  wakeTranscript,
+  wakeTrigger,
+  ACTIVITY_PREVIEW_CHARS,
+  ACTIVITY_TOOL_CALLS_MAX,
   type ActivityInput,
 } from "../../src/studio/activity.js";
 import type { GuildActivityRunRow } from "../../src/db/activity.js";
@@ -63,7 +74,7 @@ function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
     openings: [],
     messages: [],
     schedules: [],
-    generating: () => false,
+    generating: new Set(),
     ...overrides,
   };
 }
@@ -85,6 +96,18 @@ const message = (
   content: `message ${seq}`,
   tagged_names: tagged,
   created_at: ts(time),
+});
+
+const call = (id: string, name: string, args: string) => ({ id, type: "function" as const, function: { name, arguments: args } }) satisfies ToolCall;
+
+/** A stored step of `row`, with no calls, text, or result unless given. */
+const step = (row: Pick<RunActivityStepRow, "run_id" | "seq" | "created_at" | "role"> & Partial<RunActivityStepRow>): RunActivityStepRow => ({
+  tool_calls: null,
+  text: null,
+  tool_call_id: null,
+  error: null,
+  duration_ms: null,
+  ...row,
 });
 
 test("the window is hours back from until, capped, and never in the future", () => {
@@ -137,7 +160,7 @@ test("a tagged wake points at the latest row that tagged it, not the snapshot's 
           updated_at: ts("14:01:00"),
         }),
       ],
-      stats: [{ run_id: "r_desk", last_seq: 6, first_at: ts("14:00:31"), last_at: ts("14:01:00"), cost_usd: "0.012" }],
+      stats: [{ run_id: "r_desk", last_seq: 6, first_at: ts("14:00:31"), last_at: ts("14:01:00"), cost_usd: 0.012 }],
       deliveries: [{ run_id: "r_desk", metadata: { source: "group_chat", you_were_tagged: true } }],
     }),
   );
@@ -226,7 +249,7 @@ test("a direct chat nobody is recorded as starting has no user", () => {
   const view = projectActivity(
     input({
       runs: [activityRun({ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("16:00:00") })],
-      stats: [{ run_id: "r_chat", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: "0" }],
+      stats: [{ run_id: "r_chat", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: 0 }],
     }),
   );
   assert.deepEqual(view.wakes[0]?.trigger, { type: "direct", user_id: null });
@@ -310,10 +333,10 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
         activityRun({ id: "r_live", agent_id: "a_scout", kind: "group", errors: [], metadata: {}, group_chat_through_seq: 3, created_at: ts("17:39:00"), updated_at: ts("17:39:30") }),
       ],
       stats: [
-        { run_id: "r_old", last_seq: 20, first_at: null, last_at: ts("13:30:00"), cost_usd: "0" },
-        { run_id: "r_chat", last_seq: 40, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: "0.3" },
+        { run_id: "r_old", last_seq: 20, first_at: null, last_at: ts("13:30:00"), cost_usd: 0 },
+        { run_id: "r_chat", last_seq: 40, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: 0.3 },
       ],
-      generating: (runId) => runId === "r_live",
+      generating: new Set(["r_live"]),
     }),
   );
   assert.deepEqual(view.wakes.map((wake) => wake.run_id), ["r_chat", "r_live"]);
@@ -324,26 +347,17 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
 });
 
 test("a wake lists its tool calls with their results, its last text, and a direct chat's opening", () => {
-  const call = (id: string, name: string, args: string) => ({ id, type: "function" as const, function: { name, arguments: args } }) satisfies ToolCall;
-  const step = (row: Pick<RunActivityStepRow, "run_id" | "seq" | "created_at" | "role"> & Partial<RunActivityStepRow>): RunActivityStepRow => ({
-    tool_calls: null,
-    text: null,
-    tool_call_id: null,
-    error: null,
-    duration_ms: null,
-    ...row,
-  });
   const view = projectActivity(
     input({
       runs: [
         activityRun({ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("15:00:00") }),
         activityRun({ id: "r_tick", agent_id: "a_scout", kind: "schedule", schedule_id: "sch_1", errors: [], metadata: {}, created_at: ts("14:00:00"), updated_at: ts("14:01:00") }),
       ],
-      stats: [{ run_id: "r_chat", last_seq: 12, first_at: ts("14:58:00"), last_at: ts("15:00:00"), cost_usd: "0" }],
+      stats: [{ run_id: "r_chat", last_seq: 12, first_at: ts("14:58:00"), last_at: ts("15:00:00"), cost_usd: 0 }],
       steps: [
         step({ run_id: "r_tick", seq: 1, created_at: ts("14:00:10"), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" }),
-        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11"), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" }),
-        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12"), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" }),
+        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11"), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: 98 }),
+        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12"), role: "tool", tool_call_id: "c_note", error: null, duration_ms: 4 }),
         step({ run_id: "r_tick", seq: 4, created_at: ts("14:00:40"), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " }),
         step({ run_id: "r_chat", seq: 11, created_at: ts("14:59:00"), role: "assistant", tool_calls: [], text: "Here are the likes." }),
       ],
@@ -416,4 +430,170 @@ test("a coding wake lists what it changed in each repository as code writes", ()
       code: { branch: "agent/desk/refunds", files_changed: 3, insertions: 40, deletions: 2 },
     },
   ]);
+});
+
+test("tool results are found by the run and the call they answer, and a result without a call id is not indexed", () => {
+  const answered = step({ run_id: "r_1", seq: 2, created_at: ts("14:00:01"), role: "tool", tool_call_id: "c_1", duration_ms: 7 });
+  const results = resultsByCall([
+    step({ run_id: "r_1", seq: 1, created_at: ts("14:00:00"), role: "assistant", tool_calls: [call("c_1", "note_get", "{}")] }),
+    answered,
+    step({ run_id: "r_1", seq: 3, created_at: ts("14:00:02"), role: "tool", tool_call_id: null }),
+    step({ run_id: "r_2", seq: 1, created_at: ts("14:00:03"), role: "tool", tool_call_id: "c_1", duration_ms: 9 }),
+  ]);
+  assert.equal(results.size, 2);
+  assert.equal(results.get("r_1\u0000c_1"), answered);
+});
+
+test("a tool call carries its result's error and duration, and none without a result", () => {
+  const at = ts("14:00:00");
+  const result = step({ run_id: "r_1", seq: 2, created_at: ts("14:00:01"), role: "tool", tool_call_id: "c_1", error: "boom", duration_ms: 12 });
+  assert.deepEqual(toolCallOf(call("c_1", "note_get", '{"path":"a"}'), result, at), {
+    call_id: "c_1",
+    name: "note_get",
+    arguments: '{"path":"a"}',
+    error: "boom",
+    duration_ms: 12,
+    at,
+  });
+  const unanswered = toolCallOf(call("", "note_get", "{}"), undefined, at);
+  assert.equal(unanswered.call_id, null);
+  assert.equal(unanswered.error, null);
+  assert.equal(unanswered.duration_ms, null);
+  const cleared = toolCallOf(call("c_1", "note_get", "{}"), { ...result, error: "" }, at);
+  assert.equal(cleared.error, null);
+});
+
+test("a wake lists at most the tool call limit across its steps and counts every call", () => {
+  const calls = (from: number, count: number) => Array.from({ length: count }, (_, at) => call(`c_${from + at}`, "note_get", "{}"));
+  const view = projectActivity(
+    input({
+      runs: [activityRun({ id: "r_busy", kind: "schedule", created_at: ts("14:00:00"), updated_at: ts("14:10:00") })],
+      steps: [
+        step({ run_id: "r_busy", seq: 1, created_at: ts("14:00:10"), role: "assistant", tool_calls: calls(0, ACTIVITY_TOOL_CALLS_MAX - 1) }),
+        step({ run_id: "r_busy", seq: 2, created_at: ts("14:00:20"), role: "assistant", tool_calls: calls(ACTIVITY_TOOL_CALLS_MAX, 3) }),
+      ],
+    }),
+  );
+  const [wake] = view.wakes;
+  assert.equal(wake?.tool_calls.length, ACTIVITY_TOOL_CALLS_MAX);
+  assert.equal(wake?.tool_calls.at(-1)?.call_id, `c_${ACTIVITY_TOOL_CALLS_MAX}`);
+  assert.equal(wake?.tool_call_count, ACTIVITY_TOOL_CALLS_MAX + 2);
+});
+
+test("a run's posts are the group posts inside the window that name the sequence they posted", () => {
+  const posts = postsByRun(
+    [
+      { run_id: "r_1", seq: 3, created_at: ts("13:00:00"), content: "posted id=1 seq=7", call_id: "c_old" },
+      { run_id: "r_1", seq: 5, created_at: ts("14:00:00"), content: "posted id=2 seq=8", call_id: "c_new" },
+      { run_id: "r_1", seq: 6, created_at: ts("14:00:10"), content: "ERROR: limit", call_id: "c_bad" },
+      { run_id: "r_1", seq: 7, created_at: "not a time", content: "posted id=3 seq=9", call_id: "c_when" },
+      { run_id: "r_2", seq: 2, created_at: ts("14:01:00"), content: "posted id=4 seq=10", call_id: null },
+    ],
+    since.getTime(),
+  );
+  assert.deepEqual([...posts.entries()], [
+    ["r_1", [{ seq: 8, call_id: "c_new", at: "2026-09-25T14:00:00.000Z" }]],
+    ["r_2", [{ seq: 10, call_id: null, at: "2026-09-25T14:01:00.000Z" }]],
+  ]);
+});
+
+test("a run's writes are its file changes inside the window, each with what it touched", () => {
+  const change: Pick<RunFileChangeRow, "operation" | "tool_name" | "tool_call_id"> = { operation: "update", tool_name: "note_write", tool_call_id: "c_1" };
+  const writes = writesByRun(
+    [
+      { ...change, run_id: "r_1", display_path: "org/o/guilds/g_1/old.md", created_at: ts("13:00:00") },
+      { ...change, run_id: "r_1", display_path: "org/o/guilds/g_1/plan.md", created_at: ts("14:00:00") },
+      { ...change, run_id: null, display_path: "org/o/guilds/g_1/hand.md", created_at: ts("14:00:00") },
+      { ...change, run_id: "r_1", display_path: "org/o/guilds/g_1/when.md", created_at: "not a time" },
+    ],
+    since.getTime(),
+  );
+  assert.deepEqual([...writes.entries()], [
+    [
+      "r_1",
+      [
+        {
+          kind: "note",
+          target: "plan.md",
+          display_path: "org/o/guilds/g_1/plan.md",
+          operation: "update",
+          tool_name: "note_write",
+          call_id: "c_1",
+          at: "2026-09-25T14:00:00.000Z",
+        },
+      ],
+    ],
+  ]);
+});
+
+test("a run's opening is its first operator text cut to a preview, and an opening with no text is none", () => {
+  const openings = openingsByRun([
+    { run_id: "r_said", text: "  how many likes?  " },
+    { run_id: "r_long", text: "y".repeat(ACTIVITY_PREVIEW_CHARS + 50) },
+    { run_id: "r_blank", text: "   " },
+    { run_id: "r_none", text: null },
+  ]);
+  assert.equal(openings.get("r_said"), "how many likes?");
+  assert.equal(openings.get("r_long")?.length, ACTIVITY_PREVIEW_CHARS + 1);
+  assert.deepEqual([...openings.keys()], ["r_said", "r_long"]);
+});
+
+test("a run's trigger is its waking row, its routine, or who opened its chat, by the run's kind", () => {
+  const messages = new Map([[4, message(4, "14:00:00", null, ["desk"])]]);
+  const group = activityRun({ id: "r_group", kind: "group", group_chat_through_seq: 4, previous_through_seq: 3, created_at: ts("14:00:01"), updated_at: ts("14:00:02") });
+  const desk = { id: "a_desk", name: "desk", avatar_color: "#fbbf24", avatar_shape: "critters" };
+  assert.deepEqual(wakeTrigger(group, desk, { source: "group_chat", you_were_tagged: true }, messages), {
+    type: "message",
+    seq: 4,
+    through_seq: 4,
+    reason: "tag",
+    routing: null,
+    inferred: true,
+  });
+  const untold = wakeTrigger(group, undefined, undefined, messages);
+  assert.equal(untold.type === "message" && untold.reason, "rules");
+  const routine = activityRun({ id: "r_tick", kind: "schedule", schedule_id: "sch_1", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.deepEqual(wakeTrigger(routine, desk, undefined, messages), { type: "routine", schedule_id: "sch_1" });
+  const chat = activityRun({ id: "r_chat", kind: "direct", started_by_user_id: "user_ada", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.deepEqual(wakeTrigger(chat, desk, undefined, messages), { type: "direct", user_id: "user_ada" });
+});
+
+test("a wake that posted posted, one that wrote more than its memory wrote, and any other was silent", () => {
+  const write = (kind: "note" | "memory") => ({ kind, target: "t", display_path: "p", operation: "update", tool_name: null, call_id: null, at: ts("14:00:00") });
+  const post = { seq: 1, call_id: null, at: ts("14:00:00") };
+  assert.equal(wakeOutcome([post], [write("note")]), "posted");
+  assert.equal(wakeOutcome([], [write("memory"), write("note")]), "wrote");
+  assert.equal(wakeOutcome([], [write("memory")]), "silent");
+  assert.equal(wakeOutcome([], []), "silent");
+});
+
+test("a wake spans its run's start to its last step, a direct chat from its first step in the window, and a running run to now", () => {
+  const stats = { run_id: "r_1", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: 0 };
+  const chat = activityRun({ id: "r_1", kind: "direct", created_at: ts("09:00:00"), updated_at: ts("16:00:05") });
+  assert.deepEqual(wakeSpan(chat, stats, new Set(), NOW), {
+    started_at: "2026-09-25T15:58:00.000Z",
+    ended_at: "2026-09-25T16:00:00.000Z",
+    running: false,
+  });
+  assert.equal(wakeSpan(chat, { ...stats, first_at: null }, new Set(), NOW), null);
+  assert.deepEqual(wakeSpan(chat, undefined, new Set(["r_1"]), NOW), {
+    started_at: "2026-09-25T09:00:00.000Z",
+    ended_at: NOW.toISOString(),
+    running: true,
+  });
+  const tick = activityRun({ id: "r_2", kind: "schedule", created_at: ts("14:00:00"), updated_at: ts("14:01:00") });
+  assert.deepEqual(wakeSpan(tick, undefined, new Set(["r_1"]), NOW), {
+    started_at: "2026-09-25T14:00:00.000Z",
+    ended_at: "2026-09-25T14:01:00.000Z",
+    running: false,
+  });
+});
+
+test("a wake's transcript lists its steps, none when it took none, and an opening only for a direct chat", () => {
+  const steps = { calls: [toolCallOf(call("c_1", "note_get", "{}"), undefined, ts("14:00:00"))], count: 3, reply: "Done." };
+  const chat = activityRun({ id: "r_chat", kind: "direct", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.deepEqual(wakeTranscript(chat, steps, "hello"), { tool_calls: steps.calls, tool_call_count: 3, reply: "Done.", opening: "hello" });
+  assert.deepEqual(wakeTranscript(chat, undefined, undefined), { tool_calls: [], tool_call_count: 0, reply: null, opening: null });
+  const group = activityRun({ id: "r_group", kind: "group", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
+  assert.equal(wakeTranscript(group, steps, "hello").opening, null);
 });

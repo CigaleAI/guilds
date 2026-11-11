@@ -3,5 +3,35 @@
     "typescript/consistent-type-assertions": {
       "count": 2
     }
+  },
+  "src/features/agent/routine/describeTiming.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/planConnectors.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/planHandoffs.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/mapLayout.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/features/studio/approvals.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
+  },
+  "src/features/tables/values.ts": {
+    "limits/bumpy-road": {
+      "count": 1
+    }
   }
 }

@@ -1,7 +1,9 @@
 // The Studio inventory: each agent of the source guild as the roster lists it.
 
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
-import type { StudioInventoryRow } from "../db/studio.js";
+import type { Queryable } from "../db/pg.js";
+import { studioInventory, type StudioInventoryRow, type StudioSessionRow } from "../db/studio.js";
+import { assertLive } from "./session.js";
 import { hydrateStudioMember, type RosterAgent, type StudioMemberHydration } from "./system.js";
 
 /** An agent as the Studio inventory lists it: its roster header's fields, its avatar, excerpt, and latest run. */
@@ -61,4 +63,15 @@ export function inventoryItem(row: StudioInventoryRow): StudioInventoryItem {
     draft_status: row.draft_status,
     warnings,
   };
+}
+
+/** The guild's agents as the Studio inventory lists them, outside any session. */
+export async function listGuildInventory(db: Queryable, guildId: string): Promise<StudioInventoryItem[]> {
+  return (await studioInventory(db, guildId, null)).map((row) => inventoryItem(row));
+}
+
+/** The agents of a live session's guild as the Studio inventory lists them, each with its open draft in the session. */
+export async function listSessionInventory(db: Queryable, session: StudioSessionRow): Promise<StudioInventoryItem[]> {
+  assertLive(session);
+  return (await studioInventory(db, session.source_guild_id, session.id)).map((row) => inventoryItem(row));
 }

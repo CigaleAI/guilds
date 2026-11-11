@@ -139,6 +139,10 @@ function guildTextPatch(args: TextEditArguments): GuildTextPatch {
 
 type GuildBase = Extract<EditBase, { kind: "guild" }>;
 
+type MemoryBase = Extract<EditBase, { kind: "memory" }>;
+
+type NoteBase = Extract<EditBase, { kind: "note" }>;
+
 const GUILD_TEXT_FIELDS = ["about", "description"] as const;
 
 /** The guild text a studio_edit_guild call asks for, validated and laid over the live text. */
@@ -367,24 +371,39 @@ function callById(messages: ConversationMessageRow[], callId: string): ToolCall 
   return undefined;
 }
 
+/** A recorded call of an edit tool: the tool, and its arguments as an object. */
+type EditToolCall = { name: StudioEditTool; args: JsonObject };
+
+/**
+ * The edit tool call of an assistant message in `messages` with the id `callId`; null when there is
+ * none, it calls another tool, or its arguments are not an object.
+ */
+function findEditCall(messages: ConversationMessageRow[], callId: string): EditToolCall | null {
+  const call = callById(messages, callId);
+  const args = call ? parseArguments(call.function.arguments) : null;
+  if (!call || !args || !isEditTool(call.function.name)) {
+    return null;
+  }
+  return { name: call.function.name, args };
+}
+
+/** The edit request the tool message at `seq` holds, beside the edit tool call it answers. */
 export function findEditRecord(messages: ConversationMessageRow[], seq: number): EditRecord {
   const message = messages.find((row) => row.seq === seq);
   const payload = message?.payload;
-  const widget = payload?.role === "tool" ? parseEditWidget(payload.content) : null;
-  if (!message || payload?.role !== "tool" || !widget) {
+  if (!message || payload?.role !== "tool") {
     throw new StudioNotFoundError("edit request not found");
   }
-  const toolCallId = payload.tool_call_id;
-  const call = callById(messages, toolCallId);
-  const args = call ? parseArguments(call.function.arguments) : null;
-  if (!call || !args || !isEditTool(call.function.name)) {
+  const widget = parseEditWidget(payload.content);
+  const call = findEditCall(messages, payload.tool_call_id);
+  if (!widget || !call) {
     throw new StudioNotFoundError("edit request not found");
   }
   return {
-    ...recordedEdit(widget.edit, args),
+    ...recordedEdit(widget.edit, call.args),
     seq,
-    toolName: call.function.name,
-    toolCallId,
+    toolName: call.name,
+    toolCallId: payload.tool_call_id,
     widget,
     metadata: message.metadata,
   };
@@ -469,76 +488,131 @@ export type StudioEditView = {
   applied_version?: number | null;
 };
 
-// What the operator reviews: the live content, the proposal, and whether the
-// live content still matches the base the proposal was built on.
-export async function viewEdit(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<StudioEditView> {
-  const { edit } = record.widget;
+/** Which request an edit view shows, what it asks for, and when the operator answered it. */
+type EditRequestView = Pick<StudioEditView, "seq" | "tool" | "status" | "title" | "reason" | "edit" | "resolved_at">;
+
+/** The request `record` holds as every edit view shows it: what its widget asks for, and when it was answered. */
+function editRequestView(record: EditRecord): EditRequestView {
   const status = editStatus(record);
-  const reviewer = reviewerOf(deps, scope, record);
-  if (reviewer) {
-    return viewReviewedEdit(record, status, reviewer);
-  }
-  let live: EditBase | null = null;
-  let error: string | null = null;
-  try {
-    live = await loadBaseFor(deps, scope, edit);
-  } catch (caught) {
-    if (!(caught instanceof StudioError)) throw caught;
-    error = caught.message;
-  }
-  const proposed = live ? proposedFor(live, record.args) : null;
   return {
     seq: record.seq,
     tool: record.toolName,
     status,
     title: record.widget.title,
     reason: record.widget.reason,
-    edit,
-    live: live ? liveContent(live) : null,
-    live_version: live && live.kind !== "guild" ? live.version : null,
-    proposed,
-    stale: live ? baseHash(live) !== edit.base_hash : true,
-    ...(error ? { error } : {}),
+    edit: record.widget.edit,
     ...(status !== "pending" ? { resolved_at: record.metadata.edit_resolved_at ?? null } : {}),
-    ...(status === "applied" ? { applied_version: record.metadata.edit_version ?? null } : {}),
   };
 }
 
-// A table, note create or delete, routine, or access edit rendered as text on both
-// sides, with what applying does. A resolved request is not reviewed again:
-// its target has moved on.
-async function viewReviewedEdit(
-  record: EditRecord,
-  status: StudioEditStatus,
-  review: () => Promise<ReviewedEdit>,
-): Promise<StudioEditView> {
-  const { edit } = record.widget;
-  let reviewed = null;
-  let error: string | null = null;
-  if (status === "pending") {
-    try {
-      reviewed = await review();
-    } catch (caught) {
-      if (!(caught instanceof StudioError)) throw caught;
-      error = caught.message;
-    }
+/**
+ * The live content a Memory, note body, or guild text edit replaces, read now with the proposal
+ * laid over it, or the refusal that stopped the read.
+ */
+export type LiveEditBase =
+  | { state: "read"; base: EditBase; proposed: string | GuildText }
+  | { state: "refused"; error: string };
+
+/** The live content the edit `record` replaces, read whatever the request's status. */
+async function readLiveEditBase(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<LiveEditBase> {
+  let base: EditBase;
+  try {
+    base = await loadBaseFor(deps, scope, record.widget.edit);
+  } catch (caught) {
+    if (!(caught instanceof StudioError)) throw caught;
+    return { state: "refused", error: caught.message };
   }
+  return { state: "read", base, proposed: proposedFor(base, record.args) };
+}
+
+/**
+ * A Memory, note body, or guild text edit as the operator reviews it: the live content read for it
+ * beside the proposal, and whether that content still matches the base the proposal was built on.
+ */
+export function formatContentEditView(record: EditRecord, live: LiveEditBase): StudioEditView {
+  const request = editRequestView(record);
+  const applied = request.status === "applied" ? { applied_version: record.metadata.edit_version ?? null } : {};
+  if (live.state === "refused") {
+    return { ...request, live: null, live_version: null, proposed: null, stale: true, error: live.error, ...applied };
+  }
+  const { base } = live;
   return {
-    seq: record.seq,
-    tool: record.toolName,
-    status,
-    title: record.widget.title,
-    reason: record.widget.reason,
-    edit,
-    live: reviewed?.live ?? null,
-    live_version: null,
-    proposed: reviewed?.proposed ?? null,
-    effects: reviewed?.effects ?? [],
-    stale: status === "pending" && (reviewed ? reviewed.baseHash !== edit.base_hash : true),
-    ...(error ? { error } : {}),
-    ...(status !== "pending" ? { resolved_at: record.metadata.edit_resolved_at ?? null } : {}),
-    ...(status === "applied" && record.metadata.edit_version ? { applied_version: record.metadata.edit_version } : {}),
+    ...request,
+    live: liveContent(base),
+    live_version: base.kind === "guild" ? null : base.version,
+    proposed: live.proposed,
+    stale: baseHash(base) !== request.edit.base_hash,
+    ...applied,
   };
+}
+
+/** An edit request as the operator reviews it, with its live target read or reviewed now. */
+export async function viewEdit(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<StudioEditView> {
+  const reviewer = reviewerOf(deps, scope, record);
+  if (reviewer) {
+    return formatReviewedEditView(record, await reviewPendingEdit(record, reviewer));
+  }
+  return formatContentEditView(record, await readLiveEditBase(deps, scope, record));
+}
+
+/**
+ * What the view of a table, routine, access, or note create or delete edit found: the review of a
+ * pending request against its live target, the refusal that stopped it, or nothing for a resolved
+ * request, whose target has moved on.
+ */
+export type LiveEditReview =
+  | { state: "reviewed"; review: ReviewedEdit }
+  | { state: "refused"; error: string }
+  | { state: "resolved" };
+
+/** The edit `record` reviewed by `review` while it is pending; a resolved request is not reviewed again. */
+async function reviewPendingEdit(record: EditRecord, review: () => Promise<ReviewedEdit>): Promise<LiveEditReview> {
+  if (editStatus(record) !== "pending") {
+    return { state: "resolved" };
+  }
+  try {
+    return { state: "reviewed", review: await review() };
+  } catch (caught) {
+    if (!(caught instanceof StudioError)) throw caught;
+    return { state: "refused", error: caught.message };
+  }
+}
+
+/**
+ * A table, routine, access, or note create or delete edit as the operator reviews it: its target
+ * before and after as text, what applying does, and whether the target moved on since the request.
+ */
+export function formatReviewedEditView(record: EditRecord, found: LiveEditReview): StudioEditView {
+  const request = editRequestView(record);
+  const version = record.metadata.edit_version;
+  const applied = request.status === "applied" && version ? { applied_version: version } : {};
+  switch (found.state) {
+    case "reviewed": {
+      const { review } = found;
+      return {
+        ...request,
+        live: review.live,
+        live_version: null,
+        proposed: review.proposed,
+        effects: review.effects,
+        stale: review.baseHash !== request.edit.base_hash,
+        ...applied,
+      };
+    }
+    case "refused":
+      return {
+        ...request,
+        live: null,
+        live_version: null,
+        proposed: null,
+        effects: [],
+        stale: true,
+        error: found.error,
+        ...applied,
+      };
+    case "resolved":
+      return { ...request, live: null, live_version: null, proposed: null, effects: [], stale: false, ...applied };
+  }
 }
 
 /** A review's hashes: of the live target it read, and of the proposal. */
@@ -591,46 +665,88 @@ async function applyReviewed(deps: EditDeps, scope: EditScope, recorded: Recorde
   }
 }
 
-/** Writes the replacement a Memory, note body, or guild text edit proposes, over the base it was built on. */
-async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<AppliedEdit> {
-  const { edit } = record.widget;
-  const base = await loadBaseFor(deps, scope, edit);
-  if (baseHash(base) !== edit.base_hash) {
-    throw new StudioConflictError("the live content changed since this edit was proposed");
-  }
-  if (base.kind === "guild") {
-    if (guildTextHash(proposedGuildText(base, record.args)) !== edit.proposed_hash) {
-      throw new StudioConflictError("the proposal no longer matches its request");
-    }
-    const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), studioActor(scope));
-    if (!row) {
-      throw new StudioUnprocessableError("source guild not found");
-    }
-    return { version: null, guild: row };
-  }
-  const proposed = proposedContent(record.args);
-  if (hashArtifactContent(proposed) !== edit.proposed_hash) {
+/** Writes the guild text an edit proposes, refused when the proposal no longer matches its request. */
+async function applyGuildText(
+  deps: EditDeps,
+  scope: EditScope,
+  base: GuildBase,
+  record: EditRecord,
+): Promise<AppliedEdit> {
+  if (guildTextHash(proposedGuildText(base, record.args)) !== record.widget.edit.proposed_hash) {
     throw new StudioConflictError("the proposal no longer matches its request");
   }
+  const row = await updateGuildText(deps.db, base.guildId, guildTextPatch(record.args), studioActor(scope));
+  if (!row) {
+    throw new StudioUnprocessableError("source guild not found");
+  }
+  return { version: null, guild: row };
+}
+
+/** The complete text a Memory or note body edit proposes, refused when it no longer matches its request. */
+function boundContent(record: EditRecord): string {
+  const proposed = proposedContent(record.args);
+  if (hashArtifactContent(proposed) !== record.widget.edit.proposed_hash) {
+    throw new StudioConflictError("the proposal no longer matches its request");
+  }
+  return proposed;
+}
+
+/** Writes the Memory an edit proposes over the version it was built on, linked to the call that proposed it. */
+async function applyMemory(
+  deps: EditDeps,
+  scope: EditScope,
+  base: MemoryBase,
+  record: EditRecord,
+): Promise<AppliedEdit> {
+  const content = boundContent(record);
   const toolCall = { id: record.toolCallId, name: record.toolName };
   try {
-    if (base.kind === "memory") {
-      const actor = { ...studioActor(scope, { agentId: base.agentId }), toolCall };
-      const { row } = await writeMemory(deps.artifacts, actor, base.agentId, {
-        content: proposed,
-        detail: record.toolName,
-        ...(base.version > 0 ? { expectedVersion: base.version } : {}),
-      });
-      return { version: row.version };
-    }
+    const actor = { ...studioActor(scope, { agentId: base.agentId }), toolCall };
+    const { row } = await writeMemory(deps.artifacts, actor, base.agentId, {
+      content,
+      detail: record.toolName,
+      ...(base.version > 0 ? { expectedVersion: base.version } : {}),
+    });
+    return { version: row.version };
+  } catch (error) {
+    throw artifactRefusal(error);
+  }
+}
+
+/** Writes the note body an edit proposes over the version it was built on, linked to the call that proposed it. */
+async function applyNoteBody(
+  deps: EditDeps,
+  scope: EditScope,
+  base: NoteBase,
+  record: EditRecord,
+): Promise<AppliedEdit> {
+  const content = boundContent(record);
+  const toolCall = { id: record.toolCallId, name: record.toolName };
+  try {
     const actor = { ...studioActor(scope, { guildId: base.guildId }), toolCall };
     const written = await writeNoteAt(deps.artifacts, actor, base.displayPath, {
-      content: proposed,
+      content,
       expectedVersion: base.version,
     });
     return { version: written.row.version };
   } catch (error) {
     throw artifactRefusal(error);
+  }
+}
+
+/** Writes the replacement a Memory, note body, or guild text edit proposes, over the base it was built on. */
+async function applyContent(deps: EditDeps, scope: EditScope, record: EditRecord): Promise<AppliedEdit> {
+  const base = await loadBaseFor(deps, scope, record.widget.edit);
+  if (baseHash(base) !== record.widget.edit.base_hash) {
+    throw new StudioConflictError("the live content changed since this edit was proposed");
+  }
+  switch (base.kind) {
+    case "guild":
+      return applyGuildText(deps, scope, base, record);
+    case "memory":
+      return applyMemory(deps, scope, base, record);
+    case "note":
+      return applyNoteBody(deps, scope, base, record);
   }
 }
 

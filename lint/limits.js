@@ -5,7 +5,8 @@
 //
 // The built-in `complexity`, `max-depth`, `max-params` and `max-lines` rules carry the limits that
 // need no code; `max-lines` reports at one severity, so the hard file limit is the `file-lines`
-// rule. The other rules are the syntax the guidelines refuse, each a selector over the tree.
+// rule, and the blocks of nested conditional logic a function holds are the `bumpy-road` rule. The
+// other rules are the syntax the guidelines refuse, each a selector over the tree.
 
 /** A rule that reports every node a selector matches. */
 function refusal(description, message, ...selectors) {
@@ -98,10 +99,121 @@ const fileLines = {
   },
 };
 
+const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+const METHODS = new Set(["MethodDefinition", "TSAbstractMethodDefinition"]);
+const KEYED = new Set([...METHODS, "Property", "PropertyDefinition"]);
+// The conditional and loop statements, each of which opens a level of nesting.
+const NESTERS = new Set([
+  "IfStatement",
+  "ForStatement",
+  "ForInStatement",
+  "ForOfStatement",
+  "WhileStatement",
+  "DoWhileStatement",
+  "SwitchStatement",
+  "TryStatement",
+]);
+
+/** Whether a function is a method, of a class or of an object literal, accessors included. */
+function isMethod(fn) {
+  const parent = fn.parent;
+  return METHODS.has(parent?.type) || (parent?.type === "Property" && (parent.method || parent.kind !== "init"));
+}
+
+/**
+ * The function a node counts towards: the nearest method around it, a method being a unit of its
+ * own at any depth; else the outermost function around it, so a function declared inside another
+ * counts towards it; null outside any function.
+ */
+function declaringFunction(node) {
+  let found = null;
+  for (let current = node.parent; current; current = current.parent) {
+    if (FUNCTIONS.has(current.type)) {
+      if (isMethod(current)) {
+        return current;
+      }
+      found = current;
+    }
+  }
+  return found;
+}
+
+/**
+ * The outermost conditional or loop statement between a node and the function it counts towards,
+ * closures included; null when none holds the node.
+ */
+function bumpRoot(node, fn) {
+  let root = null;
+  for (let current = node.parent; current !== fn; current = current.parent) {
+    if (NESTERS.has(current.type)) {
+      root = current;
+    }
+  }
+  return root;
+}
+
+/** A function's name: its id, the const it is bound to, or its method or property key. */
+function nameOf(fn) {
+  const parent = fn.parent;
+  if (fn.id) {
+    return fn.id.name;
+  }
+  if (parent?.type === "VariableDeclarator" && parent.id.type === "Identifier") {
+    return parent.id.name;
+  }
+  if (KEYED.has(parent?.type) && parent.key.type === "Identifier") {
+    return parent.key.name;
+  }
+  return "<anonymous>";
+}
+
+// A bump is a conditional or loop statement at the top level of a function's body that holds
+// another; the statements of a function declared inside it count towards it, a method's towards
+// the method. The function is reported past `max` bumps.
+const bumpyRoad = {
+  meta: {
+    type: "problem",
+    docs: { description: "Disallow a function with several blocks of nested conditional logic." },
+    schema: [
+      {
+        type: "object",
+        properties: { max: { type: "integer", minimum: 0 } },
+        required: ["max"],
+        additionalProperties: false,
+      },
+    ],
+    messages: {
+      bumpy:
+        "`{{name}}` has {{count}} blocks of nested conditional logic; the limit is {{max}}. Each block is a step with a contract of its own: a named function. See docs/contributing/code-guidelines.md, Functions.",
+    },
+  },
+  create(context) {
+    const { max } = context.options[0];
+    const bumps = new Map();
+    const record = (node) => {
+      const fn = declaringFunction(node);
+      const root = fn && bumpRoot(node, fn);
+      if (root) {
+        bumps.set(fn, (bumps.get(fn) ?? new Set()).add(root));
+      }
+    };
+    const report = () => {
+      for (const [fn, roots] of bumps) {
+        if (roots.size > max) {
+          const data = { name: nameOf(fn), count: roots.size, max };
+          context.report({ node: fn, messageId: "bumpy", data });
+        }
+      }
+    };
+    return { ...Object.fromEntries([...NESTERS].map((type) => [type, record])), "Program:exit": report };
+  },
+};
+
 export default {
   meta: { name: "limits" },
   rules: {
     "file-lines": fileLines,
+    "bumpy-road": bumpyRoad,
     "silent-catch": silentCatch,
     "bare-error": bareError,
     "inline-parameter-type": inlineParameterType,

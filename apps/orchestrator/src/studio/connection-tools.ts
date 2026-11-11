@@ -9,11 +9,11 @@ import {
   STUDIO_CONNECTION_ACCESS_WIDGET,
   callConnectionTool,
   connectionSummary,
-  grantedConnectionIds,
   reachableConnection,
   type StudioAccessWidget,
 } from "./connections.js";
 import { StudioUnprocessableError } from "./errors.js";
+import { grantedConnectionIds } from "./session.js";
 import { wrapEvidence } from "./system.js";
 import type { StudioTool, StudioToolCall, StudioToolDeps } from "./tools.js";
 

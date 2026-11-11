@@ -125,7 +125,7 @@ test("a call shows its status and a short preview of its arguments", () => {
     seq: 4,
     arguments: long,
     error: "boom",
-    duration_ms: "12",
+    duration_ms: 12,
   });
   assert.equal(failed.status, "error");
   assert.equal(failed.error, "boom");

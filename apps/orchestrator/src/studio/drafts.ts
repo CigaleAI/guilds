@@ -24,7 +24,18 @@ import { excerptBytes } from "./system.js";
 import { getAgent, getAgentTask, listAgents, type AgentRow } from "../db/agents.js";
 import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
-import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioDraftRow, type StudioSessionRow } from "../db/studio.js";
+import {
+  getStudioDraft,
+  getStudioSession,
+  insertStudioDraft,
+  listOrphanStudioDrafts,
+  listStudioDraftHeads,
+  listStudioDrafts,
+  lockStudioDraft,
+  updateStudioDraft,
+  type StudioDraftRow,
+  type StudioSessionRow,
+} from "../db/studio.js";
 import { listConversationMessages, type ConversationMessageRow } from "../db/conversations.js";
 import {
   EVIDENCE_REF_KINDS,
@@ -409,6 +420,37 @@ export class StudioDrafts implements StudioDraftService {
   }
 }
 
+/** A published or unchanged draft, with whether its target agent is generating now and so reads the new Task on its next run. */
+export type PublishedDraft = DraftPublication & { target_generating: boolean };
+
+/** What publishing a session's draft reads and writes through, the source guild's files channel, and whether an agent is generating. */
+export type DraftAnnounceDeps = DraftPublishDeps & {
+  drafts: StudioDrafts;
+  publishFilesChanged?: ((guildId: string) => Promise<void>) | undefined;
+  isAgentBusy?: ((agentId: string) => boolean) | undefined;
+};
+
+/**
+ * Publishes a draft of the session to its target agent's Task as `user`, and tells the source guild
+ * its files changed when the Task did.
+ */
+export async function publishDraft(
+  deps: DraftAnnounceDeps,
+  session: StudioSessionRow,
+  user: UserRow,
+  draftId: string,
+): Promise<PublishedDraft> {
+  const result = await deps.drafts.publish(deps, session, user, draftId);
+  if (result.outcome === "published" && deps.publishFilesChanged && session.source_guild_id) {
+    await deps.publishFilesChanged(session.source_guild_id);
+  }
+  const targetId = result.draft.target_agent_id;
+  return {
+    ...result,
+    target_generating: targetId ? Boolean(deps.isAgentBusy?.(targetId)) : false,
+  };
+}
+
 export function viewDraft(row: StudioDraftRow): StudioDraft {
   const base = row.base_content;
   const proposed = row.proposed_content;
@@ -443,6 +485,28 @@ export function viewDraft(row: StudioDraftRow): StudioDraft {
     size_delta_bytes: proposedBytes - baseBytes,
     large_deletion: deletionRatio >= STUDIO_LARGE_DELETION_RATIO || deleted > 8 * 1024,
   };
+}
+
+/** A draft of an organisation, and the session it was drafted in when that session is still there. */
+export type OrgDraft = { draft: StudioDraftRow; session: StudioSessionRow | null };
+
+/** The draft and its session when the draft belongs to the organisation, otherwise null. */
+export async function findOrgDraft(db: Queryable, orgId: string, draftId: string): Promise<OrgDraft | null> {
+  const draft = await getStudioDraft(db, draftId);
+  if (!draft || draft.org_id !== orgId) {
+    return null;
+  }
+  return { draft, session: await getStudioSession(db, draft.session_id) };
+}
+
+/** Every draft of the session as the operator app reads it, newest first. */
+export async function listSessionDrafts(db: Queryable, sessionId: StudioSessionRow["id"]): Promise<StudioDraft[]> {
+  return (await listStudioDrafts(db, sessionId)).map(viewDraft);
+}
+
+/** The organisation's open drafts whose session's user is gone, as the operator app reads them. */
+export async function listOrphanDrafts(db: Queryable, orgId: string): Promise<StudioDraft[]> {
+  return (await listOrphanStudioDrafts(db, orgId)).map(viewDraft);
 }
 
 function isEvidenceRefKind(value: string): value is EvidenceRefKind {

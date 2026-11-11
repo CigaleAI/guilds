@@ -10,7 +10,7 @@ import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
-import type { ActivityView } from "../../src/studio/activity.js";
+import { loadGuildActivity, windowBefore, type ActivityView } from "../../src/studio/activity.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -192,6 +192,15 @@ test("studio activity lists each wake with what started it and what it produced"
     toolCall: { id: "call_note", name: "note_write" },
   };
   await writeNote(artifacts, deskActor, { key: "leads.md", content: "- one\n", title: "Leads" });
+  await insertMessage(db,
+    {
+      runId: "r_desk",
+      seq: 50,
+      payload: { role: "assistant", content: "" },
+      metadata: { generation: 1, usage: { input_tokens: 100, output_tokens: 20, cache_read_tokens: 0 }, cost_usd: 0.0125 },
+    },
+    now,
+  );
   await appendRunError(
     db,
     "r_desk",
@@ -282,6 +291,8 @@ test("studio activity lists each wake with what started it and what it produced"
     assert.equal(desk?.failed, true);
     assert.deepEqual(desk?.errors.map((error) => error.operation), ["generation.max_tool_calls"]);
     assert.deepEqual(desk?.writes.map((write) => [write.kind, write.target, write.call_id]), [["note", "leads.md", "call_note"]]);
+    assert.equal(desk?.cost_usd, 0.0125);
+    assert.equal(desk?.last_seq, 50);
 
     const chat = byRun.get("r_chat");
     assert.deepEqual(chat?.trigger, { type: "direct", user_id: "user_operator" });
@@ -290,6 +301,20 @@ test("studio activity lists each wake with what started it and what it produced"
     const tick = byRun.get("r_tick");
     assert.deepEqual(tick?.trigger, { type: "routine", schedule_id: scheduleId });
     assert.equal(tick?.outcome, "silent");
+
+    assert.deepEqual(view.wakes.filter((wake) => wake.running), []);
+
+    // A box whose generation loop still generates the direct chat draws it up to now.
+    const later = new Date(now.getTime() + 1000);
+    const live = await loadGuildActivity(
+      { db, generation: { isGenerating: (runId) => runId === "r_chat" } },
+      "guild_act",
+      windowBefore(later, 1),
+      later,
+    );
+    assert.deepEqual(live.wakes.filter((wake) => wake.running).map((wake) => [wake.run_id, wake.ended_at]), [
+      ["r_chat", later.toISOString()],
+    ]);
 
     const bad = await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/activity?hours=soon`, headers: AUTH });
     assert.equal(bad.statusCode, 422, bad.body);

@@ -52,7 +52,9 @@ target) can change whenever the coach is idle.
 
 An operator can keep several sessions on one guild and resume any of
 them. Starting a new one does not archive the current one. A session
-belongs to the user who started it.
+belongs to the user who started it. An active session whose source
+guild was deleted is recorded blocked (`source_deleted`) the next time
+its user opens it through any session route.
 
 ### What the coach sees
 
@@ -915,10 +917,13 @@ app also re-reads the session and its messages every 2.5 s
 
 | Path | What it holds |
 |---|---|
+| `apps/orchestrator/src/studio/index.ts` | A session's lifecycle: create, list, open, archive, target, post a message, cancel, continue, and the generations a restart left running |
+| `apps/orchestrator/src/studio/session.ts` | What every Studio module reads of a session: whose it is, whether it is live, how the app reads it, the guild it records, its logins, its conversation, and what sessions spent |
+| `apps/orchestrator/src/studio/drafts.ts` | Task drafts: writing, revising, discarding, and publishing them |
 | `apps/orchestrator/src/studio/system.md` | The coach's system message template |
 | `apps/orchestrator/src/studio/system-message.ts` | The session's stored system message, recomposed from the live roster before each generation |
 | `apps/orchestrator/src/studio/inventory.ts` | The roster as the inventory lists it, with its warnings |
-| `apps/orchestrator/src/studio/inspector.ts` | The agent inspector: an agent's prompt sources, runs, and routines |
+| `apps/orchestrator/src/studio/inspector.ts` | The agent inspector: an agent's prompt sources, runs, routines, and Memory history |
 | `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
 | `apps/orchestrator/src/studio/constants.ts` | The step cap, the default temperature, and the tools' caps |
 | `apps/orchestrator/src/studio/tools.ts` | The coach's tool list, and the call each tool runs for |

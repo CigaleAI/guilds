@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 
@@ -71,17 +71,72 @@ function inside(root: string, candidate: string): boolean {
   return candidate.startsWith(`${root}${path.sep}`);
 }
 
-function sameFile(left: { dev: number; ino: number }, right: { dev: number; ino: number }): boolean {
+function sameFile(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
-function linkOut(workspaceDir: string): string {
-  return `file_path must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`;
+/** The tool parameter a refusal names an agent's path by. */
+type AgentPathParameter = "file_path" | "folder_path";
+
+function linkOut(workspaceDir: string, parameter: AgentPathParameter): string {
+  return `${parameter} must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`;
+}
+
+/**
+ * Where a path resolved in an agent's workspace leads once every link is followed. Refused as
+ * `missing`, naming the path by `parameter`, when it leads nowhere.
+ */
+async function followAgentPath(resolved: string, parameter: AgentPathParameter): Promise<string> {
+  try {
+    return await realpath(resolved);
+  } catch {
+    throw new AgentFileError(`${parameter} was not found in the agent workspace`, "missing");
+  }
+}
+
+/** Whether a filesystem call failed because nothing is at its path. */
+function isMissingPath(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+/**
+ * What is at a path, without following a link there; null when nothing is. Any other failure to
+ * look is refused as `not_file` with `refusal`.
+ */
+async function lstatIfPresent(target: string, refusal: string): Promise<Stats | null> {
+  try {
+    return await lstat(target);
+  } catch (error) {
+    if (isMissingPath(error)) {
+      return null;
+    }
+    throw new AgentFileError(refusal, "not_file");
+  }
 }
 
 function throughFolders(workspaceDir: string): string {
   return `file_path must be under ${homeOfDirectory(workspaceDir)} through folders, not links`;
 }
+
+/**
+ * Makes `folder`, a part of a path in an agent's workspace, a real folder: creates it when nothing
+ * is there, and refuses it when it is anything but a folder, a link included.
+ */
+async function ensureWorkspaceFolder(folder: string, workspaceDir: string): Promise<void> {
+  const found = await lstatIfPresent(folder, throughFolders(workspaceDir));
+  if (found === null) {
+    await mkdir(folder).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "EEXIST") throw error;
+    });
+  }
+  const checked = found ?? (await lstat(folder));
+  if (!checked.isDirectory()) {
+    throw new AgentFileError(throughFolders(workspaceDir));
+  }
+}
+
+/** A file an agent named, read: its path on the host and its bytes. */
+export type AgentFile = { path: string; bytes: Buffer };
 
 /**
  * Reads a file an agent named in its workspace. The workspace is the agent's folder on this
@@ -93,17 +148,12 @@ function throughFolders(workspaceDir: string): string {
 export async function readAgentFile(
   workspaceDir: string,
   filePath: string,
-  options: { maxBytes: number },
-): Promise<{ path: string; bytes: Buffer }> {
+  maxBytes: number,
+): Promise<AgentFile> {
   const resolved = resolveAgentFilePath(workspaceDir, filePath);
-  let real: string;
-  try {
-    real = await realpath(resolved);
-  } catch {
-    throw new AgentFileError("file_path was not found in the agent workspace", "missing");
-  }
+  const real = await followAgentPath(resolved, "file_path");
   if (!inside(await realpath(workspaceDir), real)) {
-    throw new AgentFileError(linkOut(workspaceDir));
+    throw new AgentFileError(linkOut(workspaceDir, "file_path"));
   }
   const checked = await lstat(real);
   if (!checked.isFile()) {
@@ -113,15 +163,15 @@ export async function readAgentFile(
   try {
     handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
-    throw new AgentFileError(linkOut(workspaceDir));
+    throw new AgentFileError(linkOut(workspaceDir, "file_path"));
   }
   try {
     const info = await handle.stat();
     if (!info.isFile() || !sameFile(info, checked)) {
-      throw new AgentFileError(linkOut(workspaceDir));
+      throw new AgentFileError(linkOut(workspaceDir, "file_path"));
     }
-    if (info.size > options.maxBytes) {
-      throw new AgentFileError(`file_path is larger than ${options.maxBytes} bytes`, "too_large", info.size);
+    if (info.size > maxBytes) {
+      throw new AgentFileError(`file_path is larger than ${maxBytes} bytes`, "too_large", info.size);
     }
     // One byte past the size it reported shows a file that grew while it was read.
     const buffer = Buffer.alloc(info.size + 1);
@@ -145,6 +195,58 @@ export async function readAgentFile(
 /** One file of a folder an agent named: its path in the folder, with `/` between parts, and its bytes. */
 export type AgentFolderFile = { path: string; bytes: Buffer };
 
+/** A folder an agent named, read: its path on the host and its files. */
+export type AgentFolder = { path: string; files: AgentFolderFile[] };
+
+/**
+ * The files under a folder, by their paths in it with `/` between parts, sorted. A link is listed
+ * as a file, never followed. Refuses a folder holding more than `maxFiles` files.
+ */
+async function listFolderFiles(dir: string, maxFiles: number): Promise<string[]> {
+  const names: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      const below = await listFolderFiles(path.join(dir, entry.name), maxFiles);
+      names.push(...below.map((name) => `${entry.name}/${name}`));
+    } else {
+      names.push(entry.name);
+    }
+    if (names.length > maxFiles) {
+      throw new AgentFileError(`folder_path holds more than ${maxFiles} files`, "too_large");
+    }
+  }
+  return names.sort();
+}
+
+/** The bytes a folder an agent named may hold in all, and those its files read so far hold. */
+type FolderByteBudget = { limit: number; used: number };
+
+/**
+ * One file of a folder an agent named, read as `readAgentFile` reads one within the bytes the
+ * budget has left: `base` is the folder's path in the workspace and `name` the file's path in the
+ * folder. A file past what is left, even alone, takes the folder past its limit, and is refused as
+ * the folder; any other refusal names the file.
+ */
+async function readFolderFile(
+  workspaceDir: string,
+  base: string,
+  name: string,
+  budget: FolderByteBudget,
+): Promise<AgentFolderFile> {
+  try {
+    const read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), budget.limit - budget.used);
+    return { path: name, bytes: read.bytes };
+  } catch (error) {
+    if (!(error instanceof AgentFileError)) {
+      throw error;
+    }
+    if (error.problem === "too_large") {
+      throw new AgentFileError(`folder_path holds more than ${budget.limit} bytes`, "too_large");
+    }
+    throw new AgentFileError(`${name}: ${error.message}`, error.problem);
+  }
+}
+
 /**
  * Reads every file under a folder an agent named in its workspace, sorted by path. The folder has
  * to stay in the workspace once every link is followed, and each file is read as `readAgentFile`
@@ -154,59 +256,28 @@ export type AgentFolderFile = { path: string; bytes: Buffer };
 export async function readAgentFolder(
   workspaceDir: string,
   folderPath: string,
-  options: { maxFiles: number; maxBytes: number },
-): Promise<{ path: string; files: AgentFolderFile[] }> {
+  maxFiles: number,
+  maxBytes: number,
+): Promise<AgentFolder> {
   const resolved = resolveAgentFilePath(workspaceDir, folderPath);
   const root = await realpath(workspaceDir);
-  let real: string;
-  try {
-    real = await realpath(resolved);
-  } catch {
-    throw new AgentFileError("folder_path was not found in the agent workspace", "missing");
-  }
+  const real = await followAgentPath(resolved, "folder_path");
   if (real === root) {
     throw new AgentFileError(`folder_path must be a folder under ${homeOfDirectory(workspaceDir)}, not the home itself`);
   }
   if (!inside(root, real)) {
-    throw new AgentFileError(`folder_path must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`);
+    throw new AgentFileError(linkOut(workspaceDir, "folder_path"));
   }
   if (!(await lstat(real)).isDirectory()) {
     throw new AgentFileError("folder_path must be a folder", "not_file");
   }
-  const names: string[] = [];
-  const walk = async (dir: string, prefix: string): Promise<void> => {
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      const name = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), name);
-        continue;
-      }
-      names.push(name);
-      if (names.length > options.maxFiles) {
-        throw new AgentFileError(`folder_path holds more than ${options.maxFiles} files`, "too_large");
-      }
-    }
-  };
-  await walk(real, "");
-  names.sort();
   const base = path.relative(root, real);
   const files: AgentFolderFile[] = [];
-  let total = 0;
-  for (const name of names) {
-    let read: { bytes: Buffer };
-    try {
-      read = await readAgentFile(workspaceDir, path.join(base, ...name.split("/")), { maxBytes: options.maxBytes - total });
-    } catch (error) {
-      if (!(error instanceof AgentFileError)) {
-        throw error;
-      }
-      if (error.problem === "too_large") {
-        throw new AgentFileError(`folder_path holds more than ${options.maxBytes} bytes`, "too_large");
-      }
-      throw new AgentFileError(`${name}: ${error.message}`, error.problem);
-    }
-    total += read.bytes.length;
-    files.push({ path: name, bytes: read.bytes });
+  let used = 0;
+  for (const name of await listFolderFiles(real, maxFiles)) {
+    const file = await readFolderFile(workspaceDir, base, name, { limit: maxBytes, used });
+    used += file.bytes.length;
+    files.push(file);
   }
   return { path: resolved, files };
 }
@@ -232,23 +303,13 @@ export async function writeAgentFile(workspaceDir: string, filePath: string, byt
   }
   for (const part of parts) {
     current = path.join(current, part);
-    const found = await lstat(current).catch(() => null);
-    if (found === null) {
-      await mkdir(current).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "EEXIST") throw error;
-      });
-      const made = await lstat(current);
-      if (!made.isDirectory()) {
-        throw new AgentFileError(throughFolders(workspaceDir));
-      }
-    } else if (!found.isDirectory()) {
-      throw new AgentFileError(throughFolders(workspaceDir));
-    }
+    await ensureWorkspaceFolder(current, workspaceDir);
   }
   const target = path.join(current, name);
-  const existing = await lstat(target).catch(() => null);
+  const notRegularFile = "file_path must name a regular file, not a link or folder";
+  const existing = await lstatIfPresent(target, notRegularFile);
   if (existing !== null && !existing.isFile()) {
-    throw new AgentFileError("file_path must name a regular file, not a link or folder", "not_file");
+    throw new AgentFileError(notRegularFile, "not_file");
   }
   let handle: FileHandle;
   try {

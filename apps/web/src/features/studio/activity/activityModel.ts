@@ -193,13 +193,9 @@ export function buildChains(
   const seen = new Set<string>();
   const step = (wake: ActivityWake, from: string, post: ActivityPost | null): ChainStep => {
     seen.add(wake.run_id);
-    const next: ChainStep[] = [];
-    for (const posted of wake.posts) {
-      for (const run of index.wokenBy.get(posted.seq) ?? []) {
-        const woken = index.wakes.get(run);
-        if (woken && !seen.has(run)) next.push(step(woken, wake.agent_id, posted));
-      }
-    }
+    const next = wokenByPosts(wake, index).flatMap((woken) =>
+      seen.has(woken.wake.run_id) ? [] : [step(woken.wake, wake.agent_id, woken.post)],
+    );
     return { wake, from, post, next };
   };
   const parentOf = (wake: ActivityWake): string | null => {
@@ -233,6 +229,19 @@ export function buildChains(
     if (seq !== null) byMessage.set(seq, chain);
   }
   return chains.map(withTotals).sort((left, right) => right.start.at - left.start.at);
+}
+
+/** A wake in the window that a post woke, with that post. */
+export type PostWake = { post: ActivityPost; wake: ActivityWake };
+
+/** The wakes in the window that a wake's posts woke, in the order of its posts. */
+export function wokenByPosts(wake: ActivityWake, index: ActivityIndex): PostWake[] {
+  return wake.posts.flatMap((post) =>
+    (index.wokenBy.get(post.seq) ?? []).flatMap((run) => {
+      const woken = index.wakes.get(run);
+      return woken ? [{ post, wake: woken }] : [];
+    }),
+  );
 }
 
 /** What started the chain a wake begins, and the map node it starts from. */
@@ -474,23 +483,21 @@ function mapSources(
   started: ReadonlyMap<string, number>,
   onMap: ReadonlySet<string>,
 ): MapNode[] {
-  const sources: MapNode[] = [];
-  const addSource = (id: string, agentId: string | null) =>
-    sources.push({
-      id,
-      kind: nodeKind(id),
-      count: started.get(id) ?? 0,
-      counts: emptyCounts(),
-      agentId,
-    });
-  for (const routine of routines) {
-    if (onMap.has(routine.agent_id)) addSource(routineNode(routine.id), routine.agent_id);
-  }
-  for (const id of started.keys()) {
-    if (onMap.has(id) || sources.some((source) => source.id === id)) continue;
-    addSource(id, null);
-  }
-  return sources;
+  const source = (id: string, agentId: string | null): MapNode => ({
+    id,
+    kind: nodeKind(id),
+    count: started.get(id) ?? 0,
+    counts: emptyCounts(),
+    agentId,
+  });
+  const routineSources = routines
+    .filter((routine) => onMap.has(routine.agent_id))
+    .map((routine) => source(routineNode(routine.id), routine.agent_id));
+  const listed = new Set(routineSources.map((node) => node.id));
+  const otherSources = [...started.keys()]
+    .filter((id) => !onMap.has(id) && !listed.has(id))
+    .map((id) => source(id, null));
+  return [...routineSources, ...otherSources];
 }
 
 /* ---------- Each agent's inputs and outputs ---------- */
@@ -573,28 +580,13 @@ function agentInputs(
   sources: readonly MapNode[],
   wakes: readonly ChainStep[],
 ): AgentInput[] {
-  const inputs = new Map<string, AgentInput>();
-  for (const source of sources) {
-    if (source.kind === "routine" && source.agentId === agentId) {
-      inputs.set(source.id, {
-        id: source.id,
-        kind: "routine",
-        count: 0,
-        counts: emptyCounts(),
-        cost: 0,
-        reasons: {},
-      });
-    }
-  }
+  const inputs = new Map(
+    sources
+      .filter((source) => source.kind === "routine" && source.agentId === agentId)
+      .map((source) => [source.id, idleInput(source.id)] as const),
+  );
   for (const item of wakes) {
-    const input = inputs.get(item.from) ?? {
-      id: item.from,
-      kind: nodeKind(item.from),
-      count: 0,
-      counts: emptyCounts(),
-      cost: 0,
-      reasons: {},
-    };
+    const input = inputs.get(item.from) ?? idleInput(item.from);
     input.count += 1;
     input.counts[wakeBucket(item.wake)] += 1;
     input.cost += item.wake.cost_usd || 0;
@@ -607,6 +599,11 @@ function agentInputs(
   return [...inputs.values()].sort(
     (left, right) => inputOrder[left.kind] - inputOrder[right.kind] || right.count - left.count,
   );
+}
+
+/** An input from the map node `id` that woke the agent no times yet. */
+function idleInput(id: string): AgentInput {
+  return { id, kind: nodeKind(id), count: 0, counts: emptyCounts(), cost: 0, reasons: {} };
 }
 
 /** What an agent's wakes produced, added up; `counts` are its wakes by outcome. */

@@ -13,6 +13,7 @@ import {
   ActivityWindowQuerySchema,
   hoursWindow,
   loadGuildActivity,
+  type ActivityServices,
 } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
 import { loadGuildReferences } from "../studio/references.js";
@@ -24,13 +25,26 @@ import {
   parseStateKind,
   type StateDeps,
 } from "../studio/state-data.js";
-import { viewDraft } from "../studio/drafts.js";
+import {
+  declineLoginRequest,
+  grantLoginRequest,
+  grantSessionConnection,
+  listSessionConnections,
+  withdrawSessionConnection,
+} from "../studio/connections.js";
+import { listGuildInventory, listSessionInventory } from "../studio/inventory.js";
+import { assertLive, listSessionMessages, viewSession } from "../studio/session.js";
+import { requireGuildAgent } from "../studio/source-guild.js";
+import { findOrgDraft, listOrphanDrafts, listSessionDrafts, publishDraft, viewDraft } from "../studio/drafts.js";
+import { applyEditRequest, declineEditRequest, viewEditRequest } from "../studio/edit-answers.js";
 import { StudioFocusRequestSchema } from "../studio/focus.js";
-import type { StudioService } from "../studio/index.js";
+import { parseStudioMode, type StudioService } from "../studio/index.js";
 import { isOrgManager } from "../organisations/service.js";
 import {
+  inspectSessionAgent,
   listAgentRoutines,
   listAgentRunHeaders,
+  readAgentMemoryHistory,
   readGuildRun,
   RunHeaderQuerySchema,
   type InspectorServices,
@@ -143,6 +157,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     schedules: deps.schedules,
     generation: deps.generation ?? null,
   };
+  const activity: ActivityServices = { db, generation: deps.generation ?? null };
 
   app.get("/api/studio/sessions", async (request) => {
     const user = await currentUser(db, request, deps);
@@ -157,7 +172,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     const temperature = body.coach_config?.temperature;
     const parentSessionId = body.parent_session_id?.trim() ?? "";
     return await studioOf(deps).createSession(user, org, {
-      mode: body.mode ?? "optimize",
+      mode: parseStudioMode(body.mode ?? "optimize"),
       sourceGuildId: body.source_guild_id ?? "",
       model: body.coach_config?.model ?? body.model ?? "",
       ...(temperature !== undefined ? { temperature } : {}),
@@ -172,8 +187,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return studio.viewSession(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return viewSession(session);
     },
   );
 
@@ -184,7 +199,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       return await studio.archive(session);
     },
   );
@@ -196,8 +211,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return { connections: await studio.listConnections(session) };
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return { connections: await listSessionConnections(studio.deps.preview, session) };
     },
   );
 
@@ -208,11 +223,11 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       const connectionId = request.params.connection_id;
       return request.body.granted === false
-        ? await studio.withdrawConnection(session, connectionId)
-        : await studio.grantConnection(session, connectionId);
+        ? await withdrawSessionConnection(studio.deps.db, session, connectionId)
+        : await grantSessionConnection(studio.deps.db, session, connectionId);
     },
   );
 
@@ -223,9 +238,11 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       const seq = Number(request.params.seq);
-      return await studio.resolveLogin(session, user, seq, request.body.decision);
+      return request.body.decision === "grant"
+        ? await grantLoginRequest(studio.deps.db, session, user, seq)
+        : await declineLoginRequest(studio.deps.db, session, user, seq);
     },
   );
 
@@ -236,8 +253,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.getEdit(session, user, Number(request.params.seq));
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return await viewEditRequest(studio.deps, session, user, Number(request.params.seq));
     },
   );
 
@@ -248,9 +265,11 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       const seq = Number(request.params.seq);
-      return await studio.resolveEdit(session, user, seq, request.body.decision);
+      return request.body.decision === "apply"
+        ? await applyEditRequest(studio.deps, session, user, seq)
+        : await declineEditRequest(studio.deps, session, user, seq);
     },
   );
 
@@ -261,7 +280,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       return await studio.setTarget(session, request.body.agent_id ?? null);
     },
   );
@@ -272,9 +291,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     async (request) => {
       const user = await currentUser(db, request, deps);
       const guild = await requireVisibleGuild(db, request.params.guild_id, user.id);
-      const studio: StudioService = studioOf(deps);
-      const rows = await studio.guildInventory(String(guild.id));
-      return rows.map((row) => studio.inventoryItem(row));
+      return await listGuildInventory(studioOf(deps).deps.db, guild.id);
     },
   );
 
@@ -285,8 +302,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.inventory(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return await listSessionInventory(studio.deps.db, session);
     },
   );
 
@@ -297,8 +314,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.inspector(session, user, request.params.agent_id);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return await inspectSessionAgent(studio.deps, session, user, request.params.agent_id);
     },
   );
 
@@ -309,8 +326,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.messages(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return await listSessionMessages(studio.deps.db, session.id);
     },
   );
 
@@ -321,7 +338,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       const body = request.body;
       return await studio.postMessage(session, user, body.content ?? "", body.focus);
     },
@@ -334,7 +351,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       return await studio.cancel(session);
     },
   );
@@ -346,7 +363,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       return await studio.continueSession(session, user, org);
     },
   );
@@ -358,13 +375,13 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
+      const session = await studio.openSession(request.params.session_id, user, org);
       const sessionId = session.id;
       await pipeSse(
         request,
         reply,
-        () => studio.subscribe(sessionId),
-        (queue) => studio.unsubscribe(sessionId, queue),
+        () => studio.runner.subscribe(sessionId),
+        (queue) => studio.runner.unsubscribe(sessionId, queue),
       );
     },
   );
@@ -376,8 +393,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return (await studio.sessionDrafts(session)).map(viewDraft);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return await listSessionDrafts(studio.deps.db, session.id);
     },
   );
 
@@ -387,7 +404,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     if (!(await isOrgManager(db, org.id, user.id))) {
       throw new HttpError(403, "forbidden");
     }
-    return (await studioOf(deps).orphanDrafts(org.id)).map(viewDraft);
+    return await listOrphanDrafts(studioOf(deps).deps.db, org.id);
   });
 
   app.get("/api/studio/drafts/:draft_id", { schema: { params: DraftParams } }, async (request) => {
@@ -405,7 +422,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const body = request.body;
       const loaded = await loadDraftContext(deps, user, org, request.params.draft_id);
-      return await studioOf(deps).drafts.revise(
+      return await studioOf(deps).deps.drafts.revise(
         loaded.session,
         user,
         loaded.draft.id,
@@ -422,8 +439,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const loaded = await loadDraftContext(deps, user, org, request.params.draft_id);
-      const studio: StudioService = studioOf(deps);
-      return await studio.publishDraft(loaded.session, loaded.user, loaded.draft.id);
+      return await publishDraft(studioOf(deps).deps, loaded.session, loaded.user, loaded.draft.id);
     },
   );
 
@@ -437,7 +453,7 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       if (loaded.orphan) {
         throw new HttpError(403, "orphan recovery cannot discard");
       }
-      return await studioOf(deps).drafts.discard(loaded.session, loaded.user, loaded.draft.id);
+      return await studioOf(deps).deps.drafts.discard(loaded.session, loaded.user, loaded.draft.id);
     },
   );
 
@@ -448,9 +464,9 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
-      const agent = await studio.requireGuildAgent(session, request.params.agent_id);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      assertLive(session);
+      const agent = await requireGuildAgent(studio.deps.db, session.source_guild_id, session.org_id, request.params.agent_id);
       return await listAgentRunHeaders(inspector, String(agent.id), request.query);
     },
   );
@@ -462,15 +478,10 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      assertLive(session);
       const now = new Date();
-      const window = activityWindow(request.query, now);
-      return await loadGuildActivity(db, session.source_guild_id, {
-        ...window,
-        now,
-        generating: (runId) => (deps.generation ? deps.generation.isGenerating(runId) : false),
-      });
+      return await loadGuildActivity(activity, session.source_guild_id, activityWindow(request.query, now), now);
     },
   );
 
@@ -483,8 +494,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
     const user = await currentUser(db, request, deps);
     const org = await currentOrg(db, request, user);
     const studio: StudioService = studioOf(deps);
-    const session = await studio.getOwnedSession(sessionId, user, org);
-    studio.assertLive(session);
+    const session = await studio.openSession(sessionId, user, org);
+    assertLive(session);
     const guildId = session.source_guild_id;
     const actor = await loadOperatorActor(db, user, { orgId: session.org_id, guildId });
     return { actor, guildId, deps: { db, artifacts: studio.deps.artifacts } };
@@ -529,10 +540,10 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      assertLive(session);
       const window = activityWindow(request.query, new Date());
-      const services = { db, preview: studio.previewDeps() };
+      const services = { db, preview: studio.deps.preview };
       return await loadGuildTools(services, session.source_guild_id, window);
     },
   );
@@ -545,8 +556,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const org = await currentOrg(db, request, user);
       const query = request.query;
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      assertLive(session);
       return await loadToolCalls(db, session.source_guild_id, request.params.name, {
         ...hoursWindow(query.hours, new Date()),
         errorsOnly: query.errors === "true" || query.errors === "1",
@@ -562,8 +573,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      assertLive(session);
       const guildId = session.source_guild_id;
       const actor = await loadOperatorActor(db, user, { orgId: session.org_id, guildId });
       return await loadGuildReferences({ db, artifacts: studio.deps.artifacts }, actor, guildId);
@@ -577,8 +588,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      assertLive(session);
       return await readGuildRun(inspector, session.source_guild_id, request.params.run_id);
     },
   );
@@ -590,9 +601,9 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      studio.assertLive(session);
-      const agent = await studio.requireGuildAgent(session, request.params.agent_id);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      assertLive(session);
+      const agent = await requireGuildAgent(studio.deps.db, session.source_guild_id, session.org_id, request.params.agent_id);
       return await listAgentRoutines(inspector, String(agent.id));
     },
   );
@@ -604,8 +615,8 @@ export async function registerStudioRoutes(app: RouteApp, deps: AppDeps): Promis
       const user = await currentUser(db, request, deps);
       const org = await currentOrg(db, request, user);
       const studio: StudioService = studioOf(deps);
-      const session = await studio.getOwnedSession(request.params.session_id, user, org);
-      return await studio.memoryTimeline(session, user, request.params.agent_id);
+      const session = await studio.openSession(request.params.session_id, user, org);
+      return await readAgentMemoryHistory(studio.deps, session, user, request.params.agent_id);
     },
   );
 }
@@ -616,8 +627,7 @@ async function loadDraftContext(
   org: OrgMembershipRow,
   draftId: string,
 ): Promise<{ session: StudioSessionRow; draft: StudioDraftRow; user: UserRow; orphan: boolean }> {
-  const studio: StudioService = studioOf(deps);
-  const found = await studio.orgDraft(org.id, draftId);
+  const found = await findOrgDraft(studioOf(deps).deps.db, org.id, draftId);
   if (!found) {
     throw new HttpError(404, "draft not found");
   }

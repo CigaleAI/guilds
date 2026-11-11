@@ -12,7 +12,7 @@
     "test:orchestrator": "pnpm --filter @guildsrun/orchestrator test",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "test:lint-rules": "sh -c 'for f in lint/anti-slop/rules/*.test.ts; do node \"$f\" || exit 1; done'",
+    "test:lint-rules": "sh -c 'for f in lint/*.test.ts lint/anti-slop/rules/*.test.ts; do node \"$f\" || exit 1; done'",
     "storybook": "pnpm --filter @guildsrun/ui storybook",
     "build:storybook": "pnpm --filter @guildsrun/ui build-storybook",
     "design-system-doc": "pnpm --filter @guildsrun/ui design-system-doc",

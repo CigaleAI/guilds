@@ -27,7 +27,7 @@ export type RunActivityStatsRow = Pick<Message, "run_id"> & {
   last_seq: number | null;
   first_at: string | null;
   last_at: string | null;
-  cost_usd: string;
+  cost_usd: number;
 };
 
 export type RunGroupDeliveryRow = Pick<Message, "run_id" | "metadata">;
@@ -44,7 +44,7 @@ export type RunActivityStepRow = Pick<Message, "run_id" | "seq" | "created_at"> 
   text: string | null;
   tool_call_id: string | null;
   error: string | null;
-  duration_ms: string | null;
+  duration_ms: number | null;
 };
 
 export type RunOpeningRow = Pick<Message, "run_id"> & {
@@ -64,7 +64,7 @@ export type GuildToolCallRow = Pick<Message, "id" | "run_id" | "seq" | "created_
   Pick<Run, "agent_id"> & {
     call_id: string | null;
     error: string | null;
-    duration_ms: string | null;
+    duration_ms: number | null;
     arguments: string | null;
   };
 
@@ -81,9 +81,9 @@ export type GuildToolCallPage = {
   limit: number;
 };
 
-// A tool result's duration when it recorded one as a number.
+// A tool result's duration when it recorded one as a number, as a float8 so the driver reads a number.
 const TOOL_DURATION = `CASE WHEN jsonb_typeof(m.metadata->'duration_ms') = 'number'
-  THEN (m.metadata->>'duration_ms')::numeric END`;
+  THEN (m.metadata->>'duration_ms')::float8 END`;
 
 // A stored step's text: its string content, or the text parts of a content list.
 const STEP_TEXT = `
@@ -140,7 +140,7 @@ export async function listRunActivityStats(
             MAX(seq) AS last_seq,
             MIN(created_at) FILTER (WHERE created_at >= $2) AS first_at,
             MAX(created_at) AS last_at,
-            COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= $2), 0) AS cost_usd
+            COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= $2), 0)::float8 AS cost_usd
      FROM messages
      WHERE run_id = ANY($1::text[])
      GROUP BY run_id`,
@@ -204,8 +204,8 @@ export async function listRunActivitySteps(
             CASE WHEN payload->>'role' = 'assistant' THEN ${STEP_TEXT} END AS text,
             metadata->>'tool_call_id' AS tool_call_id,
             metadata->>'error' AS error,
-            metadata->>'duration_ms' AS duration_ms
-     FROM messages
+            ${TOOL_DURATION} AS duration_ms
+     FROM messages m
      WHERE run_id = ANY($1::text[])
        AND created_at >= $2
        AND payload->>'role' IN ('assistant', 'tool')

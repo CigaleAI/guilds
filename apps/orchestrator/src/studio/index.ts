@@ -1,5 +1,4 @@
 import type { ArtifactStore } from "../artifacts/store.js";
-import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import {
   assertModelConnected,
@@ -8,8 +7,6 @@ import {
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
-import { EventQueue } from "../lib/event.js";
-import type { CoachEvent } from "../conversation/runner.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
@@ -19,7 +16,7 @@ import {
   STUDIO_MAX_STEPS,
 } from "./constants.js";
 import { StudioConflictError, StudioNotFoundError, StudioUnprocessableError } from "./errors.js";
-import { StudioDrafts, type DraftPublication } from "./drafts.js";
+import { StudioDrafts } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
 import { withLockedSession } from "./session-lock.js";
 import {
@@ -29,66 +26,44 @@ import {
   readStudioSystemTemplate,
 } from "./system.js";
 import { refreshSystemMessage } from "./system-message.js";
-import { inventoryItem, type StudioInventoryItem } from "./inventory.js";
-import { inspectAgent, type StudioInspector } from "./inspector.js";
-import { studioToolSchemas, type StudioToolDeps } from "./tools.js";
-import { previewDatabase, type PreviewDeps } from "./preview.js";
 import {
-  answerLoginRequest,
-  grantSessionConnection,
-  grantedConnectionIds,
-  listSessionConnections,
-  withdrawSessionConnection,
-  type StudioConnection,
-  type StudioMcpClient,
-} from "./connections.js";
+  assertLive,
+  blockOrphanedSession,
+  readOwnedSession,
+  sourceGuildSnapshot,
+  viewSession,
+  type LiveStudioSession,
+  type StudioSession,
+} from "./session.js";
+import { inventoryItem } from "./inventory.js";
+import { studioToolSchemas } from "./tools.js";
+import { previewDatabase, type PreviewDeps } from "./preview.js";
+import type { StudioMcpClient } from "./connections.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocusRequest } from "./focus.js";
 import type { ResolvedFocus } from "./focus-evidence.js";
-import { isAccessTool } from "./access.js";
-import {
-  applyEdit,
-  editStatus,
-  findEditRecord,
-  markEdit,
-  viewEdit,
-  type EditDeps,
-  type EditScope,
-  type StudioEditView,
-} from "./edits.js";
 import type { RoutineChange } from "../schedules/operator.js";
-import { getGuild, hiddenGuildsFor, type GuildRow } from "../db/guilds.js";
-import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
+import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
+import { findGuildAgent } from "./source-guild.js";
 import type { Queryable } from "../db/pg.js";
 import {
-  type ConversationMessageRow,
-  type ConversationUsageRow,
-  conversationUsageByOrg,
   insertConversationMessage,
-  listConversationMessages,
   nextConversationSeq,
 } from "../db/conversations.js";
 import {
-  getStudioDraft,
   getStudioSession,
   insertStudioSession,
   listGeneratingStudioSessions,
-  listOrphanStudioDrafts,
   listStudioDraftHeads,
-  listStudioDrafts,
   listStudioSessions,
   markStudioSessionCancelling,
-  type StudioDraftRow,
   type StudioInventoryRow,
   type StudioSessionRow,
   studioInventory,
   updateStudioSession,
 } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
-import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
-import type { CoachSessionConfig, StudioSourceGuild } from "../db/schema/index.js";
-import { loadOperatorActor } from "../artifacts/actors.js";
-import { studioActor, type StudioOperator } from "./actor.js";
+import type { StudioOperator } from "./actor.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -106,47 +81,50 @@ export type StudioServiceDeps = {
   isAgentBusy?: (agentId: string) => boolean;
 };
 
-/** A session an operator can still work in: not archived or blocked, its source guild still there. */
-export type LiveStudioSession = StudioSessionRow & { source_guild_id: string };
+/**
+ * What the Studio's modules read and write through, built once from the service's own: the stores,
+ * the drafts, the projection of an agent's next run, the coach's logins, and the channels a change
+ * is announced on.
+ */
+export type StudioDeps = {
+  db: Queryable;
+  artifacts: ArtifactStore;
+  scripts: Scripts;
+  schedules: Schedules;
+  notesSystemPath: string;
+  mcp: StudioMcpClient | null;
+  drafts: StudioDrafts;
+  preview: PreviewDeps;
+  publishFilesChanged?: StudioServiceDeps["publishFilesChanged"];
+  publishRoutinesChanged?: StudioServiceDeps["publishRoutinesChanged"];
+  isAgentBusy?: StudioServiceDeps["isAgentBusy"];
+};
 
-/** The guild as a session records it; its description is the coach's objective. */
-function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "description">): StudioSourceGuild {
-  const objective = guild.description.trim();
-  return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
+/** The mode Studio opens a session in; a session's other mode, `create`, is not available. */
+export type StudioOpenMode = Extract<StudioSessionRow["mode"], "optimize">;
+
+/** The mode a create request names, when Studio opens sessions in it; StudioUnprocessableError for any other. */
+export function parseStudioMode(value: string): StudioOpenMode {
+  if (value !== "optimize") {
+    throw new StudioUnprocessableError("create mode is not available");
+  }
+  return value;
 }
 
 /**
- * A Studio session as the operator app reads it: where it stands, its guild as the session recorded
- * it, the logins its coach may read through, and its coach's model and limits.
+ * An operator's turn as it is recorded under the session's lock: the session as it now generates,
+ * the generation's number, the system message it runs under, and the roster read for it.
  */
-export type StudioSession = Pick<
-  StudioSessionRow,
-  | "id"
-  | "org_id"
-  | "mode"
-  | "status"
-  | "blocked_reason"
-  | "generation_state"
-  | "generation_number"
-  | "source_guild_id"
-  | "selected_target_agent_id"
-  | "parent_session_id"
-  | "created_by_name"
-  | "created_at"
-  | "updated_at"
-  | "archived_at"
-> & {
-  source_guild: StudioSessionRow["source_guild_snapshot"];
-  granted_connection_ids: string[];
-  coach: Pick<CoachSessionConfig, "model" | "temperature" | "max_tokens" | "max_steps" | "max_tool_calls" | "max_input_tokens">;
+export type StudioTurn = {
+  session: StudioSessionRow;
+  generation: number;
+  systemContent: string;
+  rows: StudioInventoryRow[];
 };
-
-/** A published or unchanged draft, with whether its target agent is generating now and so reads the new Task on its next run. */
-export type PublishedDraft = DraftPublication & { target_generating: boolean };
 
 /** What an operator opens a Studio session with: its mode, source guild, coach model, and the session it continues. */
 export type StudioSessionRequest = {
-  mode: string;
+  mode: StudioOpenMode;
   sourceGuildId: string;
   model: string;
   temperature?: number;
@@ -156,31 +134,35 @@ export type StudioSessionRequest = {
 };
 
 export class StudioService {
-  drafts: StudioDrafts;
+  deps: StudioDeps;
   runner: StudioRunner;
   admission: AdmissionCoordinator;
   policy: OrgPolicy;
   credentials: ModelCredentialsProvider;
 
-  constructor(public deps: StudioServiceDeps) {
-    this.drafts = new StudioDrafts(deps.db, deps.artifacts);
-    this.admission = deps.admission ?? new AdmissionCoordinator();
-    this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(deps.db);
+  constructor(services: StudioServiceDeps) {
+    this.deps = {
+      db: services.db,
+      artifacts: services.artifacts,
+      scripts: services.scripts,
+      schedules: services.schedules,
+      notesSystemPath: services.notesSystemPath,
+      mcp: services.mcp ?? null,
+      drafts: new StudioDrafts(services.db, services.artifacts),
+      preview: { db: previewDatabase(services.db), artifacts: services.artifacts, scripts: services.scripts },
+      publishFilesChanged: services.publishFilesChanged,
+      publishRoutinesChanged: services.publishRoutinesChanged,
+      isAgentBusy: services.isAgentBusy,
+    };
+    this.admission = services.admission ?? new AdmissionCoordinator();
+    this.policy = services.policy ?? OPEN_POLICY;
+    this.credentials = services.credentials ?? coreModelCredentials(services.db);
     this.runner = new StudioRunner({
-      db: deps.db,
+      db: services.db,
       admission: this.admission,
       policy: this.policy,
       credentials: this.credentials,
     });
-  }
-
-  previewDeps(): PreviewDeps {
-    return {
-      db: previewDatabase(this.deps.db),
-      artifacts: this.deps.artifacts,
-      scripts: this.deps.scripts,
-    };
   }
 
   async reconcile(): Promise<void> {
@@ -194,9 +176,6 @@ export class StudioService {
     org: OrgMembershipRow,
     request: StudioSessionRequest,
   ): Promise<StudioSession> {
-    if (request.mode !== "optimize") {
-      throw new StudioUnprocessableError("create mode is not available");
-    }
     const guild = await getGuild(this.deps.db, request.sourceGuildId);
     if (
       !guild ||
@@ -227,7 +206,7 @@ export class StudioService {
     };
     const sourceGuild = sourceGuildSnapshot(guild);
     const members = (await studioInventory(this.deps.db, guild.id, null)).map((row) => hydrateStudioMember(row));
-    const system = composeStudioSystemMessage(template, { mode: "optimize", config: coachConfig }, { sourceGuild, members });
+    const system = composeStudioSystemMessage(template, { mode: request.mode, config: coachConfig }, { sourceGuild, members });
     const now = new Date();
     const session = await insertStudioSession(
       this.deps.db,
@@ -236,7 +215,7 @@ export class StudioService {
         org_id: org.id,
         created_by_user_id: user.id,
         created_by_name: user.name,
-        mode: "optimize",
+        mode: request.mode,
         source_guild_id: guild.id,
         source_guild_snapshot: sourceGuild,
         config_snapshot: {
@@ -276,7 +255,7 @@ export class StudioService {
         now,
       );
     }
-    return this.viewSession(session);
+    return viewSession(session);
   }
 
   /** The coach's model: a marketplace model whose provider the organisation has connected. */
@@ -309,97 +288,15 @@ export class StudioService {
     }
     return rows
       .filter((row) => !hidden.has(row.source_guild_id ?? ""))
-      .map((row) => this.viewSession(row));
+      .map((row) => viewSession(row));
   }
 
-  async getOwnedSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
-    const session = await getStudioSession(this.deps.db, sessionId);
-    if (!session || session.org_id !== org.id) {
-      throw new StudioNotFoundError("studio session not found");
-    }
-    if (session.created_by_user_id && session.created_by_user_id !== user.id) {
-      throw new StudioNotFoundError("studio session not found");
-    }
-    if (!session.created_by_user_id) {
-      throw new StudioNotFoundError("studio session not found");
-    }
-    // Seeing the guild is checked on every request, not only at creation: a
-    // user who can no longer see a private guild loses its sessions too.
-    if (session.source_guild_id) {
-      const guild = await getGuild(this.deps.db, session.source_guild_id);
-      if (guild && !canSeeGuild(guild, user.id)) {
-        throw new StudioNotFoundError("studio session not found");
-      }
-    }
-    if (!session.source_guild_id && session.status === "active") {
-      await updateStudioSession(this.deps.db, sessionId, { status: "blocked", blocked_reason: "source_deleted" }, new Date());
-      session.status = "blocked";
-      session.blocked_reason = "source_deleted";
-    }
-    return session;
-  }
-
-  viewSession(row: StudioSessionRow): StudioSession {
-    const config = row.config_snapshot;
-    return {
-      id: row.id,
-      org_id: row.org_id,
-      mode: row.mode,
-      status: row.status,
-      blocked_reason: row.blocked_reason,
-      generation_state: row.generation_state,
-      generation_number: row.generation_number,
-      source_guild_id: row.source_guild_id,
-      source_guild: row.source_guild_snapshot,
-      selected_target_agent_id: row.selected_target_agent_id,
-      parent_session_id: row.parent_session_id,
-      granted_connection_ids: grantedConnectionIds(row),
-      coach: {
-        model: config.model,
-        temperature: config.temperature,
-        max_tokens: config.max_tokens,
-        max_steps: config.max_steps,
-        max_tool_calls: config.max_tool_calls,
-        max_input_tokens: config.max_input_tokens,
-      },
-      created_by_name: row.created_by_name,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      archived_at: row.archived_at,
-    };
-  }
-
-  async listConnections(session: StudioSessionRow): Promise<StudioConnection[]> {
-    return listSessionConnections(this.previewDeps(), session);
-  }
-
-  /** Lets the coach use one login of the source guild in this session. */
-  async grantConnection(
-    session: StudioSessionRow,
-    connectionId: string,
-  ): Promise<StudioSession> {
-    return this.viewSession(await grantSessionConnection(this.deps.db, session, connectionId));
-  }
-
-  /** Takes one login back from the coach in this session. */
-  async withdrawConnection(
-    session: StudioSessionRow,
-    connectionId: string,
-  ): Promise<StudioSession> {
-    return this.viewSession(await withdrawSessionConnection(this.deps.db, session, connectionId));
-  }
-
-  // Grant or decline one login request from the Studio log. The answer and
-  // who gave it are kept on the request's tool message; a grant also adds the
-  // login to the session. The session lock serialises answers.
-  async resolveLogin(
-    session: StudioSessionRow,
-    user: UserRow,
-    seq: number,
-    decision: "grant" | "decline",
-  ): Promise<StudioSession> {
-    this.assertLive(session);
-    return this.viewSession(await answerLoginRequest(this.deps.db, session, { user, seq, decision }));
+  /**
+   * The session `user` opens in `org`: their own, on a guild they can still see. An active session
+   * whose source guild is gone is recorded blocked as it is opened.
+   */
+  async openSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
+    return blockOrphanedSession(this.deps.db, await readOwnedSession(this.deps.db, sessionId, user, org));
   }
 
   async archive(session: StudioSessionRow): Promise<StudioSession> {
@@ -413,7 +310,7 @@ export class StudioService {
       { status: "archived", archived_at: now, generation_state: "idle" },
       now,
     );
-    return this.viewSession(updated ?? session);
+    return viewSession(updated ?? session);
   }
 
   async setTarget(session: StudioSessionRow, agentId: string | null): Promise<StudioSession> {
@@ -433,56 +330,8 @@ export class StudioService {
         { selected_target_agent_id: agentId },
         new Date(),
       );
-      return this.viewSession(updated ?? locked);
+      return viewSession(updated ?? locked);
     });
-  }
-
-  async inventory(session: StudioSessionRow): Promise<StudioInventoryItem[]> {
-    this.assertLive(session);
-    const rows = await studioInventory(this.deps.db, session.source_guild_id, session.id);
-    return rows.map((row) => inventoryItem(row));
-  }
-
-  inventoryItem(row: StudioInventoryRow): StudioInventoryItem {
-    return inventoryItem(row);
-  }
-
-  /** One agent of the session's guild as the inspector shows it to `user`, without what is hidden from them. */
-  async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<StudioInspector> {
-    this.assertLive(session);
-    const agent = await this.requireGuildAgent(session, agentId);
-    const viewer = studioActor({
-      orgId: session.org_id,
-      sourceGuildId: agent.guild_id,
-      user,
-      hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
-    });
-    return inspectAgent(
-      {
-        db: this.deps.db,
-        artifacts: this.deps.artifacts,
-        preview: this.previewDeps(),
-        notesSystemPath: this.deps.notesSystemPath,
-        isAgentBusy: this.deps.isAgentBusy,
-      },
-      viewer,
-      agent,
-    );
-  }
-
-  async memoryTimeline(
-    session: StudioSessionRow,
-    user: UserRow,
-    agentId: string,
-  ): ReturnType<typeof memoryHistory> {
-    this.assertLive(session);
-    const agent = await this.requireGuildAgent(session, agentId);
-    const actor = await loadOperatorActor(this.deps.db, user, {
-      orgId: session.org_id,
-      guildId: session.source_guild_id,
-      agentId,
-    });
-    return memoryHistory(this.deps, actor, { id: agent.id, name: agent.name });
   }
 
   async postMessage(
@@ -491,7 +340,7 @@ export class StudioService {
     content: string,
     focusInput?: StudioFocusRequest | null,
   ): Promise<StudioSession> {
-    this.assertLive(session);
+    assertLive(session);
     if (!content.trim()) {
       throw new StudioUnprocessableError("content must not be empty");
     }
@@ -504,11 +353,27 @@ export class StudioService {
       hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
     };
     // Resolve the pin before taking the lock: it reads guild data only.
-    const focus: ResolvedFocus | null =
-      focusInput === undefined || focusInput === null
-        ? null
-        : await resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts }, operator, focusInput, new Date());
-    const started = await withLockedSession(this.deps.db, session.id, async (client, locked) => {
+    const focus = await this.resolvePin(operator, focusInput ?? null);
+    const turn = await this.recordTurn(session, content, focus);
+    await this.startGeneration(turn, operator);
+    return viewSession(turn.session);
+  }
+
+  /** The evidence `request` pins a turn to, read as `operator`; null when the turn pins none. */
+  private async resolvePin(operator: StudioOperator, request: StudioFocusRequest | null): Promise<ResolvedFocus | null> {
+    if (request === null) {
+      return null;
+    }
+    return resolveStudioFocus({ db: this.deps.db, artifacts: this.deps.artifacts }, operator, request, new Date());
+  }
+
+  /**
+   * Records the operator's turn on an active, idle session under its lock: claims a coach run,
+   * refreshes the system message from the live roster, stores the pin and the message, and marks
+   * the session generating.
+   */
+  private async recordTurn(session: LiveStudioSession, content: string, focus: ResolvedFocus | null): Promise<StudioTurn> {
+    return withLockedSession(this.deps.db, session.id, async (client, locked) => {
       if (locked.status !== "active") {
         throw new StudioConflictError("session cannot generate");
       }
@@ -564,82 +429,40 @@ export class StudioService {
       );
       return { session: updated ?? locked, generation, systemContent, rows };
     });
-    const drafts = await listStudioDraftHeads(this.deps.db, started.session.id);
+  }
+
+  /** Starts the coach's generation of a recorded turn under the organisation's coach limits now, its tools reading as `operator`. */
+  private async startGeneration(turn: StudioTurn, operator: StudioOperator): Promise<void> {
+    const drafts = await listStudioDraftHeads(this.deps.db, turn.session.id);
     const generationContext = composeGenerationContext(
-      session.source_guild_id,
-      started.rows.map((row) => inventoryItem(row)),
+      operator.sourceGuildId,
+      turn.rows.map((row) => inventoryItem(row)),
       drafts[0] ?? null,
     );
-    const limits = (await this.policy.standing(started.session.org_id)).limits.coach.studio;
+    const limits = (await this.policy.standing(turn.session.org_id)).limits.coach.studio;
     this.runner.start(
-      this.toolDeps(),
+      this.deps,
       {
         session: {
-          ...started.session,
-          config_snapshot: { ...started.session.config_snapshot, ...limits },
+          ...turn.session,
+          config_snapshot: { ...turn.session.config_snapshot, ...limits },
         },
-        generation: started.generation,
+        generation: turn.generation,
         generationContext,
-        systemContent: started.systemContent,
+        systemContent: turn.systemContent,
       },
-      { ...operator, session: started.session },
+      { ...operator, session: turn.session },
     );
-    return this.viewSession(started.session);
-  }
-
-  /** The guild's agents as the coach sees them, outside any session. */
-  guildInventory(guildId: string): Promise<StudioInventoryRow[]> {
-    return studioInventory(this.deps.db, guildId, null);
-  }
-
-  /** The session's conversation, in order. */
-  messages(session: StudioSessionRow): Promise<ConversationMessageRow[]> {
-    return listConversationMessages(this.deps.db, "studio", session.id);
-  }
-
-  /** Every draft of the session, newest first. */
-  sessionDrafts(session: StudioSessionRow): Promise<StudioDraftRow[]> {
-    return listStudioDrafts(this.deps.db, session.id);
-  }
-
-  /** The organisation's open drafts whose session's user is gone. */
-  orphanDrafts(orgId: string): Promise<StudioDraftRow[]> {
-    return listOrphanStudioDrafts(this.deps.db, orgId);
-  }
-
-  /** The draft and its session when the draft belongs to the organisation, otherwise null. */
-  async orgDraft(
-    orgId: string,
-    draftId: string,
-  ): Promise<{ draft: StudioDraftRow; session: StudioSessionRow | null } | null> {
-    const draft = await getStudioDraft(this.deps.db, draftId);
-    if (!draft || draft.org_id !== orgId) {
-      return null;
-    }
-    return { draft, session: await getStudioSession(this.deps.db, draft.session_id) };
-  }
-
-  /** What Studio sessions spent, per organisation. */
-  usageByOrg(): Promise<Map<string, ConversationUsageRow>> {
-    return conversationUsageByOrg(this.deps.db, "studio");
   }
 
   /** Stops the generation running on the session; a session no generation runs on is returned as it is. */
   async cancel(session: StudioSessionRow): Promise<StudioSession> {
     const cancelling = await markStudioSessionCancelling(this.deps.db, session.id, new Date());
     if (cancelling === null) {
-      return this.viewSession(session);
+      return viewSession(session);
     }
     this.runner.cancel(session.id);
-    return this.viewSession(cancelling);
-  }
-
-  subscribe(sessionId: string): EventQueue<CoachEvent> {
-    return this.runner.subscribe(sessionId);
-  }
-
-  unsubscribe(sessionId: string, queue: EventQueue<CoachEvent>): void {
-    this.runner.unsubscribe(sessionId, queue);
+    return viewSession(cancelling);
   }
 
   async continueSession(
@@ -665,132 +488,5 @@ export class StudioService {
       summary,
       selectedTargetAgentId: session.selected_target_agent_id,
     });
-  }
-
-  /** Publishes a draft of the session to its target agent's task, as `user`. */
-  async publishDraft(
-    session: StudioSessionRow,
-    user: UserRow,
-    draftId: string,
-  ): Promise<PublishedDraft> {
-    const result = await this.drafts.publish(
-      { db: this.deps.db, preview: this.previewDeps(), notesSystemPath: this.deps.notesSystemPath },
-      session,
-      user,
-      draftId,
-    );
-    return this.announcePublish(session, result);
-  }
-
-  // Tells the source guild its files changed when the draft was published,
-  // and adds whether the target agent is generating to the outcome.
-  private async announcePublish(session: StudioSessionRow, result: DraftPublication): Promise<PublishedDraft> {
-    if (result.outcome === "published" && this.deps.publishFilesChanged && session.source_guild_id) {
-      await this.deps.publishFilesChanged(session.source_guild_id);
-    }
-    const targetId = result.draft.target_agent_id;
-    return {
-      ...result,
-      target_generating: targetId ? Boolean(this.deps.isAgentBusy?.(targetId)) : false,
-    };
-  }
-
-  private toolDeps(): StudioToolDeps {
-    return {
-      artifacts: this.deps.artifacts,
-      db: this.deps.db,
-      schedules: this.deps.schedules,
-      drafts: this.drafts,
-      preview: this.previewDeps(),
-      notesSystemPath: this.deps.notesSystemPath,
-      mcp: this.deps.mcp ?? null,
-    };
-  }
-
-  private editDeps(): EditDeps {
-    return { db: this.deps.db, artifacts: this.deps.artifacts, schedules: this.deps.schedules };
-  }
-
-  private async editScope(session: LiveStudioSession, user: UserRow): Promise<EditScope> {
-    return {
-      orgId: session.org_id,
-      sourceGuildId: session.source_guild_id,
-      sessionId: session.id,
-      user,
-      hidden: await hiddenGuildsFor(this.deps.db, session.org_id, user.id),
-    };
-  }
-
-  async getEdit(
-    session: StudioSessionRow,
-    user: UserRow,
-    seq: number,
-  ): Promise<StudioEditView> {
-    const sourceGuildId = session.source_guild_id;
-    if (!sourceGuildId) {
-      throw new StudioUnprocessableError("source guild is gone");
-    }
-    const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    const scope = await this.editScope({ ...session, source_guild_id: sourceGuildId }, user);
-    return viewEdit(this.editDeps(), scope, record);
-  }
-
-  // Apply or decline one edit request from the Studio log. The session lock
-  // serialises answers, so a request resolves once.
-  async resolveEdit(
-    session: StudioSessionRow,
-    user: UserRow,
-    seq: number,
-    decision: "apply" | "decline",
-  ): Promise<StudioEditView> {
-    this.assertLive(session);
-    const deps = this.editDeps();
-    const scope = await this.editScope(session, user);
-    const userId = user.id;
-    const outcome = await withLockedSession(this.deps.db, session.id, async () => {
-      const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-      if (editStatus(record) !== "pending") {
-        throw new StudioConflictError(`edit request is already ${editStatus(record)}`);
-      }
-      if (decision === "decline") {
-        await markEdit(this.deps.db, session.id, record, { status: "declined", version: null, userId });
-        return { record, applied: null };
-      }
-      const applied = await applyEdit(deps, scope, record);
-      await markEdit(this.deps.db, session.id, record, {
-        status: "applied",
-        version: applied.version,
-        userId,
-      });
-      return { record, applied };
-    });
-    if (outcome.applied?.guild) {
-      await updateStudioSession(
-        this.deps.db,
-        session.id,
-        { source_guild_snapshot: sourceGuildSnapshot(outcome.applied.guild) },
-        new Date(),
-      );
-    } else if (outcome.applied?.routine) {
-      await this.deps.publishRoutinesChanged?.(session.source_guild_id, outcome.applied.routine);
-    } else if (outcome.applied && !isAccessTool(outcome.record.toolName) && this.deps.publishFilesChanged) {
-      await this.deps.publishFilesChanged(session.source_guild_id);
-    }
-    const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", session.id), seq);
-    return viewEdit(deps, scope, record);
-  }
-
-  assertLive(session: StudioSessionRow): asserts session is LiveStudioSession {
-    if (session.status === "archived") {
-      throw new StudioConflictError("session is archived");
-    }
-    if (!session.source_guild_id || session.status === "blocked") {
-      throw new StudioConflictError("session source is not live");
-    }
-  }
-
-  /** The agent `agentId` names in the session's source guild; StudioNotFoundError when it names none there. */
-  async requireGuildAgent(session: LiveStudioSession, agentId: string): Promise<AgentRow> {
-    return requireGuildAgent(this.deps.db, session.source_guild_id, session.org_id, agentId);
   }
 }

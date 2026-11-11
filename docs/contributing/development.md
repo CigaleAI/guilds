@@ -379,6 +379,9 @@ Every package also runs the limits of the
 tests and stories excepted: Oxlint's `max-depth`, a warning past a
 complexity of 11 and at five parameters, a warning past 800 lines
 and, from the limits plugin (`lint/limits.js`), an error past 1,000, a refusal of
+a function that holds more than one block of nested conditional logic (`bumpy-road`: a
+conditional or loop statement at the top of its body that holds another, the statements of a
+function declared inside it counting towards it and a method's towards the method), a refusal of
 every type assertion except `as const`, and a refusal of a silent
 catch: a `catch` that neither throws nor returns, a `catch` whose
 only exit is a bare `return;`, and a promise's `.catch()` whose

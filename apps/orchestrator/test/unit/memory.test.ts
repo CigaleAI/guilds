@@ -119,7 +119,7 @@ test("create_agent writes empty memory", async () => {
   assert.equal(readFileSync(filePath, "utf8"), EMPTY_MEMORY);
   assert.equal(readFileSync(path.join(templatesRoot(), "memory.md"), "utf8"), EMPTY_MEMORY);
   assert.deepEqual(
-    notes.listAgentFiles("acme", "research", "researcher").map((item) => item.path),
+    notes.listAgentNotesFiles("acme", "research", "researcher").map((item) => item.path),
     ["task.md", "memory.md"],
   );
 });
@@ -197,8 +197,18 @@ test("note_write refuses the memory archive", async () => {
   );
   const relative = (archive ?? "").split("/agents/researcher/")[1] ?? "";
   await assert.rejects(
-    () => notes.writeAgentFile("acme", "research", "researcher", relative, "nope", { actor: "manu" }),
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", relative, "nope", "manu"),
     /memory archive notes cannot be overwritten/,
+  );
+});
+
+test("files pane save of the memory needs the user who saves it", async () => {
+  const notes = notesStore();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  await assert.rejects(
+    () => notes.writeAgentNotesFile("acme", "research", "researcher", "memory.md", "keep", null),
+    /memory writes require an actor/,
   );
 });
 
@@ -206,13 +216,13 @@ test("files pane save archives with the user", async () => {
   const notes = notesStore();
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
-  const result = await notes.writeAgentFile(
+  const result = await notes.writeAgentNotesFile(
     "acme",
     "research",
     "researcher",
     "memory.md",
     "keep the inbox clean",
-    { actor: "manu" },
+    "manu",
   );
   assert.ok(result.startsWith("memory.md written; previous archived as history-archive/"));
   const listed = notes
@@ -237,4 +247,29 @@ test("memory archive keeps the newest fifty", async () => {
     .listPrivateNotes("acme", "research", "researcher", "history-archive/")
     .filter((item) => item.endsWith(".md"));
   assert.equal(listed.length, MEMORY_ARCHIVE_KEEP);
+});
+
+test("ensure_memory_files reaches the agents of every organisation and guild, past stray files", async () => {
+  const notes = notesStore();
+  await notes.ensureMemoryFiles();
+  await notes.createGuild("acme", "research");
+  await notes.createAgent("acme", "research", "researcher");
+  await notes.createGuild("globex", "ops");
+  await notes.createAgent("globex", "ops", "operator");
+  const orgs = path.join(notes.root, "orgs");
+  writeFileSync(path.join(orgs, "stray.md"), "");
+  writeFileSync(path.join(orgs, "acme", "guilds", "stray.md"), "");
+  writeFileSync(path.join(orgs, "acme", "guilds", "research", "agents", "stray.md"), "");
+  mkdirSync(path.join(orgs, "acme", "guilds", "empty"));
+  const memories = [
+    path.join(notes.agentDir("acme", "research", "researcher"), "memory.md"),
+    path.join(notes.agentDir("globex", "ops", "operator"), "memory.md"),
+  ];
+  for (const memory of memories) {
+    unlinkSync(memory);
+  }
+  await notes.ensureMemoryFiles();
+  for (const memory of memories) {
+    assert.equal(readFileSync(memory, "utf8"), EMPTY_MEMORY);
+  }
 });
