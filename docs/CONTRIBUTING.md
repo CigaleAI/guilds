@@ -12,7 +12,8 @@ submitting it. There is no separate contributor agreement.
 - Set up a development machine and run the check:
   [Development](contributing/development.md).
 - Write code the way the repository does:
-  [Code guidelines](contributing/code-guidelines.md).
+  [Code guidelines](contributing/code-guidelines.md), or
+  [The rules in brief](contributing/rules-in-brief.md) on one page.
 - Understand the system before changing it: start at the
   [index](README.md) and [Philosophy](philosophy.md), then the
   [Architecture](README.md#architecture) pages.
