@@ -15,6 +15,9 @@ satisfies a rule without naming a thing (a looser type, a cast, a
 helper that hides the shape) makes the model wrong, and review
 refuses it.
 
+[The rules in brief](rules-in-brief.md) holds this page and
+[Pull requests](pull-requests.md) condensed to one page.
+
 Oxlint and the import-cycle check
 ([Lint](development.md#lint-and-format)) enforce these rules:
 
@@ -130,7 +133,9 @@ better than a short body that calls six helpers a reader has to
 chase. A nested condition, a loop with a branch inside, or a second
 `switch` becomes a named function only when that piece has a
 contract of its own that a reader would want to know by name. A
-chain of `if`s over a value is a lookup table.
+chain of `if`s over a value is a lookup table. A function that
+loads evidence and formats it holds two contracts: a load that
+returns a named record, and a pure format of that record.
 
 A private helper exists because it names a real step, not to make
 its caller shorter. A helper called from one place, whose name is
@@ -404,10 +409,10 @@ discussion. How a page is written is
 Before you submit a change, check:
 
 - [ ] Each function's name and signature say everything it does.
-      No flag parameters, nesting of 3 or less, object parameters
-      only for records and dependencies objects. A function past the
-      complexity or parameter limit holds one contract, named in the
-      pull request.
+      No flag parameters, nesting of 3 or less, at most one block of
+      nested conditional logic, object parameters only for records
+      and dependencies objects. A function past the complexity or
+      parameter limit holds one contract, named in the pull request.
 - [ ] A reader new to the code can say where each value comes from
       and what changes it without a chase; no layer or state was
       added that does not remove more elsewhere.
