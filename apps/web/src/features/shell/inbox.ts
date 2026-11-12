@@ -4,7 +4,7 @@ import { useNotifications } from "../../api/queries/chat";
 import type { Notifications } from "../../api/types/chat";
 import type { InboxIssue, IssueSeverity } from "../../api/types/issues";
 import { useIdentity } from "../../app/identity";
-import { disablesAgent, reachesSeverity } from "../../app/issues";
+import { reachesSeverity } from "../../app/issues";
 
 /** Tab icon while the inbox count is empty, loading, or failed. */
 const plainFavicon = "/favicon.svg";
@@ -85,17 +85,11 @@ export function useInboxCountsByGuild(): Map<string, GuildInboxCounts> {
   return useMemo(() => inboxCountsByGuild(data, floor), [data, floor]);
 }
 
-/** The inbox's issues that each keep an agent from running, the oldest first. */
-export function disablingIssues(inbox: Notifications | undefined): InboxIssue[] {
-  return (inbox?.issues ?? [])
-    .filter(disablesAgent)
-    .sort((a, b) => a.created_at.localeCompare(b.created_at));
-}
+const noIssues: InboxIssue[] = [];
 
 /** The issues that disable agents in the guilds the operator operates, the oldest first. */
 export function useDisablingIssues(): InboxIssue[] {
-  const { data } = useNotifications();
-  return useMemo(() => disablingIssues(data), [data]);
+  return useNotifications().data?.disabling ?? noIssues;
 }
 
 /**

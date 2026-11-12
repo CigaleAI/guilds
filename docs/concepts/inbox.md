@@ -144,8 +144,9 @@ A blocking issue is shown where the operator cannot miss it:
   an agent in a guild the operator operates. It names the agent, two
   agents, or their number, and **Review** opens the Inbox on the
   blocking issues.
-- The agent's row in the sidebar and the header of its inspector
-  show a red **disabled** state.
+- The agent's row in the sidebar shows a red **disabled** state, in
+  the guilds the operator operates. The header of its inspector
+  shows it to anyone who can see the guild.
 - The agent's inspector shows a red band under its header with the
   issue's summary, **Mark as resolved**, and **Open issue**, which
   opens the guild's Issues tab on the blocking issues. Its Chat
@@ -188,7 +189,8 @@ issue.
 
 | Rule | Value or behaviour |
 |---|---|
-| Inbox issues | The 200 newest open issues |
+| Inbox issues | The 200 newest open issues, and every issue that disables an agent |
+| Disabled agents shown | Every one in the guilds the operator operates; no limit |
 | Inbox tags | The 100 newest |
 | Open issues per guild | At most 100; `report_issue` is refused past that |
 | Summary | Required, at most 200 characters |
@@ -237,8 +239,13 @@ and the call's metadata holds the issue's id as `blocking_issue_id`.
 
 ### Inbox HTTP
 
-- `GET /api/notifications` returns `{ issues, mentions, unread }` for
-  the current organisation, issues and mentions newest first. A
+- `GET /api/notifications` returns
+  `{ issues, disabling, mentions, unread }` for the current
+  organisation, issues and mentions newest first. `disabling` lists
+  every open blocking issue whose agent exists, in the guilds the
+  viewer operates, oldest first, with no limit: the app reads which
+  agents are disabled from it, not from `issues`. Each of them is
+  also in `issues`, past the 200 newest when it is older than those. A
   mention carries `id`, `guild_id`, `guild_name`, `seq`,
   `author_type`, `author_name`, `content`, `created_at`, and `agent`
   (id, name, avatar) when an agent wrote it. `unread` lists

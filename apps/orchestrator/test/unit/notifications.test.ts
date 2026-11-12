@@ -7,6 +7,7 @@ import {
   NOTIFICATIONS_MESSAGE,
   Notifications,
   messageNotice,
+  withEveryDisablingIssue,
   type NotificationsDatabase,
 } from "../../src/notifications/index.js";
 import type { GroupChatView } from "../../src/groupchat/index.js";
@@ -39,6 +40,9 @@ function hub(
       return guildId === "guild_1" ? viewers : [];
     },
     async listInboxIssues() {
+      return [];
+    },
+    async listDisablingIssues() {
       return [];
     },
     async listInboxMentions() {
@@ -329,6 +333,7 @@ test("the inbox lists how many messages are unread in each guild", async () => {
   });
   assert.deepEqual(await notifications.list("org_1", "user_ada"), {
     issues: [],
+    disabling: [],
     mentions: [],
     unread: [
       { guild_id: "guild_1", count: 3 },
@@ -352,7 +357,7 @@ test("marking mentions read pings that operator", async () => {
   const inbox = await notifications.markMentionsRead("org_1", "user_ada");
   assert.equal(orgId, "org_1");
   assert.equal(userId, "user_ada");
-  assert.deepEqual(inbox, { issues: [], mentions: [], unread: [] });
+  assert.deepEqual(inbox, { issues: [], disabling: [], mentions: [], unread: [] });
   assert.equal(ada.size, 1);
   assert.equal(bo.size, 0);
   assert.deepEqual(await ada.get(), [NOTIFICATIONS_CHANGED, {}]);
@@ -363,4 +368,15 @@ test("marking mentions read does not ping when no tagged chat is unread", async 
   const ada = notifications.subscribe("user_ada", "org_1");
   await notifications.markMentionsRead("org_1", "user_ada");
   assert.equal(ada.size, 0);
+});
+
+test("the inbox's page of issues gains each disabling issue it left out, newest first", () => {
+  const row = (id: string, at: string) => ({ id, created_at: at }) as Parameters<typeof withEveryDisablingIssue>[0][number];
+  const page = [row("c", "2026-01-03T00:00:00.000Z"), row("b", "2026-01-02T00:00:00.000Z")];
+  const old = row("a", "2026-01-01T00:00:00.000Z");
+  assert.deepEqual(
+    withEveryDisablingIssue(page, [old, page[1]!]).map((issue) => issue.id),
+    ["c", "b", "a"],
+  );
+  assert.equal(withEveryDisablingIssue(page, [page[0]!]), page, "a page that holds them all is returned as it is");
 });

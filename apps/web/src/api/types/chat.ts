@@ -67,7 +67,10 @@ export type UnreadChat = {
 };
 
 export type Notifications = {
+  /** The newest open issues of the guilds the operator operates. */
   issues: InboxIssue[];
+  /** Every open blocking issue that disables an agent in those guilds, the oldest first. */
+  disabling: InboxIssue[];
   mentions: MentionNotice[];
   /** Every guild the operator can see with messages they have not read. */
   unread: UnreadChat[];

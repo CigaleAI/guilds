@@ -38,6 +38,7 @@ const inbox: Notifications = {
       agent: null,
     },
   ],
+  disabling: [],
   unread: [{ guild_id: "guild_1", count: 9 }],
 };
 

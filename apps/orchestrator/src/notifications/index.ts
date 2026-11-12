@@ -5,6 +5,7 @@ import { getAgent, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildViewerIds } from "../db/guilds.js";
 import {
   getIssue,
+  listDisablingIssues,
   listInboxIssues,
   listInboxMentions,
   markInboxMentionsRead,
@@ -16,7 +17,7 @@ import { bindQuery, type Queryable } from "../db/pg.js";
 import type { GuildEvent } from "../groupchat/index.js";
 
 // An operator's inbox is a view over existing rows, not a table of its own:
-// open issues in the guilds they operate, messages tagging them that are past
+// open issues in the guilds they operate, the blocking ones among them that disable an agent, messages tagging them that are past
 // their group-chat read cursor, and how many messages sit past that cursor in
 // each guild they can see. Resolving the issue, advancing that guild's read
 // cursor, or clearing its group chat is what clears an entry. Marking tags as
@@ -40,6 +41,7 @@ function notificationsDatabase(db: Queryable) {
     getGuild: bindQuery(db, getGuild),
     getIssue: bindQuery(db, getIssue),
     listGuildViewerIds: bindQuery(db, listGuildViewerIds),
+    listDisablingIssues: bindQuery(db, listDisablingIssues),
     listInboxIssues: bindQuery(db, listInboxIssues),
     listInboxMentions: bindQuery(db, listInboxMentions),
     listUnreadGroupChats: bindQuery(db, listUnreadGroupChats),
@@ -69,11 +71,14 @@ export type MessageNotice = Pick<GroupMessageView, "seq" | "author_type" | "auth
 export type InboxIssue = IssueItem & Pick<InboxIssueRow, "guild_name">;
 
 /**
- * An operator's inbox: the open issues of the guilds they operate, the messages tagging them past
- * their read cursor, and each guild they can see with messages they have not read.
+ * An operator's inbox: the newest open issues of the guilds they operate with every open blocking
+ * issue that disables an agent there, those disabling issues on their own, the messages tagging them past their read cursor, and each
+ * guild they can see with messages they have not read.
  */
 export type Inbox = {
   issues: InboxIssue[];
+  /** Each open blocking issue that disables an agent, the oldest first; none is left out. */
+  disabling: InboxIssue[];
   mentions: MentionNotice[];
   unread: UnreadGroupChatRow[];
 };
@@ -108,6 +113,23 @@ type AgentLook = Pick<AgentRow, "id" | "name"> & {
   avatar_shape: AgentRow["avatar_shape"] | null;
   avatar_color: AgentRow["avatar_color"] | null;
 };
+
+/**
+ * The inbox's page of issues with each disabling issue the page left out, newest first: an old
+ * blocking issue is listed however many newer issues there are.
+ */
+export function withEveryDisablingIssue(page: InboxIssueRow[], disabling: InboxIssueRow[]): InboxIssueRow[] {
+  const listed = new Set(page.map((row) => row.id));
+  const missing = disabling.filter((row) => !listed.has(row.id));
+  if (!missing.length) {
+    return page;
+  }
+  return [...page, ...missing].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+export function inboxIssue(row: InboxIssueRow): InboxIssue {
+  return { ...issueItem(row), guild_name: row.guild_name };
+}
 
 export function mentionItem(row: InboxMentionRow): MentionNotice {
   return {
@@ -153,13 +175,15 @@ export class Notifications {
   constructor(public db: NotificationsDatabase) {}
 
   async list(orgId: string, userId: string): Promise<Inbox> {
-    const [issues, mentions, unread] = await Promise.all([
+    const [issues, disabling, mentions, unread] = await Promise.all([
       this.db.listInboxIssues(orgId, userId, INBOX_ISSUE_LIMIT),
+      this.db.listDisablingIssues(orgId, userId),
       this.db.listInboxMentions(orgId, userId, INBOX_MENTION_LIMIT),
       this.db.listUnreadGroupChats(orgId, userId),
     ]);
     return {
-      issues: issues.map((row) => ({ ...issueItem(row), guild_name: row.guild_name })),
+      issues: withEveryDisablingIssue(issues, disabling).map(inboxIssue),
+      disabling: disabling.map(inboxIssue),
       mentions: mentions.map(mentionItem),
       unread,
     };

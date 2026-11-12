@@ -106,6 +106,25 @@ test("an open blocking issue disables its agent until it is resolved", { timeout
     assert.deepEqual(await pendingAgents(), [freeId]);
     assert.equal((await getGroupChatState(db, guildId))?.pending_agent_count, 1);
 
+    // An agentless blocking issue disables no one. 200 newer issues fill the inbox's page of
+    // issues: the disabling issue is still listed, after them, and among the disabling issues.
+    await insertIssue(db, { ...report, issueId: "iss_orphan", agentId: null, severity: "blocking", summary: "Agent gone" }, new Date());
+    await db.query(
+      `INSERT INTO guild_issues (id, guild_id, org_id, agent_id, agent_name, kind, severity, status, summary, detail, created_at, updated_at)
+       SELECT 'iss_noise_' || n, $1, 'org_home', $2, 'free-keeper', 'other', 'low', 'open', 'noise', 'noise',
+              now() + n * interval '1 second', now()
+       FROM generate_series(1, 200) AS n`,
+      [guildId, freeId],
+    );
+    const inbox = await app.inject({ method: "GET", url: "/api/notifications", headers: OWNER });
+    assert.equal(inbox.statusCode, 200, inbox.body);
+    const listed = inbox.json() as { issues: Array<{ id: string }>; disabling: Array<{ id: string; guild_name: string }> };
+    assert.equal(listed.issues.length, 201);
+    assert.equal(listed.issues.at(-1)?.id, "iss_blocking");
+    assert.equal(listed.issues.some((issue) => issue.id === "iss_orphan"), false);
+    assert.deepEqual(listed.disabling, [{ ...listed.disabling[0], id: "iss_blocking", guild_name: "blocked-desk" }]);
+    await db.query(`DELETE FROM guild_issues WHERE id LIKE 'iss_noise_%'`);
+
     const idle = await app.inject({
       method: "POST",
       url: `/api/agents/${blockedId}/runs`,
@@ -141,6 +160,8 @@ test("an open blocking issue disables its agent until it is resolved", { timeout
     });
     assert.equal(resolved.statusCode, 200, resolved.body);
     assert.equal(await getOpenBlockingIssue(db, blockedId), null);
+    const cleared = await app.inject({ method: "GET", url: "/api/notifications", headers: OWNER });
+    assert.deepEqual(cleared.json().disabling, []);
     assert.deepEqual((await dueAgents()).sort(), [blockedId, freeId].sort());
     assert.deepEqual((await pendingAgents()).sort(), [blockedId, freeId].sort());
     assert.deepEqual((await listDueRunWakes(db, new Date())).map((wake) => wake.id), ["wake_blocked"]);

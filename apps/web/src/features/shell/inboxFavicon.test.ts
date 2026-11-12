@@ -133,16 +133,21 @@ test("the tab icon follows the inbox while the shell is mounted, and turns plain
     });
     assert.equal(icon(), "/favicon.svg");
 
-    await setInbox({ issues: [], mentions: [mention], unread: [] });
+    await setInbox({ issues: [], mentions: [mention], disabling: [], unread: [] });
     assert.equal(icon(), "/favicon-unread.svg");
 
-    await setInbox({ issues: [], mentions: [], unread: [] });
+    await setInbox({ issues: [], mentions: [], disabling: [], unread: [] });
     assert.equal(icon(), "/favicon.svg");
 
-    await setInbox({ issues: [openIssue("medium")], mentions: [], unread: [] });
+    await setInbox({ issues: [openIssue("medium")], mentions: [], disabling: [], unread: [] });
     assert.equal(icon(), "/favicon.svg", "an issue below the operator's alert severity");
 
-    await setInbox({ issues: [openIssue("medium"), openIssue("high")], mentions: [], unread: [] });
+    await setInbox({
+      issues: [openIssue("medium"), openIssue("high")],
+      mentions: [],
+      disabling: [],
+      unread: [],
+    });
     assert.equal(icon(), "/favicon-unread.svg", "an issue at the operator's alert severity");
 
     await settle(() => mounted.unmount());

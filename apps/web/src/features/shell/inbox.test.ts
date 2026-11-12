@@ -7,7 +7,6 @@ import type { InboxIssue, IssueSeverity } from "../../api/types/issues";
 import {
   disabledAgentsSummary,
   disablingIssueByAgent,
-  disablingIssues,
   faviconForInboxCount,
   inboxCount,
   inboxCountsByGuild,
@@ -54,6 +53,7 @@ test("each guild counts its inbox tags and its open issues apart", () => {
     {
       issues: [openIssue("i1", "guild_1"), openIssue("i2", "guild_1"), openIssue("i3", "guild_2")],
       mentions: [tag(1, "guild_1"), tag(2, "guild_3"), tag(3, "guild_3"), tag(4, "guild_3")],
+      disabling: [],
       unread: [],
     },
     "low",
@@ -68,6 +68,7 @@ test("tags count no guild while no guild has an open issue", () => {
   const inbox: Notifications = {
     issues: [],
     mentions: [tag(1, "guild_1"), tag(2, "guild_2")],
+    disabling: [],
     unread: [{ guild_id: "guild_1", count: 5 }],
   };
   assert.equal(inboxCountsByGuild(inbox, "low").size, 0);
@@ -78,6 +79,7 @@ test("one open issue in any guild shows the tags of every guild", () => {
     {
       issues: [openIssue("i1", "guild_2")],
       mentions: [tag(1, "guild_1")],
+      disabling: [],
       unread: [],
     },
     "low",
@@ -91,6 +93,7 @@ test("unread chat messages that tag no one are not counted", () => {
     {
       issues: [openIssue("i1", "guild_1")],
       mentions: [tag(1, "guild_1")],
+      disabling: [],
       unread: [
         { guild_id: "guild_1", count: 40 },
         { guild_id: "guild_2", count: 7 },
@@ -115,6 +118,7 @@ test("issues below the operator's alert severity count in no guild and not in th
       openIssue("i4", "guild_3", "blocking"),
     ],
     mentions: [tag(1, "guild_2")],
+    disabling: [],
     unread: [],
   };
   const counts = inboxCountsByGuild(inbox, "high");
@@ -130,39 +134,27 @@ test("with every issue below the alert severity, no guild shows a count", () => 
   const inbox: Notifications = {
     issues: [openIssue("i1", "guild_1", "low")],
     mentions: [tag(1, "guild_1")],
+    disabling: [],
     unread: [],
   };
   assert.equal(inboxCountsByGuild(inbox, "medium").size, 0);
   assert.equal(inboxCount(inbox, "medium"), 1, "the tag still waits in the inbox");
 });
 
-test("the issues that disable agents are the open blocking ones with an agent, oldest first", () => {
-  const blocking = (id: string, at: string, agentId: string | null): InboxIssue => ({
+test("each disabled agent is disabled by its oldest issue in the list", () => {
+  const blocking = (id: string, agentId: string | null): InboxIssue => ({
     ...openIssue(id, "guild_1", "blocking"),
     agent_id: agentId,
-    created_at: at,
   });
-  const inbox: Notifications = {
-    issues: [
-      blocking("newer", "2026-01-03T00:00:00.000Z", "agent_1"),
-      openIssue("high", "guild_1", "high"),
-      blocking("gone", "2026-01-01T00:00:00.000Z", null),
-      blocking("older", "2026-01-02T00:00:00.000Z", "agent_2"),
-    ],
-    mentions: [],
-    unread: [],
-  };
-  assert.deepEqual(
-    disablingIssues(inbox).map((issue) => issue.id),
-    ["older", "newer"],
-  );
-  assert.deepEqual(disablingIssues(undefined), []);
-  const again = blocking("again", "2026-01-04T00:00:00.000Z", "agent_2");
-  const byAgent = disablingIssueByAgent(
-    disablingIssues({ ...inbox, issues: [...inbox.issues, again] }),
-  );
+  const byAgent = disablingIssueByAgent([
+    blocking("older", "agent_2"),
+    blocking("gone", null),
+    blocking("newer", "agent_1"),
+    blocking("again", "agent_2"),
+  ]);
   assert.deepEqual([...byAgent.keys()].sort(), ["agent_1", "agent_2"]);
-  assert.equal(byAgent.get("agent_2")?.id, "older", "an agent's oldest blocking issue");
+  assert.equal(byAgent.get("agent_2")?.id, "older", "the first listed, which is the oldest");
+  assert.equal(disablingIssueByAgent([]).size, 0);
 });
 
 test("an inbox count above zero uses the static unread favicon", () => {
