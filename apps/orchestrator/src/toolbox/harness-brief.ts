@@ -1,5 +1,8 @@
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { ArtifactActor } from "../artifacts/types.js";
+import { hereDir } from "../lib/paths.js";
 import { errorMessage } from "../observability/log.js";
 import { readArtifactText } from "./artifacts.js";
 import type { ToolServices } from "./services.js";
@@ -8,18 +11,23 @@ import { ToolArgumentError } from "./errors.js";
 /** The content of `notes` appended to a brief, at most. */
 export const BRIEF_NOTES_MAX_BYTES = 64 * 1024;
 
-/** What every brief starts with: the harness works alone and never publishes. */
-export const BRIEF_PREAMBLE = [
-  "You are working on a task delegated to you by an agent. You cannot reach its operator, and",
-  "nobody answers questions while you work. When you are blocked or need a decision, stop and",
-  "ask in your final message, saying exactly what you need. You may commit on the current",
-  "branch. Never push and never open pull requests. End with what you changed and what you ran.",
-].join("\n");
+/**
+ * What every brief starts with, from `harness-brief.md`: what the harness cannot reach, where
+ * it runs, and who reads its final message. The brief is the one text every harness reads.
+ */
+export const BRIEF_PREAMBLE = readFileSync(
+  path.join(hereDir(import.meta.url), "harness-brief.md"),
+  "utf8",
+).trim();
 
 type NoteSection = { path: string; section: string };
 type FittedNotes = { used: number; included: string[]; left: string[] };
 
-async function loadNote(services: ToolServices, actor: ArtifactActor | null, path: string): Promise<NoteSection> {
+async function loadNote(
+  services: ToolServices,
+  actor: ArtifactActor | null,
+  path: string,
+): Promise<NoteSection> {
   try {
     const loaded = await readArtifactText(services, actor, path);
     return { path: loaded.path, section: `# ${loaded.path}\n\n${loaded.text.trim()}` };
@@ -44,7 +52,9 @@ export function briefText(brief: string, notes: NoteSection[]): string {
   notes.forEach((note) => addNote(fitted, note));
   const parts = [BRIEF_PREAMBLE, `# Task\n\n${brief.trim()}`, ...fitted.included];
   if (fitted.left.length) {
-    parts.push(`Not included, past the ${BRIEF_NOTES_MAX_BYTES / 1024} KiB cap for notes: ${fitted.left.join(", ")}`);
+    parts.push(
+      `Not included, past the ${BRIEF_NOTES_MAX_BYTES / 1024} KiB cap for notes: ${fitted.left.join(", ")}`,
+    );
   }
   return parts.join("\n\n") + "\n";
 }

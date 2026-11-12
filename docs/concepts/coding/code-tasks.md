@@ -131,11 +131,10 @@ other [code tools](code-tools.md).
    missing from the image, or no credential, is an error
    ([Credentials and errors](harnesses.md#credentials-and-errors)).
 4. **Brief.** A fixed preamble, then the brief under `# Task`, then
-   each note under `# <display path>`. The preamble says the harness
-   cannot reach the operator, stops and asks in its final message when
-   it is blocked or needs a decision, may commit on the current branch,
-   never pushes or opens pull requests, and ends with what it changed
-   and ran. Notes are read with the agent's access, as `note_get` reads
+   each note under `# <display path>`. The preamble
+   ([The preamble](#the-preamble)) tells the harness what it cannot
+   reach, where it runs, and who reads its final message. Notes are
+   read with the agent's access, as `note_get` reads
    them. A record is its JSON view. A collection or a script is
    refused, and a note that does not load fails the call. A note past
    the 64 KiB cap is named on a closing line, not included.
@@ -262,6 +261,22 @@ waking it, as the task diff is read:
 - A log that cannot be read from the machine, secrets that cannot be
   read to redact it, or a box without generation is 503.
 
+### The preamble
+
+Every brief starts with the text of
+`apps/orchestrator/src/toolbox/harness-brief.md`, the same for every
+harness and every task. It has three parts:
+
+| Part | Says |
+| --- | --- |
+| What you cannot reach | `gh` and the GitHub API have no token, and what the task needs from GitHub is in the brief or asked for in the final message. The harness may commit on the current branch, and never pushes or opens pull requests. It cannot reach the operator, and stops and asks in its final message when it is blocked or needs a decision |
+| Where you run | A Linux container, as root, in a clone under `repos/` in the agent's home. The home stays between tasks, but the harness's own configuration in it (instruction files, rules, memory, skills, hooks) is removed before every task, so what a later task needs goes in the final message. git, Node.js, Python, build tools, ripgrep, and `mise` are installed. A server listens on a port of `GUILDS_PORTS` |
+| Your final message | An agent reads it: what changed, what ran and whether it passed, what is left, and the question it stopped on, with nothing else |
+
+The preamble reaches a harness through the brief because `start`
+removes each harness's own instruction files from the home before
+every call ([Drivers](harnesses.md#drivers)).
+
 ### Harness environment
 
 The harness gets the environment of every command the orchestrator
@@ -344,7 +359,8 @@ harness owns its session state.
 ### Code
 
 `apps/orchestrator/src/toolbox/harness.ts` (`code_task`),
-`harness-brief.ts` (the brief), `harness-setup.ts` (the harness
+`harness-brief.ts` (the brief), `harness-brief.md` (its preamble),
+`harness-setup.ts` (the harness
 checks), `harness-ops.ts` (the ops, the checkpoints, the harness log),
 `harness-result.ts` (the result),
 `apps/orchestrator/src/generation/coding.ts` (a lost task stopped at
