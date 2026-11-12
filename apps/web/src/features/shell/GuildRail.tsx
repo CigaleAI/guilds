@@ -4,7 +4,7 @@ import { useGuilds } from "../../api/queries/guilds";
 import { cappedCount, RingCount, CollapsedRail, RailItem } from "@guildsrun/ui";
 import { AccountMenu } from "./AccountMenu";
 import { guildInitials } from "./guilds";
-import { useInboxCount, useUnreadByGuild } from "./inbox";
+import { useInboxCount, useInboxCountsByGuild } from "./inbox";
 
 type GuildRailProps = { onExpand: () => void };
 
@@ -13,30 +13,46 @@ export function GuildRail({ onExpand }: GuildRailProps) {
   const { guildId } = useParams({ strict: false });
   const guilds = useGuilds().data ?? [];
   const inboxCount = useInboxCount();
-  const unread = useUnreadByGuild();
+  const inboxCounts = useInboxCountsByGuild();
 
   return (
     <CollapsedRail
       onExpand={onExpand}
-      guilds={guilds.map((guild) => (
-        <RailItem
-          key={guild.id}
-          asChild
-          tone="guild"
-          label={guild.name}
-          selected={guild.id === guildId}
-          {...(unread.has(guild.id)
-            ? {
-                badge: <RingCount>{cappedCount(unread.get(guild.id) ?? 0)}</RingCount>,
-                badgeOffset: "count" as const,
-              }
-            : {})}
-        >
-          <Link to="/guilds/$guildId" params={{ guildId: guild.id }}>
-            {guildInitials(guild.name)}
-          </Link>
-        </RailItem>
-      ))}
+      guilds={guilds.map((guild) => {
+        const counts = inboxCounts.get(guild.id);
+        return (
+          <RailItem
+            key={guild.id}
+            asChild
+            tone="guild"
+            label={guild.name}
+            selected={guild.id === guildId}
+            {...(counts
+              ? {
+                  badge: (
+                    <span className="flex flex-col items-end gap-0.5">
+                      {counts.tags ? (
+                        <RingCount tone="signal" aria-label={`${counts.tags} unread tags`}>
+                          {counts.tags}
+                        </RingCount>
+                      ) : null}
+                      {counts.issues ? (
+                        <RingCount tone="alert" aria-label={`${counts.issues} open issues`}>
+                          {counts.issues}
+                        </RingCount>
+                      ) : null}
+                    </span>
+                  ),
+                  badgeOffset: "count" as const,
+                }
+              : {})}
+          >
+            <Link to="/guilds/$guildId" params={{ guildId: guild.id }}>
+              {guildInitials(guild.name)}
+            </Link>
+          </RailItem>
+        );
+      })}
       tools={
         <>
           <RailItem

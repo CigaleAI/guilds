@@ -135,8 +135,9 @@ do the machines
 The sidebar lists the current organisation's guilds.
 
 - A guild row shows its name, a lock when private, its agent count
-  against the agent limit, and its unread count
-  ([Group chat](group-chat.md#what-the-operator-has-read)).
+  against the agent limit, and its Inbox counts: a blue count of
+  unread tags and a red count of open issues
+  ([Inbox and issues](inbox.md#guild-counts)).
 - It folds open to its agents and an **Add agent** row
   ([Agents](agents.md#sidebar)).
 - **+** on the **Guilds** header opens the create-guild dialog.
@@ -149,7 +150,7 @@ The footer links to **Inbox**, with its count
 ([Users](users.md#the-account-menu)).
 
 The sidebar retracts to a rail of guild initials, the footer's tool
-icons, and a **Settings** icon. A guild's unread count sits on its
+icons, and a **Settings** icon. A guild's Inbox counts sit on its
 tile. ⌘B, or Ctrl+B, folds it and opens it again. On a phone it opens
 as a drawer from a top bar. Folded guilds and the retracted state are
 remembered in the browser.

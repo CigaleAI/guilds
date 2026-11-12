@@ -55,12 +55,14 @@
   --dusk: var(--brand-dusk);
   --plum: var(--brand-plum);
   --ochre: #b7864f;
+  --alert: #b8322a;
 
   /* Text on fills */
   --on-signal: var(--brand-ink);
   --on-plum: var(--brand-cream);
   --on-plum-muted: #e6dce0;
   --on-ochre: var(--brand-ink);
+  --on-alert: var(--brand-paper);
 
   /* Accent text */
   --signal-t: #136a80;
@@ -86,6 +88,10 @@
   --t-dusk-fg: #4e4155;
   --t-ochre: #ede6dc;
   --t-ochre-fg: #6b4e2e;
+
+  /* Washes: paper barely tinted, under the regular text colours. */
+  --signal-wash: color-mix(in oklab, var(--signal) 10%, var(--paper));
+  --alert-wash: color-mix(in oklab, var(--alert) 7%, var(--paper));
 
   /* Identity: every agent owns one of these. Fills and the ink initials on them stay constant;
      the name colour (-t) is the shade that reads on paper and surface in each theme. */
@@ -164,6 +170,8 @@
   --mauve: #a68ca0;
   --dusk: #735f7d;
   --plum: #7a4862;
+  --alert: #e5675c;
+  --on-alert: #1a1418;
 
   --signal-t: #6cd6ee;
   --tide-t: #9acbd8;
@@ -183,6 +191,9 @@
   --t-dusk-fg: #d2c4d9;
   --t-ochre: #3a2e21;
   --t-ochre-fg: #e3cba9;
+
+  --signal-wash: color-mix(in oklab, var(--signal) 14%, var(--paper));
+  --alert-wash: color-mix(in oklab, var(--alert) 12%, var(--paper));
 
   --id-signal-t: #1fafd1;
   --id-tide-t: #599db0;

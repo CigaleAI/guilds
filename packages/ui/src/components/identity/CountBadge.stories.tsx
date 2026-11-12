@@ -24,6 +24,7 @@ export const Tones: Story = {
     <>
       <CountBadge>26</CountBadge>
       <CountBadge tone="accent">3</CountBadge>
+      <CountBadge tone="alert">2</CountBadge>
       <CountBadge tone="sand">4</CountBadge>
       <CountBadge tone="ink">112</CountBadge>
     </>

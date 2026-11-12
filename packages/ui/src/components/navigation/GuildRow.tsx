@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../cn";
 import { TreeRail } from "../../primitives/Divider";
 import { Icon } from "../../primitives/Icon";
-import { cappedCount, CountBadge } from "../identity/CountBadge";
+import { CountBadge } from "../identity/CountBadge";
 
 export type GuildVisibility = "org" | "private";
 
@@ -18,8 +18,10 @@ export type GuildRowProps = {
   visibility?: GuildVisibility;
   /** The guild open in the workspace; the only plum row in the sidebar. */
   selected?: boolean;
-  /** Group chat messages the operator has not read; shown as a count. */
-  unread?: number;
+  /** Unread messages that tag the operator; shown as a blue count. */
+  tags?: number;
+  /** Open issues agents reported; shown as a red count. */
+  issues?: number;
   onSelect?: () => void;
   open?: boolean;
   defaultOpen?: boolean;
@@ -38,7 +40,8 @@ export function GuildRow({
   maxAgents,
   visibility,
   selected,
-  unread,
+  tags,
+  issues,
   onSelect,
   open,
   defaultOpen = true,
@@ -89,14 +92,19 @@ export function GuildRow({
               <Icon icon={Lock} size={14} label="Private to its operators" />
             </span>
           ) : null}
-          {unread ? (
-            <CountBadge
-              tone={selected ? "on-plum" : "plum"}
-              className="ml-auto"
-              aria-label={`${unread} unread messages`}
-            >
-              {cappedCount(unread)}
-            </CountBadge>
+          {tags || issues ? (
+            <span className="ml-auto flex shrink-0 gap-1">
+              {tags ? (
+                <CountBadge tone="accent" aria-label={`${tags} unread tags`}>
+                  {tags}
+                </CountBadge>
+              ) : null}
+              {issues ? (
+                <CountBadge tone="alert" aria-label={`${issues} open issues`}>
+                  {issues}
+                </CountBadge>
+              ) : null}
+            </span>
           ) : null}
         </button>
       </div>

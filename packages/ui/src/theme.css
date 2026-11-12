@@ -104,11 +104,13 @@
   --color-dusk: var(--dusk);
   --color-plum: var(--plum);
   --color-ochre: var(--ochre);
+  --color-alert: var(--alert);
 
   --color-on-signal: var(--on-signal);
   --color-on-plum: var(--on-plum);
   --color-on-plum-muted: var(--on-plum-muted);
   --color-on-ochre: var(--on-ochre);
+  --color-on-alert: var(--on-alert);
 
   --color-signal-t: var(--signal-t);
   --color-tide-t: var(--tide-t);
@@ -131,6 +133,9 @@
   --color-t-dusk-fg: var(--t-dusk-fg);
   --color-t-ochre: var(--t-ochre);
   --color-t-ochre-fg: var(--t-ochre-fg);
+
+  --color-signal-wash: var(--signal-wash);
+  --color-alert-wash: var(--alert-wash);
 
   --color-id-signal: var(--id-signal);
   --color-id-tide: var(--id-tide);

@@ -82,6 +82,7 @@ export const ringCount = cva(
       tone: {
         plum: "bg-plum text-on-plum",
         signal: "bg-signal text-on-signal",
+        alert: "bg-alert text-on-alert",
       },
       ring: {
         surface: "border-surface",
