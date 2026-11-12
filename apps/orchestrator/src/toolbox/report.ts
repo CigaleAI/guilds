@@ -1,5 +1,4 @@
 import { Type } from "typebox";
-import { IssueError } from "../issues/index.js";
 import { nativeTool } from "./types.js";
 import { ToolUnavailableError } from "./errors.js";
 
@@ -39,38 +38,31 @@ export const reportIssue = nativeTool({
     if (issues === null) {
       throw new ToolUnavailableError("issue reporting is not available");
     }
-    try {
-      const row = await issues.create({
-        guildId: run.guild_id,
-        agentId: run.agent_id,
-        agentName: run.agent_name,
-        runId: run.run_id,
-        kind: args.kind,
-        severity: args.severity,
-        summary: args.summary,
-        detail: args.detail,
-        toolName: args.tool_name ?? "",
+    const row = await issues.create({
+      guildId: run.guild_id,
+      agentId: run.agent_id,
+      agentName: run.agent_name,
+      runId: run.run_id,
+      kind: args.kind,
+      severity: args.severity,
+      summary: args.summary,
+      detail: args.detail,
+      toolName: args.tool_name ?? "",
+    });
+    const chat = services.group_chat;
+    if (chat?.publish) {
+      await chat.publish(run.guild_id, "guild.issues.changed", {
+        action: "create",
+        issue_id: row.id,
+        agent_id: run.agent_id,
       });
-      const chat = services.group_chat;
-      if (chat?.publish) {
-        await chat.publish(run.guild_id, "guild.issues.changed", {
-          action: "create",
-          issue_id: row.id,
-          agent_id: run.agent_id,
-        });
-      }
-      const tool = row.tool_name ? ` tool=${row.tool_name}` : "";
-      const reported = `reported ${row.id}\nkind=${row.kind} severity=${row.severity} status=${row.status}${tool}`;
-      if (row.severity !== "blocking") {
-        return reported;
-      }
-      call.metadata = { blocking_issue_id: row.id };
-      return `${reported}\nThis agent is disabled until the operator resolves the issue. The run ends now.`;
-    } catch (caught) {
-      if (caught instanceof IssueError) {
-        throw caught;
-      }
-      throw caught;
     }
+    const tool = row.tool_name ? ` tool=${row.tool_name}` : "";
+    const reported = `reported ${row.id}\nkind=${row.kind} severity=${row.severity} status=${row.status}${tool}`;
+    if (row.severity !== "blocking") {
+      return reported;
+    }
+    call.metadata = { blocking_issue_id: row.id };
+    return `${reported}\nThis agent is disabled until the operator resolves the issue. The run ends now.`;
   },
 });
