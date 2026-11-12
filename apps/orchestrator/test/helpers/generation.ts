@@ -31,6 +31,7 @@ import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
 import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAgentScript } from "../../src/db/agents.js";
+import type { BlockingIssueRow } from "../../src/db/blocking-issues.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
 import type { CodingRepository } from "../../src/coding/repositories.js";
@@ -323,6 +324,8 @@ export class FakeDB {
   monthlyUsage: Record<string, unknown> | null = null;
   due_schedules: ScheduleRow[] = [];
   fired: Array<Record<string, unknown>> = [];
+  /** The open blocking issue that disables the agent; null while it has none. */
+  blockingIssue: BlockingIssueRow | null = null;
 
   /** A store holding one active run, `r_1`, whose snapshot is `runSnapshot()` with `snapshot` over it. */
   constructor(snapshot: Partial<RunConfigSnapshot> = {}) {
@@ -382,6 +385,10 @@ export class FakeDB {
 
   async getAgent(agentId: string) {
     return this.agent.id === agentId ? this.agent : null;
+  }
+
+  async getOpenBlockingIssue(_agentId: string): Promise<BlockingIssueRow | null> {
+    return this.blockingIssue;
   }
 
   async getOrgMonthlyUsage(_orgId: string, _month: string) {
@@ -637,6 +644,10 @@ export class RecordingDB {
 
   async getAgent(agentId: string) {
     return agentId === this.agent.id ? this.agent : null;
+  }
+
+  async getOpenBlockingIssue(_agentId: string): Promise<BlockingIssueRow | null> {
+    return null;
   }
 
   async listAgents(guildId: string) {
@@ -1194,6 +1205,7 @@ export function guildDb(agentIds: string[]) {
     listAgents: (guildId: string) => Promise<Array<Record<string, unknown>>>;
     deleteGuild: (guildId: string) => Promise<void>;
     getAgent?: (agentId: string) => Promise<AgentRow | null>;
+    getOpenBlockingIssue: (agentId: string) => Promise<BlockingIssueRow | null>;
   } = {
     purged: [],
     async getGuild(guildId: string) {
@@ -1211,6 +1223,9 @@ export function guildDb(agentIds: string[]) {
     },
     async deleteGuild(guildId: string) {
       db.purged.push(guildId);
+    },
+    async getOpenBlockingIssue(_agentId: string) {
+      return null;
     },
   };
   return db;

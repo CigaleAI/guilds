@@ -1,4 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
+import { withoutOpenBlockingIssue } from "./blocking-issues.js";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
@@ -86,11 +87,12 @@ export async function getPendingRunWake(db: Queryable, runId: string): Promise<R
   return result.rows[0] ?? null;
 }
 
-/** The pending wake-ups due at or before `now`, the earliest first. */
+/** The pending wake-ups due at or before `now` whose agent no blocking issue disables, the earliest first. */
 export async function listDueRunWakes(db: Queryable, now: Date): Promise<RunWakeRow[]> {
   const result = await db.query<RunWakeRow>(
     `SELECT ${RUN_WAKE_COLUMNS} FROM run_wakes
      WHERE state = 'pending' AND due_at <= $1
+       AND ${withoutOpenBlockingIssue("run_wakes.agent_id")}
      ORDER BY due_at, id`,
     [stamp(now)],
   );

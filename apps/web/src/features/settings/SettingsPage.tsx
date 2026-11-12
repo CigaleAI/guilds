@@ -7,6 +7,7 @@ import type { UsageTotals } from "../../api/types/org";
 import { agentLook } from "../../app/agents";
 import { formatCost } from "../../app/format";
 import { useIdentity } from "../../app/identity";
+import { issueAlertLabel, issueSeverities } from "../../app/issues";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
   Button,
@@ -130,7 +131,7 @@ function General() {
   );
 }
 
-/** The operator's own name, colour and timezone. */
+/** The operator's own name, colour, timezone, and the least severe issue they are alerted to. */
 function ProfileSettings() {
   const { user, org } = useIdentity();
   const profile = useUpdateProfile();
@@ -241,6 +242,25 @@ function ProfileSettings() {
           ? "New random-window routines start in this timezone."
           : `Not set: new routines use this browser's timezone (${browserZone}).`}
       </p>
+      <Select
+        tone="surface"
+        label="Issue alerts"
+        hint="Issues at this severity or above count in your Inbox and on your guilds, ring the chime, and show a desktop notification when those are on. The others stay listed in the Inbox and each guild's Issues tab."
+        value={user.issue_alert_severity}
+        disabled={profile.isPending}
+        onValueChange={(value) => {
+          const severity = issueSeverities.find((known) => known === value);
+          if (severity === undefined) return;
+          profile.mutate(
+            { issue_alert_severity: severity },
+            { onError: failed("Couldn't save your issue alerts") },
+          );
+        }}
+        options={issueSeverities.map((severity) => ({
+          value: severity,
+          label: issueAlertLabel[severity],
+        }))}
+      />
     </Group>
   );
 }

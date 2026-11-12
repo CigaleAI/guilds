@@ -23,6 +23,22 @@ export class ConflictError extends Error {
   }
 }
 
+/** The agent starts no generation while a blocking issue it reported is open. */
+export class AgentDisabledError extends ConflictError {
+  constructor(summary: string) {
+    super(`agent is disabled by a blocking issue: ${summary}. Resolve the issue first`);
+    this.name = "AgentDisabledError";
+  }
+}
+
+/** A tool call of the generation filed a blocking issue, which ends it. */
+export class GenerationBlocked extends Error {
+  constructor(issueId: string) {
+    super(`the agent reported blocking issue ${issueId}; it is disabled until the issue is resolved`);
+    this.name = "GenerationBlocked";
+  }
+}
+
 export class RunRequestError extends Error {
   status: number;
   detail: string;

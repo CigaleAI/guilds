@@ -4,6 +4,7 @@ import { EventQueue, type StreamEvent } from "../lib/event.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildViewerIds } from "../db/guilds.js";
 import {
+  getIssue,
   listInboxIssues,
   listInboxMentions,
   markInboxMentionsRead,
@@ -24,6 +25,8 @@ import type { GuildEvent } from "../groupchat/index.js";
 export const NOTIFICATIONS_CHANGED = "notifications.changed";
 /** A public message was posted in a guild the viewer can see; the data names it. */
 export const NOTIFICATIONS_MESSAGE = "notifications.message";
+/** An agent reported an issue in a guild the viewer operates; the data is the issue. */
+export const NOTIFICATIONS_ISSUE = "notifications.issue";
 export const INBOX_ISSUE_LIMIT = 200;
 export const INBOX_MENTION_LIMIT = 100;
 /** How much of a message a stream notice carries, enough for a preview. */
@@ -35,6 +38,7 @@ function notificationsDatabase(db: Queryable) {
   return {
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
+    getIssue: bindQuery(db, getIssue),
     listGuildViewerIds: bindQuery(db, listGuildViewerIds),
     listInboxIssues: bindQuery(db, listInboxIssues),
     listInboxMentions: bindQuery(db, listInboxMentions),
@@ -61,12 +65,15 @@ export type MessageNotice = Pick<GroupMessageView, "seq" | "author_type" | "auth
   agent: AgentBrief | null;
 };
 
+/** An issue as the inbox lists it: with the name of its guild. */
+export type InboxIssue = IssueItem & Pick<InboxIssueRow, "guild_name">;
+
 /**
  * An operator's inbox: the open issues of the guilds they operate, the messages tagging them past
  * their read cursor, and each guild they can see with messages they have not read.
  */
 export type Inbox = {
-  issues: Array<IssueItem & Pick<InboxIssueRow, "guild_name">>;
+  issues: InboxIssue[];
   mentions: MentionNotice[];
   unread: UnreadGroupChatRow[];
 };
@@ -78,6 +85,7 @@ export type InboxChanged = Record<string, never>;
 export type InboxEvents = {
   "notifications.changed": InboxChanged;
   "notifications.message": MessageNotice;
+  "notifications.issue": InboxIssue;
 };
 
 /** One event of the inbox's stream. */
@@ -230,6 +238,25 @@ export class Notifications {
     await this._sendToViewers(guildId, [NOTIFICATIONS_MESSAGE, messageNotice(guildId, message, agent)]);
   }
 
+  /**
+   * Tells the guild's operators of the issue an agent just reported, on the streams opened in the
+   * guild's organisation, then that their inbox changed. An issue that is gone is not announced.
+   */
+  async _announceIssue(guildId: string, issueId: string): Promise<void> {
+    const [guild, issue] = await Promise.all([this.db.getGuild(guildId), this.db.getIssue(guildId, issueId)]);
+    if (!guild) {
+      return;
+    }
+    const operatorIds = guild.operators.map((operator) => operator.user_id);
+    if (issue) {
+      const notice: InboxIssue = { ...issueItem(issue), guild_name: guild.name };
+      for (const userId of new Set(operatorIds)) {
+        await this._send(userId, guild.org_id, [NOTIFICATIONS_ISSUE, notice]);
+      }
+    }
+    await this.ping(operatorIds);
+  }
+
   /** Maps a guild event to the inboxes it changes. */
   async observe(guildId: string, ...[event, data]: GuildEvent): Promise<void> {
     if (event === "group.message.committed") {
@@ -240,7 +267,12 @@ export class Notifications {
       await this._sendToViewers(guildId, [NOTIFICATIONS_CHANGED, {}]);
       return;
     }
-    if (event === "guild.issues.changed" && this._subs.size) {
+    if (event !== "guild.issues.changed" || !this._subs.size) {
+      return;
+    }
+    if (data.action === "create" && data.issue_id !== undefined) {
+      await this._announceIssue(guildId, data.issue_id);
+    } else {
       const guild = await this.db.getGuild(guildId);
       await this.ping(guild ? guild.operators.map((operator) => operator.user_id) : []);
     }

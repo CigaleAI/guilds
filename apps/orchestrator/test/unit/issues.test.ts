@@ -140,6 +140,38 @@ test("report_issue_tool_writes_an_open_row", async () => {
   assert.equal(db.rows[0]?.kind, "api");
   assert.equal(db.rows[0]?.run_id, "r_1");
   assert.equal(published[0]?.[1], "guild.issues.changed");
+  assert.equal(metadata.blocking_issue_id, undefined);
+});
+
+test("a blocking report names its issue in the call's metadata and tells the agent the run ends", async () => {
+  const db = new MemoryIssuesDB();
+  const ctx = toolFixture({
+    run_id: "r_1",
+    agent_id: "a_1",
+    guild_id: "guild_1",
+    sandbox: null,
+    secrets: {},
+    agent_name: "researcher",
+    issues: new Issues(db as never),
+  });
+  const [payload, metadata] = await invokeTool(ctx.services, ctx.run, ctx.hooks, {
+    id: "call_1",
+    type: "function",
+    function: {
+      name: "report_issue",
+      arguments: JSON.stringify({
+        summary: "Gmail login revoked",
+        detail: "every gmail call answers 401",
+        kind: "api",
+        severity: "blocking",
+      }),
+    },
+  });
+  assert.equal(metadata.error, null);
+  assert.equal(db.rows[0]?.severity, "blocking");
+  assert.equal(metadata.blocking_issue_id, db.rows[0]?.id);
+  assert.match(String(payload.content), /severity=blocking status=open/);
+  assert.match(String(payload.content), /disabled until the operator resolves the issue\. The run ends now\.$/);
 });
 
 test("report_issue_rejects_unknown_kind", async () => {

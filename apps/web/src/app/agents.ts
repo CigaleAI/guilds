@@ -1,6 +1,7 @@
 import type { Agent, AgentBrief } from "../api/types/agents";
+import type { Issue } from "../api/types/issues";
 import { identityHex, identityToneOf } from "@guildsrun/ui";
-import type { IdentityTone } from "@guildsrun/ui";
+import type { AgentState, IdentityTone } from "@guildsrun/ui";
 type Styled = Pick<Agent | AgentBrief, "avatar_shape" | "avatar_color">;
 
 /** Mascot styles the orchestrator renders at /avatars/<style>.svg. */
@@ -39,4 +40,16 @@ export function agentLook(agent: Styled): AgentLook {
   if (!seed) return { tone };
   const color = identityHex[tone].slice(1);
   return { tone, src: `/avatars/${style}.svg?seed=${encodeURIComponent(seed)}&color=${color}` };
+}
+
+/**
+ * What the agent is doing, as its status dot says it: disabled while `disabling`, the open
+ * blocking issue it reported, stands; otherwise running while it generates, else idle.
+ */
+export function agentStateOf(
+  agent: Pick<Agent, "generating">,
+  disabling: Issue | undefined,
+): AgentState {
+  if (disabling) return "disabled";
+  return agent.generating ? "running" : "idle";
 }

@@ -78,10 +78,12 @@ test("user_item formats timestamps and optional fields", () => {
     image: null,
     timezone: null,
     color: null,
+    issue_alert_severity: "high" as const,
     created_at: "2026-09-12T00:00:00+00:00",
     updated_at: "2026-09-12T00:00:00+00:00",
   };
   const item = userItem(row);
+  assert.equal("issue_alert_severity" in item, false, "a user's alert setting is theirs alone");
   assert.equal(item.email, null);
   assert.equal(item.image, null);
   const emailed = userItem({ ...row, email: "Ada@Example.com" });
@@ -245,6 +247,7 @@ test("run and message views match R0 fixtures", () => {
       image: null,
       timezone: null,
       color: null,
+      issue_alert_severity: "low",
       created_at: "2026-09-13T12:00:00+00:00",
       updated_at: "2026-09-13T12:00:00+00:00",
     }),

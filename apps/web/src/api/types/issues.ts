@@ -7,7 +7,8 @@ import type { AgentBrief } from "./agents";
 
 export type IssueKind = "tool_failure" | "truncated" | "api" | "other";
 
-export type IssueSeverity = "low" | "medium" | "high";
+/** How severe an issue is, the least severe first. An open `blocking` issue disables its agent. */
+export type IssueSeverity = "low" | "medium" | "high" | "blocking";
 
 export type IssueStatus = "open" | "resolved";
 
@@ -29,6 +30,15 @@ export type Issue = {
   resolved_by: string | null;
   agent: AgentBrief | null;
 };
+
+/** An issue as the inbox lists it: with the name of its guild. */
+export type InboxIssue = Issue & { guild_name: string };
+
+/** What the inbox stream says of an issue an agent just reported in a guild the operator operates. */
+export type IssueNotice = Pick<
+  InboxIssue,
+  "id" | "guild_id" | "guild_name" | "severity" | "summary" | "agent_name" | "agent"
+>;
 
 /** An issue resolved or reopened in its guild. */
 export type IssueStatusChange = { issueId: string; status: IssueStatus };

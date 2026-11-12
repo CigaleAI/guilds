@@ -14324,7 +14324,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -14351,9 +14351,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -15180,7 +15181,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -15207,9 +15208,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -16149,7 +16151,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -16176,9 +16178,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -17006,7 +17009,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -17033,9 +17036,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -17865,7 +17869,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -17892,9 +17896,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -29424,7 +29429,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -29451,9 +29456,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -30282,7 +30288,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -30309,9 +30315,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -31139,7 +31146,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -31166,9 +31173,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -31997,7 +32005,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -32024,9 +32032,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -32854,7 +32863,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -32881,9 +32890,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",
@@ -33902,7 +33912,7 @@
                 "type": "function",
                 "function": {
                   "name": "report_issue",
-                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text.",
+                  "description": "Report a problem with this agent's tooling or platform to the operator. Use when a tool call fails, a result is truncated, an API or MCP login errors, or the sandbox otherwise blocks the work this run needs. Do not use for missing facts, Task questions, or ordinary empty search results. kind is tool_failure, truncated, api, or other. Name the failing tool when you know it. summary is one line; detail is what happened and any error text. severity blocking is for a problem that makes every further run of this agent pointless or harmful until the operator fixes it, such as a revoked login the Task depends on: it ends this run at once and disables this agent until the operator resolves the issue.",
                   "parameters": {
                     "type": "object",
                     "properties": {
@@ -33929,9 +33939,10 @@
                         "enum": [
                           "medium",
                           "low",
-                          "high"
+                          "high",
+                          "blocking"
                         ],
-                        "description": "optional; defaults to medium"
+                        "description": "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue"
                       },
                       "tool_name": {
                         "type": "string",

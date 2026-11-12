@@ -11,8 +11,10 @@ import { IconButton, BrandMark, dialogScrim } from "@guildsrun/ui";
 import { ModelSetupGate } from "../models/ModelSetupGate";
 import { GuildRail } from "./GuildRail";
 import { GuildSidebar } from "./GuildSidebar";
+import { DisabledAgentsBanner } from "./DisabledAgentsBanner";
 import { useInboxFavicon } from "./inbox";
-import { useNewMessageAlerts } from "./newMessages";
+import { useNewIssueAlerts } from "./newIssues";
+import { useChime, useNewMessageAlerts } from "./newMessages";
 
 /** Whether the sidebar is folded into the rail. */
 const retractedKey = "guilds-rail-retracted";
@@ -22,12 +24,14 @@ const retractedKey = "guilds-rail-retracted";
  * gate over everything while the organisation has no provider connected. On a phone the
  * navigation opens as a drawer from a top bar and closes once a page is picked. A link followed
  * from a page's content leaves a way back; a guild or agent shows it in its tab row, any other
- * page above itself. A message posted where the operator is not looking rings a chime, and
- * shows a desktop notification when they turned those on. The tab icon shows a dot while the
- * inbox has anything waiting.
+ * page above itself. A message posted where the operator is not looking, and an issue reported at
+ * the severity they asked to be alerted to, ring a chime and show a desktop notification when
+ * they turned those on. The tab icon shows a dot while the inbox has anything waiting, and a red
+ * band sits above the page while a blocking issue disables an agent.
  */
 export function AppShell() {
-  useInboxStream(useNewMessageAlerts());
+  const chime = useChime();
+  useInboxStream({ onMessage: useNewMessageAlerts(chime), onIssue: useNewIssueAlerts(chime) });
   useInboxFavicon();
   useReturnTrail();
   const { shellBanners = [] } = useSlots();
@@ -87,6 +91,7 @@ export function AppShell() {
         data-return-source=""
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden contain-paint bg-paper md:rounded-2xl md:shadow-float"
       >
+        <DisabledAgentsBanner />
         {shellBanners.map((Notice, index) => (
           <Notice key={index} />
         ))}

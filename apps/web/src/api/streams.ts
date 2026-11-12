@@ -29,6 +29,7 @@ import { studioKeys } from "./queries/studio";
 import { tableKeys } from "./queries/tables";
 import { applyToolProgress, dropToolProgress, type ToolProgress } from "./toolProgress";
 import type { GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
+import type { IssueNotice } from "./types/issues";
 import type { Run, RunMessage } from "./types/runs";
 import type { StudioMessage, StudioSession } from "./types/studio";
 import type { BuilderSession } from "./types/builder";
@@ -142,12 +143,20 @@ export function useGuildStream(guildId: string): void {
 
 const inboxEvents = Object.keys(inboxEventGuards);
 
+/** What the shell does with what the inbox stream announces. */
+export type InboxAnnouncements = {
+  /** A message was posted in a guild the operator can see. */
+  onMessage: (notice: MessageNotice) => void;
+  /** An agent reported an issue in a guild the operator operates. */
+  onIssue: (notice: IssueNotice) => void;
+};
+
 /**
  * Keeps the inbox current: its counts, and the tag and issue counts of each guild. Bursts of
- * changes collapse into one refetch. A message posted in a guild the operator can see also
- * reaches `onMessage`.
+ * changes collapse into one refetch. A message posted in a guild the operator can see, and an
+ * issue reported in one they operate, also reach `announcements`.
  */
-export function useInboxStream(onMessage?: (notice: MessageNotice) => void): void {
+export function useInboxStream(announcements: InboxAnnouncements): void {
   const client = useQueryClient();
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(pending.current), []);
@@ -161,7 +170,11 @@ export function useInboxStream(onMessage?: (notice: MessageNotice) => void): voi
     "notifications.changed": refetch,
     "notifications.message": (notice) => {
       refetch();
-      onMessage?.(notice);
+      announcements.onMessage(notice);
+    },
+    "notifications.issue": (notice) => {
+      refetch();
+      announcements.onIssue(notice);
     },
   };
   useEventStream("/api/notifications/stream", {

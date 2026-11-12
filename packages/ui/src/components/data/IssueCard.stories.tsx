@@ -50,6 +50,25 @@ export const Open: Story = {
   render: () => <Toggle />,
 };
 
+export const Blocking: Story = {
+  render: () => (
+    <IssueCard
+      summary="Gmail login revoked"
+      kind="api"
+      severity="blocking"
+      status="open"
+      disablesAgent
+      agent={{ name: "mailroom", tone: "tide" }}
+      age="4m"
+      toolName="gmail_search"
+      detail={<Detail>Every Gmail call answers 401 since the login was revoked. No digest can be written without it.</Detail>}
+      onInvestigate={() => {}}
+      onStatusChange={() => {}}
+      onOpenRun={() => {}}
+    />
+  ),
+};
+
 export const Severities: Story = {
   render: () => (
     <>

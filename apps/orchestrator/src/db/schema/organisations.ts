@@ -28,9 +28,16 @@ export const users = pgTable(
     email: text("email"),
     timezone: text("timezone"),
     color: text("color"),
+    issue_alert_severity: text("issue_alert_severity", { enum: ["low", "medium", "high", "blocking"] })
+      .notNull()
+      .default("low"),
   },
   (table) => [
     unique("users_name_key").on(table.name),
+    check(
+      "users_issue_alert_severity_check",
+      sql`${table.issue_alert_severity} IN ('low', 'medium', 'high', 'blocking')`,
+    ),
     check("users_color_hex", sql`${table.color} IS NULL OR ${table.color} ~ '^#[0-9a-f]{6}$'`),
     uniqueIndex("users_email_lower_unique")
       .on(sql`lower(${table.email})`)

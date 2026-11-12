@@ -6,6 +6,7 @@ import {
   isAnyPayload,
   isGroupChatState,
   isGroupMessage,
+  isIssueNotice,
   isLiveDelta,
   isMessageNotice,
   isRunContinuation,
@@ -118,6 +119,25 @@ test("isMessageNotice admits a notice from an operator or an agent", () => {
   assert.equal(isMessageNotice({ ...notice, author_type: "agent", agent }), true);
   assert.equal(isMessageNotice({ ...notice, agent: { id: "a1" } }), false);
   assert.equal(isMessageNotice({ ...notice, preview: undefined }), false);
+});
+
+test("isIssueNotice admits a reported issue of a known severity, with or without its agent", () => {
+  const notice = {
+    id: "iss_1",
+    guild_id: "g1",
+    guild_name: "Research",
+    severity: "blocking",
+    summary: "Login revoked",
+    agent_name: "scout",
+    agent: null,
+  };
+  assert.equal(isIssueNotice(notice), true);
+  const agent = { id: "a1", name: "Scout", avatar_shape: "teardrop", avatar_color: "#7c5cff" };
+  assert.equal(isIssueNotice({ ...notice, severity: "low", agent }), true);
+  assert.equal(isIssueNotice({ ...notice, severity: "urgent" }), false);
+  assert.equal(isIssueNotice({ ...notice, guild_name: undefined }), false);
+  assert.equal(isIssueNotice({ ...notice, agent: { id: "a1" } }), false);
+  assert.equal(isIssueNotice(null), false);
 });
 
 test("isRunMessage admits a committed run row and refuses one without its payload or cost", () => {

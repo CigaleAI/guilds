@@ -15,6 +15,7 @@ export type UserProfilePatch = {
   name?: string | undefined;
   timezone?: string | null | undefined;
   color?: string | null | undefined;
+  issue_alert_severity?: UserRow["issue_alert_severity"] | undefined;
 };
 
 export type NewUser = {
@@ -54,6 +55,7 @@ async function writeUserProfile(
        name = CASE WHEN $2 THEN $3 ELSE name END,
        timezone = CASE WHEN $4 THEN $5 ELSE timezone END,
        color = CASE WHEN $6 THEN $7 ELSE color END,
+       issue_alert_severity = COALESCE($9, issue_alert_severity),
        updated_at = $8
      WHERE id = $1
      RETURNING ${USER_COLUMNS}`,
@@ -66,6 +68,7 @@ async function writeUserProfile(
       "color" in profile,
       profile.color ?? null,
       stamp(now),
+      profile.issue_alert_severity ?? null,
     ],
   );
   return result.rows[0] ?? null;

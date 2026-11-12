@@ -10,6 +10,7 @@ const toneFill = {
   dusk: "bg-dusk",
   ochre: "bg-ochre",
   plum: "bg-plum",
+  alert: "bg-alert",
   idle: "bg-rule",
 } as const;
 

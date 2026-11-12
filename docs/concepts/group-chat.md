@@ -150,6 +150,11 @@ An agent runs one thing at a time, whatever started it.
   tick ([Routines](routines.md)).
 - A new direct message to a busy agent is refused.
 
+An agent disabled by an open blocking issue is treated the same way
+until the issue is resolved, and is not counted among the agents the
+chat still has to deliver to
+([Inbox and issues](inbox.md#blocking-issues)).
+
 ### What the operator has read
 
 Each operator has their own read cursor per guild: the last message

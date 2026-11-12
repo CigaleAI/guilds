@@ -16,7 +16,8 @@ import {
 import { bindQuery, type Queryable } from "../db/pg.js";
 
 export const ISSUE_KINDS = ["tool_failure", "truncated", "api", "other"] as const satisfies readonly IssueRow["kind"][];
-export const ISSUE_SEVERITIES = ["low", "medium", "high"] as const satisfies readonly IssueRow["severity"][];
+/** The severities an issue may have, the least severe first. A `blocking` issue disables its agent while it is open. */
+export const ISSUE_SEVERITIES = ["low", "medium", "high", "blocking"] as const satisfies readonly IssueRow["severity"][];
 export const ISSUE_STATUSES = ["open", "resolved"] as const satisfies readonly IssueRow["status"][];
 export const ISSUE_SUMMARY_MAX = 200;
 export const ISSUE_DETAIL_MAX = 4000;

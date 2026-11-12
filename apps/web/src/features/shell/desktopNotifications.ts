@@ -5,6 +5,7 @@ import { toast } from "@guildsrun/ui";
 import { guildKeys } from "../../api/queries/guilds";
 import type { Guild } from "../../api/types/guilds";
 import type { MessageNotice } from "../../api/types/chat";
+import type { IssueNotice } from "../../api/types/issues";
 import { agentLook } from "../../app/agents";
 import { readStored, useStoredFlag } from "../../app/storage";
 
@@ -38,6 +39,24 @@ export function noticeFor(notice: MessageNotice, guildName: string | undefined):
     title: guildName ? `${notice.author_name} in ${guildName}` : notice.author_name,
     body: plainPreview(notice.preview),
     tag: `guild:${notice.guild_id}`,
+    ...(icon ? { icon } : {}),
+  };
+}
+
+/**
+ * What the notification of a reported issue shows: who reported what severity where, the issue's
+ * summary, and the agent's mascot. A blocking issue says its agent is disabled.
+ */
+export function issueNoticeFor(notice: IssueNotice): DesktopNotice {
+  const agentName = notice.agent?.name ?? notice.agent_name;
+  const icon = notice.agent ? agentLook(notice.agent).src : undefined;
+  return {
+    title:
+      notice.severity === "blocking"
+        ? `${agentName} is disabled in ${notice.guild_name}`
+        : `${agentName} reported a ${notice.severity} issue in ${notice.guild_name}`,
+    body: plainPreview(notice.summary),
+    tag: `issue:${notice.id}`,
     ...(icon ? { icon } : {}),
   };
 }
@@ -154,5 +173,21 @@ export function useDesktopNotification(): (notice: MessageNotice) => void {
       });
     };
     void show(noticeFor(notice, guild?.name), open);
+  };
+}
+
+/**
+ * Shows the reported issue as a desktop notification when the operator turned those on. Opening
+ * it brings the window forward and opens the guild's issues.
+ */
+export function useIssueDesktopNotification(): (notice: IssueNotice) => void {
+  const navigate = useNavigate();
+  return (notice) => {
+    if (!desktopNotificationsOn()) return;
+    const open = () => {
+      window.focus();
+      void navigate({ to: "/guilds/$guildId/issues", params: { guildId: notice.guild_id } });
+    };
+    void show(issueNoticeFor(notice), open);
   };
 }

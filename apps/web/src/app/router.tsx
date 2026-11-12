@@ -5,6 +5,7 @@ import {
   lazyRouteComponent,
   type SearchSchemaInput,
 } from "@tanstack/react-router";
+import type { IssueSeverity } from "../api/types/issues";
 import { isString, type JsonObject, type JsonValue } from "../api/wire";
 import type { RevealStep } from "../features/agent/chat/FlowView";
 import type { ChatSearch } from "../features/agent/chat/SessionChrome";
@@ -14,15 +15,25 @@ import type { TableTab } from "../features/tables/TablesPage";
 import { parseStudioSearch, type StudioSearch } from "../features/studio/location";
 import { NotFound } from "../features/home/NotFound";
 import { AppShell } from "../features/shell/AppShell";
+import { issueSeverities } from "./issues";
 
 const rootRoute = createRootRoute({ component: AppShell, notFoundComponent: NotFound });
 
 const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home });
 
+/** What a list of issues reads from its address: the one severity it shows, or none for every one. */
+export type IssueListSearch = { severity?: IssueSeverity };
+
+function issueListSearch(search: JsonObject): IssueListSearch {
+  const severity = issueSeverities.find((known) => known === search.severity);
+  return severity ? { severity } : {};
+}
+
 const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inbox",
   component: lazyRouteComponent(() => import("../features/inbox/Inbox"), "Inbox"),
+  validateSearch: issueListSearch,
 });
 
 // Each route's `validateSearch` reads the search as the router parses it from the URL: a JSON
@@ -210,6 +221,7 @@ const guildIssuesRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "issues",
   component: lazyRouteComponent(() => import("../features/guild/pages/GuildIssues"), "GuildIssues"),
+  validateSearch: issueListSearch,
 });
 
 const guildUsageRoute = createRoute({

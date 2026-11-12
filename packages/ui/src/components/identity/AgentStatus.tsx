@@ -1,15 +1,15 @@
 import type { ComponentProps } from "react";
 import { cn } from "../../cn";
-import { Dot } from "../../primitives/Dot";
-import type { Tone } from "../../tones";
+import { Dot, type DotProps } from "../../primitives/Dot";
 
 /**
  * What an agent is doing: `running` while it generates a reply, `idle` otherwise, `connecting`
- * while its live state is still loading.
+ * while its live state is still loading, `disabled` while a blocking issue keeps it from running.
  */
-export type AgentState = "running" | "idle" | "connecting";
+export type AgentState = "running" | "idle" | "connecting" | "disabled";
 
-const stateStyle: Record<AgentState, { tone: Tone; text: string; pulse: boolean }> = {
+const stateStyle: Record<AgentState, { tone: NonNullable<DotProps["tone"]>; text: string; pulse: boolean }> = {
+  disabled: { tone: "alert", text: "text-alert", pulse: false },
   running: { tone: "signal", text: "text-signal-t", pulse: false },
   idle: { tone: "idle", text: "text-muted", pulse: false },
   connecting: { tone: "dusk", text: "text-muted", pulse: true },

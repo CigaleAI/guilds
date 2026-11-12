@@ -8,6 +8,22 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** An issue can be `blocking`. An agent that files one with
+`report_issue` ends its run at once and is disabled until someone
+resolves the issue: a direct message to it is refused with the
+issue's summary, and its group deliveries, routines, and wake-ups
+wait. A red band above every page names the disabled agents, the
+agent's sidebar row and inspector show a red disabled state, the
+inspector offers **Mark as resolved**, and the issue's card is
+outlined in red. The Inbox and each guild's Issues tab filter issues
+by severity, held in the address as `?severity=`. Each user picks the
+least severe issue they are alerted to under **Settings → General →
+Issue alerts** (`issue_alert_severity` on `/api/auth/me`): issues at
+or above it count in the Inbox badge, the tab icon, and the guild
+counts, ring the chime, and show a desktop notification; the others
+stay listed. The inbox stream sends `notifications.issue` when an
+agent reports an issue.
+
 **Rebuild.** Each guild in the sidebar and on the rail shows the
 messages that tag the operator as a blue count and its open issues as
 a red count, in place of its count of unread chat messages. The counts

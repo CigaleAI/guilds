@@ -1,5 +1,5 @@
 import type { AgentBrief } from "./agents";
-import type { Issue } from "./issues";
+import type { InboxIssue } from "./issues";
 
 /**
  * Shapes of the orchestrator's JSON API for the group chat and the inbox, as the app reads them.
@@ -67,7 +67,7 @@ export type UnreadChat = {
 };
 
 export type Notifications = {
-  issues: (Issue & { guild_name: string })[];
+  issues: InboxIssue[];
   mentions: MentionNotice[];
   /** Every guild the operator can see with messages they have not read. */
   unread: UnreadChat[];

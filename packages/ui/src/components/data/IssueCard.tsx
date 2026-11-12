@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Sparkles } from "lucide-react";
+import { Check, ExternalLink, OctagonAlert, Sparkles } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../../cn";
 import { identityText, type IdentityTone } from "../../identity";
@@ -8,7 +8,7 @@ import { Button } from "../actions/Button";
 import { Avatar } from "../identity/Avatar";
 
 export type IssueKind = "tool_failure" | "truncated" | "api" | "other";
-export type IssueSeverity = "low" | "medium" | "high";
+export type IssueSeverity = "low" | "medium" | "high" | "blocking";
 export type IssueStatus = "open" | "resolved";
 
 export const issueKindLabel: Record<IssueKind, string> = {
@@ -18,12 +18,18 @@ export const issueKindLabel: Record<IssueKind, string> = {
   other: "Other",
 };
 
-const severityLabel: Record<IssueSeverity, string> = { low: "Low", medium: "Medium", high: "High" };
+export const issueSeverityLabel: Record<IssueSeverity, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  blocking: "Blocking",
+};
 
 const severityPill: Record<IssueSeverity, { pill: string; dot: string }> = {
   low: { pill: "bg-t-plum text-t-dusk-fg", dot: "bg-dusk" },
   medium: { pill: "bg-t-ochre text-t-ochre-fg", dot: "bg-ochre" },
   high: { pill: "bg-plum text-on-plum", dot: "bg-plum-soft" },
+  blocking: { pill: "bg-alert text-on-alert", dot: "bg-on-alert" },
 };
 
 export type IssueAgent = { name: string; tone: IdentityTone; src?: string };
@@ -35,6 +41,8 @@ export type IssueCardProps = Omit<ComponentProps<"article">, "children"> & {
   status: IssueStatus;
   /** The agent that reported it. */
   agent: IssueAgent;
+  /** The issue keeps its agent from running until it is resolved: the card says so in a red band. */
+  disablesAgent?: boolean;
   /** Time since it was reported, such as "6h". */
   age: string;
   /** Named where issues from several guilds share a list, as in the inbox. */
@@ -59,6 +67,7 @@ export function IssueCard({
   severity,
   status,
   agent,
+  disablesAgent = false,
   age,
   guildName,
   toolName,
@@ -75,7 +84,22 @@ export function IssueCard({
   const severityStyle = open ? severityPill[severity] : { pill: "bg-well text-muted", dot: "bg-rule" };
 
   return (
-    <article className={cn("flex min-w-0 flex-col gap-3 rounded-xl bg-paper p-4 text-fg", className)} {...props}>
+    <article
+      className={cn(
+        "flex min-w-0 flex-col gap-3 rounded-xl bg-paper p-4 text-fg",
+        disablesAgent && "ring-2 ring-alert",
+        className,
+      )}
+      {...props}
+    >
+      {disablesAgent ? (
+        <p className="flex items-center gap-2 rounded-lg bg-alert px-3 py-2 text-sm font-semibold text-on-alert">
+          <Icon icon={OctagonAlert} size={16} />
+          <span className="min-w-0">
+            <span className="font-mono">{agent.name}</span> is disabled until this issue is resolved
+          </span>
+        </p>
+      ) : null}
       <div className="flex min-w-0 items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           {open ? null : (
@@ -91,7 +115,7 @@ export function IssueCard({
             )}
           >
             <span className={cn("size-1.5 rounded-full", severityStyle.dot)} aria-hidden />
-            {severityLabel[severity]}
+            {issueSeverityLabel[severity]}
             <span className="sr-only"> severity</span>
           </span>
           <Tag tone="well" font="sans">

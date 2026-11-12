@@ -1,4 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
+import { withoutOpenBlockingIssue } from "./blocking-issues.js";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
@@ -243,6 +244,7 @@ export async function listDueSchedules(pool: Queryable, now: Date): Promise<Sche
      JOIN agents a ON a.id = s.agent_id
      JOIN guilds g ON g.id = a.guild_id
      WHERE s.next_run_at <= $1 AND s.paused = false AND g.routines_enabled
+       AND ${withoutOpenBlockingIssue("a.id")}
      ORDER BY s.next_run_at`,
     [stamp(now)],
   );

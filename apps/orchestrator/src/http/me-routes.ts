@@ -5,8 +5,11 @@ import { currentUser } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import type { UserRow } from "../db/users.js";
 
-/** The request's own user, and whether they administer the instance. */
-type Me = UserItem & { platform_admin: boolean };
+/**
+ * The request's own user, whether they administer the instance, and the least severe issue they
+ * are alerted to.
+ */
+type Me = UserItem & Pick<UserRow, "issue_alert_severity"> & { platform_admin: boolean };
 
 /** How this server identifies a request, and the request's own user. */
 export async function registerMeRoutes(app: RouteApp, deps: AppDeps): Promise<void> {
@@ -15,6 +18,7 @@ export async function registerMeRoutes(app: RouteApp, deps: AppDeps): Promise<vo
   async function me(user: UserRow): Promise<Me> {
     return {
       ...userItem(user),
+      issue_alert_severity: user.issue_alert_severity,
       platform_admin: await isInstanceAdmin(deps, user.id),
     };
   }

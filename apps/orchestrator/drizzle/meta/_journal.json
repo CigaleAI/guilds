@@ -162,6 +162,20 @@
       "when": 1791957600000,
       "tag": "0023_agent_wake_ups_config",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791961200000,
+      "tag": "0024_blocking_issues",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791964800000,
+      "tag": "0025_issue_alert_severity",
+      "breakpoints": true
     }
   ]
 }

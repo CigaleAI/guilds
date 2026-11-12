@@ -18,9 +18,11 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useFinishedChatIdleClose } from "./chat/chatLinger";
+import { DisabledAgentNotice } from "./DisabledAgentNotice";
 import { useAgent, useDeleteAgent } from "../../api/queries/agents";
 import { useBrokenEmbeds } from "../../api/queries/notes";
-import { agentLook } from "../../app/agents";
+import { agentLook, agentStateOf } from "../../app/agents";
+import { useDisablingIssue } from "../../app/issues";
 import { ReturnButton } from "../../app/ReturnButton";
 import { useMediaQuery, wideScreen } from "../../app/media";
 import { readStored, writeStored } from "../../app/storage";
@@ -198,6 +200,7 @@ export function AgentInspector() {
   const wide = useMediaQuery(wideScreen);
   const onChat = Boolean(useMatchRoute()({ to: "/guilds/$guildId/agents/$agentId", fuzzy: false }));
   const agent = useAgent(agentId);
+  const disabling = useDisablingIssue(guildId, agentId);
   const [full, setFull] = useState(() => readStored(viewModeKey) === "full");
   const [deleting, setDeleting] = useState(false);
 
@@ -218,7 +221,7 @@ export function AgentInspector() {
               compact={!wide}
               name={agent.data.name}
               {...agentLook(agent.data)}
-              state={agent.data.generating ? "running" : "idle"}
+              state={agentStateOf(agent.data, disabling)}
               {...(agent.data.focus ? { focus: agent.data.focus } : {})}
               actions={
                 <AgentActions
@@ -232,6 +235,7 @@ export function AgentInspector() {
                 />
               }
             />
+            <DisabledAgentNotice guildId={guildId} agentId={agentId} agentName={agent.data.name} />
             <div className="flex min-w-0 shrink-0 items-center border-y border-line bg-surface">
               <TabsNav aria-label="Agent pages" className="min-w-0 w-auto flex-1 border-y-0">
                 {tabs

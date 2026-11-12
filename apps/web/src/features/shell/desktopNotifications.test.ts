@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MessageNotice } from "../../api/types/chat";
+import type { IssueNotice } from "../../api/types/issues";
 import {
   desktopNotificationsKey,
   desktopNotificationsOn,
+  issueNoticeFor,
   noticeFor,
   plainPreview,
   previewLength,
@@ -116,4 +118,35 @@ test("notifications are on only when chosen here and allowed by the browser", ()
   assert.equal(desktopNotificationsOn(), false, "not allowed yet");
   (globalThis as { Notification?: unknown }).Notification = { permission: "granted" };
   assert.equal(desktopNotificationsOn(), true);
+});
+
+const reported: IssueNotice = {
+  id: "iss_1",
+  guild_id: "g1",
+  guild_name: "Research",
+  severity: "high",
+  summary: "**Gmail** login revoked",
+  agent_name: "scout-old",
+  agent: { id: "a1", name: "scout", avatar_shape: "clay:scout", avatar_color: "#1d9bf0" },
+};
+
+test("an issue's notification names the agent, the severity and the guild, and shows the summary", () => {
+  const shown = issueNoticeFor(reported);
+  assert.equal(shown.title, "scout reported a high issue in Research");
+  assert.equal(shown.body, "Gmail login revoked");
+  assert.equal(shown.tag, "issue:iss_1");
+  assert.ok(shown.icon);
+});
+
+test("a blocking issue's notification says its agent is disabled", () => {
+  assert.equal(
+    issueNoticeFor({ ...reported, severity: "blocking" }).title,
+    "scout is disabled in Research",
+  );
+});
+
+test("an issue whose agent is gone is named by the name it reported under, without an icon", () => {
+  const shown = issueNoticeFor({ ...reported, agent: null });
+  assert.equal(shown.title, "scout-old reported a high issue in Research");
+  assert.equal("icon" in shown, false);
 });

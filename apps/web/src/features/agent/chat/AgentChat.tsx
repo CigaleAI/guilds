@@ -29,6 +29,7 @@ import { PendingWakeBanner } from "./PendingWake";
 import { RunStatus, useChatSession, type ChatSearch } from "./SessionChrome";
 import { Transcript } from "./Transcript";
 import { useIdentity } from "../../../app/identity";
+import { useDisablingIssue } from "../../../app/issues";
 import { runIsCapped, runTitle } from "../runState";
 
 const bottomSlack = 64;
@@ -203,23 +204,32 @@ type SessionComposerProps = {
   onCancel: () => void;
 };
 
-/** The message box: it starts a session or writes in this one, and stops the run while it generates. */
+/**
+ * The message box: it starts a session or writes in this one, and stops the run while it
+ * generates. It takes nothing while a blocking issue disables the agent.
+ */
 function SessionComposer({ agent, run, wide, sending, onSend, onCancel }: SessionComposerProps) {
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
   const attachmentsUnavailable = attachmentsNote(models.data, agent.config.model);
+  const disabling = useDisablingIssue(agent.guild_id, agent.id);
+  const invitation = run
+    ? `Send a message to ${agent.name}…`
+    : `Start a session with ${agent.name}…`;
   return (
     <Composer
       className="mx-auto w-full max-w-240"
       variant={wide ? "card" : "inline"}
       label={`Message ${agent.name}`}
-      placeholder={run ? `Send a message to ${agent.name}…` : `Start a session with ${agent.name}…`}
+      placeholder={
+        disabling ? `${agent.name} is disabled until its blocking issue is resolved` : invitation
+      }
       onSend={onSend}
       acceptAttachments={!attachmentsUnavailable}
       {...(attachmentsUnavailable ? { attachmentsUnavailable } : {})}
       generating={Boolean(run?.generating) || sending}
       onCancel={onCancel}
-      disabled={run ? run.status !== "active" : false}
+      disabled={Boolean(disabling) || (run ? run.status !== "active" : false)}
     />
   );
 }

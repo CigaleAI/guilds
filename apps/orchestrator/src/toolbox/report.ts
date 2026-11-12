@@ -9,7 +9,10 @@ const DESCRIPTION =
   "or the sandbox otherwise blocks the work this run needs. Do not use for missing " +
   "facts, Task questions, or ordinary empty search results. kind is tool_failure, " +
   "truncated, api, or other. Name the failing tool when you know it. summary is one " +
-  "line; detail is what happened and any error text.";
+  "line; detail is what happened and any error text. severity blocking is for a problem " +
+  "that makes every further run of this agent pointless or harmful until the operator " +
+  "fixes it, such as a revoked login the Task depends on: it ends this run at once and " +
+  "disables this agent until the operator resolves the issue.";
 
 export const reportIssue = nativeTool({
   name: "report_issue",
@@ -22,10 +25,16 @@ export const reportIssue = nativeTool({
       description:
         "tool_failure for a failed call, truncated when output was cut off, api for login or remote HTTP errors, other for the rest",
     }),
-    severity: Type.Optional(Type.String({ enum: ["medium", "low", "high"], description: "optional; defaults to medium" })),
+    severity: Type.Optional(
+      Type.String({
+        enum: ["medium", "low", "high", "blocking"],
+        description: "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue",
+      }),
+    ),
     tool_name: Type.Optional(Type.String({ description: "the tool that failed, when known" })),
   }),
-  async handler(services, run, _hooks, { arguments: args }) {
+  async handler(services, run, _hooks, call) {
+    const args = call.arguments;
     const issues = services.issues;
     if (issues === null) {
       throw new ToolUnavailableError("issue reporting is not available");
@@ -51,7 +60,12 @@ export const reportIssue = nativeTool({
         });
       }
       const tool = row.tool_name ? ` tool=${row.tool_name}` : "";
-      return `reported ${row.id}\nkind=${row.kind} severity=${row.severity} status=${row.status}${tool}`;
+      const reported = `reported ${row.id}\nkind=${row.kind} severity=${row.severity} status=${row.status}${tool}`;
+      if (row.severity !== "blocking") {
+        return reported;
+      }
+      call.metadata = { blocking_issue_id: row.id };
+      return `${reported}\nThis agent is disabled until the operator resolves the issue. The run ends now.`;
     } catch (caught) {
       if (caught instanceof IssueError) {
         throw caught;

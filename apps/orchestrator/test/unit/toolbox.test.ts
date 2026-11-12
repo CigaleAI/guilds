@@ -80,6 +80,7 @@ test("script_run schema from type hints", () => {
     "medium",
     "low",
     "high",
+    "blocking",
   ]);
   assert.deepEqual(schemaRequired("browser_navigate"), ["url"]);
   assert.deepEqual(schemaRequired("browser_snapshot"), []);

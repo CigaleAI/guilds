@@ -57,7 +57,9 @@ a run for the agent.
 If the agent is busy with any other run, including a group-chat
 delivery, the routine is skipped for this tick and stays due. The next
 tick tries again. Nothing piles up: a due routine is one due routine,
-however long it waits.
+however long it waits. The routine of an agent disabled by an open
+blocking issue stays due the same way until the issue is resolved
+([Inbox and issues](inbox.md#blocking-issues)).
 
 Every other outcome moves the routine on to its next planned wake-up
 and records the fire as its last wake, even when no run could be
@@ -166,6 +168,7 @@ chip. The guild **Settings** tab edits the same switch
 | Instruction | non-empty Markdown, trimmed, at most 2000 characters |
 | Ticker | every 30 seconds |
 | Busy agent | skipped this tick, stays due |
+| Agent disabled by a blocking issue | stays due until the issue is resolved |
 | Any other outcome, a failed create included | moves to the next planned wake-up and sets the last wake |
 | Guild switch | on by default; off holds every routine |
 | Missed wake-ups | never replayed |

@@ -203,6 +203,12 @@ export class GenerationLoop implements GroupRunner {
     const { groupRouter } = services;
     this.groupChat = services.groupChat;
     this.groupChat.bind(this);
+    // An issue that changes may enable an agent with chat left to read: its guild's dispatcher looks again.
+    this.groupChat.observe(async (guildId, ...[event]) => {
+      if (event === "guild.issues.changed") {
+        await this.groupChat.wake(guildId);
+      }
+    });
     this.issues = services.issues;
     this.schedules = services.schedules;
     this.scripts = services.scripts;

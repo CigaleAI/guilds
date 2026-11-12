@@ -39,6 +39,7 @@ and a copy button.
 | Home: opens the last guild visited, or the first; with none, **Create a guild** or **Use Builder** | `/` | [Guilds](../concepts/guilds.md), [Guild builder](../concepts/guild-builder.md) |
 | Not-found page: **Nothing lives at this address**, with **Back to your guilds** | any unknown path | this page |
 | Sidebar: **Inbox**, **Builder**, **Recipes**, **Tables** | every page | [Inbox and issues](../concepts/inbox.md), [Guild builder](../concepts/guild-builder.md), [Recipes](../concepts/recipes.md), [Collections](../concepts/collections.md) |
+| Red band above the page: the agents a blocking issue disables, with **Review** | every page, while one is disabled | [Inbox and issues](../concepts/inbox.md#disabled-agents) |
 | Sidebar: guild rows, each with its unread tag and open issue counts | every page | [Guilds](../concepts/guilds.md), [Inbox and issues](../concepts/inbox.md) |
 | Sidebar: agent rows and **Add agent** | every page | [Agents](../concepts/agents.md) |
 | Collapsed rail (⌘B / Ctrl+B): the same entries, guild tag and issue badges, and **Settings** | every page | [Guilds](../concepts/guilds.md) |

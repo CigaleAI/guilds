@@ -1,11 +1,12 @@
 import type { MentionNotice, Notifications } from "../../api/types/chat";
-import type { Issue } from "../../api/types/issues";
+import type { InboxIssue } from "../../api/types/issues";
+import { issuesOfSeverity, type SeverityFilter } from "../../app/issues";
 
 export type InboxFilter = "all" | "tags" | "issues";
 
 export type InboxEntry =
   | { kind: "tag"; at: string; notice: MentionNotice }
-  | { kind: "issue"; at: string; issue: Issue & { guild_name: string } };
+  | { kind: "issue"; at: string; issue: InboxIssue };
 
 /** The card ground of each kind of entry: blue for a tag, red for an issue. */
 export const entryGround: Record<InboxEntry["kind"], string> = {
@@ -13,13 +14,17 @@ export const entryGround: Record<InboxEntry["kind"], string> = {
   issue: "bg-alert-wash",
 };
 
-/** The inbox's tags and issues the filter keeps, newest first. */
+/**
+ * The inbox's tags and issues the filters keep, newest first. A severity keeps the issues of that
+ * level and no tag, since a tag has none.
+ */
 export function inboxEntries(
   inbox: Notifications | undefined,
   filter: InboxFilter,
+  severity: SeverityFilter,
 ): InboxEntry[] {
-  const tags = filter === "issues" ? [] : (inbox?.mentions ?? []);
-  const issues = filter === "tags" ? [] : (inbox?.issues ?? []);
+  const tags = filter === "issues" || severity !== "all" ? [] : (inbox?.mentions ?? []);
+  const issues = filter === "tags" ? [] : issuesOfSeverity(inbox?.issues ?? [], severity);
   return [
     ...tags.map((notice) => ({ kind: "tag" as const, at: notice.created_at, notice })),
     ...issues.map((issue) => ({ kind: "issue" as const, at: issue.created_at, issue })),
