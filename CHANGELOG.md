@@ -8,9 +8,9 @@ commands for each effect are in
 
 ## Unreleased
 
-**Rebuild.** An issue can be `blocking`. An agent that files one with
-`report_issue` ends its run at once and is disabled until someone
-resolves the issue: a direct message to it is refused with the
+**Rebuild.** An issue can be `blocking`. Filing one with
+`report_issue` ends the agent's generation at once, and the agent is
+disabled until someone resolves the issue: a direct message to it is refused with the
 issue's summary, and its group deliveries, routines, and wake-ups
 wait. A red band above every page names the disabled agents, the
 agent's sidebar row and inspector show a red disabled state, the

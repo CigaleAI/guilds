@@ -235,7 +235,7 @@ operators see it in their inbox and on the guild's **Issues** tab
 | `severity` | No | `low`, `medium`, `high`, or `blocking`; default `medium` |
 | `tool_name` | No | The tool that failed |
 
-A `blocking` issue ends the run at once and disables the agent until
+A `blocking` issue ends the generation at once and disables the agent until
 an operator resolves it
 ([Blocking issues](../concepts/inbox.md#blocking-issues)).
 

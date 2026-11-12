@@ -59,10 +59,11 @@ An agent files a blocking issue for a problem that makes every
 further run pointless or harmful until an operator fixes it, such as
 a revoked login its Task depends on.
 
-Filing one ends the run it is filed from at once: the calls the
-model made after it in the same reply get the interrupted result, the
-model is not called again, and the run records `generation.blocked`
-([Runs](runs.md#limits-that-end-a-run)).
+Filing one ends the generation it is filed from at once: the calls
+the model made after it in the same reply get the interrupted result,
+the model is not called again, and the run records
+`generation.blocked`. A direct run stays open and a one-shot run
+completes ([Runs](runs.md#limits-that-end-a-run)).
 
 While an agent has an open blocking issue it is **disabled**: it
 starts no generation.
@@ -198,7 +199,7 @@ issue.
 | Tool name | Optional, at most 120 characters |
 | Kind | `tool_failure`, `truncated`, `api`, or `other` |
 | Severity | `low`, `medium`, `high`, or `blocking`; default `medium` |
-| Blocking issue | Ends the run that files it; disables its agent while open |
+| Blocking issue | Ends the generation that files it; disables its agent while open |
 | Alert severity | Per user; `low` (every issue) by default |
 | Resolving | Resolves it for every operator |
 | Who resolves | Anyone who can see the guild |
