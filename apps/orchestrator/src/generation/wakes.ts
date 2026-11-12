@@ -26,7 +26,7 @@ import type { Wakes } from "../wakes/service.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
 import { continuedBy, latestInChain } from "./chain.js";
-import { ConflictError, logOperationFailure, type OperationFailure } from "./errors.js";
+import { AgentDisabledError, ConflictError, logOperationFailure, type OperationFailure } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { GenerationStarter } from "./runs.js";
 
@@ -125,7 +125,8 @@ export class RunWakes {
 
   /**
    * Fires the wake-up on the run it wakes: its generation admitted, its message appended, and
-   * the generation started in the background. A run on a terminal cap has it cancelled instead.
+   * the generation started in the background. A run on a terminal cap has it cancelled instead;
+   * one whose agent is busy or disabled stays due.
    */
   private async fire(due: RunWakeRow): Promise<void> {
     const { db, starter } = this.services;
@@ -145,7 +146,7 @@ export class RunWakes {
     try {
       await starter.beginGeneration(run.id, run.agent_id);
     } catch (error) {
-      if (error instanceof ConflictError) {
+      if (error instanceof ConflictError || error instanceof AgentDisabledError) {
         return;
       }
       throw error;

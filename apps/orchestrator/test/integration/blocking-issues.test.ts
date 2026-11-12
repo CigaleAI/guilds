@@ -124,6 +124,15 @@ test("an open blocking issue disables its agent until it is resolved", { timeout
     assert.equal(refused.statusCode, 409, refused.body);
     assert.match(String(refused.json().detail), /agent is disabled by a blocking issue: Gmail login revoked\. Resolve the issue first/);
 
+    const message = await app.inject({
+      method: "POST",
+      url: `/api/runs/${String(idle.json().id)}/messages`,
+      headers: { ...OWNER, ...JSON_BODY },
+      payload: { content: "are you there?" },
+    });
+    assert.equal(message.statusCode, 409, message.body);
+    assert.match(String(message.json().detail), /agent is disabled by a blocking issue: Gmail login revoked/);
+
     const resolved = await app.inject({
       method: "PATCH",
       url: `/api/guilds/${guildId}/issues/iss_blocking`,

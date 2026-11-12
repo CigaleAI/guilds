@@ -646,8 +646,11 @@ export class RecordingDB {
     return agentId === this.agent.id ? this.agent : null;
   }
 
+  /** The open blocking issue that disables the agent; null while it has none. */
+  blockingIssue: BlockingIssueRow | null = null;
+
   async getOpenBlockingIssue(_agentId: string): Promise<BlockingIssueRow | null> {
-    return null;
+    return this.blockingIssue;
   }
 
   async listAgents(guildId: string) {

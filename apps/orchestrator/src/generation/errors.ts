@@ -23,8 +23,11 @@ export class ConflictError extends Error {
   }
 }
 
-/** The agent starts no generation while a blocking issue it reported is open. */
-export class AgentDisabledError extends ConflictError {
+/**
+ * The agent starts no generation while a blocking issue it reported is open. It is not busy: no
+ * generation of its own will end and free it, only the issue's resolution.
+ */
+export class AgentDisabledError extends Error {
   constructor(summary: string) {
     super(`agent is disabled by a blocking issue: ${summary}. Resolve the issue first`);
     this.name = "AgentDisabledError";
@@ -49,6 +52,11 @@ export class RunRequestError extends Error {
     this.status = status;
     this.detail = detail;
   }
+}
+
+/** Whether the error is an agent admitted no generation: it is busy, or a blocking issue disables it. */
+export function isAdmissionRefusal(error: unknown): error is ConflictError | AgentDisabledError {
+  return error instanceof ConflictError || error instanceof AgentDisabledError;
 }
 
 /** The agent a run belongs to was deleted while the run still worked for it. */

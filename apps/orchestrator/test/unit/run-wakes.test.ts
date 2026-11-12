@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RunWakeRow } from "../../src/db/wakes.js";
 import type { ActiveGenerations } from "../../src/generation/active-generations.js";
-import { ConflictError } from "../../src/generation/errors.js";
+import { AgentDisabledError, ConflictError } from "../../src/generation/errors.js";
 import type { RunEventBus } from "../../src/generation/events.js";
 import {
   RunWakes,
@@ -58,7 +58,7 @@ function runRow(id: string) {
 function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | null) {
   const calls: string[] = [];
   const inserted: string[] = [];
-  let conflict = false;
+  let refusal: Error | null = null;
   const tx = {
     markRunWakeFired: async (wakeId: string) => fired(wakeId),
     reopenForWake: async () => false,
@@ -96,8 +96,8 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
     starter: {
       beginGeneration: async (runId: string) => {
         calls.push(`begin ${runId}`);
-        if (conflict) {
-          throw new ConflictError("agent is already generating");
+        if (refusal) {
+          throw refusal;
         }
       },
       endGeneration: (runId: string) => {
@@ -113,7 +113,10 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
     calls,
     inserted,
     conflictOnBegin: () => {
-      conflict = true;
+      refusal = new ConflictError("agent is already generating");
+    },
+    disabledOnBegin: () => {
+      refusal = new AgentDisabledError("Gmail login revoked");
     },
   };
 }
@@ -130,6 +133,16 @@ test("a wake-up whose agent another generation takes first stays due without a t
     wakeRow({ id: wakeId, state: "fired", fired_at: NOW }),
   );
   fake.conflictOnBegin();
+  await fake.wakes.fireDueWakes(new Date(NOW));
+  assert.deepEqual(fake.calls, ["begin r_1"]);
+  assert.deepEqual(fake.inserted, []);
+});
+
+test("a wake-up whose agent a blocking issue disables first stays due without a transaction", async () => {
+  const fake = fakeWakes([wakeRow()], (wakeId) =>
+    wakeRow({ id: wakeId, state: "fired", fired_at: NOW }),
+  );
+  fake.disabledOnBegin();
   await fake.wakes.fireDueWakes(new Date(NOW));
   assert.deepEqual(fake.calls, ["begin r_1"]);
   assert.deepEqual(fake.inserted, []);

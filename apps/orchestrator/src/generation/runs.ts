@@ -11,7 +11,12 @@ import {
 import type { RunMetadata } from "../db/schema/index.js";
 import { listDueSchedules, markScheduleFired, type ScheduleRow } from "../db/schedules.js";
 import { iso, runItem, type RunView } from "../db/views.js";
-import { DeliveryBusyError, DeliveryCreateError, type GroupDelivery } from "../groupchat/delivery.js";
+import {
+  DeliveryBusyError,
+  DeliveryCreateError,
+  DeliveryDisabledError,
+  type GroupDelivery,
+} from "../groupchat/delivery.js";
 import { groupChatUserMessage, wakeMessage } from "../groupchat/wake.js";
 import { newId } from "../lib/ids.js";
 import { sleep } from "../lib/event.js";
@@ -20,7 +25,14 @@ import type { Schedules } from "../schedules/service.js";
 import { planAfterFire, rowTiming } from "../schedules/timing.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { continuationMessage, type ChainPosition } from "./chain.js";
-import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
+import {
+  AgentDisabledError,
+  ConflictError,
+  isAdmissionRefusal,
+  logOperationFailure,
+  RunRequestError,
+  type OperationFailure,
+} from "./errors.js";
 import type { RunPreparation } from "./prepare.js";
 import {
   preparedPromptHashes,
@@ -55,10 +67,14 @@ export function runsDatabase(db: Queryable): RunsDatabase {
 }
 
 /**
- * How a due schedule's wake-up went: its run started, its agent became busy and the schedule
- * stays due, or the run could not be created and the schedule moves on.
+ * How a due schedule's wake-up went: its run started, its agent became busy or disabled and the
+ * schedule stays due, or the run could not be created and the schedule moves on.
  */
-type ScheduleWake = { outcome: "started" } | { outcome: "busy" } | { outcome: "failed"; failure: OperationFailure };
+type ScheduleWake =
+  | { outcome: "started" }
+  | { outcome: "busy" }
+  | { outcome: "disabled" }
+  | { outcome: "failed"; failure: OperationFailure };
 
 /** How a created run starts generating: the loop admits it, ends it, and generates it. */
 export type GenerationStarter = {
@@ -143,7 +159,7 @@ export class Runs {
       try {
         await this.startCreated(runId, agentId, create);
       } catch (error) {
-        if (error instanceof ConflictError) {
+        if (isAdmissionRefusal(error)) {
           throw new RunRequestError(409, error.message);
         }
         throw error;
@@ -229,8 +245,8 @@ export class Runs {
 
   /**
    * Wakes each due schedule whose agent is free, and plans its next wake-up. A schedule whose
-   * agent is busy stays due for the next tick; one whose run cannot be created is logged and
-   * moves on.
+   * agent is busy or disabled stays due for the next tick; one whose run cannot be created is
+   * logged and moves on.
    */
   async fireDueSchedules(now?: Date): Promise<void> {
     const when = now ?? new Date();
@@ -239,7 +255,7 @@ export class Runs {
         continue;
       }
       const wake = await this.wakeSchedule(row);
-      if (wake.outcome === "busy") {
+      if (wake.outcome === "busy" || wake.outcome === "disabled") {
         continue;
       }
       if (wake.outcome === "failed") {
@@ -257,6 +273,9 @@ export class Runs {
     } catch (error) {
       if (error instanceof DeliveryBusyError) {
         return { outcome: "busy" };
+      }
+      if (error instanceof DeliveryDisabledError) {
+        return { outcome: "disabled" };
       }
       const message = error instanceof DeliveryCreateError ? error.message : "schedule wake-up failed";
       return {
@@ -353,13 +372,19 @@ export class Runs {
     return prepared;
   }
 
-  /** Starts a delivered run; an agent that became busy meanwhile makes the delivery wait. */
+  /**
+   * Starts a delivered run. An agent that became busy meanwhile makes the delivery wait for it to
+   * be free; one a blocking issue disabled meanwhile puts the delivery off.
+   */
   private async startDelivery(runId: string, agentId: string, create: () => Promise<void>): Promise<void> {
     try {
       await this.startCreated(runId, agentId, create);
     } catch (error) {
       if (error instanceof ConflictError) {
         throw new DeliveryBusyError();
+      }
+      if (error instanceof AgentDisabledError) {
+        throw new DeliveryDisabledError(error.message);
       }
       throw error;
     }

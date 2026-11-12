@@ -5,7 +5,16 @@ import { generationLive } from "../../src/generation/completion.js";
 import { AgentDisabledError, ConflictError } from "../../src/generation/errors.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 import { tempDir } from "../helpers/env.js";
-import { FakeDB, FakeSandboxes, fakeStream, makeLoop, toolCall } from "../helpers/generation.js";
+import { DeliveryDisabledError } from "../../src/groupchat/delivery.js";
+import {
+  FakeDB,
+  FakeSandboxes,
+  fakeStream,
+  makeLoop,
+  scheduleRow,
+  seededLoop,
+  toolCall,
+} from "../helpers/generation.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -76,7 +85,7 @@ test("an agent with an open blocking issue is refused a generation, and admitted
     () => loop.beginGeneration("r_1", "a_1"),
     (error: unknown) => {
       assert.ok(error instanceof AgentDisabledError);
-      assert.ok(error instanceof ConflictError);
+      assert.equal(error instanceof ConflictError, false, "a disabled agent is not a busy one");
       assert.match(error.message, /disabled by a blocking issue: Gmail login revoked/);
       assert.match(error.message, /Resolve the issue first/);
       return true;
@@ -120,4 +129,34 @@ test("a tool call that files an issue below blocking lets the generation go on",
 
   assert.equal(db.llm_histories.length, 2);
   assert.deepEqual(db.run.errors, []);
+});
+
+test("a delivery to an agent a blocking issue disabled meanwhile is put off, not made to wait for a lock", async () => {
+  const { loop, db } = await seededLoop();
+  db.blockingIssue = { id: "iss_1", summary: "Gmail login revoked" };
+
+  await assert.rejects(
+    () => loop.runs.deliverGroupRun({ agentId: "a_1", throughSeq: 0, deliveredThrough: 0, recipients: null }),
+    (error: unknown) => error instanceof DeliveryDisabledError && /Gmail login revoked/.test(error.message),
+  );
+  await assert.rejects(
+    () => loop.runs.deliverScheduleRun(scheduleRow()),
+    (error: unknown) => error instanceof DeliveryDisabledError,
+  );
+  assert.equal(db.run, null);
+  assert.equal(loop.isAgentBusy("a_1"), false);
+});
+
+test("a due routine whose agent a blocking issue disabled meanwhile stays due", async () => {
+  const { loop, db } = await seededLoop();
+  db.due_schedules = [scheduleRow()];
+  db.blockingIssue = { id: "iss_1", summary: "Gmail login revoked" };
+
+  await loop.runs.fireDueSchedules(new Date());
+  assert.equal(db.fired.length, 0);
+
+  db.blockingIssue = null;
+  await loop.runs.fireDueSchedules(new Date());
+  assert.equal(db.fired[0]?.id, "sch_1");
+  await loop.close();
 });
