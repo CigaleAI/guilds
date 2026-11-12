@@ -7,6 +7,7 @@ import { recognizedTags, type GroupTags } from "./tags.js";
 import { recipientNamesAfter, taggedRecipientNamesAfter } from "./recipients.js";
 import {
   DeliveryBusyError,
+  DeliveryDisabledError,
   DeliveryCreateError,
   deliveriesToStart,
   interruptTargets,
@@ -661,7 +662,11 @@ export class GroupChat {
     }
   }
 
-  /** A busy agent waits for a lock to come free; any other failure is recorded and moves on. */
+  /**
+   * A busy agent waits for a lock to come free. A disabled agent's delivery is put off: its cursor
+   * stays, so the chat delivers to it once its blocking issue is resolved. Any other failure is
+   * recorded and moves on.
+   */
   async _delivery_error(
     guildId: string,
     delivery: GroupDelivery,
@@ -670,6 +675,9 @@ export class GroupChat {
     const { error, seen } = failure;
     if (error instanceof DeliveryBusyError) {
       await this._runner?.waitForLockRelease(seen);
+      return;
+    }
+    if (error instanceof DeliveryDisabledError) {
       return;
     }
     if (!(error instanceof DeliveryCreateError)) {

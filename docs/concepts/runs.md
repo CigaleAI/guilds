@@ -43,6 +43,11 @@ checks every 30 seconds ([Routines](routines.md#the-ticker)).
 Different agents generate at the same time, on one machine or on
 several.
 
+An agent with an open blocking issue is disabled: it starts no
+generation until the issue is resolved. A direct message is refused,
+and group deliveries, due routines, and due wake-ups wait
+([Inbox and issues](inbox.md#blocking-issues)).
+
 ### Generations
 
 A generation is one turn of the agent loop:
@@ -99,6 +104,12 @@ A run also completes when its model cannot be called: the model's
 provider is not connected for the organisation, or an extension refuses
 the model credentials or blocks the organisation. That run can be
 resumed once the cause is fixed.
+
+A generation also ends when the agent files a blocking issue with
+`report_issue`: no later tool call of that reply runs and the model
+is not called again. A direct run stays open and a one-shot run
+completes; either takes a message again once the issue is resolved
+([Inbox and issues](inbox.md#blocking-issues)).
 
 ### Tool-result stubbing
 
@@ -448,6 +459,16 @@ run:
 Resume is refused after `generation.max_tool_calls`,
 `generation.max_input_tokens`, and `generation.max_chain`, and allowed
 after the three above.
+
+A `report_issue` call that files a blocking issue ends the
+generation after its result is stored. Each later call of the same
+reply gets the interrupted result, the run records
+`generation.blocked`, and the run does not complete because of it.
+
+Admitting a generation refuses an agent with an open blocking issue
+with `agent is disabled by a blocking issue: <summary>. Resolve the
+issue first`: a 409 on a direct message, and a wait for a group
+delivery, a routine, or a wake-up.
 
 ### Stubbing rules
 

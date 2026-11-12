@@ -1,4 +1,5 @@
 import type { AgentBrief } from "./agents";
+import type { IssueSeverity } from "./issues";
 
 /**
  * Shapes of the orchestrator's JSON API for the operator, the organisation and its members, as the
@@ -13,6 +14,8 @@ export type User = {
   timezone: string | null;
   /** Identity colour, a 6-digit hex; null until they choose one. */
   color: string | null;
+  /** The least severe issue the operator is alerted to: counted in their Inbox, chimed and notified. */
+  issue_alert_severity: IssueSeverity;
   created_at: string;
   updated_at: string;
   /** An owner of the platform organisation: the Admin page and the platform routes answer them. */
@@ -20,7 +23,12 @@ export type User = {
 };
 
 /** The signed-in operator's own settings to change; a field left out keeps its value. */
-export type ProfileChanges = { name?: string; timezone?: string | null; color?: string | null };
+export type ProfileChanges = {
+  name?: string;
+  timezone?: string | null;
+  color?: string | null;
+  issue_alert_severity?: IssueSeverity;
+};
 
 export type OrgRole = "owner" | "admin" | "member";
 

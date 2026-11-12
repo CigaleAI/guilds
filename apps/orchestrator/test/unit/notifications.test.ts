@@ -3,9 +3,11 @@ import { test } from "node:test";
 import {
   NOTICE_PREVIEW_LENGTH,
   NOTIFICATIONS_CHANGED,
+  NOTIFICATIONS_ISSUE,
   NOTIFICATIONS_MESSAGE,
   Notifications,
   messageNotice,
+  withEveryDisablingIssue,
   type NotificationsDatabase,
 } from "../../src/notifications/index.js";
 import type { GroupChatView } from "../../src/groupchat/index.js";
@@ -29,12 +31,18 @@ function hub(
       return agentId === "agent_scout" ? scout : null;
     },
     async getGuild(guildId) {
-      return guildId === "guild_1" ? { id: guildId, org_id: "org_1", operators } : null;
+      return guildId === "guild_1" ? { id: guildId, org_id: "org_1", name: "alpha", operators } : null;
+    },
+    async getIssue() {
+      return null;
     },
     async listGuildViewerIds(guildId) {
       return guildId === "guild_1" ? viewers : [];
     },
     async listInboxIssues() {
+      return [];
+    },
+    async listDisablingIssues() {
       return [];
     },
     async listInboxMentions() {
@@ -146,9 +154,10 @@ test("an operator's message is announced without looking any agent up", async ()
     author_agent_id: null,
   });
   assert.equal(lookups, 0);
-  const [, data] = await ada.get();
+  const [name, data] = await ada.get();
+  assert.equal(name, NOTIFICATIONS_MESSAGE);
   assert.equal(data.agent, null);
-  assert.equal(data.author_name, "bo");
+  assert.equal("author_name" in data && data.author_name, "bo");
 });
 
 test("a message in a guild that is gone reaches nobody", async () => {
@@ -186,6 +195,66 @@ test("an issue change pings every operator of the guild", async () => {
   assert.deepEqual(await ada.get(), [NOTIFICATIONS_CHANGED, {}]);
   await notifications.observe("guild_1", "group.idle", chat);
   assert.equal(ada.size, 0, "other guild events leave the inbox alone");
+});
+
+test("a reported issue is announced to the guild's operators in its organisation, then pings them", async () => {
+  const reported = {
+    id: "iss_1",
+    guild_id: "guild_1",
+    org_id: "org_1",
+    agent_id: "agent_scout",
+    agent_name: "scout",
+    run_id: "r_1",
+    kind: "api",
+    severity: "blocking",
+    status: "open",
+    summary: "Gmail login revoked",
+    detail: "401 on every call",
+    tool_name: null,
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+    resolved_at: null,
+    resolved_by: null,
+    live_agent_name: "scout",
+    avatar_shape: "clay:scout",
+    avatar_color: "#1d9bf0",
+  };
+  const notifications = hub([{ user_id: "user_ada", name: "ada", role: "admin" }], {
+    async getIssue(guildId, issueId) {
+      return guildId === "guild_1" && issueId === "iss_1" ? reported : null;
+    },
+  });
+  const ada = notifications.subscribe("user_ada", "org_1");
+  const adaElsewhere = notifications.subscribe("user_ada", "org_2");
+  const cy = notifications.subscribe("user_cy", "org_1");
+
+  await notifications.observe("guild_1", "guild.issues.changed", { action: "create", issue_id: "iss_1" });
+
+  const [name, data] = await ada.get();
+  assert.equal(name, NOTIFICATIONS_ISSUE);
+  assert.deepEqual(
+    { id: "id" in data && data.id, severity: "severity" in data && data.severity, guild: "guild_name" in data && data.guild_name },
+    { id: "iss_1", severity: "blocking", guild: "alpha" },
+  );
+  assert.deepEqual(await ada.get(), [NOTIFICATIONS_CHANGED, {}]);
+  assert.deepEqual(await adaElsewhere.get(), [NOTIFICATIONS_CHANGED, {}], "another organisation's stream is only pinged");
+  assert.equal(cy.size, 0, "someone who does not operate the guild hears nothing");
+});
+
+test("a reported issue that is gone only pings the operators", async () => {
+  const notifications = hub([{ user_id: "user_ada", name: "ada", role: "admin" }]);
+  const ada = notifications.subscribe("user_ada", "org_1");
+  await notifications.observe("guild_1", "guild.issues.changed", { action: "create", issue_id: "iss_gone" });
+  assert.equal(ada.size, 1);
+  assert.deepEqual(await ada.get(), [NOTIFICATIONS_CHANGED, {}]);
+});
+
+test("a resolved issue pings the operators without announcing it", async () => {
+  const notifications = hub([{ user_id: "user_ada", name: "ada", role: "admin" }]);
+  const ada = notifications.subscribe("user_ada", "org_1");
+  await notifications.observe("guild_1", "guild.issues.changed", { action: "resolved", issue_id: "iss_1" });
+  assert.equal(ada.size, 1);
+  assert.deepEqual(await ada.get(), [NOTIFICATIONS_CHANGED, {}]);
 });
 
 test("a cleared group chat pings every viewer of the guild", async () => {
@@ -264,6 +333,7 @@ test("the inbox lists how many messages are unread in each guild", async () => {
   });
   assert.deepEqual(await notifications.list("org_1", "user_ada"), {
     issues: [],
+    disabling: [],
     mentions: [],
     unread: [
       { guild_id: "guild_1", count: 3 },
@@ -287,7 +357,7 @@ test("marking mentions read pings that operator", async () => {
   const inbox = await notifications.markMentionsRead("org_1", "user_ada");
   assert.equal(orgId, "org_1");
   assert.equal(userId, "user_ada");
-  assert.deepEqual(inbox, { issues: [], mentions: [], unread: [] });
+  assert.deepEqual(inbox, { issues: [], disabling: [], mentions: [], unread: [] });
   assert.equal(ada.size, 1);
   assert.equal(bo.size, 0);
   assert.deepEqual(await ada.get(), [NOTIFICATIONS_CHANGED, {}]);
@@ -298,4 +368,15 @@ test("marking mentions read does not ping when no tagged chat is unread", async 
   const ada = notifications.subscribe("user_ada", "org_1");
   await notifications.markMentionsRead("org_1", "user_ada");
   assert.equal(ada.size, 0);
+});
+
+test("the inbox's page of issues gains each disabling issue it left out, newest first", () => {
+  const row = (id: string, at: string) => ({ id, created_at: at }) as Parameters<typeof withEveryDisablingIssue>[0][number];
+  const page = [row("c", "2026-01-03T00:00:00.000Z"), row("b", "2026-01-02T00:00:00.000Z")];
+  const old = row("a", "2026-01-01T00:00:00.000Z");
+  assert.deepEqual(
+    withEveryDisablingIssue(page, [old, page[1]!]).map((issue) => issue.id),
+    ["c", "b", "a"],
+  );
+  assert.equal(withEveryDisablingIssue(page, [page[0]!]), page, "a page that holds them all is returned as it is");
 });

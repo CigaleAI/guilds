@@ -35,6 +35,9 @@ A user has:
   avatar.
 - an optional image. Core never sets one, so the account button shows
   initials. An image an extension sets shows in their place.
+- an alert severity: the least severe issue they are alerted to
+  ([Inbox and issues](inbox.md#alert-severity)). Only the user reads
+  it.
 
 The name `user` is reserved: `@user` is the group-chat tag for every
 operator of a guild.
@@ -113,6 +116,8 @@ An extension that signs people in adds **Sign out** here.
 - **Timezone**: new random-window routines start in it. It has its
   own **Save**. Unset, the hint says new routines use the browser's
   timezone.
+- **Issue alerts**: **Every issue**, **Medium and above**, **High
+  and above**, or **Blocking only**. A choice saves it.
 
 The rest of the tab belongs to the organisation
 ([Organisations](organisations.md)).
@@ -156,6 +161,7 @@ The `users` table:
 | `image` | Optional image path |
 | `timezone` | Optional IANA name |
 | `color` | Optional, `^#[0-9a-f]{6}$` |
+| `issue_alert_severity` | `low`, `medium`, `high`, or `blocking`; default `low` |
 | `created_at`, `updated_at` | Timestamps |
 
 Code: `apps/orchestrator/src/users/index.ts`.
@@ -166,12 +172,16 @@ Code: `apps/orchestrator/src/users/index.ts`.
   returns `{ mode }`, plus what an identity provider's sign-in page
   needs.
 - `GET /api/auth/me` returns the user with `platform_admin`, true
-  for the instance admin. The app shows **Admin** from it.
-- `PATCH /api/auth/me` takes `name`, `timezone`, `color`, or any of
-  them. `name` is a string; `timezone` and `color` are a string or
-  `null`. A field of another type is 422. A field left out keeps
-  its value. A body with none of the three is 422. An invalid name,
-  colour, or timezone is 422. A name another user holds is 409. A
+  for the instance admin, and `issue_alert_severity`. The app shows
+  **Admin** from the first. No other route returns a user's
+  `issue_alert_severity`.
+- `PATCH /api/auth/me` takes `name`, `timezone`, `color`,
+  `issue_alert_severity`, or any of them. `name` is a string;
+  `timezone` and `color` are a string or `null`;
+  `issue_alert_severity` is `low`, `medium`, `high`, or `blocking`.
+  A field of another type is 422. A field left out keeps its value.
+  A body with none of the four is 422. An invalid name, colour,
+  timezone, or severity is 422. A name another user holds is 409. A
   name an agent holds in a guild the user operates is 409. The name
   is trimmed. The colour is stored in lower case.
 

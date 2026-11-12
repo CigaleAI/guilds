@@ -505,7 +505,7 @@ export const guildIssues = pgTable(
     agent_name: text("agent_name").notNull(),
     run_id: text("run_id"),
     kind: text("kind", { enum: ["tool_failure", "truncated", "api", "other"] }).notNull(),
-    severity: text("severity", { enum: ["low", "medium", "high"] }).notNull(),
+    severity: text("severity", { enum: ["low", "medium", "high", "blocking"] }).notNull(),
     status: text("status", { enum: ["open", "resolved"] }).notNull().default("open"),
     summary: text("summary").notNull(),
     detail: text("detail").notNull(),
@@ -522,7 +522,7 @@ export const guildIssues = pgTable(
     ),
     check(
       "guild_issues_severity_check",
-      sql`${table.severity} IN ('low', 'medium', 'high')`,
+      sql`${table.severity} IN ('low', 'medium', 'high', 'blocking')`,
     ),
     check(
       "guild_issues_status_check",
@@ -549,5 +549,8 @@ export const guildIssues = pgTable(
       name: "guild_issues_run_id_fkey",
     }).onDelete("set null"),
     index("guild_issues_by_guild").on(table.guild_id, table.status, table.created_at),
+    index("guild_issues_open_blocking")
+      .on(table.agent_id)
+      .where(sql`${table.status} = 'open' AND ${table.severity} = 'blocking'`),
   ],
 );

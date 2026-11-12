@@ -25,7 +25,7 @@ import { CodeTaskParameters } from "../toolbox/harness.js";
 import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import type { CodingRuns } from "./coding.js";
-import { GenerationCancelled, logOperationFailure, type OperationFailure } from "./errors.js";
+import { GenerationBlocked, GenerationCancelled, logOperationFailure, type OperationFailure } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
 import type { ConnectionTarget } from "./offered-tools.js";
@@ -226,7 +226,10 @@ export type ToolCallsServices = {
 export class ToolCalls {
   constructor(private readonly services: ToolCallsServices) {}
 
-  /** Runs the model's calls in order, each result kept as it comes; a cancel stops before the next one. */
+  /**
+   * Runs the model's calls in order, each result kept as it comes; a cancel stops before the next
+   * one, and a call that filed a blocking issue ends the generation with `GenerationBlocked`.
+   */
   async execute(turn: RunGeneration, tools: GenerationTools, calls: ToolCall[]): Promise<void> {
     const { db, events, generations } = this.services;
     const history = await db.listMessages(turn.runId);
@@ -246,6 +249,9 @@ export class ToolCalls {
       );
       const row = await events.commitMessage(turn.runId, payload, { generation: turn.generation, ...metadata });
       reads.push({ seq: row.seq, metadata });
+      if (metadata.blocking_issue_id !== undefined) {
+        throw new GenerationBlocked(metadata.blocking_issue_id);
+      }
     }
   }
 

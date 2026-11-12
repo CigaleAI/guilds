@@ -126,6 +126,8 @@ export type ReportedToolMetadata = {
   deletions?: number;
   start_sha?: string | null;
   end_sha?: string | null;
+  /** The blocking issue a `report_issue` call filed; the generation ends after the call. */
+  blocking_issue_id?: string;
   /** The page a `browse` call ended on; null when it never loaded one. */
   final_url?: string | null;
   /** The browser actions a `browse` call took. */

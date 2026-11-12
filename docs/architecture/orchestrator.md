@@ -460,11 +460,12 @@ compile.
 | `group.idle` | guild | durable | Group dispatch has nothing left to deliver |
 | `group.delivery.started`, `group.delivery.finished`, `group.delivery.failed` | guild | durable | A delivery run's progress |
 | `guild.artifacts.changed` | guild | invalidation | A note, file, record, or agent item the guild's page shows changed. An agent's write of a record or of its own items is announced on its guild. A write or delete of a note or a file, by an agent or an operator, and a replaced access list of one, are announced on each guild whose page lists the item, before or after the change: its home guild and the guilds in its scope, every guild of the organisation when its access list has an organisation row, read from every row of the list; an item homed in a private guild is announced on that guild alone. `{ path, scope?, agent_id? }`, `scope` `agent` for an agent's Task or Memory and `files` for a shared file; re-read them |
-| `guild.issues.changed` | guild | invalidation | Re-read the guild's issues |
+| `guild.issues.changed` | guild | invalidation | Re-read the guild's issues. The guild's group chat also looks again for agents to deliver to, since a resolved blocking issue enables its agent |
 | `agent.scripts.changed` | guild | invalidation | Re-read an agent's scripts |
 | `agent.routines.changed` | guild | invalidation | Re-read an agent's routines |
 | `notifications.changed` | inbox | invalidation | Re-read the inbox |
 | `notifications.message` | inbox | durable | A message posted in a guild the user sees, with its author's look |
+| `notifications.issue` | inbox | durable | An issue an agent reported in a guild the user operates, as the Inbox lists it |
 
 The streams:
 

@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { CheckCheck, Flag } from "lucide-react";
 import { useState } from "react";
 import {
@@ -9,6 +9,8 @@ import {
 import type { Issue } from "../../../api/types/issues";
 import { agentLook } from "../../../app/agents";
 import { relativeTime } from "../../../app/format";
+import { disablesAgent, issuesOfSeverity, type SeverityFilter } from "../../../app/issues";
+import { IssueSeverityFilter } from "../../../app/IssueSeverityFilter";
 import {
   Button,
   Markdown,
@@ -33,8 +35,9 @@ function issueAgent(issue: Issue): IssueAgent {
 }
 
 /**
- * Tool failures the guild's agents reported with report_issue. Resolve one once its cause is
- * fixed, or every open row at once; reopen it if it comes back.
+ * Tool failures the guild's agents reported with report_issue, filtered by status and by the
+ * severity the address holds. Resolve one once its cause is fixed, or every open row at once;
+ * reopen it if it comes back.
  */
 export function GuildIssues() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
@@ -44,10 +47,12 @@ export function GuildIssues() {
   const resolveOpen = useResolveOpenIssues(guildId);
   const { investigate } = useInvestigateIssue();
   const [filter, setFilter] = useState<Filter>("open");
+  const severity: SeverityFilter = useSearch({ from: "/guilds/$guildId/issues" }).severity ?? "all";
 
   const all = issues.data ?? [];
   const open = all.filter((issue) => issue.status === "open").length;
-  const listed = filter === "all" ? all : all.filter((issue) => issue.status === filter);
+  const ofStatus = filter === "all" ? all : all.filter((issue) => issue.status === filter);
+  const listed = issuesOfSeverity(ofStatus, severity);
 
   const change = (issue: Issue, status: Issue["status"]) =>
     setStatus.mutate(
@@ -101,6 +106,18 @@ export function GuildIssues() {
           ]}
         />
       </div>
+      <IssueSeverityFilter
+        issues={ofStatus}
+        value={severity}
+        onValueChange={(next) =>
+          void navigate({
+            to: "/guilds/$guildId/issues",
+            params: { guildId },
+            search: next === "all" ? {} : { severity: next },
+            replace: true,
+          })
+        }
+      />
 
       {issues.isPending ? (
         <SkeletonRows rows={4} label="Loading issues" />
@@ -118,7 +135,13 @@ export function GuildIssues() {
       ) : listed.length === 0 ? (
         <EmptyState
           icon={Flag}
-          title={filter === "open" ? "No open issues" : "No issues"}
+          title={
+            severity !== "all"
+              ? "No issue of this severity"
+              : filter === "open"
+                ? "No open issues"
+                : "No issues"
+          }
           description="Agents report an issue when a tool fails, a result is cut short, or a login errors."
         />
       ) : (
@@ -133,6 +156,7 @@ export function GuildIssues() {
                 kind={issue.kind}
                 severity={issue.severity}
                 status={issue.status}
+                disablesAgent={disablesAgent(issue)}
                 agent={issueAgent(issue)}
                 age={relativeTime(issue.created_at)}
                 {...(issue.tool_name ? { toolName: issue.tool_name } : {})}

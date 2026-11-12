@@ -39,7 +39,7 @@ import { terminalCapOf } from "./caps.js";
 import { continuedBy, latestInChain, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
-import { ConflictError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
+import { isAdmissionRefusal, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import { RunEventBus, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase } from "./generate.js";
 import { runWasResumed } from "./lifecycle.js";
@@ -203,6 +203,12 @@ export class GenerationLoop implements GroupRunner {
     const { groupRouter } = services;
     this.groupChat = services.groupChat;
     this.groupChat.bind(this);
+    // An issue that changes may enable an agent with chat left to read: its guild's dispatcher looks again.
+    this.groupChat.observe(async (guildId, ...[event]) => {
+      if (event === "guild.issues.changed") {
+        await this.groupChat.wake(guildId);
+      }
+    });
     this.issues = services.issues;
     this.schedules = services.schedules;
     this.scripts = services.scripts;
@@ -441,7 +447,7 @@ export class GenerationLoop implements GroupRunner {
     try {
       await this.beginGeneration(runId, run.agent_id);
     } catch (error) {
-      if (error instanceof ConflictError) {
+      if (isAdmissionRefusal(error)) {
         throw new RunRequestError(409, error.message);
       }
       throw error;

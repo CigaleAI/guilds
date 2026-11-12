@@ -13,6 +13,7 @@ export function userRow(overrides: Partial<UserRow> = {}): UserRow {
     email: null,
     timezone: null,
     color: null,
+    issue_alert_severity: "low",
     ...overrides,
   };
 }

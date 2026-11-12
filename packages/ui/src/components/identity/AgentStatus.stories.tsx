@@ -25,6 +25,7 @@ const agents = [
   { name: "skyzo", tone: "signal", state: "running" },
   { name: "wallet", tone: "tide", state: "idle" },
   { name: "managooor", tone: "rosewood", state: "connecting" },
+  { name: "mailroom", tone: "tide", state: "disabled" },
 ] as const;
 
 export const States: Story = {

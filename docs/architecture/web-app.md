@@ -188,7 +188,7 @@ SSE carries transient deltas and newly committed rows
 | Stream | URL | What it keeps current |
 |---|---|---|
 | One per open guild | `/api/guilds/:id/group-chat/stream` | Chat, delivery state, issues, notes, files, Tasks and Memory, routines, and scripts |
-| The inbox | `/api/notifications/stream` | The inbox and its badge, each guild's tag and issue counts, and the chime for a message posted where the operator is not looking |
+| The inbox | `/api/notifications/stream` | The inbox and its badge, each guild's tag and issue counts, the band and states of disabled agents, and the chime and desktop notification for a message posted where the operator is not looking and for an issue reported at the operator's alert severity |
 | One per open run | `/api/runs/:id/stream` | The run transcript, the progress lines of its running tool calls, the records its tools change, and its pending wake-up |
 | One per open Studio session | `/api/studio/sessions/:id/stream` | The coach chat and drafts |
 | One per open Builder session | `/api/builder/sessions/:id/stream` | The coach chat and the recipe draft |

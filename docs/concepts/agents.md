@@ -135,7 +135,9 @@ Each guild folds open to its agents and an **Add agent** row. The row
 is disabled once the guild is full. Each agent row shows:
 
 - its avatar;
-- a live state dot: signal green while it runs, a quiet dot when idle;
+- a live state dot: signal green while it runs, a quiet dot when
+  idle, red while a blocking issue disables it
+  ([Inbox and issues](inbox.md#disabled-agents));
 - a code marker on a coding agent;
 - a marker for browser access;
 - a marker naming the notes or collections its Task embeds that the
@@ -187,7 +189,11 @@ group chat. On a wide screen, the expand control fills the window
 instead; the choice is remembered.
 
 The header shows the avatar, the name, whether the agent is running,
-and its focus. Two warnings can sit there:
+idle, or disabled, and its focus. Under the header of a disabled
+agent, a red band names the blocking issue and offers **Mark as
+resolved** and **Open issue**
+([Inbox and issues](inbox.md#disabled-agents)). Two warnings can sit
+in the header:
 
 - a coding agent that is not ready shows a warning icon
   ([Coding agents](coding/index.md));

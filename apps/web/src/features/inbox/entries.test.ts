@@ -38,11 +38,12 @@ const inbox: Notifications = {
       agent: null,
     },
   ],
+  disabling: [],
   unread: [{ guild_id: "guild_1", count: 9 }],
 };
 
 test("All lists tags and issues together, newest first", () => {
-  const entries = inboxEntries(inbox, "all");
+  const entries = inboxEntries(inbox, "all", "all");
   assert.deepEqual(
     entries.map((entry) => entry.kind),
     ["issue", "tag"],
@@ -50,7 +51,7 @@ test("All lists tags and issues together, newest first", () => {
 });
 
 test("Tags lists the messages that tag the operator only", () => {
-  const entries = inboxEntries(inbox, "tags");
+  const entries = inboxEntries(inbox, "tags", "all");
   assert.deepEqual(
     entries.map((entry) => entry.kind),
     ["tag"],
@@ -58,7 +59,7 @@ test("Tags lists the messages that tag the operator only", () => {
 });
 
 test("Issues lists the open issues only", () => {
-  const entries = inboxEntries(inbox, "issues");
+  const entries = inboxEntries(inbox, "issues", "all");
   assert.deepEqual(
     entries.map((entry) => entry.kind),
     ["issue"],
@@ -66,10 +67,19 @@ test("Issues lists the open issues only", () => {
 });
 
 test("an inbox not loaded yet lists nothing", () => {
-  assert.deepEqual(inboxEntries(undefined, "all"), []);
+  assert.deepEqual(inboxEntries(undefined, "all", "all"), []);
 });
 
 test("a tag card sits on a blue wash and an issue card on a red one", () => {
   assert.equal(entryGround.tag, "bg-signal-wash");
   assert.equal(entryGround.issue, "bg-alert-wash");
+});
+
+test("a severity lists the issues of that level and no tag", () => {
+  assert.deepEqual(
+    inboxEntries(inbox, "all", "high").map((entry) => entry.kind),
+    ["issue"],
+  );
+  assert.deepEqual(inboxEntries(inbox, "all", "blocking"), []);
+  assert.deepEqual(inboxEntries(inbox, "tags", "high"), []);
 });

@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox";
+import { ISSUE_SEVERITIES } from "../issues/index.js";
 import { GuildNameTaken, LastOrgOwner } from "../db/errors.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
@@ -129,11 +130,15 @@ export async function removeUser(db: Queryable, userId: string): Promise<void> {
   }
 }
 
-/** A user's change to their own profile; an absent field stays, and null clears a timezone or color. */
+/**
+ * A user's change to their own profile; an absent field stays, and null clears a timezone or color.
+ * `issue_alert_severity` is the least severe issue the user is alerted to.
+ */
 export const ProfileChangeSchema = Type.Object({
   name: Type.Optional(Type.String()),
   timezone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   color: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  issue_alert_severity: Type.Optional(Type.Union(ISSUE_SEVERITIES.map((severity) => Type.Literal(severity)))),
 });
 
 export type ProfileChange = Static<typeof ProfileChangeSchema>;
@@ -146,16 +151,17 @@ function validateProfile(change: ProfileChange): UserProfilePatch {
     ...(change.timezone !== undefined
       ? { timezone: change.timezone === null ? null : validateTimezone(change.timezone) }
       : {}),
+    ...(change.issue_alert_severity !== undefined ? { issue_alert_severity: change.issue_alert_severity } : {}),
   };
 }
 
 /**
- * Changes the user's own name, timezone, or color. A name is unique, and is no agent's name in a
- * guild the user operates.
+ * Changes the user's own name, timezone, color, or the least severe issue they are alerted to. A
+ * name is unique, and is no agent's name in a guild the user operates.
  */
 export async function changeOwnProfile(db: Queryable, userId: string, change: ProfileChange): Promise<UserRow> {
-  if (change.name === undefined && change.timezone === undefined && change.color === undefined) {
-    throw new UserError(422, "name, timezone, or color is required");
+  if (Object.values(change).every((value) => value === undefined)) {
+    throw new UserError(422, "name, timezone, color, or issue_alert_severity is required");
   }
   const profile = validateProfile(change);
   let row;

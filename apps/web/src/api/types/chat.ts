@@ -1,5 +1,5 @@
 import type { AgentBrief } from "./agents";
-import type { Issue } from "./issues";
+import type { InboxIssue } from "./issues";
 
 /**
  * Shapes of the orchestrator's JSON API for the group chat and the inbox, as the app reads them.
@@ -67,7 +67,10 @@ export type UnreadChat = {
 };
 
 export type Notifications = {
-  issues: (Issue & { guild_name: string })[];
+  /** The newest open issues of the guilds the operator operates. */
+  issues: InboxIssue[];
+  /** Every open blocking issue that disables an agent in those guilds, the oldest first. */
+  disabling: InboxIssue[];
   mentions: MentionNotice[];
   /** Every guild the operator can see with messages they have not read. */
   unread: UnreadChat[];

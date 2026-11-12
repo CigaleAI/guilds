@@ -23,7 +23,13 @@ import { terminalCapOf } from "./caps.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
 import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase, type CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
-import { GenerationCancelled, logOperationFailure, RunLimitError, type OperationFailure } from "./errors.js";
+import {
+  GenerationBlocked,
+  GenerationCancelled,
+  logOperationFailure,
+  RunLimitError,
+  type OperationFailure,
+} from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import { runStanding, runWasResumed } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
@@ -597,10 +603,11 @@ export class RunGenerator {
 
   /**
    * One model step with its tool calls; null when the step ended the generation: a hand-off, a
-   * limit that completes the run, or a failed model call, and the run says which.
+   * blocking issue the agent reported, a limit that completes the run, or a failed model call,
+   * and the run says which.
    */
   private async stepOrStop(gen: Generation, tools: GenerationTools): Promise<ToolCall[] | null> {
-    const { db, events, chains } = this.services;
+    const { db, events, chains, toolCalls } = this.services;
     try {
       return await this.modelStep(gen, tools);
     } catch (error) {
@@ -609,6 +616,11 @@ export class RunGenerator {
       }
       if (error instanceof HandoffDue) {
         await chains.handOff(gen, tools);
+        return null;
+      }
+      if (error instanceof GenerationBlocked) {
+        await toolCalls.resolveUnresolved(gen.runId, gen.generation);
+        await events.recordError(gen, "generation.blocked", error);
         return null;
       }
       if (error instanceof RunLimitError) {

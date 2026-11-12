@@ -1,4 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
+import { withoutOpenBlockingIssue } from "./blocking-issues.js";
 import { AgentMessageLimitReached, GroupChatCleared, RowMissing } from "./errors.js";
 import { guildVisibleTo } from "./guilds.js";
 import { tableColumns } from "./columns.js";
@@ -94,6 +95,7 @@ export async function getGroupChatState(
          FROM agents a
          WHERE a.guild_id = p.id
            AND a.group_chat_delivered_through < p.group_chat_seq
+           AND ${withoutOpenBlockingIssue("a.id")}
        ) AS pending_agent_count
      FROM guilds p
      WHERE p.id = $1`,
@@ -171,6 +173,7 @@ export async function listPendingGroupAgents(
     `SELECT id, guild_id, name, created_at, group_chat_delivered_through
      FROM agents
      WHERE guild_id = $1 AND group_chat_delivered_through < $2
+       AND ${withoutOpenBlockingIssue("agents.id")}
      ORDER BY group_chat_delivered_through, created_at`,
     [guildId, chatSeq],
   );

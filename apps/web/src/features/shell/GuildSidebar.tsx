@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAgentsByGuild } from "../../api/queries/agents";
 import { useBrokenEmbeds } from "../../api/queries/notes";
 import { useGuilds } from "../../api/queries/guilds";
-import { agentLook } from "../../app/agents";
+import { agentLook, agentStateOf } from "../../app/agents";
 import { readStored, writeStored } from "../../app/storage";
 import {
   SkeletonRows,
@@ -18,7 +18,7 @@ import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";
 import { AccountMenu } from "./AccountMenu";
 import { parseFoldedGuilds, type FoldedGuilds } from "./foldedGuilds";
-import { useInboxCount, useInboxCountsByGuild } from "./inbox";
+import { useDisablingIssueByAgent, useInboxCount, useInboxCountsByGuild } from "./inbox";
 
 /** Guild ids the operator folded in the sidebar. */
 const collapsedKey = "guilds-guilds-collapsed";
@@ -41,6 +41,7 @@ export function GuildSidebar({ onRetract }: GuildSidebarProps) {
   const [addingTo, setAddingTo] = useState<{ id: string; name: string } | null>(null);
   const inboxCount = useInboxCount();
   const inboxCounts = useInboxCountsByGuild();
+  const disablingIssues = useDisablingIssueByAgent();
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
   const setOpen = (id: string, open: boolean) => {
@@ -123,7 +124,7 @@ export function GuildSidebar({ onRetract }: GuildSidebarProps) {
                       name={agent.name}
                       tone={look.tone}
                       {...(look.src ? { src: look.src } : {})}
-                      state={agent.generating ? "running" : "idle"}
+                      state={agentStateOf(agent, disablingIssues.get(agent.id))}
                       browser={agent.browser}
                       coding={agent.coding}
                       {...(brokenEmbeds.has(agent.id)

@@ -15,6 +15,7 @@ import {
 } from "../../src/groupchat/index.js";
 import {
   DeliveryCreateError,
+  DeliveryDisabledError,
   deliveriesToStart,
   interruptTargets,
   withActiveCursors,
@@ -43,6 +44,8 @@ class MemoryGroupDB {
   agents: Record<string, Record<string, unknown>> = {};
   runs: Record<string, Record<string, unknown>> = {};
   messages: Array<Record<string, unknown>> = [];
+  /** Agents an open blocking issue disables: the chat does not list them as pending. */
+  disabledAgents = new Set<string>();
   private nextId = 1;
   private created = 0;
 
@@ -112,6 +115,7 @@ class MemoryGroupDB {
     const pending = Object.values(this.agents).filter(
       (agent) =>
         agent.guild_id === guildId &&
+        !this.disabledAgents.has(String(agent.id)) &&
         Number(agent.group_chat_delivered_through) < seq,
     ).length;
     return {
@@ -162,6 +166,7 @@ class MemoryGroupDB {
     const pending = Object.values(this.agents).filter(
       (agent) =>
         agent.guild_id === guildId &&
+        !this.disabledAgents.has(String(agent.id)) &&
         Number(agent.group_chat_delivered_through) < chatSeq,
     );
     pending.sort(
@@ -370,6 +375,8 @@ class FakeRunner implements GroupRunner {
   deliveries: Array<[string, number]> = [];
   delivery_cursors: number[] = [];
   fail_agents = new Set<string>();
+  /** Agents whose delivery finds them disabled by a blocking issue, with what happens as it does. */
+  disabled = new Map<string, () => void>();
   lockGeneration = 0;
   private readonly lockEvent = new AsyncEvent();
   gate: AsyncEvent | null = null;
@@ -401,6 +408,11 @@ class FakeRunner implements GroupRunner {
     const { agentId, throughSeq, deliveredThrough } = delivery;
     if (this.fail_agents.has(agentId)) {
       throw new DeliveryCreateError("invalid prompt files");
+    }
+    const becameDisabled = this.disabled.get(agentId);
+    if (becameDisabled) {
+      becameDisabled();
+      throw new DeliveryDisabledError("agent is disabled by a blocking issue");
     }
     this.started.push(agentId);
     const gate = this.gates.get(agentId) ?? this.gate;
@@ -995,6 +1007,29 @@ describe("groupchat", { concurrency: 1 }, () => {
     assert.equal(db.agents.a_1?.group_chat_delivered_through, 0);
     runner.busy.clear();
     runner.release();
+    await waitDispatch(chat);
+    assert.deepEqual(runner.deliveries, [
+      ["a_2", 1],
+      ["a_1", 1],
+    ]);
+  });
+
+  test("a delivery that finds its agent disabled is put off without waiting for a lock, and made once the agent is enabled", async () => {
+    const { db, chat } = seed();
+    const runner = new FakeRunner();
+    // The blocking issue lands after the dispatcher listed the agent as pending.
+    runner.disabled.set("a_1", () => db.disabledAgents.add("a_1"));
+    chat.bind(runner);
+    await chat.postUser("guild_1", "Plan the release.", OPERATOR);
+    await waitDispatch(chat);
+    assert.equal(chat.isDispatching("guild_1"), false, "no lock release was needed to end the dispatch");
+    assert.deepEqual(runner.deliveries, [["a_2", 1]]);
+    assert.equal(db.agents.a_1?.group_chat_delivered_through, 0, "its cursor stays");
+    assert.deepEqual(db.guilds.guild_1?.group_chat_errors, [], "no failure is recorded");
+
+    runner.disabled.clear();
+    db.disabledAgents.clear();
+    await chat.wake("guild_1");
     await waitDispatch(chat);
     assert.deepEqual(runner.deliveries, [
       ["a_2", 1],

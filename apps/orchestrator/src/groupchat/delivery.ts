@@ -15,6 +15,14 @@ export class DeliveryBusyError extends Error {
   }
 }
 
+/** The delivery's agent is disabled by an open blocking issue: the delivery is put off until the issue is resolved. */
+export class DeliveryDisabledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeliveryDisabledError";
+  }
+}
+
 /** One group run to start: the agent, the snapshot it sees, and why it was picked. */
 export type GroupDelivery = {
   agentId: string;

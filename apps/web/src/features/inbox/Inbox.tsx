@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { CheckCheck } from "lucide-react";
 import { useState } from "react";
 import { useMarkTagsRead, useNotifications } from "../../api/queries/chat";
@@ -6,6 +6,8 @@ import { useSetAnyIssueStatus } from "../../api/queries/issues";
 import type { MentionNotice } from "../../api/types/chat";
 import { agentLook } from "../../app/agents";
 import { relativeTime } from "../../app/format";
+import { disablesAgent, type SeverityFilter } from "../../app/issues";
+import { IssueSeverityFilter } from "../../app/IssueSeverityFilter";
 import {
   Button,
   Markdown,
@@ -56,7 +58,8 @@ function MentionCard({ notice }: MentionCardProps) {
 
 /**
  * What needs the operator, across the guilds they operate: messages that tag them and issues agents
- * reported. Reading the chat clears a tag; resolving an issue clears it.
+ * reported. Reading the chat clears a tag; resolving an issue clears it. The address holds the
+ * severity the issues are filtered to.
  */
 export function Inbox() {
   const navigate = useNavigate();
@@ -65,10 +68,11 @@ export function Inbox() {
   const markTagsRead = useMarkTagsRead();
   const { investigate } = useInvestigateIssue();
   const [filter, setFilter] = useState<InboxFilter>("all");
+  const severity: SeverityFilter = useSearch({ from: "/inbox" }).severity ?? "all";
 
   const tags = notifications.data?.mentions ?? [];
   const issues = notifications.data?.issues ?? [];
-  const entries = inboxEntries(notifications.data, filter);
+  const entries = inboxEntries(notifications.data, filter, severity);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10">
@@ -113,6 +117,17 @@ export function Inbox() {
             ]}
           />
         </header>
+        <IssueSeverityFilter
+          issues={issues}
+          value={severity}
+          onValueChange={(next) =>
+            void navigate({
+              to: "/inbox",
+              search: next === "all" ? {} : { severity: next },
+              replace: true,
+            })
+          }
+        />
 
         {notifications.isPending ? (
           <SkeletonRows rows={5} label="Loading the inbox" />
@@ -130,7 +145,7 @@ export function Inbox() {
         ) : entries.length === 0 ? (
           <EmptyState
             icon={CheckCheck}
-            title="Nothing needs you"
+            title={severity === "all" ? "Nothing needs you" : "No issue of this severity"}
             description="Agents' issues and messages that tag you appear here for the guilds you operate."
           />
         ) : (
@@ -150,6 +165,7 @@ export function Inbox() {
                   kind={issue.kind}
                   severity={issue.severity}
                   status={issue.status}
+                  disablesAgent={disablesAgent(issue)}
                   guildName={issue.guild_name}
                   agent={{ name: issue.agent?.name ?? issue.agent_name, ...look }}
                   age={relativeTime(issue.created_at)}

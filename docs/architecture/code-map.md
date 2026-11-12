@@ -90,7 +90,7 @@ A repository that extends core holds this one as a submodule
 | `llm/` | Providers, the models.dev catalog, credentials, the model client, tokens, and cost ([Model client](orchestrator.md#model-client)) |
 | `policy/` | `OrgPolicy` and the checks core runs against it |
 | `avatars/` | SVG avatars in seven styles: six from [DiceBear](https://www.dicebear.com/) and the clay default (`clay.ts`); `looks.ts` assigns a guild a mascot set and each builder role a look |
-| `issues/` | Guild issues from `report_issue`, and the statuses an operator sets, each announced to the guild (`operator.ts`) |
+| `issues/` | Guild issues from `report_issue`, their severities, and the statuses an operator sets, each announced to the guild (`operator.ts`). An open blocking issue disables its agent (`db/blocking-issues.ts`) |
 | `notifications/` | The inbox view and its per-user stream |
 | `usage/` | Usage counter keys, deltas, and tree (`index.ts`), and the organisation, guild, and agent listings (`view.ts`) |
 | `studio/` | Prompt Studio: sessions, the coach's tools, drafts and edits, focus pins, the activity ledger, and the runs and routines the inspector reads (`inspector.ts`) ([Prompt Studio](../concepts/prompt-studio.md)) |
@@ -129,7 +129,7 @@ One directory per area. The screens are in the
 
 | Directory | What it holds |
 | --- | --- |
-| `shell/` | Sidebar and rail, guild tag and issue counts, account menu, new-message chime and desktop notifications |
+| `shell/` | Sidebar and rail, guild tag and issue counts, the band over disabled agents, account menu, and the chime and desktop notifications for new messages and reported issues |
 | `home/` | `/`, the empty state, and the not-found page |
 | `guild/` | Guild workspace and its menu, group chat with its message queue and budget, the State tab, and the guild pages (`pages/`) |
 | `agent/` | Create-agent dialogs, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's coding agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |

@@ -39,7 +39,7 @@ function isAttending(): boolean {
 }
 
 /** Rings at most once per `chimeGapMs`, once the browser allows sound. */
-function useChime(): () => void {
+export function useChime(): () => void {
   const lastAt = useRef<number | null>(null);
   useEffect(primeChime, []);
   return () => {
@@ -49,13 +49,12 @@ function useChime(): () => void {
 }
 
 /**
- * Announces a message the operator would otherwise miss: the chime, and a desktop notification
- * when they turned those on. Feed it the inbox stream's notices.
+ * Announces a message the operator would otherwise miss: `chime` rings, and a desktop
+ * notification shows when they turned those on. Feed it the inbox stream's notices.
  */
-export function useNewMessageAlerts(): (notice: MessageNotice) => void {
+export function useNewMessageAlerts(chime: () => void): (notice: MessageNotice) => void {
   const { user } = useIdentity();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const chime = useChime();
   const notify = useDesktopNotification();
   return (notice) => {
     if (!announces(notice, { name: user.name, pathname, attending: isAttending() })) return;

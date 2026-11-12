@@ -543,7 +543,12 @@ describe("generation", { concurrency: 1 }, () => {
   });
 
   test("agent_lock_serializes_generations", async () => {
-    const loop = makeLoop({ getAgent: async () => null }, {}, tempDir("guilds-gen-"), {});
+    const loop = makeLoop(
+      { getAgent: async () => null, getOpenBlockingIssue: async () => null },
+      {},
+      tempDir("guilds-gen-"),
+      {},
+    );
     await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(() => loop.beginGeneration("r_2", "a_1"), (error: unknown) => {
       assert.ok(error instanceof ConflictError);
@@ -685,6 +690,9 @@ describe("generation", { concurrency: 1 }, () => {
     const db = {
       async getAgent(agentId: string) {
         return { id: agentId, name: "researcher", guild_name: "research", org_slug: "acme" };
+      },
+      async getOpenBlockingIssue() {
+        return null;
       },
     };
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());

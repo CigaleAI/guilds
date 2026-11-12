@@ -1,18 +1,22 @@
 import { AdmissionConflictError, type AdmissionCoordinator } from "../admission/coordinator.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
+import { getOpenBlockingIssue } from "../db/blocking-issues.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { AsyncEvent } from "../lib/event.js";
 import type { OrgPolicy } from "../policy/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import { CancelEvent } from "../toolbox/index.js";
-import { ConflictError, RunRequestError } from "./errors.js";
+import { AgentDisabledError, ConflictError, RunRequestError } from "./errors.js";
 
-/** The db/ functions the generations in progress read their agents through. */
-export type ActiveGenerationsDatabase = { getAgent: BoundQuery<typeof getAgent> };
+/** The db/ functions the generations in progress read their agents and what disables them through. */
+export type ActiveGenerationsDatabase = {
+  getAgent: BoundQuery<typeof getAgent>;
+  getOpenBlockingIssue: BoundQuery<typeof getOpenBlockingIssue>;
+};
 
-/** The db/ functions the generations in progress read their agents through, on `db`. */
+/** The db/ functions the generations in progress read their agents and what disables them through, on `db`. */
 export function activeGenerationsDatabase(db: Queryable): ActiveGenerationsDatabase {
-  return { getAgent: bindQuery(db, getAgent) };
+  return { getAgent: bindQuery(db, getAgent), getOpenBlockingIssue: bindQuery(db, getOpenBlockingIssue) };
 }
 
 /** A run that generates: its agent, how it is cancelled, and the work in flight for it. */
@@ -27,7 +31,7 @@ type ActiveRun = {
 /**
  * The generations in progress on one loop. An agent generates one run at a time, admitted by
  * the coordinator against its organisation's plan; an agent that is being deleted or moved is
- * held busy the same way. Each release bumps `lockGeneration` and wakes whoever waits for one.
+ * held busy the same way, and one with an open blocking issue is admitted none. Each release bumps `lockGeneration` and wakes whoever waits for one.
  */
 export class ActiveGenerations {
   lockGeneration = 0;
@@ -140,7 +144,8 @@ export class ActiveGenerations {
 
   /**
    * Admits a generation of the run on its agent, under the organisation's concurrent-run limit.
-   * Returns the machine the agent generates on, or null when its row names none.
+   * An agent with an open blocking issue is refused with `AgentDisabledError`. Returns the
+   * machine the agent generates on, or null when its row names none.
    */
   async begin(runId: string, agentId: string): Promise<string | null> {
     const previous = this.mutex;
@@ -155,6 +160,10 @@ export class ActiveGenerations {
       }
       if (this.busyAgents.has(agentId)) {
         throw new ConflictError("agent is already generating");
+      }
+      const blocking = await this.db.getOpenBlockingIssue(agentId);
+      if (blocking !== null) {
+        throw new AgentDisabledError(blocking.summary);
       }
       const agent = await this.db.getAgent(agentId);
       await this.admit(agentId, agent?.org_id ?? "");

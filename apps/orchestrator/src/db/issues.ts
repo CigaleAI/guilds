@@ -169,6 +169,28 @@ export async function resolveOpenIssues(
   return result.rows.length;
 }
 
+/**
+ * The open blocking issues that each disable an agent, in the guilds this user operates, the
+ * oldest first. Every one is listed: which agents are disabled is not a page of the inbox.
+ */
+export async function listDisablingIssues(
+  pool: Queryable,
+  orgId: string,
+  userId: string,
+): Promise<InboxIssueRow[]> {
+  const result = await pool.query<InboxIssueRow>(
+    `SELECT ${HYDRATED_ISSUE_COLUMNS}, p.name AS guild_name
+     FROM guild_issues i
+     JOIN guild_operators go ON go.guild_id = i.guild_id AND go.user_id = $2
+     JOIN guilds p ON p.id = i.guild_id
+     JOIN agents a ON a.id = i.agent_id
+     WHERE i.org_id = $1 AND i.status = 'open' AND i.severity = 'blocking'
+     ORDER BY i.created_at, i.id`,
+    [orgId, userId],
+  );
+  return result.rows;
+}
+
 // Open issues in the guilds this user operates, newest first.
 export async function listInboxIssues(
   pool: Queryable,

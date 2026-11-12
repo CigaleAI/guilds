@@ -5,6 +5,7 @@
 
 import type { AgentBrief, AgentChange } from "./types/agents";
 import type { DeliveryError, GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
+import { issueSeverities, type IssueNotice, type IssueSeverity } from "./types/issues";
 import type {
   LiveDelta,
   MessagePayload,
@@ -132,6 +133,19 @@ export function isMessageNotice(data: unknown): data is MessageNotice {
   );
 }
 
+function isIssueSeverity(value: unknown): value is IssueSeverity {
+  return issueSeverities.some((severity) => severity === value);
+}
+
+export function isIssueNotice(data: unknown): data is IssueNotice {
+  return (
+    isJsonObject(data) &&
+    hasFields(data, ["id", "guild_id", "guild_name", "summary", "agent_name"], isString) &&
+    isIssueSeverity(data.severity) &&
+    (data.agent === null || isAgentBrief(data.agent))
+  );
+}
+
 function isToolCall(value: unknown): value is ToolCall {
   return (
     isJsonObject(value) &&
@@ -245,11 +259,13 @@ export const guildEventGuards: PayloadGuards<GuildEvents> = {
 export type InboxEvents = {
   "notifications.changed": unknown;
   "notifications.message": MessageNotice;
+  "notifications.issue": IssueNotice;
 };
 
 export const inboxEventGuards: PayloadGuards<InboxEvents> = {
   "notifications.changed": isAnyPayload,
   "notifications.message": isMessageNotice,
+  "notifications.issue": isIssueNotice,
 };
 
 /** What each event of a run's stream carries. */
