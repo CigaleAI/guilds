@@ -368,7 +368,7 @@ capabilities payload reports `max_coding_agents` and the remaining
 | `apps/orchestrator/src/generation/generate.ts` | The first two generation-start checks: a harness and a repository |
 | `apps/orchestrator/src/generation/coding.ts` | What a coding run does around its tool calls: the harness check, the repositories' tokens and clone, and the checkpoints; and the diff, harness log, and harness check an operator asks for |
 | `apps/orchestrator/src/generation/run-review.ts` | A coding agent's harness view and a run's changes |
-| `apps/orchestrator/src/toolbox/harness.ts`, `harness-brief.ts`, `harness-setup.ts`, `harness-ops.ts`, `harness-result.ts` | `code_task`, its brief, the harness checks, the harness ops and log, and the result |
+| `apps/orchestrator/src/toolbox/harness.ts`, `harness-brief.ts`, `harness-brief.md`, `harness-setup.ts`, `harness-ops.ts`, `harness-result.ts` | `code_task`, its brief, the brief's preamble, the harness checks, the harness ops and log, and the result |
 | `apps/orchestrator/src/toolbox/code.ts` | `shell`, `shell_status`, `file_read`, `code_search`, and the sandbox helper transport |
 | `apps/orchestrator/src/http/coding-routes.ts` | Repository, GitHub selection, harness, diff, and harness log routes |
 | `apps/orchestrator/src/prompts/system.md` | The `coding` section of the system prompt |
