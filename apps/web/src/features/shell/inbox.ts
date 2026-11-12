@@ -39,12 +39,31 @@ export function useInboxFavicon(): void {
   }, []);
 }
 
-/** Unread group chat messages by guild id; a guild with none is absent. */
-export function unreadByGuild(inbox: Notifications | undefined): Map<string, number> {
-  return new Map((inbox?.unread ?? []).map((chat) => [chat.guild_id, chat.count]));
+/** A guild's entries in the inbox: unread tags and open issues. */
+export type GuildInboxCounts = { tags: number; issues: number };
+
+/**
+ * The inbox's tags and issues counted by guild id; a guild with neither is absent. Empty while no
+ * guild has an open issue.
+ */
+export function inboxCountsByGuild(
+  inbox: Notifications | undefined,
+): Map<string, GuildInboxCounts> {
+  const counts = new Map<string, GuildInboxCounts>();
+  if (!inbox?.issues.length) return counts;
+  const countsOf = (guildId: string): GuildInboxCounts => {
+    const found = counts.get(guildId);
+    if (found) return found;
+    const created = { tags: 0, issues: 0 };
+    counts.set(guildId, created);
+    return created;
+  };
+  for (const notice of inbox.mentions) countsOf(notice.guild_id).tags += 1;
+  for (const issue of inbox.issues) countsOf(issue.guild_id).issues += 1;
+  return counts;
 }
 
-export function useUnreadByGuild(): Map<string, number> {
+export function useInboxCountsByGuild(): Map<string, GuildInboxCounts> {
   const { data } = useNotifications();
-  return useMemo(() => unreadByGuild(data), [data]);
+  return useMemo(() => inboxCountsByGuild(data), [data]);
 }

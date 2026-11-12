@@ -3,7 +3,6 @@ import { BookOpen, Database, Inbox, Settings, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { RingCount } from "../../primitives/Dot";
 import { Avatar } from "../identity/Avatar";
-import { cappedCount } from "../identity/CountBadge";
 import { CollapsedRail } from "./CollapsedRail";
 import { RailItem } from "./RailItem";
 
@@ -17,10 +16,10 @@ export default meta;
 type Story = StoryObj<typeof CollapsedRail>;
 
 const guilds = [
-  { name: "X-Replies", initials: "XR", unread: 0 },
-  { name: "Cigale-Replies-Auto", initials: "CR", unread: 4 },
-  { name: "Degen-capital", initials: "DC", unread: 0 },
-  { name: "Link-Prospection", initials: "LP", unread: 120 },
+  { name: "X-Replies", initials: "XR", tags: 0, issues: 0 },
+  { name: "Cigale-Replies-Auto", initials: "CR", tags: 4, issues: 1 },
+  { name: "Degen-capital", initials: "DC", tags: 0, issues: 0 },
+  { name: "Link-Prospection", initials: "LP", tags: 0, issues: 12 },
 ];
 
 function RailDemo() {
@@ -35,9 +34,14 @@ function RailDemo() {
           label={guild.name}
           selected={guild.name === selected}
           onClick={() => setSelected(guild.name)}
-          {...(guild.unread
+          {...(guild.tags || guild.issues
             ? {
-                badge: <RingCount>{cappedCount(guild.unread)}</RingCount>,
+                badge: (
+                  <span className="flex flex-col items-end gap-0.5">
+                    {guild.tags ? <RingCount tone="signal">{guild.tags}</RingCount> : null}
+                    {guild.issues ? <RingCount tone="alert">{guild.issues}</RingCount> : null}
+                  </span>
+                ),
                 badgeOffset: "count" as const,
               }
             : {})}

@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Each guild in the sidebar and on the rail shows the
+messages that tag the operator as a blue count and its open issues as
+a red count, in place of its count of unread chat messages. The counts
+show only while some guild has an open issue. In the Inbox, tag cards
+sit on a light blue ground and issue cards on a light red one.
+
 **Rebuild.** A Studio focus pin's `seq` and `version_index` are
 non-negative integers, no longer their digits as text, and its ids
 are non-empty strings; any other value is refused with a 422 before

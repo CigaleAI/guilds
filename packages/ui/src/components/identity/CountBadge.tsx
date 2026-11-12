@@ -10,6 +10,7 @@ export const countBadge = cva(
       tone: {
         plum: "bg-plum text-on-plum",
         accent: "bg-signal text-on-signal",
+        alert: "bg-alert text-on-alert",
         sand: "bg-well text-fg",
         ink: "bg-ink-fill text-on-ink",
         "on-plum": "bg-on-plum text-plum",

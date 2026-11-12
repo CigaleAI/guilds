@@ -120,6 +120,7 @@ const colourGroups: { name: string; tokens: [string, string][] }[] = [
       ["dusk", "queued · capacity"],
       ["plum", "blocker · selected · human"],
       ["ochre", "warning fill"],
+      ["alert", "open issue count"],
     ],
   },
   {
@@ -129,6 +130,7 @@ const colourGroups: { name: string; tokens: [string, string][] }[] = [
       ["on-plum", "on plum · dusk · tide"],
       ["on-plum-muted", "meta on deep fills"],
       ["on-ochre", "on ochre"],
+      ["on-alert", "on alert"],
     ],
   },
   {
@@ -153,6 +155,13 @@ const colourGroups: { name: string; tokens: [string, string][] }[] = [
       ["t-dusk-fg", "queued text"],
       ["t-ochre", "warning · pending"],
       ["t-ochre-fg", "on t-ochre"],
+    ],
+  },
+  {
+    name: "Washes",
+    tokens: [
+      ["signal-wash", "tag card · fg text"],
+      ["alert-wash", "issue card · fg text"],
     ],
   },
   {

@@ -143,9 +143,9 @@ export function useGuildStream(guildId: string): void {
 const inboxEvents = Object.keys(inboxEventGuards);
 
 /**
- * Keeps the inbox current: its counts, and the unread count of each guild. Bursts of changes
- * collapse into one refetch. A message posted in a guild the operator can see also reaches
- * `onMessage`.
+ * Keeps the inbox current: its counts, and the tag and issue counts of each guild. Bursts of
+ * changes collapse into one refetch. A message posted in a guild the operator can see also
+ * reaches `onMessage`.
  */
 export function useInboxStream(onMessage?: (notice: MessageNotice) => void): void {
   const client = useQueryClient();

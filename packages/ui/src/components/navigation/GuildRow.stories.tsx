@@ -39,18 +39,19 @@ export const Rows: Story = {
   ),
 };
 
-/** Unread group chat messages show as a count at the end of the row, in either state. */
-export const Unread: Story = {
+/** Unread tags show as a blue count and open issues as a red one, at the end of the row. */
+export const Counts: Story = {
   render: () => (
     <>
-      <GuildRow name="X-Replies" agentCount={2} maxAgents={15} defaultOpen={false} unread={3} />
+      <GuildRow name="X-Replies" agentCount={2} maxAgents={15} defaultOpen={false} tags={3} />
       <GuildRow
         name="Degen-capital"
         agentCount={4}
         maxAgents={15}
         selected
         defaultOpen={false}
-        unread={12}
+        tags={12}
+        issues={2}
       />
       <GuildRow
         name="Link-Prospection"
@@ -58,7 +59,7 @@ export const Unread: Story = {
         maxAgents={15}
         defaultOpen={false}
         visibility="private"
-        unread={140}
+        issues={140}
       />
     </>
   ),

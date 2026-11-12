@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useMarkTagsRead, useNotifications } from "../../api/queries/chat";
 import { useSetAnyIssueStatus } from "../../api/queries/issues";
 import type { MentionNotice } from "../../api/types/chat";
-import type { Issue } from "../../api/types/issues";
 import { agentLook } from "../../app/agents";
 import { relativeTime } from "../../app/format";
 import {
@@ -18,21 +17,17 @@ import {
   Avatar,
   toast,
   Icon,
+  cn,
 } from "@guildsrun/ui";
 import { useInvestigateIssue } from "../studio/investigate";
-
-type Filter = "all" | "tags" | "issues";
-
-type Entry =
-  | { kind: "tag"; at: string; notice: MentionNotice }
-  | { kind: "issue"; at: string; issue: Issue & { guild_name: string } };
+import { entryGround, inboxEntries, type InboxFilter } from "./entries";
 
 type MentionCardProps = { notice: MentionNotice };
 
 function MentionCard({ notice }: MentionCardProps) {
   const look = notice.agent ? agentLook(notice.agent) : null;
   return (
-    <article className="flex flex-col gap-2 rounded-xl bg-surface p-4">
+    <article className={cn("flex flex-col gap-2 rounded-xl p-4", entryGround.tag)}>
       <div className="flex flex-wrap items-center gap-2.5">
         {look ? (
           <Avatar name={notice.author_name} size={28} {...look} />
@@ -69,18 +64,11 @@ export function Inbox() {
   const setStatus = useSetAnyIssueStatus();
   const markTagsRead = useMarkTagsRead();
   const { investigate } = useInvestigateIssue();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<InboxFilter>("all");
 
   const tags = notifications.data?.mentions ?? [];
   const issues = notifications.data?.issues ?? [];
-  const entries: Entry[] = [
-    ...(filter === "issues"
-      ? []
-      : tags.map((notice) => ({ kind: "tag" as const, at: notice.created_at, notice }))),
-    ...(filter === "tags"
-      ? []
-      : issues.map((issue) => ({ kind: "issue" as const, at: issue.created_at, issue }))),
-  ].sort((a, b) => b.at.localeCompare(a.at));
+  const entries = inboxEntries(notifications.data, filter);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10">
@@ -157,6 +145,7 @@ export function Inbox() {
               return (
                 <IssueCard
                   key={`issue-${issue.id}`}
+                  className={entryGround.issue}
                   summary={issue.summary}
                   kind={issue.kind}
                   severity={issue.severity}

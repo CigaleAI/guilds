@@ -50,13 +50,28 @@ The badge counts both issues and tags and updates live. The browser
 tab icon shows a dot while the Inbox has anything waiting.
 
 Filters: **All**, **Tags**, **Issues**, each with its count.
-**Mark tags as read** shows while any tags remain. It marks every
-guild chat that has a tag in the Inbox as read, through its latest
-message.
+**Tags** lists the messages that tag the operator; **Issues** lists
+the open issues. **Mark tags as read** shows while any tags remain.
+It marks every guild chat that has a tag in the Inbox as read,
+through its latest message.
 
-A tag card names the author and the guild and shows the message.
-**Open in chat** opens that guild's group chat at the message, which
-marks the chat read up to it.
+A tag card sits on a light blue ground, an issue card on a light red
+one, in both themes. A tag card names the author and the guild and
+shows the message. **Open in chat** opens that guild's group chat at
+the message, which marks the chat read up to it.
+
+### Guild counts
+
+Each guild row in the sidebar, and each guild tile on the retracted
+rail, shows two counts from the Inbox:
+
+- a blue count of the guild's tags in the Inbox
+- a red count of the guild's open issues in the Inbox
+
+The counts show only while at least one guild has an open issue;
+with no open issue anywhere, no guild shows a count. A count of zero
+is not shown. An unread chat message that does not tag the operator
+is not counted.
 
 ### Issue cards
 

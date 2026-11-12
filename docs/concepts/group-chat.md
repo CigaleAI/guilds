@@ -154,8 +154,8 @@ An agent runs one thing at a time, whatever started it.
 
 Each operator has their own read cursor per guild: the last message
 they have had on screen. It drives the **New** divider, the
-**New messages** button, and the unread count on the guild in the
-sidebar. It never moves backwards.
+**New messages** button, and which tags stay in the
+[Inbox](inbox.md). It never moves backwards.
 
 A message someone else posts in a guild the operator is not watching
 rings a short chime, and can show a desktop notification.

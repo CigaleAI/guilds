@@ -24,7 +24,8 @@ type Guild = {
   name: string;
   maxAgents: number;
   visibility?: GuildVisibility;
-  unread?: number;
+  tags?: number;
+  issues?: number;
   agents: Agent[];
 };
 
@@ -40,7 +41,8 @@ const guilds: Guild[] = [
   {
     name: "Cigale-Replies-Auto",
     maxAgents: 15,
-    unread: 4,
+    tags: 4,
+    issues: 1,
     agents: [
       { name: "cigaler", tone: "dusk", state: "idle" },
       { name: "x-connector", tone: "dusk", state: "idle", browser: true },
@@ -130,7 +132,8 @@ function Workspace() {
           agentCount={g.agents.length}
           maxAgents={g.maxAgents}
           {...(g.visibility ? { visibility: g.visibility } : {})}
-          {...(g.unread ? { unread: g.unread } : {})}
+          {...(g.tags ? { tags: g.tags } : {})}
+          {...(g.issues ? { issues: g.issues } : {})}
           selected={g.name === guild}
           onSelect={() => setGuild(g.name)}
           onAddAgent={() => {}}

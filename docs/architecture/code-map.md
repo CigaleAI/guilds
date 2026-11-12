@@ -129,7 +129,7 @@ One directory per area. The screens are in the
 
 | Directory | What it holds |
 | --- | --- |
-| `shell/` | Sidebar and rail, unread counts, account menu, new-message chime and desktop notifications |
+| `shell/` | Sidebar and rail, guild tag and issue counts, account menu, new-message chime and desktop notifications |
 | `home/` | `/`, the empty state, and the not-found page |
 | `guild/` | Guild workspace and its menu, group chat with its message queue and budget, the State tab, and the guild pages (`pages/`) |
 | `agent/` | Create-agent dialogs, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's coding agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
