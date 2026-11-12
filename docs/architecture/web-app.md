@@ -229,6 +229,7 @@ at 10 a minute.
 |---|---|
 | `guilds-user-id`, `guilds-org-id` | The operator's user and organisation |
 | `guilds-theme` | The theme, when it is not `system` |
+| `guilds-message-chime-muted` | Whether the new-message chime is muted |
 | `guilds-desktop-notifications` | Whether desktop notifications are wanted |
 | `guilds-last-guild` | The last guild visited, which `/` opens |
 | `guilds-guilds-collapsed` | The guilds the sidebar folds |

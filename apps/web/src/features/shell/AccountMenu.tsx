@@ -1,9 +1,20 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, Check, LogOut, Monitor, Moon, Settings, Sun, ShieldCheck } from "lucide-react";
+import {
+  Bell,
+  Check,
+  LogOut,
+  Monitor,
+  Moon,
+  Settings,
+  Sun,
+  ShieldCheck,
+  VolumeX,
+} from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { switchOrg } from "../../api/identity";
 import { useIdentity } from "../../app/identity";
 import { useSlots } from "../../app/slots";
+import { useStoredFlag } from "../../app/storage";
 import { useThemeChoice, type ThemePreference } from "../../app/theme";
 import {
   cn,
@@ -16,6 +27,7 @@ import {
   initialsOf,
   personTone,
 } from "@guildsrun/ui";
+import { messageChimeMutedKey } from "./newMessages";
 import { useDesktopNotificationsChoice } from "./desktopNotifications";
 const themes: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "Match system", icon: Monitor },
@@ -67,7 +79,7 @@ function AccountTrigger({ compact }: AccountTriggerProps) {
 type AccountMenuProps = { compact?: boolean };
 
 /**
- * The signed-in operator: organisation, theme, desktop notifications, settings and sign-out.
+ * The signed-in operator: organisation, theme, message chime, desktop notifications, settings and sign-out.
  * `compact` shows only the avatar.
  */
 export function AccountMenu({ compact = false }: AccountMenuProps) {
@@ -77,6 +89,7 @@ export function AccountMenu({ compact = false }: AccountMenuProps) {
   const platformAdmin = user.platform_admin;
   const [theme, setTheme] = useThemeChoice();
   const notifications = useDesktopNotificationsChoice();
+  const [chimeMuted, setChimeMuted] = useStoredFlag(messageChimeMutedKey);
 
   return (
     <Menu>
@@ -107,16 +120,22 @@ export function AccountMenu({ compact = false }: AccountMenuProps) {
             {choice.label}
           </MenuItem>
         ))}
+        <MenuSeparator />
+        <MenuItem
+          role="menuitemcheckbox"
+          aria-checked={!chimeMuted}
+          icon={chimeMuted ? VolumeX : Check}
+          onSelect={() => setChimeMuted(!chimeMuted)}
+        >
+          Message chime
+        </MenuItem>
         {notifications.supported ? (
-          <>
-            <MenuSeparator />
-            <MenuItem
-              icon={notifications.on ? Check : Bell}
-              onSelect={() => void notifications.toggle()}
-            >
-              Desktop notifications
-            </MenuItem>
-          </>
+          <MenuItem
+            icon={notifications.on ? Check : Bell}
+            onSelect={() => void notifications.toggle()}
+          >
+            Desktop notifications
+          </MenuItem>
         ) : null}
         <MenuSeparator />
         <MenuItem icon={Settings} onSelect={() => void navigate({ to: "/settings" })}>

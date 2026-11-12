@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** The new-message chime can be turned off. **Message
+chime** in the account menu mutes it for this browser, in every guild
+and organisation; reported issues still ring and desktop
+notifications are unchanged. The browser remembers the choice in
+`guilds-message-chime-muted`.
+
 **Rebuild.** Every code task's brief tells the harness what it
 cannot reach, where it runs, and who reads its final message. `gh` and
 the GitHub API have no token there, so the harness asks in its final

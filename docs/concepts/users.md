@@ -98,6 +98,11 @@ and organisation. Its menu:
 - switches organisation when the user has several memberships
   ([Organisations](organisations.md))
 - sets the theme: **Match system**, **Light**, or **Dark**
+- turns the **Message chime** on or off for this browser, in every
+  guild and organisation. Off silences the chime for new messages
+  ([Group chat](group-chat.md#in-the-app)); reported issues still
+  ring ([Inbox and issues](inbox.md#alert-severity)), and desktop
+  notifications are unchanged
 - turns **Desktop notifications** on or off for this browser, when
   the browser supports them. Turning them on asks the browser's
   permission ([Group chat](group-chat.md#in-the-app))
