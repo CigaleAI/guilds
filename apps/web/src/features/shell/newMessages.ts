@@ -2,11 +2,14 @@ import { useLocation } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import type { MessageNotice } from "../../api/types/chat";
 import { useIdentity } from "../../app/identity";
+import { readStored } from "../../app/storage";
 import { playChime, primeChime } from "./chime";
 import { useDesktopNotification } from "./desktopNotifications";
 
 /** The least time between two chimes, so a burst of replies rings once. */
 export const chimeGapMs = 2000;
+/** Whether the operator turned the new-message chime off in this browser. */
+export const messageChimeMutedKey = "guilds-message-chime-muted";
 
 export type Reader = {
   /** The operator's name, as messages carry it. */
@@ -49,8 +52,9 @@ export function useChime(): () => void {
 }
 
 /**
- * Announces a message the operator would otherwise miss: `chime` rings, and a desktop
- * notification shows when they turned those on. Feed it the inbox stream's notices.
+ * Announces a message the operator would otherwise miss: `chime` rings unless they turned the
+ * message chime off in this browser, and a desktop notification shows when they turned those on.
+ * Feed it the inbox stream's notices.
  */
 export function useNewMessageAlerts(chime: () => void): (notice: MessageNotice) => void {
   const { user } = useIdentity();
@@ -58,7 +62,7 @@ export function useNewMessageAlerts(chime: () => void): (notice: MessageNotice) 
   const notify = useDesktopNotification();
   return (notice) => {
     if (!announces(notice, { name: user.name, pathname, attending: isAttending() })) return;
-    chime();
+    if (readStored(messageChimeMutedKey) !== "true") chime();
     notify(notice);
   };
 }

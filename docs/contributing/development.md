@@ -288,12 +288,15 @@ without a browser and test the functions a module exports:
 - in the design system, the content parsers: embeds, mentions,
   highlighting, and prompt blocks
 
-A hook that writes to the page is tested mounted: the test installs
-a `happy-dom` window as the globals, sets `NODE_ENV` to `test`, then
-imports React DOM, the query client, and the router, which pick
-browser or server as they load. It renders the hook under a
-`QueryClient` and a memory-history router, changes the query data,
-and restores the globals and `NODE_ENV` when it ends.
+A hook or a component that writes to the page is tested mounted: the
+test installs a `happy-dom` window as the globals, sets `NODE_ENV` to
+`test`, then imports React DOM, the query client, and the router,
+which pick browser or server as they load. It renders under a
+memory-history router, and under a `QueryClient` when it reads
+queries, changes the query data or acts on the page, and restores the
+globals and `NODE_ENV` when it ends. A menu also needs the window's
+DOM and event classes as globals, since its panel creates events and
+checks elements.
 
 `fixtures/compat/` holds the frozen contracts, one directory per
 surface: HTTP routes, SSE and WebSocket frames, crypto, adapters,

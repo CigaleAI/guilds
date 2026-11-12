@@ -218,7 +218,10 @@ The **Group chat** tab is the guild's home, at `/guilds/<id>`.
   shown and the window focused. Other guild tabs, such as Settings,
   still ring. One's own messages never ring, and replies within two
   seconds of a chime ring once. The browser allows sound only after
-  the operator has clicked or typed in the page once.
+  the operator has clicked or typed in the page once. **Message chime**
+  in the account menu turns it off for this browser; issues still
+  ring and desktop notifications still show
+  ([Users](users.md#the-account-menu)).
 - The same messages show as a desktop notification once the operator
   turns **Desktop notifications** on in the account menu
   ([Users](users.md#the-account-menu)). It names the author and the
