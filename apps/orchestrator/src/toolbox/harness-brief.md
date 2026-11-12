@@ -21,6 +21,10 @@ your work, and nobody answers questions while you work.
   the task's repository, under `repos/` in the agent's home (`$HOME`).
 - The home stays between tasks, with its clones, caches, and
   toolchains. Everything outside it goes with the container.
+- Your own configuration in the home is removed before every task:
+  instruction files, rules, memory, skills, hooks. Do not write there
+  to remember something. What a later task needs goes in your final
+  message.
 - git, Node.js, Python, build tools, and ripgrep are installed.
   `mise` installs other language toolchains.
 - A server you start listens on a port of `$GUILDS_PORTS`. `$PORT` is

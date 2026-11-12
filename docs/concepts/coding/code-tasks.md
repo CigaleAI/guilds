@@ -270,7 +270,7 @@ harness and every task. It has three parts:
 | Part | Says |
 | --- | --- |
 | What you cannot reach | `gh` and the GitHub API have no token, and what the task needs from GitHub is in the brief or asked for in the final message. The harness may commit on the current branch, and never pushes or opens pull requests. It cannot reach the operator, and stops and asks in its final message when it is blocked or needs a decision |
-| Where you run | A Linux container, as root, in a clone under `repos/` in the agent's home. The home stays between tasks. git, Node.js, Python, build tools, ripgrep, and `mise` are installed. A server listens on a port of `GUILDS_PORTS` |
+| Where you run | A Linux container, as root, in a clone under `repos/` in the agent's home. The home stays between tasks, but the harness's own configuration in it (instruction files, rules, memory, skills, hooks) is removed before every task, so what a later task needs goes in the final message. git, Node.js, Python, build tools, ripgrep, and `mise` are installed. A server listens on a port of `GUILDS_PORTS` |
 | Your final message | An agent reads it: what changed, what ran and whether it passed, what is left, and the question it stopped on, with nothing else |
 
 The preamble reaches a harness through the brief because `start`
