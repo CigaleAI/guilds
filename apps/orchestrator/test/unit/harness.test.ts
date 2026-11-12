@@ -190,6 +190,10 @@ describe("code_task with the Claude Code driver", () => {
     assert.ok(!call.argv.includes("--resume"));
     assert.equal(realpathSync(call.cwd), realpathSync(repo));
     assert.ok(call.stdin.startsWith(BRIEF_PREAMBLE), "the prompt reaches the CLI on stdin");
+    for (const part of ["# What you cannot reach", "# Where you run", "# Your final message"]) {
+      assert.ok(call.stdin.includes(part), `the harness reads ${part}`);
+      assert.ok(call.stdin.indexOf(part) < call.stdin.indexOf("# Task"), `${part} comes before the task`);
+    }
     assert.ok(call.stdin.includes("Make the greeting name the guild."));
     assert.ok(!call.argv.some((arg) => arg.includes("Make the greeting")), "never on its command line");
     assert.equal(call.env.IS_SANDBOX, "1");

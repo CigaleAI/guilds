@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Every code task's brief tells the harness what it
+cannot reach, where it runs, and who reads its final message. `gh` and
+the GitHub API have no token there, so the harness asks in its final
+message for what it needs from GitHub. Its own configuration in the
+agent's home is removed before each task. Its final message is read by
+the agent, and holds only what changed, what ran, what is left, and
+its question. The text is
+`apps/orchestrator/src/toolbox/harness-brief.md`.
+
 **Rebuild.** An issue can be `blocking`. Filing one with
 `report_issue` ends the agent's generation at once, and the agent is
 disabled until someone resolves the issue: a direct message to it is refused with the
