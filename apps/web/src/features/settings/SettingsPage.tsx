@@ -3,11 +3,12 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useOrgModels } from "../../api/queries/models";
 import { useOrgUsage, useUpdateProfile, useUpdateOrg } from "../../api/queries/org";
 import { switchOrg } from "../../api/identity";
+import { issueSeverities } from "../../api/types/issues";
 import type { UsageTotals } from "../../api/types/org";
 import { agentLook } from "../../app/agents";
 import { formatCost } from "../../app/format";
 import { useIdentity } from "../../app/identity";
-import { issueAlertLabel, issueSeverities } from "../../app/issues";
+import { issueAlertLabel } from "../../app/issues";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
   Button,

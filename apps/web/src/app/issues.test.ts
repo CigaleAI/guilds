@@ -56,6 +56,8 @@ test("an agent is disabled by its oldest open blocking issue, and by no one else
   assert.equal(issueDisabling("agent_1", issues)?.id, "older");
   assert.equal(issueDisabling("agent_2", issues)?.id, "other");
   assert.equal(issueDisabling("agent_3", issues), undefined);
+  const sameInstant = [issue({ id: "iss_b" }), issue({ id: "iss_a" })];
+  assert.equal(issueDisabling("agent_1", sameInstant)?.id, "iss_a", "the lowest id at one instant");
 });
 
 test("the severity filter keeps every issue, or those of one level", () => {

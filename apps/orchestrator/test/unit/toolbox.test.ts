@@ -77,8 +77,8 @@ test("script_run schema from type hints", () => {
   const severity = REGISTRY.report_issue!.schema.function.parameters.properties?.severity;
   assert.ok(typeof severity === "object");
   assert.deepEqual(severity.enum, [
-    "medium",
     "low",
+    "medium",
     "high",
     "blocking",
   ]);

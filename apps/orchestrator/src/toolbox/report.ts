@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { ISSUE_SEVERITIES } from "../issues/index.js";
 import { nativeTool } from "./types.js";
 import { ToolUnavailableError } from "./errors.js";
 
@@ -26,7 +27,7 @@ export const reportIssue = nativeTool({
     }),
     severity: Type.Optional(
       Type.String({
-        enum: ["medium", "low", "high", "blocking"],
+        enum: [...ISSUE_SEVERITIES],
         description: "optional; defaults to medium. blocking ends this run and disables this agent until the operator resolves the issue",
       }),
     ),

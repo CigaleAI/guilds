@@ -5,7 +5,7 @@ import {
   lazyRouteComponent,
   type SearchSchemaInput,
 } from "@tanstack/react-router";
-import type { IssueSeverity } from "../api/types/issues";
+import { issueSeverities, type IssueSeverity } from "../api/types/issues";
 import { isString, type JsonObject, type JsonValue } from "../api/wire";
 import type { RevealStep } from "../features/agent/chat/FlowView";
 import type { ChatSearch } from "../features/agent/chat/SessionChrome";
@@ -15,7 +15,6 @@ import type { TableTab } from "../features/tables/TablesPage";
 import { parseStudioSearch, type StudioSearch } from "../features/studio/location";
 import { NotFound } from "../features/home/NotFound";
 import { AppShell } from "../features/shell/AppShell";
-import { issueSeverities } from "./issues";
 
 const rootRoute = createRootRoute({ component: AppShell, notFoundComponent: NotFound });
 

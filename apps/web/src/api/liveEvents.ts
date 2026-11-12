@@ -5,7 +5,7 @@
 
 import type { AgentBrief, AgentChange } from "./types/agents";
 import type { DeliveryError, GroupChatState, GroupMessage, MessageNotice } from "./types/chat";
-import type { IssueNotice, IssueSeverity } from "./types/issues";
+import { issueSeverities, type IssueNotice, type IssueSeverity } from "./types/issues";
 import type {
   LiveDelta,
   MessagePayload,
@@ -134,7 +134,7 @@ export function isMessageNotice(data: unknown): data is MessageNotice {
 }
 
 function isIssueSeverity(value: unknown): value is IssueSeverity {
-  return value === "low" || value === "medium" || value === "high" || value === "blocking";
+  return issueSeverities.some((severity) => severity === value);
 }
 
 export function isIssueNotice(data: unknown): data is IssueNotice {

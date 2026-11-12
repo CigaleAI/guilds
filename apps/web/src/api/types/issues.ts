@@ -7,8 +7,11 @@ import type { AgentBrief } from "./agents";
 
 export type IssueKind = "tool_failure" | "truncated" | "api" | "other";
 
-/** How severe an issue is, the least severe first. An open `blocking` issue disables its agent. */
-export type IssueSeverity = "low" | "medium" | "high" | "blocking";
+/** The severities an issue may have, the least severe first. */
+export const issueSeverities = ["low", "medium", "high", "blocking"] as const;
+
+/** How severe an issue is. An open `blocking` issue disables its agent. */
+export type IssueSeverity = (typeof issueSeverities)[number];
 
 export type IssueStatus = "open" | "resolved";
 

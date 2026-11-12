@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox";
+import { ISSUE_SEVERITIES } from "../issues/index.js";
 import { GuildNameTaken, LastOrgOwner } from "../db/errors.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
@@ -137,9 +138,7 @@ export const ProfileChangeSchema = Type.Object({
   name: Type.Optional(Type.String()),
   timezone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   color: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  issue_alert_severity: Type.Optional(
-    Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high"), Type.Literal("blocking")]),
-  ),
+  issue_alert_severity: Type.Optional(Type.Union(ISSUE_SEVERITIES.map((severity) => Type.Literal(severity)))),
 });
 
 export type ProfileChange = Static<typeof ProfileChangeSchema>;

@@ -14349,8 +14349,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -15206,8 +15206,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -16176,8 +16176,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -17034,8 +17034,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -17894,8 +17894,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -29454,8 +29454,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -30313,8 +30313,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -31171,8 +31171,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -32030,8 +32030,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -32888,8 +32888,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],
@@ -33937,8 +33937,8 @@
                       "severity": {
                         "type": "string",
                         "enum": [
-                          "medium",
                           "low",
+                          "medium",
                           "high",
                           "blocking"
                         ],

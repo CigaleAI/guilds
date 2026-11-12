@@ -1,14 +1,6 @@
 import { issueSeverityLabel, type SegmentedOption } from "@guildsrun/ui";
 import { useOpenIssues } from "../api/queries/issues";
-import type { Issue, IssueSeverity } from "../api/types/issues";
-
-/** The severities an issue may have, the least severe first. */
-export const issueSeverities = [
-  "low",
-  "medium",
-  "high",
-  "blocking",
-] as const satisfies readonly IssueSeverity[];
+import { issueSeverities, type Issue, type IssueSeverity } from "../api/types/issues";
 
 /** Whether an issue of `severity` is at least as severe as `floor`. */
 export function reachesSeverity(severity: IssueSeverity, floor: IssueSeverity): boolean {
@@ -20,14 +12,17 @@ export function disablesAgent(issue: Pick<Issue, "status" | "severity" | "agent_
   return issue.status === "open" && issue.severity === "blocking" && issue.agent_id !== null;
 }
 
-/** The issue that disables the agent, the oldest when several do; undefined while none does. */
+/**
+ * The issue that disables the agent: the oldest when several do, the lowest id among those filed
+ * at the same instant, as the orchestrator names it. Undefined while none does.
+ */
 export function issueDisabling<T extends Issue>(
   agentId: string,
   issues: readonly T[],
 ): T | undefined {
   return issues
     .filter((issue) => issue.agent_id === agentId && disablesAgent(issue))
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))[0];
 }
 
 /** The open blocking issue that disables the guild's agent; undefined while none does. */
