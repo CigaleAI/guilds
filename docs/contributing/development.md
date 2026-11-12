@@ -381,7 +381,9 @@ complexity of 11 and at five parameters, a warning past 800 lines
 and, from the limits plugin (`lint/limits.js`), an error past 1,000, a refusal of
 a function that holds more than one block of nested conditional logic (`bumpy-road`: a
 conditional or loop statement at the top of its body that holds another, the statements of a
-function declared inside it counting towards it and a method's towards the method), a refusal of
+function declared inside it counting towards it and a method's towards the method; Oxlint's own
+`complexity` and `max-depth` stop at a function boundary, so a closure's branches count only
+here), a refusal of
 every type assertion except `as const`, and a refusal of a silent
 catch: a `catch` that neither throws nor returns, a `catch` whose
 only exit is a bare `return;`, and a promise's `.catch()` whose
@@ -429,6 +431,11 @@ take `unknown` and check it, so `no-unknown-parameters` and
 and `parse` modules in the orchestrator and in `src/api/wire.ts`
 in the operator app. The operator app and the design system also
 run the React correctness rules, `jsx-key` among them.
+
+The rules of `lint/` are tested code: each custom rule has a test
+beside it (`lint/*.test.ts`, `lint/anti-slop/rules/*.test.ts`), and
+`pnpm test:lint-rules`, the `lint-rules` step of the check, runs
+them.
 
 `pnpm lint` runs Oxlint through `scripts/lint.mjs`, which subtracts
 the errors that predate the rules, recorded in the package's
