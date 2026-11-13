@@ -156,6 +156,10 @@ A collection opens at `/tables/<id>` on **Records**.
     - "contains" for any other text or list column
   - **Add record**, or clicking a row, opens the record dialog
     ([below](#the-record-dialog)).
+  - The pencil in a column's cell, shown on hover or focus, edits that
+    one value in place. It opens the dialog's field for the column,
+    with **Cancel** and **Save changes**, and checks and sends the value
+    as the dialog does. `id` and `updated_at` have no pencil.
   - The delete button on a row removes the record after a confirm.
     Its id is not reused.
   - **Delete all** empties the collection after a confirm that asks
@@ -220,8 +224,8 @@ description under it and `*` on a required column:
 | `array` | comma-separated items; blank items are dropped |
 
 An empty field means no value. The dialog checks each field before it
-sends: a number, `true` or `false`, a date and time, and every
-required column set. A saved record also shows its version, who
+sends: a number, `true` or `false`, a date and time, only allowed
+values in a list it changes, and every required column set. A saved record also shows its version, who
 changed it last, and the provenance strip
 ([Artifact store](artifacts.md#every-change-is-recorded)). A field
 whose stored value no longer fits its column is flagged.
