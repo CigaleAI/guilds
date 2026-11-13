@@ -24,7 +24,7 @@ import { LatestChange, useOpenStepInAgent } from "../notes/LatestChange";
 
 const unset = "__unset__";
 
-type FieldProps = {
+type RecordFieldProps = {
   column: Column;
   text: string;
   onChange: (text: string) => void;
@@ -32,7 +32,7 @@ type FieldProps = {
 };
 
 /** A column's field: a pick among its values, a text area for free text, or a typed input. */
-function Field({ column, text, onChange, error }: FieldProps) {
+function RecordField({ column, text, onChange, error }: RecordFieldProps) {
   const label = column.required ? `${column.name} *` : column.name;
   const labels = { label, hint: column.description, ...(error ? { error } : {}) };
   if (column.type === "boolean" || (column.type === "text" && column.values?.length)) {
@@ -251,7 +251,7 @@ function RecordForm({ collection, record, onClose }: RecordFormProps) {
         ) : null}
         {collection.columns.map((column) => (
           <div key={column.name} className="flex flex-col gap-1">
-            <Field
+            <RecordField
               column={column}
               text={texts[column.name] ?? ""}
               onChange={(text) => setTexts({ ...texts, [column.name]: text })}
