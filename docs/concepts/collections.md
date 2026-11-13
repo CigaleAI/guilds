@@ -225,7 +225,7 @@ description under it and `*` on a required column:
 
 An empty field means no value. The dialog checks each field before it
 sends: a number, `true` or `false`, a date and time, only allowed
-values in a list, and every required column set. A saved record also shows its version, who
+values in a list it changes, and every required column set. A saved record also shows its version, who
 changed it last, and the provenance strip
 ([Artifact store](artifacts.md#every-change-is-recorded)). A field
 whose stored value no longer fits its column is flagged.

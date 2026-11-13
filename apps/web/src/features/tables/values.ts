@@ -118,6 +118,26 @@ export function fieldError(text: string, column: Column): string | undefined {
 }
 
 /**
+ * Why a record's fields cannot be saved, by column name. A field left as loaded is not checked
+ * against its column's allowed values: saving does not send it. Texts and loaded texts are by
+ * column name.
+ */
+export function recordErrors(
+  columns: readonly Column[],
+  texts: Record<string, string>,
+  loaded: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    columns.flatMap((column) => {
+      const text = texts[column.name] ?? "";
+      const unchanged = text === (loaded[column.name] ?? "");
+      const error = fieldError(text, unchanged ? { ...column, values: [] } : column);
+      return error ? [[column.name, error]] : [];
+    }),
+  );
+}
+
+/**
  * What saving a record's fields sends: each column whose text differs from the loaded one and
  * parses, with its value; null clears it. Texts and loaded texts are by column name.
  */

@@ -19,7 +19,7 @@ import {
   Icon,
   type FormFieldText,
 } from "@guildsrun/ui";
-import { fieldError, fieldText, fits, parseField, recordChanges } from "./values";
+import { fieldText, fits, parseField, recordChanges, recordErrors } from "./values";
 import { LatestChange, useOpenStepInAgent } from "../notes/LatestChange";
 
 const unset = "__unset__";
@@ -186,12 +186,7 @@ function RecordForm({ collection, record, onClose }: RecordFormProps) {
     column,
     result: parseField(texts[column.name] ?? "", column),
   }));
-  const errors = Object.fromEntries(
-    collection.columns.flatMap((column) => {
-      const error = fieldError(texts[column.name] ?? "", column);
-      return error ? [[column.name, error]] : [];
-    }),
-  );
+  const errors = recordErrors(collection.columns, texts, initial);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

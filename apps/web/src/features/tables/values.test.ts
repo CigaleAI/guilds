@@ -13,6 +13,7 @@ import {
   isTableTab,
   parseField,
   recordChanges,
+  recordErrors,
   tableNameError,
   whereOf,
 } from "./values";
@@ -69,6 +70,24 @@ test("a list column with allowed values takes only those values", () => {
   assert.deepEqual(parseField("red, blue", tags), { value: ["red", "blue"] });
   assert.deepEqual(parseField("red, green", tags), { error: "Only red, blue." });
   assert.equal(fieldError("green", tags), "Only red, blue.");
+});
+
+test("a record's list left as loaded keeps values it no longer allows; a changed one cannot", () => {
+  const columns = [column("note", "text"), column("tags", "array", { values: ["red", "blue"] })];
+  const loaded = { note: "a", tags: "red, green" };
+  assert.deepEqual(recordErrors(columns, { note: "b", tags: "red, green" }, loaded), {});
+  assert.deepEqual(recordErrors(columns, { note: "a", tags: "green" }, loaded), {
+    tags: "Only red, blue.",
+  });
+  assert.deepEqual(recordErrors(columns, { note: "a", tags: "red, blue" }, loaded), {});
+});
+
+test("a record's field left as loaded is still checked for its type and being required", () => {
+  const columns = [column("score", "number"), column("name", "text", { required: true })];
+  assert.deepEqual(recordErrors(columns, { score: "abc", name: "" }, { score: "abc", name: "" }), {
+    score: "A number.",
+    name: "Required.",
+  });
 });
 
 test("a field's error is why its text does not parse, or that a required column is empty", () => {
