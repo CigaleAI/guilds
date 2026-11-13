@@ -224,8 +224,8 @@ description under it and `*` on a required column:
 | `array` | comma-separated items; blank items are dropped |
 
 An empty field means no value. The dialog checks each field before it
-sends: a number, `true` or `false`, a date and time, and every
-required column set. A saved record also shows its version, who
+sends: a number, `true` or `false`, a date and time, only allowed
+values in a list, and every required column set. A saved record also shows its version, who
 changed it last, and the provenance strip
 ([Artifact store](artifacts.md#every-change-is-recorded)). A field
 whose stored value no longer fits its column is flagged.

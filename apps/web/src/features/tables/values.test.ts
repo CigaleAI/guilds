@@ -64,6 +64,13 @@ test("form text becomes a typed value, null when empty", () => {
   assert.equal(fieldText(["a", "b"], column("tags", "array")), "a, b");
 });
 
+test("a list column with allowed values takes only those values", () => {
+  const tags = column("tags", "array", { values: ["red", "blue"] });
+  assert.deepEqual(parseField("red, blue", tags), { value: ["red", "blue"] });
+  assert.deepEqual(parseField("red, green", tags), { error: "Only red, blue." });
+  assert.equal(fieldError("green", tags), "Only red, blue.");
+});
+
 test("a field's error is why its text does not parse, or that a required column is empty", () => {
   assert.equal(fieldError("abc", column("score", "number")), "A number.");
   assert.equal(fieldError(" ", column("score", "number", { required: true })), "Required.");

@@ -95,13 +95,19 @@ export function parseField(
         : { value: date.toISOString() };
     }
     case "array":
-      return {
-        value: trimmed
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-      };
+      return parseListField(trimmed, column);
   }
+}
+
+/** What a list column's comma-separated text means: its items, or that one is not an allowed value. */
+function parseListField(text: string, column: Column): { value: string[] } | { error: string } {
+  const items = text
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.every((item) => isAllowedValue(column, item))
+    ? { value: items }
+    : { error: `Only ${(column.values ?? []).join(", ")}.` };
 }
 
 /** Why the form's text cannot be saved in its column; undefined when it can. */
