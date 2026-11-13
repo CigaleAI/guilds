@@ -1,6 +1,6 @@
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Clock, Plus } from "lucide-react";
+import { Clock, Plus, Sparkles } from "lucide-react";
 import { useAgentRuns, useRun } from "../../../api/queries/runs";
 import { useAgentSchedules } from "../../../api/queries/schedules";
 import type { Run } from "../../../api/types/runs";
@@ -105,12 +105,40 @@ export function useChatSession() {
   };
 }
 
-/** Clock opens the session drawer; plus starts a new session. */
+/** Studio's start at the open run of the agent's guild, at the call or message the Chat opens at. */
+export function studioStartAtRun(guildId: string, agentId: string, runId: string, search: ChatSearch) {
+  return {
+    guild: guildId,
+    agent: agentId,
+    run: runId,
+    ...(search.call ? { call: search.call } : {}),
+    ...(search.seq !== undefined ? { seq: search.seq } : {}),
+  };
+}
+
+/** Sparkles opens the open run in Studio; clock opens the session drawer; plus starts a new session. */
 export function ChatSessionChrome() {
-  const { search, selectRun, toggleHistory } = useChatSession();
+  const { guildId, agentId, search, runId, selectRun, toggleHistory } = useChatSession();
+  const navigate = useNavigate();
 
   return (
     <div className="flex shrink-0 items-center gap-1 border-l border-line py-1 pr-3 pl-2 md:pr-6">
+      {runId ? (
+        <Tooltip label="Debug in Studio">
+          <IconButton
+            icon={Sparkles}
+            label="Debug in Studio"
+            variant="ghost"
+            size={28}
+            onClick={() =>
+              void navigate({
+                to: "/studio",
+                search: studioStartAtRun(guildId, agentId, runId, search),
+              })
+            }
+          />
+        </Tooltip>
+      ) : null}
       <Tooltip label={search.history ? "Hide history" : "Session history"}>
         <IconButton
           icon={Clock}

@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { StudioFocus } from "../../api/types/studio";
-import { agentTab, focusLocation, parseStudioSearch, revealedStep, tablePathOf } from "./location";
+import { studioStartAtRun } from "../agent/chat/SessionChrome";
+import {
+  agentTab,
+  focusLocation,
+  landingSessionLocation,
+  parseStudioLandingSearch,
+  parseStudioSearch,
+  revealedStep,
+  runHistoryLocation,
+  tablePathOf,
+} from "./location";
 
 /** A pin of `kind` naming only the ids given, on no agent unless they name one. */
 function pin(fields: Pick<StudioFocus, "kind"> & Partial<StudioFocus>): StudioFocus {
@@ -156,6 +166,94 @@ test("an agent opens on the tab asked for, else where a request waits, else Prom
   assert.equal(agentTab("scripts", ["memory"], tabs), "memory");
   assert.equal(agentTab(undefined, ["list", "draft"], tabs), "draft");
   assert.equal(agentTab(undefined, [], tabs), "prompt");
+});
+
+test("a run's History location opens the agent's History on the run, at the step given", () => {
+  assert.deepEqual(runHistoryLocation("a_1", "r_1", { call: "c_1", seq: 0 }), {
+    section: "agents",
+    agent: "a_1",
+    tab: "history",
+    item: "r_1",
+    call: "c_1",
+    seq: 0,
+  });
+  assert.deepEqual(runHistoryLocation("a_1", "r_1", {}), {
+    section: "agents",
+    agent: "a_1",
+    tab: "history",
+    item: "r_1",
+  });
+});
+
+test("Studio's start keeps its guild, and with it a run named by its agent and id, at a step", () => {
+  assert.deepEqual(
+    parseStudioLandingSearch({ guild: "g_1", agent: "a_1", run: "r_1", call: "c_1", seq: "2" }),
+    { guild: "g_1", agent: "a_1", run: "r_1", call: "c_1", seq: 2 },
+  );
+  assert.deepEqual(parseStudioLandingSearch({ guild: "g_1", agent: "a_1", run: "r_1", seq: "-1" }), {
+    guild: "g_1",
+    agent: "a_1",
+    run: "r_1",
+  });
+  assert.deepEqual(parseStudioLandingSearch({ guild: "g_1" }), { guild: "g_1" });
+  assert.deepEqual(parseStudioLandingSearch({}), {});
+});
+
+test("Studio's start drops a run without its guild, and an agent or run without the other", () => {
+  assert.deepEqual(parseStudioLandingSearch({ agent: "a_1", run: "r_1" }), {});
+  assert.deepEqual(parseStudioLandingSearch({ guild: "g_1", run: "r_1", call: "c_1" }), {
+    guild: "g_1",
+  });
+  assert.deepEqual(parseStudioLandingSearch({ guild: "g_1", agent: "a_1", seq: "3" }), {
+    guild: "g_1",
+  });
+});
+
+test("a session on the start's guild opens at the run it names, in its agent's History", () => {
+  const link = { guild: "g_1", agent: "a_1", run: "r_1", call: "c_1", seq: 4 };
+  assert.deepEqual(landingSessionLocation(link, "g_1"), {
+    section: "agents",
+    agent: "a_1",
+    tab: "history",
+    item: "r_1",
+    call: "c_1",
+    seq: 4,
+  });
+  assert.deepEqual(landingSessionLocation({ guild: "g_1", agent: "a_1", run: "r_1" }, "g_1"), {
+    section: "agents",
+    agent: "a_1",
+    tab: "history",
+    item: "r_1",
+  });
+});
+
+test("a session on another guild, or a start naming no run, opens where it would anyway", () => {
+  assert.equal(landingSessionLocation({ guild: "g_1", agent: "a_1", run: "r_1" }, "g_2"), null);
+  assert.equal(landingSessionLocation({ guild: "g_1" }, "g_1"), null);
+  assert.equal(landingSessionLocation({}, "g_1"), null);
+});
+
+/** A search as a URL holds it: each value as text. */
+function asUrl(search: Record<string, string | number>): Record<string, string> {
+  return Object.fromEntries(Object.entries(search).map(([key, value]) => [key, String(value)]));
+}
+
+test("a run open in Chat opens the same run and step in Studio's History, from a link or a refresh", () => {
+  const start = parseStudioLandingSearch(
+    asUrl(studioStartAtRun("g_1", "a_1", "r_1", { run: "r_1", call: "c_1", seq: 4 })),
+  );
+  const location = landingSessionLocation(start, "g_1");
+  assert.deepEqual(location, {
+    section: "agents",
+    agent: "a_1",
+    tab: "history",
+    item: "r_1",
+    call: "c_1",
+    seq: 4,
+  });
+  assert.ok(location);
+  assert.deepEqual(parseStudioSearch(asUrl(location)), location);
+  assert.deepEqual(revealedStep(parseStudioSearch(asUrl(location))), { call: "c_1", seq: 4 });
 });
 
 test("a location reveals the call and the row it names in its run", () => {

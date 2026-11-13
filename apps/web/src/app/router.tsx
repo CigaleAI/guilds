@@ -12,7 +12,12 @@ import type { ChatSearch } from "../features/agent/chat/SessionChrome";
 import { GuildChatPage, GuildWorkspace } from "../features/guild/GuildWorkspace";
 import { Home } from "../features/home/Home";
 import type { TableTab } from "../features/tables/TablesPage";
-import { parseStudioSearch, type StudioSearch } from "../features/studio/location";
+import {
+  parseStudioLandingSearch,
+  parseStudioSearch,
+  type StudioLandingSearch,
+  type StudioSearch,
+} from "../features/studio/location";
 import { NotFound } from "../features/home/NotFound";
 import { AppShell } from "../features/shell/AppShell";
 
@@ -124,17 +129,11 @@ const applyRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/recipes/ApplyPage"), "ApplyPage"),
 });
 
-/** The guild Studio's start opens on, when a link names one. */
-type StudioLandingSearch = { guild?: string };
-
 const studioRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/studio",
   component: lazyRouteComponent(() => import("../features/studio/StudioLanding"), "StudioLanding"),
-  validateSearch: (search: JsonObject): StudioLandingSearch => {
-    const guild = searchText(search.guild);
-    return guild ? { guild } : {};
-  },
+  validateSearch: (search: JsonObject): StudioLandingSearch => parseStudioLandingSearch(search),
 });
 
 const studioSessionRoute = createRoute({

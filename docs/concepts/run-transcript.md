@@ -226,6 +226,10 @@ transcript, streaming while it generates. With it, `&call=<tool call
 id>` or `&seq=<n>` also opens that step, lit, and scrolls to it.
 `history=true` opens the **History** drawer beside it.
 
+**Debug in Studio** in the tab strip, shown while a run is open,
+opens that run and step in Studio's **History**
+([Prompt Studio](prompt-studio.md#opening-studio)).
+
 ## Reference
 
 ### Live updates
