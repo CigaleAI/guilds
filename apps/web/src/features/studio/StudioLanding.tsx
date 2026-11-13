@@ -1,6 +1,6 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useCreateStudioSession, useStudioSessions } from "../../api/queries/studio";
 import { useGuilds } from "../../api/queries/guilds";
 import { useOrgModels } from "../../api/queries/models";
@@ -11,6 +11,7 @@ import { useIdentity } from "../../app/identity";
 import { messageTime } from "../../app/format";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { modelOptions, preselectedModel } from "../models/models";
+import { landingSessionLocation, type StudioLandingSearch } from "./location";
 import {
   Button,
   Select,
@@ -23,10 +24,12 @@ import {
 } from "@guildsrun/ui";
 /**
  * Studio's start: a coach session on one guild. An open session resumes; a new one picks the
- * coach's model and temperature.
+ * coach's model and temperature. A link that names a run of the guild resumes the latest active
+ * session there at that run, and without one any session started or opened here opens at it.
  */
 export function StudioLanding() {
   const search = useSearch({ from: "/studio" });
+  const navigate = useNavigate();
   const guilds = useGuilds();
   const sessions = useStudioSessions();
   const { org } = useIdentity();
@@ -36,6 +39,21 @@ export function StudioLanding() {
   const listed = (sessions.data ?? []).filter(
     (session) => !guildId || session.source_guild_id === guildId,
   );
+
+  useEffect(() => {
+    const live = sessions.data?.find(
+      (session) => session.source_guild_id === search.guild && session.status === "active",
+    );
+    const location = live ? landingSessionLocation(search, live.source_guild_id) : null;
+    if (live && location) {
+      void navigate({
+        to: "/studio/$sessionId",
+        params: { sessionId: live.id },
+        search: location,
+        replace: true,
+      });
+    }
+  }, [sessions.data, search, navigate]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10">
@@ -54,6 +72,7 @@ export function StudioLanding() {
             guilds={guilds.data}
             models={models.data}
             guildId={guildId}
+            link={search}
             onGuildChange={setGuildId}
           />
         )}
@@ -62,6 +81,7 @@ export function StudioLanding() {
           title={guildId ? "Your sessions on this guild" : "Your sessions"}
           pending={sessions.isPending}
           sessions={listed}
+          link={search}
         />
       </div>
     </div>
@@ -73,11 +93,13 @@ type NewSessionFormProps = {
   models: OrgModels | undefined;
   /** The guild chosen; empty until one is, when the form offers the first guild. */
   guildId: string;
+  /** The start's link, whose run a session on its guild opens at. */
+  link: StudioLandingSearch;
   onGuildChange: (guildId: string) => void;
 };
 
 /** Starts a coach session on a guild with the model and temperature chosen. */
-function NewSessionForm({ guilds, models, guildId, onGuildChange }: NewSessionFormProps) {
+function NewSessionForm({ guilds, models, guildId, link, onGuildChange }: NewSessionFormProps) {
   const navigate = useNavigate();
   const create = useCreateStudioSession();
   const [model, setModel] = useState("");
@@ -90,11 +112,16 @@ function NewSessionForm({ guilds, models, guildId, onGuildChange }: NewSessionFo
     event.preventDefault();
     const value = Number(temperature);
     if (!chosenGuild || !chosenModel || !Number.isFinite(value) || value < 0 || value > 2) return;
+    const location = landingSessionLocation(link, chosenGuild);
     create.mutate(
       { guildId: chosenGuild, model: chosenModel, temperature: value },
       {
         onSuccess: (session) =>
-          void navigate({ to: "/studio/$sessionId", params: { sessionId: session.id } }),
+          void navigate({
+            to: "/studio/$sessionId",
+            params: { sessionId: session.id },
+            ...(location ? { search: location } : {}),
+          }),
       },
     );
   };
@@ -148,10 +175,16 @@ function NewSessionForm({ guilds, models, guildId, onGuildChange }: NewSessionFo
   );
 }
 
-type SessionListProps = { title: string; pending: boolean; sessions: StudioSession[] };
+type SessionListProps = {
+  title: string;
+  pending: boolean;
+  sessions: StudioSession[];
+  /** The start's link, whose run a session on its guild opens at. */
+  link: StudioLandingSearch;
+};
 
 /** The operator's sessions, each opening its workspace. */
-function SessionList({ title, pending, sessions }: SessionListProps) {
+function SessionList({ title, pending, sessions, link }: SessionListProps) {
   return (
     <section aria-label="Sessions" className="flex flex-col gap-2">
       <h2 className="type-label text-muted">{title}</h2>
@@ -160,23 +193,30 @@ function SessionList({ title, pending, sessions }: SessionListProps) {
       ) : sessions.length === 0 ? (
         <EmptyState icon={Sparkles} title="No sessions yet" description="Start one above." />
       ) : (
-        sessions.map((session) => (
-          <Row
-            key={session.id}
-            asChild
-            tone="surface"
-            interactive
-            title={session.source_guild?.name ?? session.source_guild_id}
-            meta={`${session.coach.model} · started ${messageTime(session.created_at)}${session.parent_session_id ? " · continues an earlier session" : ""}`}
-            trail={
-              <Tag tone={session.status === "active" ? "tide" : "well"} font="sans">
-                {session.status}
-              </Tag>
-            }
-          >
-            <Link to="/studio/$sessionId" params={{ sessionId: session.id }} />
-          </Row>
-        ))
+        sessions.map((session) => {
+          const location = landingSessionLocation(link, session.source_guild_id);
+          return (
+            <Row
+              key={session.id}
+              asChild
+              tone="surface"
+              interactive
+              title={session.source_guild?.name ?? session.source_guild_id}
+              meta={`${session.coach.model} · started ${messageTime(session.created_at)}${session.parent_session_id ? " · continues an earlier session" : ""}`}
+              trail={
+                <Tag tone={session.status === "active" ? "tide" : "well"} font="sans">
+                  {session.status}
+                </Tag>
+              }
+            >
+              <Link
+                to="/studio/$sessionId"
+                params={{ sessionId: session.id }}
+                {...(location ? { search: location } : {})}
+              />
+            </Row>
+          );
+        })
       )}
     </section>
   );

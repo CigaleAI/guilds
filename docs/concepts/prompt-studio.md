@@ -135,6 +135,12 @@ organisation's admission slots, like any generation.
 - **Investigate in Studio** on an issue card (the Inbox or the
   guild's **Issues** tab) always starts a new session (see
   [Focus pins](#focus-pins)).
+- **Debug in Studio** on a run open in an agent's Chat tab
+  ([Run transcript](run-transcript.md#in-the-app)) resumes your
+  active session on the guild at that run, in the agent's **History**
+  tab and at the step open in the chat. Without an active session it
+  opens the Studio landing for that guild; the session you start or
+  open there opens at the run.
 - **New session** in the workspace header opens the landing.
 
 The landing has the create form and your sessions on that guild, any
@@ -437,7 +443,12 @@ schema also allows `create`, which no route writes.
 ### Routes and location
 
 The workspace is at `/studio` and `/studio/<session_id>`. The landing
-for one guild is `/studio?guild=<id>`.
+for one guild is `/studio?guild=<id>`. With
+`&agent=<id>&run=<run id>`, and `&call=` or `&seq=` for a step, it
+resumes the latest active session on the guild at that run; without
+one, a session on that guild started or opened from the landing opens
+there. `agent` and `run` are kept only together and with `guild`;
+`apps/web/src/features/studio/location.ts` parses them.
 
 The inspector location is
 `/studio/<session_id>?section=…&agent=…&tab=…&kind=…&item=…&call=…&seq=…`.
@@ -454,7 +465,8 @@ keeps only its own fields:
 A link without a known `section` opens the guild's overview.
 A pinned file opens in State with the file selected; a pinned record
 opens its table. **Investigate in Studio** opens
-`section=agents&agent=<id>&tab=history&item=<run id>`.
+`section=agents&agent=<id>&tab=history&item=<run id>`, and a landing
+link that names a run the same, with its `call` or `seq`.
 
 The splitter's share persists in `localStorage` (`studio.split`), and
 so do the windows of State (`studio.state.hours`) and Tools

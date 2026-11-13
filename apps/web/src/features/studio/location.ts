@@ -150,6 +150,51 @@ export function parseStudioSearch(search: JsonObject): StudioSearch {
   return compact(sectionParsers[section](search));
 }
 
+/** What a link to Studio's start names: the guild to open on, and a run of it to open at. */
+export type StudioLandingSearch = {
+  guild?: string;
+  agent?: string;
+  run?: string;
+  call?: string;
+  seq?: number;
+};
+
+/**
+ * The start a URL names: its guild, and with the guild the run (its agent and id both) and the
+ * step in it.
+ */
+export function parseStudioLandingSearch(search: JsonObject): StudioLandingSearch {
+  const guild = text(search.guild);
+  const agent = text(search.agent);
+  const run = text(search.run);
+  if (!guild) return {};
+  if (!agent || !run) return { guild };
+  const call = text(search.call);
+  const seq = parseSeq(search.seq);
+  return {
+    guild,
+    agent,
+    run,
+    ...(call === undefined ? {} : { call }),
+    ...(seq === undefined ? {} : { seq }),
+  };
+}
+
+/**
+ * Where a session on `guildId` opens from the start: the run the link names, in its agent's
+ * History; null when the link names no run of that guild.
+ */
+export function landingSessionLocation(
+  search: StudioLandingSearch,
+  guildId: string,
+): StudioSearch | null {
+  if (search.guild !== guildId || !search.agent || !search.run) return null;
+  return runHistoryLocation(search.agent, search.run, {
+    ...(search.call === undefined ? {} : { call: search.call }),
+    ...(search.seq === undefined ? {} : { seq: search.seq }),
+  });
+}
+
 /** The step a location reveals in the run it selects: its call, its row, both, or neither. */
 export function revealedStep(search: StudioSearch): RevealStep {
   return {
@@ -175,15 +220,23 @@ export function tablePathOf(path: string): string | null {
   return match?.[1] ?? null;
 }
 
-function runLocation(focus: StudioFocus): StudioSearch | null {
-  if (!focus.agent_id || !focus.run_id) return null;
+/** A run in its agent's History, opened at the step given. */
+export function runHistoryLocation(agentId: string, runId: string, step: RevealStep): StudioSearch {
   return compact({
     section: "agents",
-    agent: focus.agent_id,
+    agent: agentId,
     tab: "history",
-    item: focus.run_id,
-    call: focus.call_id ?? undefined,
-    seq: focus.seq ?? undefined,
+    item: runId,
+    call: step.call,
+    seq: step.seq,
+  });
+}
+
+function runLocation(focus: StudioFocus): StudioSearch | null {
+  if (!focus.agent_id || !focus.run_id) return null;
+  return runHistoryLocation(focus.agent_id, focus.run_id, {
+    ...(focus.call_id !== null ? { call: focus.call_id } : {}),
+    ...(focus.seq !== null ? { seq: focus.seq } : {}),
   });
 }
 

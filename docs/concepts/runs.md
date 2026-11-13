@@ -193,7 +193,8 @@ run. The body of the tab is the
 - The tab strip carries a clock, **Session history**, that opens the
   **History** drawer (`?history=true`), and a plus, **New session**. A
   new session opened with the plus stays open while another run is
-  generating.
+  generating. While a run is open, sparkles, **Debug in Studio**, opens
+  it in Studio ([Prompt Studio](prompt-studio.md#opening-studio)).
 - On a coding agent, a coding strip sits under the tab strip
   ([Coding agents](coding/index.md)).
 

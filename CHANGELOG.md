@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** **Debug in Studio** in an agent's Chat tab opens the run
+on screen in Studio: your latest active session on the guild, on that
+agent's **History** tab at that run and the step open in the chat.
+Without an active session it opens the Studio landing for the guild,
+and the session started or opened there opens at the run. The landing
+takes `agent`, `run`, `call`, and `seq` beside `guild`.
+
 **Rebuild.** The new-message chime can be turned off. **Message
 chime** in the account menu mutes it for this browser, in every guild
 and organisation; reported issues still ring and desktop
