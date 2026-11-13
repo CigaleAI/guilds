@@ -2,6 +2,7 @@ import type {
   Column,
   ColumnInput,
   ColumnType,
+  RecordChanges,
   RecordCondition,
   RecordValue,
   RecordWhere,
@@ -101,6 +102,32 @@ export function parseField(
           .filter(Boolean),
       };
   }
+}
+
+/** Why the form's text cannot be saved in its column; undefined when it can. */
+export function fieldError(text: string, column: Column): string | undefined {
+  const result = parseField(text, column);
+  if ("error" in result) return result.error;
+  return column.required && result.value === null ? "Required." : undefined;
+}
+
+/**
+ * What saving a record's fields sends: each column whose text differs from the loaded one and
+ * parses, with its value; null clears it. Texts and loaded texts are by column name.
+ */
+export function recordChanges(
+  columns: readonly Column[],
+  texts: Record<string, string>,
+  loaded: Record<string, string>,
+): RecordChanges {
+  return Object.fromEntries(
+    columns.flatMap((column) => {
+      const text = texts[column.name] ?? "";
+      if (text === (loaded[column.name] ?? "")) return [];
+      const result = parseField(text, column);
+      return "value" in result ? [[column.name, result.value]] : [];
+    }),
+  );
 }
 
 /** A filter on one column: a value, or a range for numbers and times. */

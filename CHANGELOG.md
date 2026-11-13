@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A record's value can be changed from the records grid
+without opening the record. Each column cell has a pencil, shown on
+hover or focus, that opens the record dialog's field for that column
+with **Cancel** and **Save changes**. It checks the value as the
+dialog does and sends it only when it changed. `id` and `updated_at`
+have no pencil.
+
 **Rebuild.** **Debug in Studio** in an agent's Chat tab opens the run
 on screen in Studio: your latest active session on the guild, on that
 agent's **History** tab at that run and the step open in the chat.

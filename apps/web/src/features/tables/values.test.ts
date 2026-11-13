@@ -5,12 +5,14 @@ import {
   columnErrors,
   columnsForSave,
   describeChanges,
+  fieldError,
   fieldText,
   fits,
   isColumnType,
   isNewTableReady,
   isTableTab,
   parseField,
+  recordChanges,
   tableNameError,
   whereOf,
 } from "./values";
@@ -60,6 +62,56 @@ test("form text becomes a typed value, null when empty", () => {
   assert.deepEqual(parseField("a, b ,,c", column("tags", "array")), { value: ["a", "b", "c"] });
   assert.deepEqual(parseField("true", column("done", "boolean")), { value: true });
   assert.equal(fieldText(["a", "b"], column("tags", "array")), "a, b");
+});
+
+test("a field's error is why its text does not parse, or that a required column is empty", () => {
+  assert.equal(fieldError("abc", column("score", "number")), "A number.");
+  assert.equal(fieldError(" ", column("score", "number", { required: true })), "Required.");
+  assert.equal(fieldError("", column("score", "number")), undefined);
+  assert.equal(fieldError("3", column("score", "number", { required: true })), undefined);
+});
+
+test("saving fields sends each changed column of every type with its typed value", () => {
+  const columns = [
+    column("note", "text"),
+    column("status", "text", { values: ["watch", "ignore"] }),
+    column("score", "number"),
+    column("done", "boolean"),
+    column("due", "datetime"),
+    column("tags", "array"),
+  ];
+  const loaded = { note: "a", status: "watch", score: "1", done: "false", due: "", tags: "x" };
+  const texts = {
+    note: "b",
+    status: "ignore",
+    score: "2.5",
+    done: "true",
+    due: "2026-11-13T10:00",
+    tags: "x, y",
+  };
+  assert.deepEqual(recordChanges(columns, texts, loaded), {
+    note: "b",
+    status: "ignore",
+    score: 2.5,
+    done: true,
+    due: new Date("2026-11-13T10:00").toISOString(),
+    tags: ["x", "y"],
+  });
+});
+
+test("saving fields leaves out unchanged columns and clears emptied ones", () => {
+  const columns = [column("note", "text"), column("score", "number")];
+  assert.deepEqual(recordChanges(columns, { note: "a", score: "" }, { note: "a", score: "4" }), {
+    score: null,
+  });
+  assert.deepEqual(recordChanges(columns, { note: "a" }, { note: "a" }), {});
+});
+
+test("saving fields leaves out a column whose text does not parse", () => {
+  const columns = [column("score", "number"), column("note", "text")];
+  assert.deepEqual(recordChanges(columns, { score: "abc", note: "b" }, { score: "1", note: "a" }), {
+    note: "b",
+  });
 });
 
 test("filters become the server's where", () => {

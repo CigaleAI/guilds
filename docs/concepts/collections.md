@@ -156,6 +156,10 @@ A collection opens at `/tables/<id>` on **Records**.
     - "contains" for any other text or list column
   - **Add record**, or clicking a row, opens the record dialog
     ([below](#the-record-dialog)).
+  - The pencil in a column's cell, shown on hover or focus, edits that
+    one value in place. It opens the dialog's field for the column,
+    with **Cancel** and **Save changes**, and checks and sends the value
+    as the dialog does. `id` and `updated_at` have no pencil.
   - The delete button on a row removes the record after a confirm.
     Its id is not reused.
   - **Delete all** empties the collection after a confirm that asks
