@@ -117,8 +117,11 @@ export type AgentConfig = {
   max_input_tokens: number;
   /** The most wake-ups a run may fire. */
   max_wake_ups: number;
-  /** User turns, including the current one, whose tool results stay in the model prompt. */
-  keep_tool_result_generations: number;
+  /**
+   * User turns, including the current one, whose tool results stay in the model prompt; null takes
+   * the guild's `keep_tool_result_generations`.
+   */
+  keep_tool_result_generations: number | null;
   max_scripts: number;
   /** The agent home's cap in MiB. A generation will not start while the home is over this. */
   max_workspace_mib: number;

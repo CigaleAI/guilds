@@ -569,6 +569,7 @@
             }
           ],
           "routines_enabled": true,
+          "keep_tool_result_generations": 2,
           "description": "",
           "max_agents": 15,
           "git_author_email": ""
@@ -844,6 +845,7 @@
             }
           ],
           "routines_enabled": true,
+          "keep_tool_result_generations": 2,
           "description": "",
           "max_agents": 15,
           "git_author_email": ""
@@ -883,6 +885,7 @@
               }
             ],
             "routines_enabled": true,
+            "keep_tool_result_generations": 2,
             "description": "",
             "max_agents": 15,
             "git_author_email": ""
@@ -922,6 +925,7 @@
             }
           ],
           "routines_enabled": true,
+          "keep_tool_result_generations": 2,
           "description": "",
           "max_agents": 15,
           "git_author_email": ""
@@ -963,6 +967,7 @@
             }
           ],
           "routines_enabled": true,
+          "keep_tool_result_generations": 2,
           "description": "",
           "max_agents": 15,
           "git_author_email": ""
@@ -34068,6 +34073,7 @@
             }
           ],
           "routines_enabled": true,
+          "keep_tool_result_generations": 2,
           "description": "",
           "max_agents": 15,
           "git_author_email": ""

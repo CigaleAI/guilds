@@ -57,9 +57,10 @@ function request(config: Record<string, unknown>): AgentRequest {
   };
 }
 
+/** A patch that keeps the agent's tool-result turns: changing them asks the database for a guild admin. */
 function patch(config: Record<string, unknown>) {
   return {
-    config,
+    config: { keep_tool_result_generations: agentRow().config.keep_tool_result_generations, ...config },
     machineId: undefined,
     name: undefined,
     focus: undefined,

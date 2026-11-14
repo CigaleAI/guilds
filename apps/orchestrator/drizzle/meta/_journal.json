@@ -176,6 +176,13 @@
       "when": 1791964800000,
       "tag": "0025_issue_alert_severity",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791968400000,
+      "tag": "0026_guild_keep_tool_result_generations",
+      "breakpoints": true
     }
   ]
 }

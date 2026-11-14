@@ -42,11 +42,20 @@ import { Schedules, type ScheduleDatabase } from "../../src/schedules/service.js
 import { Issues, type IssuesDatabase } from "../../src/issues/index.js";
 import { GroupChat, type GroupChatDatabase } from "../../src/groupchat/index.js";
 import { defaultGroupRouter } from "../../src/typesafe/group.js";
-import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, SecretRef, ToolCall } from "../../src/db/schema/index.js";
+import {
+  DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS,
+  type AgentConfig,
+  type CompletionMetadata,
+  type ResolvedAgentConfig,
+  type RunConfigSnapshot,
+  type SecretRef,
+  type ToolCall,
+} from "../../src/db/schema/index.js";
 import { Wakes, type WakesDatabase } from "../../src/wakes/service.js";
 import { validateAgentConfig } from "../../src/agents/validation.js";
+import { resolveAgentConfig } from "../../src/agents/config.js";
 
-export const AGENT_CONFIG: AgentConfig = {
+export const AGENT_CONFIG: ResolvedAgentConfig = {
   model: "openrouter/openai/gpt-5.6-luna",
   temperature: 0,
   max_tokens: 32,
@@ -71,9 +80,13 @@ export const AGENT_CONFIG: AgentConfig = {
   thinking_level: "none",
 };
 
-/** The config snapshot a run of an agent with `config` starts with, offering no tools, connections or secrets. */
+/**
+ * The config snapshot a run of an agent with `config`, in a guild at the default settings, starts
+ * with, offering no tools, connections or secrets.
+ */
 export function runSnapshot(config: AgentConfig = AGENT_CONFIG): RunConfigSnapshot {
-  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = config;
+  const resolved = resolveAgentConfig(config, DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS);
+  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = resolved;
   return { ...settings, projection_policy_version: 1, database: false, tools: [], mcp: [], secrets: [] };
 }
 
@@ -128,6 +141,7 @@ export function agentRow(overrides: Partial<AgentRow> = {}): AgentRow {
     guild_name: "guild",
     guild_about: "",
     guild_description: "",
+    guild_keep_tool_result_generations: DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS,
     org_slug: "org",
     guild_operators: [],
     ...overrides,

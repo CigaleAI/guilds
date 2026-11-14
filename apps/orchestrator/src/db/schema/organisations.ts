@@ -90,6 +90,8 @@ export const orgMembers = pgTable(
 /** How many agents a guild holds, and how many messages its agents post to its group chat, unless it says otherwise. */
 export const DEFAULT_GUILD_AGENTS = 15;
 export const DEFAULT_AGENT_MESSAGE_LIMIT = 200;
+/** How many user turns, including the current one, keep full tool results in the prompts of a new guild's agents. */
+export const DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS = 2;
 
 /** A group chat delivery that failed, as the guild's chat state lists it. */
 export type GroupChatFailure = {
@@ -119,12 +121,17 @@ export const guilds = pgTable(
     description: text("description").notNull().default(""),
     max_agents: integer("max_agents").notNull().default(DEFAULT_GUILD_AGENTS),
     git_author_email: text("git_author_email").notNull().default(""),
+    /** The `keep_tool_result_generations` of every agent of the guild whose config sets none. */
+    keep_tool_result_generations: integer("keep_tool_result_generations")
+      .notNull()
+      .default(DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS),
   },
   (table) => [
     unique("guilds_org_name_unique").on(table.org_id, table.name),
     unique("guilds_org_id_id_unique").on(table.org_id, table.id),
     check("group_agent_message_limit_positive", sql`${table.group_agent_message_limit} > 0`),
     check("guilds_max_agents_positive", sql`${table.max_agents} > 0`),
+    check("guilds_keep_tool_result_generations_positive", sql`${table.keep_tool_result_generations} > 0`),
     check("guilds_visibility_check", sql`${table.visibility} IN ('org', 'private')`),
     foreignKey({
       columns: [table.org_id],

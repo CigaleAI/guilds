@@ -3,7 +3,6 @@ import { test } from "node:test";
 import { secretPayload, validateSecretName } from "../../src/credentials/validate.js";
 import {
   CONFIG_KEYS,
-  DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
   DEFAULT_MAX_INPUT_TOKENS,
   DEFAULT_MAX_SCRIPTS,
   DEFAULT_MAX_WORKSPACE_MIB,
@@ -38,6 +37,7 @@ import {
   validateGuildTextPatch,
   validateGitAuthorEmail,
   validateGuildName,
+  validateKeepToolResultGenerations,
   validateMaxAgents,
   validateRoutinesEnabled,
   validateVisibility,
@@ -102,6 +102,22 @@ test("max_agents is a positive integer", () => {
   assert.equal(validateMaxAgents("12"), 12);
   assert.throws(() => validateMaxAgents(0), /max_agents/);
   assert.throws(() => validateMaxAgents(1.5), /max_agents/);
+});
+
+test("a guild's keep_tool_result_generations is a positive whole number", () => {
+  assert.equal(validateKeepToolResultGenerations(1), 1);
+  assert.equal(validateKeepToolResultGenerations(4), 4);
+  assert.equal(validateKeepToolResultGenerations(2147483647), 2147483647);
+  assert.throws(
+    () => validateKeepToolResultGenerations(3_000_000_000),
+    /keep_tool_result_generations must be at most 2147483647/,
+  );
+  for (const refused of [0, -1, 1.5, "2", null]) {
+    assert.throws(
+      () => validateKeepToolResultGenerations(refused),
+      /keep_tool_result_generations must be a positive integer/,
+    );
+  }
 });
 
 test("guild routines switch is a boolean", () => {
@@ -260,7 +276,7 @@ test("a config that leaves out every setting but its model takes every default",
     max_tool_calls: DEFAULT_MAX_TOOL_CALLS,
     max_input_tokens: DEFAULT_MAX_INPUT_TOKENS,
     max_wake_ups: DEFAULT_MAX_WAKE_UPS,
-    keep_tool_result_generations: DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
+    keep_tool_result_generations: null,
     max_scripts: DEFAULT_MAX_SCRIPTS,
     max_workspace_mib: DEFAULT_MAX_WORKSPACE_MIB,
     browser: false,
@@ -413,6 +429,20 @@ test("max_wake_ups defaults to 10 for every agent, coding or not, and takes a po
   }
 });
 
+test("keep_tool_result_generations is left to the guild unless the config sets a positive whole number", () => {
+  const model = VALID_CONFIG.model;
+  assert.equal(validateAgentConfig({ model }).keep_tool_result_generations, null);
+  assert.equal(validateNewAgentConfig({ model, coding: true, harness: "codex" }).keep_tool_result_generations, null);
+  assert.equal(validateAgentConfig({ model, keep_tool_result_generations: null }).keep_tool_result_generations, null);
+  assert.equal(validateAgentConfig({ model, keep_tool_result_generations: 3 }).keep_tool_result_generations, 3);
+  for (const refused of [0, -1, 2.5, "3"]) {
+    assert.throws(
+      () => validateAgentConfig({ model, keep_tool_result_generations: refused }),
+      /keep_tool_result_generations must be a positive integer/,
+    );
+  }
+});
+
 test("config defaults missing run limits", () => {
   assert.equal(validateAgentConfig(VALID_CONFIG).max_tool_calls, 50);
   assert.equal(validateAgentConfig(VALID_CONFIG).max_input_tokens, 100000);
@@ -422,7 +452,6 @@ test("config defaults missing run limits", () => {
   const filled = validateAgentConfig(withoutLimits);
   assert.equal(filled.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
   assert.equal(filled.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS);
-  assert.equal(filled.keep_tool_result_generations, DEFAULT_KEEP_TOOL_RESULT_GENERATIONS);
   assert.equal(filled.max_scripts, DEFAULT_MAX_SCRIPTS);
   assert.equal(filled.max_workspace_mib, DEFAULT_MAX_WORKSPACE_MIB);
   assert.throws(
@@ -432,10 +461,6 @@ test("config defaults missing run limits", () => {
   assert.throws(
     () => validateAgentConfig({ ...VALID_CONFIG, max_input_tokens: 0 }),
     /max_input_tokens must be a positive/,
-  );
-  assert.throws(
-    () => validateAgentConfig({ ...VALID_CONFIG, keep_tool_result_generations: 0 }),
-    /keep_tool_result_generations must be a positive/,
   );
   assert.throws(
     () => validateAgentConfig({ ...VALID_CONFIG, max_scripts: 0 }),

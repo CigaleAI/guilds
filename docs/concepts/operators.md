@@ -37,7 +37,7 @@ things:
 
 | Role | Can also |
 |---|---|
-| `admin` | Add, remove, and change operators; change visibility; clear the group chat; delete the guild |
+| `admin` | Add, remove, and change operators; change visibility; change the guild's and its agents' **Keep tool results**; clear the group chat; delete the guild |
 | `operator` | Nothing beyond what being on the roster gives |
 
 Whoever creates a guild, from the create dialog or a recipe apply,
