@@ -31,7 +31,7 @@ import type { RecipeRow } from "../db/recipes.js";
 import { listSecrets } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
-import { canSeeGuild } from "../guilds/operators.js";
+import { canSeeGuild, guildRole } from "../guilds/operators.js";
 import { validateGuildName } from "../guilds/validation.js";
 import { validateAgentName } from "../agents/validation.js";
 import { integrationForConnector } from "../instance/integrations.js";
@@ -495,9 +495,15 @@ function inventoryFromRecipe(recipe: RecipeDocument, plan: InventoryPlan): Apply
   };
 }
 
+/** Whether a role of the recipe gives its agent tool-result turns of its own. */
+function recipeSetsToolResultTurns(recipe: RecipeDocument): boolean {
+  return recipe.roles.some((role) => (role.config.keep_tool_result_generations ?? null) !== null);
+}
+
 /**
  * The empty guild the recipe fills, when the operator picked one; refuses one of another
- * organisation, a private guild the user does not operate, and one with agents.
+ * organisation, a private guild the user does not operate, one with agents, and, unless the user
+ * administers it, a recipe whose roles give their agents tool-result turns of their own.
  */
 async function destinationGuild(apply: RecipeApply, source: PreviewSource, guildId: string | undefined): Promise<string | null> {
   if (!guildId) {
@@ -509,6 +515,9 @@ async function destinationGuild(apply: RecipeApply, source: PreviewSource, guild
   }
   if ((await listAgents(apply.db, guild.id)).length) {
     throw new RecipeError("destination guild is not empty");
+  }
+  if (guildRole(guild, source.user.id) !== "admin" && recipeSetsToolResultTurns(source.recipeRow.body)) {
+    throw new RecipeError("only a guild admin can apply a recipe that sets keep_tool_result_generations", 403);
   }
   return guild.id;
 }

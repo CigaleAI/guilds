@@ -28,6 +28,7 @@ const listOnlyDb = uniqueDbName("agent_platform_migrate_list_only");
 const listOnlyPathsDb = uniqueDbName("agent_platform_migrate_list_only_paths");
 const homeGuildDb = uniqueDbName("agent_platform_migrate_home_guild");
 const wakeUpsConfigDb = uniqueDbName("agent_platform_migrate_wake_ups_config");
+const toolResultTurnsDb = uniqueDbName("agent_platform_migrate_tool_result_turns");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -41,6 +42,7 @@ after(async () => {
   await dropIsolatedDatabase(listOnlyPathsDb);
   await dropIsolatedDatabase(homeGuildDb);
   await dropIsolatedDatabase(wakeUpsConfigDb);
+  await dropIsolatedDatabase(toolResultTurnsDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -262,7 +264,10 @@ test("the agent config migration gives a config each key it predates, keeping th
     await applyMigrations(pool);
     const rows = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents ORDER BY id");
     const byId = new Map(rows.rows.map((row) => [row.id, row.config]));
-    assert.deepEqual(byId.get("old"), agentConfig({ model: MODEL, coding: true, harness: "codex", max_steps: 200 }));
+    assert.deepEqual(
+      byId.get("old"),
+      agentConfig({ model: MODEL, coding: true, harness: "codex", max_steps: 200, keep_tool_result_generations: 1 }),
+    );
     assert.deepEqual(byId.get("full"), full);
   } finally {
     await pool.end();
@@ -377,6 +382,42 @@ test("the wake-ups config migration gives agent configs and run snapshots max_wa
     assert.deepEqual(snapshots.get("run_active"), runSnapshot(agentConfig()));
     assert.deepEqual(snapshots.get("run_completed"), runSnapshot(agentConfig()));
     assert.deepEqual(snapshots.get("run_capped"), cappedSnapshot);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the guild tool-result turns migration keeps existing guilds at 1, starts new ones at 2, and leaves every agent's own value", async () => {
+  const pool = await createPool(await createIsolatedDatabase(toolResultTurnsDb), reportPoolError);
+  try {
+    const folder = chainBefore("0026_guild_keep_tool_result_generations");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_old', 'old', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    const own = agentConfig({ keep_tool_result_generations: 3 });
+    await pool.query(
+      `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+       VALUES ('agent_1', 'guild_old', 'agent', $1, $2, $2, 'org_1', '', '', $2, 'mach_1', 0)`,
+      [JSON.stringify(own), now],
+    );
+
+    await applyMigrations(pool);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_new', 'new', 'org_1', $1, $1)", [now]);
+    const guilds = await pool.query<{ id: string; keep: number }>("SELECT id, keep_tool_result_generations AS keep FROM public.guilds");
+    const keeps = new Map(guilds.rows.map((row) => [row.id, row.keep]));
+    assert.equal(keeps.get("guild_old"), 1);
+    assert.equal(keeps.get("guild_new"), 2);
+    const agents = await pool.query<{ config: Record<string, unknown> }>("SELECT config FROM public.agents WHERE id = 'agent_1'");
+    assert.deepEqual(agents.rows[0]?.config, own);
+    await assert.rejects(
+      pool.query("UPDATE public.guilds SET keep_tool_result_generations = 0 WHERE id = 'guild_new'"),
+      /guilds_keep_tool_result_generations_positive/,
+    );
   } finally {
     await pool.end();
   }

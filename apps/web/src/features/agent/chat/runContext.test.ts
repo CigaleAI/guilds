@@ -12,6 +12,7 @@ function runOffering(tools: Run["config_snapshot"]["tools"]): Run {
     kind: "direct",
     config_snapshot: {
       ...defaultAgentConfig,
+      keep_tool_result_generations: 2,
       tools,
       mcp: [
         {

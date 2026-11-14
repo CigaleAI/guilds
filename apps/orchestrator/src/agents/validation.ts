@@ -339,10 +339,10 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     max_tool_calls: requirePositiveInteger(filled.max_tool_calls, "max_tool_calls"),
     max_input_tokens: requirePositiveInteger(filled.max_input_tokens, "max_input_tokens"),
     max_wake_ups: requirePositiveInteger(filled.max_wake_ups, "max_wake_ups"),
-    keep_tool_result_generations: requirePositiveInteger(
-      filled.keep_tool_result_generations,
-      "keep_tool_result_generations",
-    ),
+    keep_tool_result_generations:
+      filled.keep_tool_result_generations === null
+        ? null
+        : requirePositiveInteger(filled.keep_tool_result_generations, "keep_tool_result_generations"),
     max_scripts: requirePositiveInteger(filled.max_scripts, "max_scripts"),
     max_workspace_mib: requirePositiveInteger(filled.max_workspace_mib, "max_workspace_mib"),
     browser,

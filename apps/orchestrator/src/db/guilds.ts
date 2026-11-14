@@ -33,6 +33,7 @@ const GUILD_KEYS = [
   "group_agent_message_limit",
   "visibility",
   "routines_enabled",
+  "keep_tool_result_generations",
   "created_at",
   "updated_at",
 ] as const;
@@ -60,6 +61,7 @@ export type GuildPatch = {
   description?: string | null | undefined;
   maxAgents?: number | null | undefined;
   gitAuthorEmail?: string | null | undefined;
+  keepToolResultGenerations?: number | null | undefined;
 };
 
 export type NewGuild = {
@@ -128,6 +130,7 @@ export async function updateGuild(
          max_agents = COALESCE($7, max_agents),
          git_author_email = COALESCE($8, git_author_email),
          name = COALESCE($9, name),
+         keep_tool_result_generations = COALESCE($10, keep_tool_result_generations),
          updated_at = $4
      WHERE id = $1
      RETURNING about, description`,
@@ -141,6 +144,7 @@ export async function updateGuild(
       options.maxAgents ?? null,
       options.gitAuthorEmail ?? null,
       options.name ?? null,
+      options.keepToolResultGenerations ?? null,
     ],
   );
   return result.rows[0] ?? null;

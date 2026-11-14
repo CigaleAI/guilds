@@ -207,7 +207,9 @@ What capture writes:
   same way; an agent on its harness's default model leaves the key
   out, and `config.harness_effort` likewise on the default effort.
   `config.secret_aliases` travels the same way; an agent without
-  an alias leaves the key out.
+  an alias leaves the key out. `config.keep_tool_result_generations`
+  travels the same way; an agent that takes its guild's leaves the key
+  out, and the applied agent takes its new guild's.
 - A harness subscription token stays behind. On a coding agent, the
   aliases of the harness token variables (`CLAUDE_CODE_OAUTH_TOKEN`,
   `CURSOR_API_KEY`) are left out, and so are the secrets those

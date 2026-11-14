@@ -29,6 +29,7 @@ import {
   validateGuildDescription,
   validateGuildName,
   validateGuildTextPatch,
+  validateKeepToolResultGenerations,
   validateMaxAgents,
   validateRoutinesEnabled,
   validateVisibility,
@@ -65,6 +66,7 @@ export type GuildSettingsPatch = {
   gitAuthorEmail?: string | null;
   visibility?: string | null;
   routinesEnabled?: boolean;
+  keepToolResultGenerations?: number;
 };
 
 /** The organisation a guild is created in. */
@@ -90,6 +92,7 @@ export type GuildView = Pick<
   | "visibility"
   | "operators"
   | "routines_enabled"
+  | "keep_tool_result_generations"
 > & { database: false };
 
 /** A guild as the API answers it. */
@@ -105,6 +108,7 @@ export function guildItem(row: GuildRow): GuildView {
     visibility: row.visibility,
     operators: row.operators,
     routines_enabled: row.routines_enabled,
+    keep_tool_result_generations: row.keep_tool_result_generations,
   };
 }
 
@@ -262,6 +266,7 @@ function validateGuildSettings(patch: GuildSettingsPatch): GuildPatch {
     maxAgents: optional(patch.maxAgents, validateMaxAgents),
     gitAuthorEmail: optional(patch.gitAuthorEmail, validateGitAuthorEmail),
     visibility: optional(patch.visibility, validateVisibility),
+    keepToolResultGenerations: optional(patch.keepToolResultGenerations, validateKeepToolResultGenerations),
     ...(routinesEnabled === null ? {} : { routinesEnabled }),
   };
 }
@@ -281,10 +286,19 @@ async function moveGuildNotes(
   }
 }
 
+/** Whether `changes` gives the guild another visibility or other tool-result turns, which only an admin changes. */
+function changesAdminSettings(guild: GuildRow, changes: GuildPatch): boolean {
+  const { visibility, keepToolResultGenerations } = changes;
+  const newVisibility = Boolean(visibility) && visibility !== guild.visibility;
+  const newToolResultTurns =
+    Boolean(keepToolResultGenerations) && keepToolResultGenerations !== guild.keep_tool_result_generations;
+  return newVisibility || newToolResultTurns;
+}
+
 /**
- * Changes a guild's settings. Only an admin changes its visibility; a rename moves its notes folder
- * and waits while it is being deleted or an agent of it is generating; switching routines on
- * releases its held schedules.
+ * Changes a guild's settings. Only an admin changes its visibility and its tool-result turns; a
+ * rename moves its notes folder and waits while it is being deleted or an agent of it is
+ * generating; switching routines on releases its held schedules.
  */
 export async function updateGuildSettings(
   services: GuildServices,
@@ -294,8 +308,8 @@ export async function updateGuildSettings(
 ): Promise<GuildRow> {
   const { db, schedules } = services;
   const changes = validateGuildSettings(patch);
-  const { name, visibility, routinesEnabled } = changes;
-  if (visibility && visibility !== guild.visibility) {
+  const { name, routinesEnabled } = changes;
+  if (changesAdminSettings(guild, changes)) {
     await requireAdministeredGuild(db, guild.id, actor.id);
   }
   const renamed = name && name !== guild.name ? name : null;

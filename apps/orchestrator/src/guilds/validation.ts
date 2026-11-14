@@ -3,6 +3,8 @@ import { NAME_RE } from "../lib/names.js";
 export const ABOUT_MAX = 200;
 export const DESCRIPTION_MAX = 8000;
 export const GIT_AUTHOR_EMAIL_MAX = 254;
+/** The largest value a PostgreSQL `integer` column stores. */
+export const POSTGRES_INTEGER_MAX = 2147483647;
 export const GUILD_VISIBILITIES = ["org", "private"] as const;
 export type GuildVisibility = (typeof GUILD_VISIBILITIES)[number];
 export const GUILD_OPERATOR_ROLES = ["admin", "operator"] as const;
@@ -108,6 +110,16 @@ export function validateMaxAgents(raw: unknown): number {
     throw new GuildValidationError("max_agents must be a positive integer");
   }
   return value;
+}
+
+export function validateKeepToolResultGenerations(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1) {
+    throw new GuildValidationError("keep_tool_result_generations must be a positive integer");
+  }
+  if (raw > POSTGRES_INTEGER_MAX) {
+    throw new GuildValidationError(`keep_tool_result_generations must be at most ${POSTGRES_INTEGER_MAX}`);
+  }
+  return raw;
 }
 
 export function validateRoutinesEnabled(raw: unknown): boolean {
