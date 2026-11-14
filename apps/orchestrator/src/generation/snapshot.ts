@@ -5,7 +5,7 @@ import type { GroupMessageRow } from "../db/group-chat.js";
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
 import type { NewRun, RunRow } from "../db/runs.js";
 import type {
-  AgentConfig,
+  ResolvedAgentConfig,
   RunConfigSnapshot,
   RunMetadata,
   RunScriptSnapshot,
@@ -25,7 +25,7 @@ export type RunKind = RunRow["kind"];
 
 /** A run snapshot's config, with the tools the agent's access offers to a run of `kind`. */
 export function configSnapshot(
-  config: AgentConfig,
+  config: ResolvedAgentConfig,
   access: RuntimeAccess,
   kind: RunKind,
   scripts?: RunScriptSnapshot[],
@@ -68,7 +68,7 @@ export function configSnapshot(
 /** A run about to be created: its agent, its config and access, and the prompts composed for it. */
 export type PreparedRun = {
   agent: AgentRow;
-  config: AgentConfig;
+  config: ResolvedAgentConfig;
   access: RuntimeAccess;
   members: GuildAgentRow[];
   historyRows: GroupMessageRow[];

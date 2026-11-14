@@ -8,6 +8,21 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A guild sets how many user turns, including the current
+one, keep full tool results in its agents' prompts: **Keep tool
+results** under **Limits** in its Settings, and
+`keep_tool_result_generations` on `PUT /api/guilds/:id`, a whole
+number from 1 to 2147483647. A new guild starts at 2; a migration sets every
+existing guild to 1. An agent's **Keep tool results** is now optional:
+empty, sent as `keep_tool_result_generations: null`, takes the guild's,
+and a new agent starts empty. Every existing agent keeps its own value.
+Each run snapshots the value it uses. A captured recipe carries an
+agent's own value and leaves out one taken from its guild. Only a
+guild admin changes the guild's value, sets, changes or clears an
+agent's own, or applies into an existing guild a recipe that carries
+one; anyone else gets 403, and the guild's field is read-only for
+them (SEC-59).
+
 **Rebuild.** **Debug in Studio** in an agent's Chat tab opens the run
 on screen in Studio: your latest active session on the guild, on that
 agent's **History** tab at that run and the step open in the chat.

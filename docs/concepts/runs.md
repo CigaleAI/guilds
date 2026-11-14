@@ -117,8 +117,10 @@ Tool results can be large: a web page, a long file. Old ones rarely
 matter. Before each model call, large tool results from earlier turns
 are replaced by a short stub, in what is sent only. The stub says
 which tool produced the result and how to fetch it again. The stored
-run keeps the full results. By default only the current turn keeps
-its full tool results. The agent's settings can keep more.
+run keeps the full results. The guild's settings say how many user
+turns, including the current one, keep their full tool results; a new
+guild keeps 2. An agent's own setting, when set, takes the place of
+its guild's.
 
 ### Run chains
 
@@ -243,7 +245,7 @@ An ended run shows a banner under the transcript:
 | Wrap-up warning | when 8 tool calls or fewer are left |
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
 | Max wake-ups | 10 by default, for a coding agent too |
-| Full tool results kept | the current turn only, by default |
+| Full tool results kept | the agent's setting, else its guild's; 2 user turns for a new guild |
 | Results never stubbed | under 2048 bytes |
 | Routine check | every 30 seconds |
 | Wake-up check | every 30 seconds, before the routines; a wake-up fires up to 30 seconds late |
@@ -360,7 +362,9 @@ tool-call identity in `file_changes` ([Artifacts](artifacts.md)).
 ### Snapshot
 
 The run stores an immutable snapshot. It holds the agent's config at
-run creation, less `max_scripts` and `max_workspace_mib`, with
+run creation, less `max_scripts` and `max_workspace_mib`, with the
+guild's `keep_tool_result_generations` when the agent's is null, and
+with
 `projection_policy_version`, the offered `tools`, `mcp`, `secrets`,
 and the `scripts` ([Scripts](scripts.md#snapshot)).
 
@@ -484,12 +488,13 @@ window are replaced with a short stub:
 Assistant `tool_calls` stay. User and assistant text stay.
 
 Here a generation is one user turn and the tool loop that follows, not
-a run in a chain. `keep_tool_result_generations` (default 1,
-snapshotted) is how many generations stay live, including the current
-one:
+a run in a chain. `keep_tool_result_generations` (the agent's, else
+its guild's; snapshotted) is how many generations stay live,
+including the current one:
 
-- `1`: stub every previous generation. This is the default.
+- `1`: stub every previous generation.
 - `2`: also keep the previous user turn's tool results; stub older.
+  A new guild starts here.
 
 A result under 2048 bytes is never stubbed. When the projected prompt
 is still over `max_input_tokens`, the oldest live results above that

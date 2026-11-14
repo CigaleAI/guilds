@@ -188,6 +188,25 @@ test("max wake-ups starts at 10 for every agent, round-trips, and takes a whole 
   assert.equal(configErrors(form).max_wake_ups, undefined);
 });
 
+test("keep tool results starts empty for the guild's, round-trips, and takes a whole number of 1 or more", () => {
+  const form = configFormOf(defaultAgentConfig);
+  assert.equal(form.keep_tool_result_generations, "");
+  assert.equal(configOf(form, undefined).keep_tool_result_generations, null);
+  assert.equal(configOf({ ...form, keep_tool_result_generations: " " }, undefined).keep_tool_result_generations, null);
+  assert.equal(configOf({ ...form, keep_tool_result_generations: "3" }, undefined).keep_tool_result_generations, 3);
+  assert.equal(
+    configFormOf({ ...defaultAgentConfig, keep_tool_result_generations: 3 }).keep_tool_result_generations,
+    "3",
+  );
+  assert.equal(configErrors(form).keep_tool_result_generations, undefined);
+  for (const refused of ["0", "2.5", "-1"]) {
+    assert.equal(
+      configErrors({ ...form, keep_tool_result_generations: refused }).keep_tool_result_generations,
+      "A whole number, 1 or more, or empty.",
+    );
+  }
+});
+
 test("limits the operator already changed stay as typed", () => {
   const form = { ...configFormOf(defaultAgentConfig), max_steps: "80" };
   const coding = withCoding(form, true);

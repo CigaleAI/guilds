@@ -80,7 +80,11 @@ Run limits stop a run that goes on too long:
 | Max tool calls | tool calls in one run | 50 |
 | Max input tokens | the size of the prompt sent to the model | 100000 |
 | Max wake-ups | the wake-ups one run may fire | 10 |
-| Keep tool results | how many user turns keep full tool output in the prompt; older large results are stubbed | 1 |
+| Keep tool results | how many user turns keep full tool output in the prompt; older large results are stubbed | empty: the guild's ([Guilds](guilds.md#other-guild-settings)) |
+
+Only a guild admin sets, changes, or clears an agent's **Keep tool
+results**. Anyone else's save that changes it is refused; one that
+leaves it as it is passes.
 
 A coding agent starts at 200 steps and 200 tool calls. What happens
 at each limit is on [Runs](runs.md).
@@ -313,7 +317,7 @@ the agent.
 | `max_tool_calls` | positive integer | `50` (`200` for a new coding agent) | [Runs](runs.md#generation) |
 | `max_input_tokens` | positive integer | `100000` | [Runs](runs.md#generation) |
 | `max_wake_ups` | positive integer | `10` | [Runs](runs.md#snapshot) |
-| `keep_tool_result_generations` | positive integer | `1` | [Runs](runs.md#tool-result-stubbing) |
+| `keep_tool_result_generations` | positive integer, or null for the guild's `keep_tool_result_generations` | `null` | [Runs](runs.md#tool-result-stubbing) |
 | `max_scripts` | positive integer | `10` | [Scripts](scripts.md) |
 | `max_workspace_mib` | positive integer | `10240` | [Agent home](agent-home.md) |
 | `browser` | boolean | `false` | [Browser](browser.md) |
@@ -430,9 +434,9 @@ prompt, and it is not part of the recipient Choice.
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
 | `GET /api/guilds/:id/agents` | lists the guild's agents with their busy state | 200 | |
-| `POST /api/guilds/:id/agents` | creates an agent from `name`, `config`, and optional `focus`, `wake_triggers`, `avatar_shape`, `avatar_color`, `machine_id` | 201 | 422 validation or model not connected; 409 guild being deleted, `this guild is limited to N agents`, name taken, or an operator of that name; a placement refusal; an extension's policy limit |
+| `POST /api/guilds/:id/agents` | creates an agent from `name`, `config`, and optional `focus`, `wake_triggers`, `avatar_shape`, `avatar_color`, `machine_id` | 201 | 422 validation or model not connected; 403 a `keep_tool_result_generations` of its own from someone not a guild admin; 409 guild being deleted, `this guild is limited to N agents`, name taken, or an operator of that name; a placement refusal; an extension's policy limit |
 | `GET /api/agents/:id` | the agent | 200 | 404 |
-| `PUT /api/agents/:id/config` | saves `config` plus optional `name`, `avatar_shape`, `avatar_color`, `focus`, `wake_triggers`, `machine_id` | 200 | 422 validation; 409 rename while generating or while the guild is being deleted, name taken; a placement refusal; an extension's policy limit |
+| `PUT /api/agents/:id/config` | saves `config` plus optional `name`, `avatar_shape`, `avatar_color`, `focus`, `wake_triggers`, `machine_id` | 200 | 422 validation; 403 a `keep_tool_result_generations` change from someone not a guild admin; 409 rename while generating or while the guild is being deleted, name taken; a placement refusal; an extension's policy limit |
 | `PUT /api/agents/:id/machine` | moves the agent to `machine_id` ([Machines](machines.md#move-rules)) | 200 | a placement refusal |
 | `DELETE /api/agents/:id` | deletes the agent | 204 | 409 generating; 404 |
 | `GET /api/guilds/:id/embed-status` | each agent's `broken_embeds` | 200 | |

@@ -98,6 +98,12 @@ visibility.
 - **Agent turns in a row** is how many agent messages the group chat
   takes before an operator must post
   ([Group chat](group-chat.md#the-agent-message-limit)).
+- **Keep tool results** is how many user turns, including the current
+  one, keep full tool output in the model prompt, for every agent of
+  the guild whose own setting is empty
+  ([Runs](runs.md#tool-result-stubbing)). A new guild starts at 2.
+  Only a guild admin changes it, and only a guild admin sets or
+  clears an agent's own.
 - **Commit author email** is the address coding agents put on
   commits. Empty, each agent uses its own platform address
   ([Repositories](coding/repositories.md)).
@@ -221,7 +227,8 @@ The guild's **Settings** tab, in this order:
 - **Purpose**: **Short description**, and **Description** with
   **Write** and **Preview**.
 - **Limits**: **Agents**, the agent limit, with the guild's current
-  agent count; and **Agent turns in a row**.
+  agent count; **Agent turns in a row**; and **Keep tool results**.
+  **Keep tool results** is read-only for anyone but an admin.
 - **Behaviour**: **Routines fire on schedule**. Turning it off holds
   every routine; paused routines stay paused. For admins, **Private**.
 - **Operators**: the roster ([Operators](operators.md)).
@@ -266,9 +273,10 @@ then returns to `/`.
 | Commit author email | Empty, or one address with a dotted domain; at most 254 characters; no `.invalid` domain |
 | Agent limit | Default 15; a whole number of at least 1; may sit below the current count |
 | Agents past the limit | Refused, by create and by recipe apply |
+| Keep tool results | Default 2 for a new guild; a whole number of at least 1 |
 | Visibility | Organisation or private; private in the create dialog |
 | First admin | The creator |
-| Visibility change, clearing the group chat, and delete | Guild admins only |
+| Visibility change, Keep tool results change, clearing the group chat, and delete | Guild admins only |
 | Rename | Refused while being deleted or while an agent generates |
 | Delete | Refused while an agent generates or the group chat is delivering |
 | Guilds per organisation | No cap in core; an extension's policy may set one |
@@ -289,6 +297,7 @@ The `guilds` table:
 | `max_agents` | The agent limit, default 15, positive |
 | `visibility` | `org` or `private`; default `org`. An empty value or `null` also means `org` |
 | `routines_enabled` | Whether routines fire, default true ([Routines](routines.md)) |
+| `keep_tool_result_generations` | The user turns that keep full tool results for each agent whose config sets none, default 2, positive (`guilds_keep_tool_result_generations_positive`) ([Runs](runs.md#tool-result-stubbing)) |
 | `git_author_email` | The commit author email, empty for none ([Repositories](coding/repositories.md)) |
 | `group_chat_seq`, `group_agent_message_count`, `group_agent_message_limit`, `group_chat_errors`, `group_chat_cleared_at` | Group-chat state ([Group chat](group-chat.md)). `group_agent_message_limit` defaults to 200; a recipe apply sets the recipe's |
 | `created_at`, `updated_at` | Timestamps |
@@ -322,19 +331,25 @@ cannot see is 404.
 ### Edit
 
 `PUT /api/guilds/:id` takes `name`, `about`, `description`,
-`max_agents`, `git_author_email`, `visibility`, and
-`routines_enabled`. A field left out keeps its value. It returns the
-guild. `name`, `about` and `description` are strings, `max_agents` a
-number, `git_author_email` and `visibility` a string or null, and
+`max_agents`, `git_author_email`, `visibility`, `routines_enabled`,
+and `keep_tool_result_generations`. A field left out keeps its value.
+It returns the guild. `name`, `about` and `description` are strings,
+`max_agents` and `keep_tool_result_generations` numbers,
+`git_author_email` and `visibility` a string or null, and
 `routines_enabled` a boolean; a create takes the same types.
 
 - 422 for a field of another type, naming it.
 - 422 for an invalid value: `max_agents must be a positive integer`,
+  `keep_tool_result_generations must be a positive integer`,
+  `keep_tool_result_generations must be at most 2147483647` (the
+  largest PostgreSQL `integer`),
   `visibility must be org or
   private`, `git_author_email must be a single email address`,
   `git_author_email must not use a .invalid domain`, and the name,
   about, description, and email length rules.
-- A visibility change takes a guild admin (403 otherwise).
+- A visibility change and a `keep_tool_result_generations` change
+  take a guild admin (403 `only a guild admin can do this`
+  otherwise). A value equal to the guild's is no change.
 - 409 `guild name already exists`.
 - 409 `guild is being deleted` on a rename during deletion.
 - 409 `a member agent is already generating` on a rename while an
@@ -348,7 +363,8 @@ number, `git_author_email` and `visibility` a string or null, and
 ([Group chat](group-chat.md)).
 
 The Settings tab saves the name, about, description, `max_agents`,
-commit author email, visibility, and routines through the first
+commit author email, visibility, routines, and
+`keep_tool_result_generations` through the first
 route, and the message limit through the second.
 
 ### Delete

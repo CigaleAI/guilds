@@ -116,10 +116,10 @@ function clippedHint(value: string | null | undefined): string {
 
 /**
  * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A harness,
- * harness model or harness effort left unset, and secret aliases a recipe carries none of, leave
- * their key out; apply settles them. The agent-optimized browser stays behind: it needs the
- * applying instance's System One key and a model of the applying organisation, so a role browses
- * with the step-by-step browser tools.
+ * harness model or harness effort left unset, tool-result turns left to the guild, and secret
+ * aliases a recipe carries none of, leave their key out; apply settles them. The agent-optimized
+ * browser stays behind: it needs the applying instance's System One key and a model of the
+ * applying organisation, so a role browses with the step-by-step browser tools.
  */
 export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
   const aliases = portableSecretAliases(config);
@@ -131,7 +131,9 @@ export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
     max_tool_calls: config.max_tool_calls,
     max_input_tokens: config.max_input_tokens,
     max_wake_ups: config.max_wake_ups,
-    keep_tool_result_generations: config.keep_tool_result_generations,
+    ...(config.keep_tool_result_generations === null
+      ? {}
+      : { keep_tool_result_generations: config.keep_tool_result_generations }),
     max_scripts: config.max_scripts,
     max_workspace_mib: config.max_workspace_mib,
     browser: config.browser,

@@ -1030,6 +1030,18 @@ describe("generation", { concurrency: 1 }, () => {
     assert.ok(!loop.generations.isAgentBusy("a_1"));
   });
 
+  test("a run snapshots the guild's tool-result turns for an agent that sets none, and the agent's own over the guild's", async () => {
+    const { loop, db } = await seededLoop();
+    loop.generateInBackground = () => undefined;
+    db.agent.guild_keep_tool_result_generations = 3;
+    db.agent.config = { ...AGENT_CONFIG, keep_tool_result_generations: null };
+    await loop.runs.createRun("a_1", null);
+    assert.equal((db.run?.config_snapshot as Record<string, unknown>).keep_tool_result_generations, 3);
+    db.agent.config = { ...AGENT_CONFIG, keep_tool_result_generations: 1 };
+    await loop.runs.createRun("a_1", null);
+    assert.equal((db.run?.config_snapshot as Record<string, unknown>).keep_tool_result_generations, 1);
+  });
+
   test("create_run_offers_artifact_tools_not_database_tools", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
