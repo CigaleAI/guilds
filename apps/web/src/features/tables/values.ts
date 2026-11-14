@@ -2,6 +2,7 @@ import type {
   Column,
   ColumnInput,
   ColumnType,
+  RecordChanges,
   RecordCondition,
   RecordValue,
   RecordWhere,
@@ -94,13 +95,65 @@ export function parseField(
         : { value: date.toISOString() };
     }
     case "array":
-      return {
-        value: trimmed
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-      };
+      return parseListField(trimmed, column);
   }
+}
+
+/** What a list column's comma-separated text means: its items, or that one is not an allowed value. */
+function parseListField(text: string, column: Column): { value: string[] } | { error: string } {
+  const items = text
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.every((item) => isAllowedValue(column, item))
+    ? { value: items }
+    : { error: `Only ${(column.values ?? []).join(", ")}.` };
+}
+
+/** Why the form's text cannot be saved in its column; undefined when it can. */
+export function fieldError(text: string, column: Column): string | undefined {
+  const result = parseField(text, column);
+  if ("error" in result) return result.error;
+  return column.required && result.value === null ? "Required." : undefined;
+}
+
+/**
+ * Why a record's fields cannot be saved, by column name. A field left as loaded is not checked
+ * against its column's allowed values: saving does not send it. Texts and loaded texts are by
+ * column name.
+ */
+export function recordErrors(
+  columns: readonly Column[],
+  texts: Record<string, string>,
+  loaded: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    columns.flatMap((column) => {
+      const text = texts[column.name] ?? "";
+      const unchanged = text === (loaded[column.name] ?? "");
+      const error = fieldError(text, unchanged ? { ...column, values: [] } : column);
+      return error ? [[column.name, error]] : [];
+    }),
+  );
+}
+
+/**
+ * What saving a record's fields sends: each column whose text differs from the loaded one and
+ * parses, with its value; null clears it. Texts and loaded texts are by column name.
+ */
+export function recordChanges(
+  columns: readonly Column[],
+  texts: Record<string, string>,
+  loaded: Record<string, string>,
+): RecordChanges {
+  return Object.fromEntries(
+    columns.flatMap((column) => {
+      const text = texts[column.name] ?? "";
+      if (text === (loaded[column.name] ?? "")) return [];
+      const result = parseField(text, column);
+      return "value" in result ? [[column.name, result.value]] : [];
+    }),
+  );
 }
 
 /** A filter on one column: a value, or a range for numbers and times. */

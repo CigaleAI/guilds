@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A record's value can be changed from the records grid
+without opening the record. Each column cell has a pencil, shown on
+hover or focus, that opens the record dialog's field for that column
+with **Cancel** and **Save changes**. It checks the value as the
+dialog does and sends it only when it changed. `id` and `updated_at`
+have no pencil.
+
 **Rebuild.** Operators can reply to an earlier message in a guild's
 group chat (`reply_to_seq` on `POST /api/guilds/:id/group-chat/messages`
 and on each public message). Each message in the chat has a **Reply**
