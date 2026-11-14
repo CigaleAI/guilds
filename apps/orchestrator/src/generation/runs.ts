@@ -175,7 +175,7 @@ export class Runs {
   /** Creates the group run a delivery asks for, waits for its generation, and completes the delivery. */
   async deliverGroupRun(delivery: GroupDelivery): Promise<void> {
     const { agentId, throughSeq, deliveredThrough, recipients } = delivery;
-    const prepared = await this.preparedDelivery(agentId, throughSeq);
+    const prepared = await this.preparedDelivery(agentId, throughSeq, deliveredThrough);
     const projected = [
       groupChatUserMessage({
         members: prepared.members,
@@ -356,10 +356,14 @@ export class Runs {
   }
 
   /** The run a delivery creates, prepared; a delivery to a busy agent waits, one that cannot be prepared is dropped. */
-  private async preparedDelivery(agentId: string, throughSeq: number | null): Promise<PreparedRun> {
+  private async preparedDelivery(
+    agentId: string,
+    throughSeq: number | null,
+    deliveredThrough?: number,
+  ): Promise<PreparedRun> {
     let prepared: PreparedRun;
     try {
-      prepared = await this.preparation.prepare(agentId, throughSeq);
+      prepared = await this.preparation.prepare(agentId, throughSeq, deliveredThrough);
     } catch (error) {
       if (error instanceof RunRequestError) {
         throw new DeliveryCreateError(error.detail);

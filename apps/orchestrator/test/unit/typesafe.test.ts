@@ -542,6 +542,76 @@ test("selectGroupHistory keeps ten from the last forty, including latest and tag
   assert.deepEqual(serialized.usage, { input_tokens: 900 });
 });
 
+test("classifyGroupRecipients includes surrounding rows around reply_to_seq outside the window", async () => {
+  const rows = Array.from({ length: 12 }, (_, index) =>
+    index + 1 === 12
+      ? { ...chatRow(12, "yes, do that"), reply_to_seq: 4 }
+      : chatRow(index + 1, `m${index + 1}`),
+  );
+  await classifyGroupRecipients(
+    {
+      rows,
+      members: [{ name: "writer", focus: "notes", task: "" }],
+      pendingNames: ["writer"],
+    },
+    createTypeSafeClient({
+      evaluate: async ({ state }) => {
+        const typed = state as {
+          latest: { seq: number; replyToSeq?: number };
+          context: Array<{ seq: number }>;
+        };
+        assert.equal(typed.latest.seq, 12);
+        assert.equal(typed.latest.replyToSeq, 4);
+        assert.deepEqual(
+          typed.context.map((row) => row.seq),
+          [2, 3, 4, 5, 6, 9, 10, 11],
+        );
+        return choiceResult("writer");
+      },
+    }),
+  );
+});
+
+test("selectGroupHistory pulls old reply window into candidates, keeps target, and ranks neighbours via Jev", async () => {
+  const rows = Array.from({ length: 50 }, (_, index) =>
+    index + 1 === 50
+      ? { ...chatRow(50, "can you revisit this?"), reply_to_seq: 5 }
+      : chatRow(index + 1, `m${index + 1}`),
+  );
+  const selected = await selectGroupHistory(
+    {
+      rows,
+      agentName: "writer",
+      agentFocus: "notes",
+      deliveredThrough: 49,
+    },
+    createTypeSafeClient({
+      evaluate: async ({ state, questions }) => {
+        const typed = state as { messages: Array<{ seq: number }> };
+        assert.deepEqual(
+          typed.messages.slice(0, 5).map((row) => row.seq),
+          [3, 4, 5, 6, 7],
+        );
+        assert.ok(!("keep_5" in questions), "reply target is always kept without asking Jev");
+        assert.ok("keep_4" in questions, "neighbour before reply target is scored by Jev");
+        assert.ok("keep_6" in questions, "neighbour after reply target is scored by Jev");
+        return {
+          model: "jev-1.13.0",
+          answers: noulAnswers({
+            ...Object.fromEntries(Object.keys(questions).map((id) => [id, 0.1])),
+            keep_4: 0.95,
+            keep_6: 0.92,
+          }),
+        };
+      },
+    }),
+  );
+  assert.deepEqual(
+    selected.rows.map((row) => Number(row.seq)),
+    [4, 5, 6, 44, 45, 46, 47, 48, 49, 50],
+  );
+});
+
 test("createGroupRouter falls back to everyone and last N when evaluate throws", async () => {
   const router = createGroupRouter({
     client: createTypeSafeClient({

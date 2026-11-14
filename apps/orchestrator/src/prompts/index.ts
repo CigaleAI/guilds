@@ -72,8 +72,8 @@ export const STATE_INTRO =
   "the longer guild goal when set. `group.members` lists every agent in this " +
   "guild and its purpose (`focus`); use those names when tagging. " +
   "`group.operators` lists the people the guild works for; use those names when " +
-  "tagging. `group.history` is the last 10 public rows, each " +
-  "with `sentBy`, the member or operator who wrote it. " +
+  "tagging. `group.history` is up to 10 public rows, each " +
+  "with `seq`, `sentBy` (the member or operator who wrote it), and `replyToSeq` when it replies to an earlier message. " +
   "`collections` lists the collections this agent " +
   "can read (capped at 50): name, purpose, `access` (read or write), `scope` " +
   "(`guild` for a table of this guild, `org` for an organisation table), display " +

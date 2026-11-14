@@ -1,9 +1,12 @@
 import {
   CONTEXT_HISTORY_LIMIT,
-  HISTORY_CANDIDATE_LIMIT,
+  defaultHistoryRows,
+  historyCandidateRows,
   historyStateItem,
   recentGroupRows,
+  replyTargetSeqs,
   storedTags,
+  surroundingRows,
 } from "../groupchat/history.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { IntegrationSources } from "../instance/integrations.js";
@@ -66,6 +69,7 @@ export type HistorySnapshot = {
   rows: GroupMessageRow[];
   agentName: string;
   agentFocus?: string;
+  deliveredThrough?: number;
 };
 
 /** The rows an agent reads, and the Noul of each candidate row TypeSafe ranked, by seq. */
@@ -140,6 +144,21 @@ export function serializeHistoryDecision(decision: HistoryDecision): HistoryRout
   return payload;
 }
 
+function recipientContextRows(rows: readonly RoutedMessage[], window: readonly RoutedMessage[]): RoutedMessage[] {
+  const latest = window[window.length - 1];
+  if (!latest) {
+    return [];
+  }
+  const replySeq = latest.reply_to_seq;
+  if (replySeq === null || replySeq === undefined) {
+    return window.slice(0, -1);
+  }
+  const around = surroundingRows(rows, Number(replySeq));
+  const kept = new Set([...around, ...window.slice(0, -1)].map((row) => Number(row.seq)));
+  kept.delete(Number(latest.seq));
+  return rows.filter((row) => kept.has(Number(row.seq)));
+}
+
 export async function classifyGroupRecipients(
   snapshot: RecipientSnapshot,
   client: TypeSafeClient,
@@ -153,6 +172,7 @@ export async function classifyGroupRecipients(
   if (!roster.length || !latestRow) {
     return { names: new Set(), choice: NONE_RECIPIENT, confidence: 1, probabilities: {} };
   }
+  const contextRows = recipientContextRows(snapshot.rows, window);
   // Define `none` by what the message asks, not by surface genre: listing
   // genres (status, chatter) makes the model file any message that reads like
   // one under none, whatever it asks.
@@ -165,7 +185,7 @@ export async function classifyGroupRecipients(
   const result = await client.evaluate({
     state: {
       latest: stateItem(latestRow, LATEST_CONTENT_MAX_CHARS),
-      context: window.slice(0, -1).map((row) => stateItem(row, HISTORY_CONTENT_MAX_CHARS)),
+      context: contextRows.map((row) => stateItem(row, HISTORY_CONTENT_MAX_CHARS)),
     },
     questions: {
       recipient: {
@@ -194,20 +214,19 @@ export async function classifyGroupRecipients(
   return out;
 }
 
-/** The seqs an agent always reads: the latest row's, then each row that tags it, newest first. */
-function alwaysKeptSeqs(window: GroupMessageRow[], agentName: string): number[] {
-  const latestSeq = Number(window[window.length - 1]?.seq);
-  const always: number[] = [];
-  if (Number.isFinite(latestSeq)) {
-    always.push(latestSeq);
-  }
-  for (const row of [...window].reverse()) {
-    const seq = Number(row.seq);
-    if (storedTags(row).includes(agentName) && !always.includes(seq)) {
-      always.push(seq);
-    }
-  }
-  return always;
+/** The seqs an agent always reads: the latest row's, active reply targets, then each row that tags it, newest first. */
+function alwaysKeptSeqs(
+  window: GroupMessageRow[],
+  agentName: string,
+  replyTargets: readonly number[],
+): number[] {
+  const windowSeqs = new Set(window.map((row) => Number(row.seq)));
+  const tagged = [...window]
+    .reverse()
+    .filter((row) => storedTags(row).includes(agentName))
+    .map((row) => Number(row.seq));
+  const candidates = [Number(window[window.length - 1]?.seq), ...replyTargets, ...tagged];
+  return [...new Set(candidates.filter((seq) => windowSeqs.has(seq)))];
 }
 
 // One yes/no Noul per candidate row (the rerank pattern); agent and focus
@@ -257,12 +276,13 @@ export async function selectGroupHistory(
   snapshot: HistorySnapshot,
   client: TypeSafeClient,
 ): Promise<HistorySelection> {
-  const window = recentGroupRows(snapshot.rows, HISTORY_CANDIDATE_LIMIT);
+  const window = historyCandidateRows(snapshot.rows, snapshot.deliveredThrough);
   if (window.length <= CONTEXT_HISTORY_LIMIT) {
     return { rows: window, keep: {} };
   }
   const latest = window[window.length - 1];
-  const always = alwaysKeptSeqs(window, snapshot.agentName);
+  const targets = replyTargetSeqs(snapshot.rows, snapshot.deliveredThrough);
+  const always = alwaysKeptSeqs(window, snapshot.agentName, targets);
   const questions = keepQuestions(window, always);
   const keep: Record<string, number> = {};
   let model: string | undefined;
@@ -290,7 +310,7 @@ export async function selectGroupHistory(
   const selected = selectedSeqs(always, keep, CONTEXT_HISTORY_LIMIT);
   const rows = window.filter((row) => selected.has(Number(row.seq)));
   const out: HistorySelection = {
-    rows: rows.length ? rows : window.slice(-CONTEXT_HISTORY_LIMIT),
+    rows: rows.length ? rows : defaultHistoryRows(window, snapshot.deliveredThrough),
     keep,
   };
   if (model !== undefined) {
@@ -369,7 +389,7 @@ export function createGroupRouter(options: GroupRouterOptions = {}): GroupRouter
       }
     },
     async history(args) {
-      const fallbackRows = recentGroupRows(args.rows, CONTEXT_HISTORY_LIMIT);
+      const fallbackRows = defaultHistoryRows(args.rows, args.deliveredThrough);
       if (!client.configured) {
         return { source: "limit", rows: fallbackRows };
       }

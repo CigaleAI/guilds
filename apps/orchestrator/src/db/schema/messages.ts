@@ -154,6 +154,7 @@ export type RunInputMetadata = {
   reopened_run?: boolean;
   group_message_id?: number;
   group_seq?: number;
+  reply_to_seq?: number;
   author_type?: string;
   author_name?: string;
   tagged?: string[];

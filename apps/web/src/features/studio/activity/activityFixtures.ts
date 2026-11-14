@@ -33,6 +33,7 @@ export function row(
     author_agent_id: author,
     author_user_id: author === null ? "user_operator" : null,
     source_run_id: sourceRun,
+    reply_to_seq: null,
     tagged: [],
     preview: `row ${seq}`,
     length: 5,

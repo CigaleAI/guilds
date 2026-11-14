@@ -378,6 +378,7 @@ export const groupMessages = pgTable(
     tagged_agent_ids: jsonb("tagged_agent_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     tagged_user_ids: jsonb("tagged_user_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     author_user_id: text("author_user_id"),
+    reply_to_seq: bigint("reply_to_seq", { mode: "number" }),
   },
   (table) => [
     unique("group_messages_guild_id_seq_key").on(table.guild_id, table.seq),
@@ -402,6 +403,11 @@ export const groupMessages = pgTable(
       foreignColumns: [users.id],
       name: "group_messages_author_user_id_fkey",
     }).onDelete("set null"),
+    foreignKey({
+      columns: [table.guild_id, table.reply_to_seq],
+      foreignColumns: [table.guild_id, table.seq],
+      name: "group_messages_reply_to_seq_fkey",
+    }).onDelete("cascade"),
   ],
 );
 

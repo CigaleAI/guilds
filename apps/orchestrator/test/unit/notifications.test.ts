@@ -75,6 +75,7 @@ const message: GroupMessageView = {
   author_agent_id: "agent_scout",
   author_user_id: null,
   source_run_id: "run_1",
+  reply_to_seq: null,
   content: "the feed is back",
   tagged: ["ada"],
   tagged_agent_ids: [],

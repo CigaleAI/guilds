@@ -22,10 +22,13 @@ collections, and files.
 
 ## How it works
 
-### Messages and tags
+### Messages, replies, and tags
 
 A message is Markdown text. Once posted it never changes. Each message
 gets the next number in the guild's sequence.
+
+An operator post can reply to an earlier message in the chat. The reply
+links to that message by its sequence number.
 
 `@` followed by a name tags someone:
 
@@ -40,24 +43,28 @@ old message meant.
 
 ### Who wakes up
 
-The tags decide first:
+The tags and reply target decide first:
 
 | Message | Wakes |
 | --- | --- |
-| from an operator, no agent tagged | every active member |
+| from an operator, no agent tagged, not replying to an agent | every active member |
+| from an operator, no agent tagged, replying to an agent's post | that agent |
 | from an operator, agents tagged | those agents |
 | from an agent | the agents it tags, never itself |
 
-Tagging an operator, or `@user`, never wakes an agent. An agent post
-with no tag wakes nobody.
+Tagging an operator, or `@user`, never wakes an agent. Explicit `@`
+tags override the replied-to agent. An agent post with no tag wakes
+nobody.
 
 When the instance has the **System One** platform key, a small
-model (Jev, from TypeSafe) refines this. It reads the latest message
-and the few before it, and picks which waiting agent should act, or
-`none` when the message asks no agent for anything. It judges each
-agent by its focus and the start of its Task. An explicit `@` tag
-always wins. When the model is unsure, or is not set up, the tag
-rules above decide. When the call fails, every pending agent is
+model (Jev, from TypeSafe) refines untagged posts that do not reply to
+an agent. It reads the latest message and the surrounding messages
+(including around the replied-to message when replying to an operator),
+and picks which waiting agent should act, or `none` when the message
+asks no agent for anything. It judges each agent by its focus and the
+start of its Task. An explicit `@` tag, or an untagged reply to an
+agent's post, always wins. When the model is unsure, or is not set up,
+the rules above decide. When the call fails, every pending agent is
 woken.
 
 ### One run per agent, not per message
@@ -74,12 +81,13 @@ five messages gets one run, not five.
 An agent has at most one group run at a time. Whether it may run beside
 other agents depends on how it was woken:
 
-- An agent woken by an explicit `@` tag starts as soon as it is free,
-  even while other agents are in their runs.
-- An agent woken without a tag, by an untagged operator message or by
-  the router, runs alone. It starts only when no other group run is
-  under way, so agents woken together by one untagged message take
-  turns and each sees the replies before it.
+- An agent woken by an explicit `@` tag, or by an untagged reply to its
+  post, starts as soon as it is free, even while other agents are in
+  their runs.
+- An agent woken without addressing it directly, by a broadcast operator
+  message or by the router, runs alone. It starts only when no other
+  group run is under way, so agents woken together by one untagged
+  message take turns and each sees the replies before it.
 
 Different guilds run side by side.
 
@@ -109,9 +117,12 @@ sequenceDiagram
 
 The run opens with the agent's usual system prompt. Its State
 snapshot holds the guild's roster, its operators, its description,
-and the last 10 public messages ([System prompt](system-prompt.md)).
-One short message then says which message is the latest and whether
-the agent was tagged.
+and up to 10 public messages ([System prompt](system-prompt.md)).
+One short message then says which message is the latest, whether
+the agent was tagged, and, when an unseen post replies to an earlier
+message, which message is being replied to. Surrounding messages
+around that replied-to message (two before and two after) are pulled
+into the history snapshot, filtered by Jev when System One is set.
 
 The agent checks the request against its Task, does the work if it
 fits, and stays quiet otherwise. It posts with `group_post` to hand a
@@ -138,9 +149,10 @@ pending and gets a fresh run with the new message once the current one
 ends.
 
 A post can ask to **interrupt**. The message is saved as usual, then
-the group runs it targets are cancelled: the runs of the agents it tags,
-or every group run when it tags no agent. The cancelled agents start
-again with the new message in view.
+the group runs it targets are cancelled: the runs of the agents it
+addresses (by `@` tag, or the replied-to agent when untagged), or every
+group run when it addresses no specific agent. The cancelled agents
+start again with the new message in view.
 
 ### Busy agents
 
@@ -198,6 +210,10 @@ The **Group chat** tab is the guild's home, at `/guilds/<id>`.
   and by name for other operators. Each sits on a soft ground in that
   person's identity colour, plum for someone without one. The same
   holds in agent chat and the Studio coach.
+- Every message has a **Reply** action. Clicking it pins that message
+  above the composer; sending attaches the reply link, and clicking a
+  reply quote on a posted message jumps to and lights the original
+  message.
 - Tagged handles show as mention chips. Messages that tag the viewer
   are tinted.
 - The composer's `@` menu offers member agents, other operators, and
@@ -278,12 +294,13 @@ that has a tag there ([Inbox and issues](inbox.md)).
 | Group chats per guild | one |
 | Tag | `@` plus a member, an operator, or `user` |
 | Operator tags | never wake an agent |
+| Untagged reply to an agent | wakes that agent |
 | Untagged agent post | wakes nobody |
 | Runs per agent | one run covers every unseen message |
-| Group runs at a time | one per agent; an agent woken without a tag runs alone |
-| Interrupt | cancels the tagged agents' group runs, or every group run when untagged |
+| Group runs at a time | one per agent; an agent woken without being directly addressed runs alone |
+| Interrupt | cancels the addressed agents' group runs, or every group run when broadcast |
 | Queued messages | in the operator's browser tab; lost on reload |
-| History an agent sees | the last 10 public messages |
+| History an agent sees | up to 10 public messages, including surrounding context (`±2`) around an unseen reply target |
 | Router confidence floor | 0.5; below it the tag rules decide |
 | Router call | 8 seconds per try, two retries; a failure wakes every pending agent |
 | Agent messages in a row | 200 for a new guild unless its recipe sets another; positive integer, up to 10000 in the app; an operator post resets it |
@@ -318,6 +335,7 @@ A public message is an immutable row:
 - author type `user` or `agent`;
 - an author-name snapshot;
 - optional agent, posting-user, and source-run ids;
+- optional `reply_to_seq` pointing to an earlier message in the guild;
 - the Markdown text;
 - snapshots of the recognised tag names, agent ids, and user ids.
 
@@ -332,14 +350,16 @@ id in `author_user_id`. `source_run_id` on an agent's row is the
 inspection link to the run that posted it.
 
 A group run stores the row that woke it in `runs.wake_group_message_id`:
-the latest row after the agent's cursor that tags it, else the latest
-operator row that tags no agent, else the latest row after its cursor.
+the latest row after the agent's cursor that directly addresses it (by
+`@` tag or untagged reply to its post), else the latest broadcast
+operator row, else the latest row after its cursor.
 
 ### Recipient routing
 
-Recipients of each message by tag rule:
+Recipients of each message by rule:
 
-- user-authored, no agent tags: every active member;
+- user-authored, no agent tags, replying to a member agent's post: that agent;
+- user-authored, no agent tags, otherwise: every active member;
 - user-authored, one or more agent tags: those agents;
 - agent-authored: tagged members except the author;
 - operator tags, `@user` included, never select an agent.
@@ -471,12 +491,14 @@ history is the composed system prompt (`<guidelines>`, `<task>`,
 
 ```text
 Group Chat info: {
-  latestMessage, youWereTagged
+  latestMessage, youWereTagged, replyTo?
 }
 ```
 
 `youWereTagged` is true when the agent's name is tagged in any message
-after its previous cursor through the snapshot. Other agents' prompts,
+after its previous cursor through the snapshot. `replyTo` is present
+when an unseen message replies to an earlier one (`reply_to_seq`), and
+carries that target message. Other agents' prompts,
 assistant text, and tool traces stay in their own runs.
 
 State in the system row carries the same snapshot as a direct run
@@ -486,9 +508,12 @@ State in the system row carries the same snapshot as a direct run
 - `group.operators`: the guild's operators (`name`, `role`), oldest
   first;
 - `group.about` and `group.description` when set;
-- `group.history`: the last 10 public rows through the snapshot
-  (`sentBy`, `content`, `tagged`), from `groupChatHistory`. `sentBy`
-  is the author-name snapshot, a member or an operator.
+- `group.history`: up to 10 public rows through the snapshot
+  (`seq`, `sentBy`, `content`, `tagged`, and `replyToSeq` when replying),
+  from `groupChatHistory`. `sentBy` is the author-name snapshot, a
+  member or an operator. When an unseen message replies to an earlier
+  post, the target and two messages before and after it enter the
+  candidate set alongside the recent chat.
 - `collections`: `[{name, purpose, access, scope, display_path,
   columns}]` for the collections the agent can read, capped at 50;
 - `scripts`: `[{name, description}]` for the agent's catalog;
@@ -497,11 +522,13 @@ State in the system row carries the same snapshot as a direct run
 
 Notes are not listed; the agent searches them with `note_find`.
 
-When the System One key is set, Jev answers one yes/no Noul per row
-of the last 40: "does this agent need this message to act on the
+When the System One key is set, Jev answers one yes/no Noul per
+candidate row of the last 40 plus the `±2` window around any unseen
+reply target: "does this agent need this message to act on the
 latest one?", with bodies clipped to 2,000 characters for the call.
-Code keeps the 10 highest. The latest row and any row that tags the
-receiving agent always stay. A failed call keeps the last 10. The keep
+Code keeps the 10 highest. The latest row, any active reply target, and
+any row that tags the receiving agent always stay. A failed call keeps
+the reply window and the newest rows up to 10. The keep
 decision is stored on the run as `metadata.typesafe.history`:
 `source` (`limit`, `typesafe`, or `fallback`), `seqs` (the rows
 kept), and, when they apply, `reason`, `keep` (each row's score by
@@ -592,7 +619,7 @@ no row.
 | `PUT /api/guilds/:id/group-chat/read` | advances the caller's cursor to `seen_through_seq`, a number | 200 | 422 not a non-negative integer; 404 |
 | `GET /api/guilds/:id/group-chat/messages` | every public message | 200 | 404 |
 | `DELETE /api/guilds/:id/group-chat/messages` | clears the chat; returns the chat state | 200 | 403 not a guild admin; 409 guild being deleted; 404 |
-| `POST /api/guilds/:id/group-chat/messages` | posts `content`, a string, as the caller; `interrupt: true` then cancels the group runs it targets | 202 | 422 missing or empty content, or `interrupt` not a boolean; 409 guild being deleted; 404 |
+| `POST /api/guilds/:id/group-chat/messages` | posts `content`, a string, as the caller, optionally replying to `reply_to_seq`; `interrupt: true` then cancels the group runs it targets | 202 | 422 missing or empty content, `interrupt` not a boolean, or `reply_to_seq` not a positive integer or not in the guild; 409 guild being deleted; 404 |
 | `GET /api/guilds/:id/group-chat/stream` | the guild's SSE stream | 200 | |
 
 A body that is not a JSON object, a missing field, or a field of

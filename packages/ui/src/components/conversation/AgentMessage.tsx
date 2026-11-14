@@ -18,12 +18,16 @@ export type AgentMessageProps = Omit<ComponentProps<"article">, "title"> & {
   seq?: number;
   /** Opens the private run that produced this post; shows the "Inspect run" pill. */
   onInspectRun?: () => void;
+  /** Starts a reply to this message; shows the "Reply" action. */
+  onReply?: () => void;
   /** Makes the agent's name a button that opens its conversation. */
   onOpenAgent?: () => void;
   /** Leave the avatar out, as for the Studio coach speaking in its own panel. */
   hideAvatar?: boolean;
   /** The ground of the bubble: paper on a surface card, surface on a paper chat. */
   bubble?: "paper" | "surface";
+  /** Above the body, such as the message this post replies to. */
+  replyTo?: ReactNode;
   /** Under the body, such as "Updated portfolio_valuation.md". */
   footer?: ReactNode;
   /** The message body, usually rendered Markdown. */
@@ -39,9 +43,11 @@ export function AgentMessage({
   dateTime,
   seq,
   onInspectRun,
+  onReply,
   onOpenAgent,
   hideAvatar,
   bubble = "paper",
+  replyTo,
   footer,
   children,
   className,
@@ -92,7 +98,19 @@ export function AgentMessage({
               Inspect run
             </Button>
           ) : null}
+          {onReply ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onReply}
+              title="Reply to this message"
+              className="h-5 text-2xs font-bold"
+            >
+              Reply
+            </Button>
+          ) : null}
         </header>
+        {replyTo !== undefined ? <div className="min-w-0">{replyTo}</div> : null}
         {children !== undefined ? <div className="min-w-0">{children}</div> : null}
         {footer !== undefined ? (
           <footer className="flex flex-wrap items-center gap-1.5 text-md">{footer}</footer>

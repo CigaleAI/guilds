@@ -69,12 +69,14 @@ In a group-triggered run, State already contains the public-history snapshot.
 A separate Group Chat info user message identifies the latest delivery:
 
 Group Chat info: {
-  "latestMessage": {"sentBy": "...", "content": "...", "tagged": ["..."]},
+  "latestMessage": {"seq": 12, "sentBy": "...", "content": "...", "tagged": ["..."]},
   "youWereTagged": true
 }
 
 `youWereTagged` is true when your name is in `tagged` on any message you had
-not yet seen.
+not yet seen. When an unseen message replies to an earlier one (`replyToSeq`),
+Group Chat info also carries `replyTo`, the message being answered, and
+`group.history` includes surrounding messages around it.
 
 <capability name="scripts">
 <capability name="no_coding">A script is the only way to execute code in the

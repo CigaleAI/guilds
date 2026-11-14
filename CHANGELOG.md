@@ -8,6 +8,17 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Operators can reply to an earlier message in a guild's
+group chat (`reply_to_seq` on `POST /api/guilds/:id/group-chat/messages`
+and on each public message). Each message in the chat has a **Reply**
+action that pins it above the composer, and clicking a reply quote jumps
+to and lights the original message. An untagged operator reply to a
+member agent's post wakes (and, with `interrupt: true`, cancels) only
+that agent; explicit `@` tags override. Woken runs receive `replyTo` in
+`Group Chat info`, `seq` and `replyToSeq` on `group.history` entries,
+and two messages before and after the target in the history candidates
+(ranked by Jev when System One is set).
+
 **Rebuild.** The shared Guidelines in every run's system prompt no
 longer catalogue native tools; how to call a tool stays on that tool.
 They list each agent and its purpose from the guild roster, name the

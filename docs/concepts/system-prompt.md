@@ -53,8 +53,8 @@ The run's own messages follow the system message:
 - A direct run continues with the operator's message, if it was
   created with one.
 - A run woken by the [group chat](group-chat.md) gets a Group Chat
-  info message: the latest group message and whether the agent was
-  tagged.
+  info message: the latest group message, whether the agent was
+  tagged, and, when replying, the message being replied to.
 - A run woken by a [routine](routines.md) gets a Schedule wake-up
   message: the routine's instruction and when it last fired.
 - A later generation can open with a Wake-up message instead, when a
@@ -195,7 +195,7 @@ The run's system row metadata records `task_source`
 ```text
 0  system   composed prompt (<guidelines>, <task>, <state>, <memory>)
 1  user     the operator's message, if any (direct)
-            Group Chat info: { latestMessage, youWereTagged } (group)
+            Group Chat info: { latestMessage, youWereTagged, replyTo? } (group)
             Schedule wake-up: { id, cron or window, instruction, previous_run_at } (schedule)
 ```
 
@@ -231,7 +231,7 @@ coding agent's State intro adds a line on `repositories`.
 | `max_tool_calls` | the run's tool-call budget |
 | `group.members` | the roster: `name`, and `focus` (its purpose) when set |
 | `group.operators` | the guild's operators: `name` and `role` ([Operators](operators.md)) |
-| `group.history` | up to 10 public rows, each with `sentBy`: the last 10, or the 10 the group router keeps from the last 40 ([Group chat](group-chat.md#delivery)) |
+| `group.history` | up to 10 public rows, each with `seq`, `sentBy`, and optional `replyToSeq`: from the recent chat and any active reply window, ranked by the group router when set ([Group chat](group-chat.md#delivery)) |
 | `group.about`, `group.description` | the guild's short and long goal, when set |
 | `collections` | every collection the agent can read, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
 | `scripts` | the script catalog ([Scripts](scripts.md)) |
