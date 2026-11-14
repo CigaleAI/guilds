@@ -43,6 +43,7 @@ export type AgentRow = GuildAgentRow &
     guild_name: Guild["name"];
     guild_about: Guild["about"];
     guild_description: Guild["description"];
+    guild_keep_tool_result_generations: Guild["keep_tool_result_generations"];
     org_slug: InferSelectModel<typeof orgs>["slug"];
     guild_operators: GuildOperatorRow[];
   };
@@ -279,6 +280,7 @@ export async function getAgent(pool: Queryable, agentId: string): Promise<AgentR
        m.max_workspace_mib AS machine_max_workspace_mib, m.workspace_mib AS machine_workspace_mib,
        m.harnesses AS machine_harnesses,
        p.name AS guild_name, p.about AS guild_about, p.description AS guild_description,
+       p.keep_tool_result_generations AS guild_keep_tool_result_generations,
        p.org_id AS org_id, o.slug AS org_slug,
        ${guildOperatorsColumn("guild_operators")}
      FROM agents a

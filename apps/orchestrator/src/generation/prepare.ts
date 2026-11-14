@@ -1,11 +1,11 @@
 import { existsSync, statSync } from "node:fs";
 import { agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { isOptimizedBrowserOn } from "../agents/config.js";
+import { isOptimizedBrowserOn, resolveAgentConfig } from "../agents/config.js";
 import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";
-import type { AgentConfig, RunTaskSource } from "../db/schema/index.js";
+import type { AgentConfig, ResolvedAgentConfig, RunTaskSource } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
@@ -175,10 +175,13 @@ export class RunPreparation {
     };
   }
 
-  /** The agent's validated config and the tools, secrets, and connections it is granted; 422 when either fails. */
-  private async agentAccess(agent: AgentRow): Promise<{ config: AgentConfig; access: RuntimeAccess }> {
+  /**
+   * The agent's validated config, resolved against its guild, and the tools, secrets, and
+   * connections it is granted; 422 when either fails.
+   */
+  private async agentAccess(agent: AgentRow): Promise<{ config: ResolvedAgentConfig; access: RuntimeAccess }> {
     try {
-      const config = validateAgentConfig(agent.config);
+      const config = resolveAgentConfig(validateAgentConfig(agent.config), agent.guild_keep_tool_result_generations);
       const access = await this.services.db.agentRuntime(agent, this.services.mcp);
       return { config, access };
     } catch (error) {

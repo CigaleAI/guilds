@@ -29,6 +29,8 @@ export type Guild = {
   visibility: "org" | "private";
   operators: GuildOperator[];
   routines_enabled: boolean;
+  /** User turns, including the current one, whose tool results stay in the prompt of each agent that sets none. */
+  keep_tool_result_generations: number;
 };
 
 /** A git repository of a guild, cloned into each coding agent's workspace. */
@@ -78,6 +80,7 @@ export type GuildInput = Partial<
     | "git_author_email"
     | "routines_enabled"
     | "visibility"
+    | "keep_tool_result_generations"
   >
 >;
 

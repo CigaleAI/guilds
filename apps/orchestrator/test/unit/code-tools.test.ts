@@ -25,7 +25,7 @@ import { REGISTRY } from "../../src/toolbox/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
-import type { AgentConfig, RunConfigSnapshot } from "../../src/db/schema/index.js";
+import type { ResolvedAgentConfig, RunConfigSnapshot } from "../../src/db/schema/index.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, liveSecret, makeLoop } from "../helpers/generation.js";
 import { connectionRow } from "../helpers/servers.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
@@ -43,7 +43,7 @@ const GITHUB_APP_KEYS = {
   client_secret: "client-secret",
 };
 /** A coding agent's config: coding on, with a harness. */
-const CODER: AgentConfig = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
+const CODER: ResolvedAgentConfig = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
 const originalStream = live.streamCompletion;
 /** What `guilds-harness check` answers for Claude Code installed and running on a granted token. */
 const HARNESS_READY = { installed: true, version: "9.9.9 (stub)", credential: "secret" };

@@ -21,7 +21,7 @@ export const defaultAgentConfig: AgentConfig = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   max_wake_ups: 10,
-  keep_tool_result_generations: 1,
+  keep_tool_result_generations: null,
   max_scripts: 10,
   max_workspace_mib: 10240,
   browser: false,
@@ -59,11 +59,6 @@ export const limitFields = [
     label: "Max wake-ups",
     hint: "The most wake-ups one run may fire.",
   },
-  {
-    key: "keep_tool_result_generations",
-    label: "Keep tool results",
-    hint: "How many user turns, including the current one, keep full tool output in the model prompt. Older large results are stubbed; the stored transcript is unchanged.",
-  },
 ] as const;
 
 type LimitKey = (typeof limitFields)[number]["key"];
@@ -94,11 +89,14 @@ export type ConfigForm = {
   memory: boolean;
   max_scripts: string;
   max_workspace_mib: string;
+  /** Empty takes the guild's. */
+  keep_tool_result_generations: string;
 } & Record<LimitKey, string>;
 
 export type ConfigErrors = Partial<
   Record<
     | LimitKey
+    | "keep_tool_result_generations"
     | "temperature"
     | "max_scripts"
     | "max_workspace_mib"
@@ -140,7 +138,8 @@ export function configFormOf(config: AgentConfig, machineId = ""): ConfigForm {
     max_tool_calls: String(config.max_tool_calls),
     max_input_tokens: String(config.max_input_tokens),
     max_wake_ups: String(config.max_wake_ups),
-    keep_tool_result_generations: String(config.keep_tool_result_generations ?? 1),
+    keep_tool_result_generations:
+      config.keep_tool_result_generations === null ? "" : String(config.keep_tool_result_generations),
     max_scripts: String(config.max_scripts ?? 10),
     max_workspace_mib: String(config.max_workspace_mib ?? 10240),
   };
@@ -153,11 +152,18 @@ function positiveInteger(text: string): boolean {
 /** The server's rule for a harness model: empty for the default, else an alias or a full model name. */
 const harnessModelPattern = /^(?:[A-Za-z0-9][A-Za-z0-9._:/=,[\]-]{0,119})?$/;
 
-/** The run limits, the script cap and the disk cap that are not a whole number of 1 or more. */
+/**
+ * The run limits, the script cap and the disk cap that are not a whole number of 1 or more, and
+ * the tool-result turns when set and not one.
+ */
 function budgetErrors(form: ConfigForm): ConfigErrors {
   const errors: ConfigErrors = {};
   for (const field of limitFields) {
     if (!positiveInteger(form[field.key])) errors[field.key] = "A whole number, 1 or more.";
+  }
+  const keep = form.keep_tool_result_generations;
+  if (keep.trim() && !positiveInteger(keep)) {
+    errors.keep_tool_result_generations = "A whole number, 1 or more, or empty.";
   }
   if (!positiveInteger(form.max_scripts)) errors.max_scripts = "A whole number, 1 or more.";
   if (!positiveInteger(form.max_workspace_mib))
@@ -277,7 +283,9 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     max_tool_calls: Number(form.max_tool_calls),
     max_input_tokens: Number(form.max_input_tokens),
     max_wake_ups: Number(form.max_wake_ups),
-    keep_tool_result_generations: Number(form.keep_tool_result_generations),
+    keep_tool_result_generations: form.keep_tool_result_generations.trim()
+      ? Number(form.keep_tool_result_generations)
+      : null,
     max_scripts: Number(form.max_scripts),
     max_workspace_mib: Number(form.max_workspace_mib),
   };
