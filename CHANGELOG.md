@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** In Studio's **Tools**, each native tool's name carries an
+info icon that says what the tool does in one plain sentence, on
+hover, keyboard focus, or a click or tap. Scripts and connection
+tools are unchanged.
+
 **Rebuild.** A record's value can be changed from the records grid
 without opening the record. Each column cell has a pencil, shown on
 hover or focus, that opens the record dialog's field for that column

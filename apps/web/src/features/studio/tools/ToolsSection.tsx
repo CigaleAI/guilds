@@ -15,8 +15,10 @@ import {
   type DataTableColumn,
 } from "@guildsrun/ui";
 import { useStudio } from "../StudioContext";
+import { nativeToolSummary } from "./nativeToolSummary";
 import { OfferedAgents } from "./OfferedAgents";
 import { ToolDetail } from "./ToolDetail";
+import { ToolSummaryInfo } from "./ToolSummaryInfo";
 import {
   TOOL_DEFAULT_HOURS,
   TOOL_WINDOW_HOURS,
@@ -187,23 +189,29 @@ function toolColumns(
       id: "tool",
       header: "Tool",
       className: "min-w-64",
-      cell: (tool) => (
-        <span className="flex flex-col gap-1">
-          <span className="font-mono text-sm font-medium">{tool.name}</span>
-          <span className="flex flex-wrap items-center gap-1 text-xs text-muted">
-            {tool.group}
-            {flagsOf(tool).map((flag) => (
-              <Tag
-                key={flag.kind}
-                tone={flag.kind === "needs_approval" ? "signal" : "ochre"}
-                font="sans"
-              >
-                {toolFlagLabel(flag)}
-              </Tag>
-            ))}
+      cell: (tool) => {
+        const summary = nativeToolSummary(tool);
+        return (
+          <span className="flex flex-col gap-1">
+            <span className="flex items-center gap-1">
+              <span className="font-mono text-sm font-medium">{tool.name}</span>
+              {summary ? <ToolSummaryInfo name={tool.name} summary={summary} /> : null}
+            </span>
+            <span className="flex flex-wrap items-center gap-1 text-xs text-muted">
+              {tool.group}
+              {flagsOf(tool).map((flag) => (
+                <Tag
+                  key={flag.kind}
+                  tone={flag.kind === "needs_approval" ? "signal" : "ochre"}
+                  font="sans"
+                >
+                  {toolFlagLabel(flag)}
+                </Tag>
+              ))}
+            </span>
           </span>
-        </span>
-      ),
+        );
+      },
     },
     {
       id: "offered",
