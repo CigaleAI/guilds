@@ -183,6 +183,13 @@
       "when": 1791968400000,
       "tag": "0026_guild_keep_tool_result_generations",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791972000000,
+      "tag": "0027_group_message_replies",
+      "breakpoints": true
     }
   ]
 }

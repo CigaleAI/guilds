@@ -135,7 +135,11 @@ export class RunPreparation {
    * A run of the agent about to be created. A group run sees the chat through `throughSeq`;
    * any other run sees all of it.
    */
-  async prepare(agentId: string, throughSeq: number | null): Promise<PreparedRun> {
+  async prepare(
+    agentId: string,
+    throughSeq: number | null,
+    deliveredThrough?: number,
+  ): Promise<PreparedRun> {
     const { db, scripts, groupRouter } = this.services;
     const agent = await this.services.generations.runnableAgent(agentId);
     const { config, access } = await this.agentAccess(agent);
@@ -144,7 +148,12 @@ export class RunPreparation {
     const caps = promptCapabilities(config, access.tools);
     const standing = standingForCapabilities(rawStanding, caps);
     const historyRows = await db.listGroupMessages(agent.guild_id, { throughSeq });
-    const history = await groupRouter.history({ rows: historyRows, agentName: agent.name, agentFocus: agent.focus });
+    const history = await groupRouter.history({
+      rows: historyRows,
+      agentName: agent.name,
+      agentFocus: agent.focus,
+      ...(deliveredThrough !== undefined ? { deliveredThrough } : {}),
+    });
     await this.prepareHome(agent);
     const state = this.runState(agent, {
       members,

@@ -5,7 +5,7 @@ import type { GuildAgentRow } from "../db/agents.js";
 import type { GuildOperatorRow } from "../db/guilds.js";
 import type { SecretRef } from "../db/schema/index.js";
 import { collectDirectoryListing, type DirectoryNotes } from "../directories/index.js";
-import { CONTEXT_HISTORY_LIMIT, groupChatHistory } from "../groupchat/history.js";
+import { CONTEXT_HISTORY_LIMIT, defaultHistoryRows, groupChatHistory } from "../groupchat/history.js";
 import type { RoutedMessage } from "../groupchat/router.js";
 import { utcClock, type UtcClock } from "../lib/clock.js";
 import type { JsonObject, JsonValue } from "../lib/json.js";
@@ -98,7 +98,7 @@ function stateGroup(options: RunStateInputs): StateGroup {
   const group: StateGroup = {
     members: options.members.map(stateMember),
     operators: (options.operators ?? []).map(({ name, role }) => ({ name, role })),
-    history: groupChatHistory(options.historyRows, { limit: CONTEXT_HISTORY_LIMIT }),
+    history: groupChatHistory(defaultHistoryRows(options.historyRows, undefined, CONTEXT_HISTORY_LIMIT)),
   };
   const about = (options.guildAbout ?? "").trim();
   if (about) {

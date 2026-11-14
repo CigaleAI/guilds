@@ -15,6 +15,16 @@ export class GroupChatCleared extends Error {
   }
 }
 
+export class GroupReplyTargetMissing extends Error {
+  seq: number;
+
+  constructor(seq: number) {
+    super(`message ${seq} not found in this guild`);
+    this.name = "GroupReplyTargetMissing";
+    this.seq = seq;
+  }
+}
+
 export class LastGuildAdmin extends Error {
   constructor(message = "a guild needs at least one admin") {
     super(message);

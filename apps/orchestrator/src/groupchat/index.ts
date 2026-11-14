@@ -1,4 +1,4 @@
-import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
+import { AgentMessageLimitReached, GroupChatCleared, GroupReplyTargetMissing } from "../db/errors.js";
 import { groupMessageItem, type GroupMessageView } from "../db/views.js";
 import { AsyncEvent, EventQueue, type StreamEvent } from "../lib/event.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
@@ -22,6 +22,7 @@ import { advanceGroupCursor,
   appendGroupChatError,
   clearGroupMessages,
   getGroupChatState,
+  getGroupMessage,
   listGroupMessages,
   listPendingGroupAgents,
   postAgentGroupMessage,
@@ -68,6 +69,7 @@ export type MessageAuthor = { id: string; name: string };
 function groupChatDatabase(db: Queryable) {
   return {
     getGroupChatState: bindQuery(db, getGroupChatState),
+    getGroupMessage: bindQuery(db, getGroupMessage),
     updateGroupAgentMessageLimit: bindQuery(db, updateGroupAgentMessageLimit),
     clearGroupMessages: bindQuery(db, clearGroupMessages),
     getGuild: bindQuery(db, getGuild),
@@ -309,29 +311,39 @@ export class GroupChat {
     return (await this.db.listGroupMessages(guildId)).map((row) => groupMessageItem(row));
   }
 
-  /** Posts an operator message as `author`. */
+  /** Posts an operator message as `author`, replying to `replyToSeq` when given. */
   async postUser(
     guildId: string,
     content: string,
     author: MessageAuthor,
+    replyToSeq?: number,
   ): Promise<GroupMessageView> {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
     }
     const text = requireContent(content);
     const tags = await this._tags(guildId, text);
-    const row = await this.db.postUserGroupMessage(
-      {
-        guildId,
-        content: text,
-        taggedNames: tags.names,
-        taggedAgentIds: tags.agentIds,
-        taggedUserIds: tags.userIds,
-        authorName: author.name,
-        authorUserId: author.id,
-      },
-      new Date(),
-    );
+    let row: GroupMessageRow | null;
+    try {
+      row = await this.db.postUserGroupMessage(
+        {
+          guildId,
+          content: text,
+          taggedNames: tags.names,
+          taggedAgentIds: tags.agentIds,
+          taggedUserIds: tags.userIds,
+          authorName: author.name,
+          authorUserId: author.id,
+          replyToSeq,
+        },
+        new Date(),
+      );
+    } catch (error) {
+      if (error instanceof GroupReplyTargetMissing) {
+        throw new GroupChatError(422, error.message);
+      }
+      throw error;
+    }
     if (row === null) {
       throw new GroupChatError(404, "guild not found");
     }
@@ -348,9 +360,11 @@ export class GroupChat {
     guildId: string,
     content: string,
     author: MessageAuthor,
+    replyToSeq?: number,
   ): Promise<GroupMessageView> {
-    const message = await this.postUser(guildId, content, author);
-    await this._interrupt(guildId, message.tagged_agent_ids);
+    const message = await this.postUser(guildId, content, author, replyToSeq);
+    const targetIds = await this._interrupt_targets(guildId, message);
+    await this._interrupt(guildId, targetIds);
     return message;
   }
 
@@ -407,6 +421,20 @@ export class GroupChat {
     const message = groupMessageItem(row);
     await this._after_commit(guildId, message);
     return `posted id=${message.id} seq=${message.seq}`;
+  }
+
+  async _interrupt_targets(guildId: string, message: GroupMessageView): Promise<string[]> {
+    if (message.tagged_agent_ids.length > 0 || message.reply_to_seq === null) {
+      return message.tagged_agent_ids;
+    }
+    const replied = await this.db.getGroupMessage(guildId, message.reply_to_seq);
+    if (replied?.author_type !== "agent" || replied.author_agent_id === null) {
+      return [];
+    }
+    const members = await this.db.listAgents(guildId);
+    return members.some((member) => member.id === replied.author_agent_id)
+      ? [replied.author_agent_id]
+      : [];
   }
 
   async _interrupt(guildId: string, taggedAgentIds: string[]): Promise<void> {

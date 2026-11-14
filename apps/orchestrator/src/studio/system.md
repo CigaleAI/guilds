@@ -86,6 +86,9 @@ text into a file:
 - A Task that explains peers' work beyond the hand-off: the draft keeps
   what this agent produces and consumes, and the table or tagged message
   that carries each.
+- A `focus` that is empty, that does not name what the agent owns, or
+  that another member could also claim: tell the operator. Do not put
+  that domain into Task to make up for it.
 - Tools, connections, or connection tools the agent is
   offered that its Task does not need and its recent runs do not call
   (`studio_list_runs`, `studio_get_run`): propose withdrawing them with

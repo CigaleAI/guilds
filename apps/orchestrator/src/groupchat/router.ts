@@ -22,11 +22,12 @@ export type HistoryDecision = {
   usage?: TypeSafeUsage;
 };
 
-/** A public message as a router reads it: where it sits, who wrote it, its text and its tags. */
+/** A public message as a router reads it: where it sits, who wrote it, its text, its tags, and what it replies to. */
 export type RoutedMessage = Pick<
   GroupMessageRow,
   "seq" | "author_type" | "author_name" | "content" | "tagged_names"
->;
+> &
+  Partial<Pick<GroupMessageRow, "reply_to_seq">>;
 
 /** A guild member as a router offers it: its name, and the focus and Task that say its duties. */
 export type RoutedMember = Pick<GuildAgentRow, "name" | "focus" | "task">;
@@ -45,6 +46,7 @@ export type GroupRouter = {
     rows: GroupMessageRow[];
     agentName: string;
     agentFocus?: string;
+    deliveredThrough?: number;
   }): Promise<HistoryDecision>;
 };
 

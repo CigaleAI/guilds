@@ -93,6 +93,7 @@ const message = (
   author_agent_id: author ? `a_${author}` : null,
   author_user_id: null,
   source_run_id: sourceRunId,
+  reply_to_seq: null,
   content: `message ${seq}`,
   tagged_names: tagged,
   created_at: ts(time),

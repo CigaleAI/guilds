@@ -73,6 +73,10 @@ test("script_run schema from type hints", () => {
   assert.match(String(noteWrite.function.parameters.properties.path?.description), /display path of an existing note/);
   assert.match(String(noteWrite.function.parameters.properties.key?.description), /the \.md file name, for example queries\.md$/);
   assert.deepEqual(schemaRequired("group_post"), ["content"]);
+  assert.match(String(REGISTRY.group_post!.description), /only for coordination/);
+  assert.match(String(REGISTRY.group_post!.description), /@operator-name/);
+  assert.match(String(REGISTRY.browse!.description), /authorize false/);
+  assert.match(String(REGISTRY.browse!.description), /needs_confirmation/);
   assert.deepEqual(schemaRequired("report_issue"), ["summary", "detail", "kind"]);
   const severity = REGISTRY.report_issue!.schema.function.parameters.properties?.severity;
   assert.ok(typeof severity === "object");

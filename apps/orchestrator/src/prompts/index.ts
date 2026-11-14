@@ -61,73 +61,61 @@ export function taskIntroForCapabilities(caps?: StandingCaps): string {
 export const STATE_PREFIX = "State: ";
 
 export const STATE_INTRO =
-  "A snapshot of the guild at the start of this run. Use it instead of an " +
-  "initial note_find, record_list, or script_list. Call those tools later only when " +
-  "you need a refresh.\n" +
+  "A snapshot of the guild at the start of this run. Use it as your initial " +
+  "context. Call listing tools later only when you need a refresh.\n" +
   "\n" +
   "`utc_now` is the UTC instant at run creation (ISO-8601). `utc_date` is " +
   "that calendar day, including the weekday. Treat them as the current " +
   "clock. Do not invent a date, weekday, or time of day. " +
   "`max_tool_calls` is the tool-invocation budget for this run. " +
-  "`group.about` is the short guild description when set. `group.description` is " +
-  "the longer guild brief when set. `group.members` is the agent " +
-  "roster and `group.operators` the people the guild works for; use those " +
-  "names when tagging. `group.history` is the last 10 public rows, each " +
-  "with `sentBy`, the member or operator who wrote it. " +
+  "`group.about` is the short guild goal when set. `group.description` is " +
+  "the longer guild goal when set. `group.members` lists every agent in this " +
+  "guild and its purpose (`focus`); use those names when tagging. " +
+  "`group.operators` lists the people the guild works for; use those names when " +
+  "tagging. `group.history` is up to 10 public rows, each " +
+  "with `seq`, `sentBy` (the member or operator who wrote it), and `replyToSeq` when it replies to an earlier message. " +
   "`collections` lists the collections this agent " +
   "can read (capped at 50): name, purpose, `access` (read or write), `scope` " +
   "(`guild` for a table of this guild, `org` for an organisation table), display " +
   "path, and `columns` (name, type, description, and when set required, " +
-  "unique, or the values a text column accepts). Notes are not listed here; " +
-  "search them with note_find. Shared files are not listed here; search them with file_find " +
-  "and copy one into your home with file_fetch. `scripts` are reusable Python files at " +
-  "`scripts/<name>.py` in your home that read their arguments as JSON from " +
-  "stdin; pass them in the `arguments` of script_run, or call a script " +
-  "listed with `parameters` as a tool under its name. " +
+  "unique, or the values a text column accepts). Notes are not listed here. " +
+  "Shared files are not listed here. `scripts` are this agent's reusable " +
+  "Python files. " +
   "`environment` is the secrets this agent " +
-  "has, injected as variables. Read those values from the process environment " +
-  "inside a script; never print them.";
+  "has, injected as variables. Never print those values.";
 
 export function stateIntroForCapabilities(caps: StandingCaps): string {
-  const listing = [
-    caps.notes ? "note_find" : null,
-    "record_list",
-    caps.scripts ? "script_list" : null,
-  ].filter((item): item is string => item !== null);
-  const listed =
-    listing.length === 1
-      ? listing[0]
-      : listing.length === 2
-        ? `${listing[0]} or ${listing[1]}`
-        : `${listing[0]}, ${listing[1]}, or ${listing[2]}`;
-  let text = STATE_INTRO.replace("initial note_find, record_list, or script_list", `initial ${listed}`);
-  if (!caps.notes) {
-    text = text.replace("Notes are not listed here; search them with note_find. ", "");
+  if (caps.scripts) {
+    return STATE_INTRO;
   }
-  if (!caps.files) {
-    text = text.replace(
-      "Shared files are not listed here; search them with file_find and copy one into your home with file_fetch. ",
-      "",
-    );
-  }
-  if (!caps.scripts) {
-    text = text.replace(
-      "`scripts` are reusable Python files at `scripts/<name>.py` in your home that read their arguments as JSON from stdin; pass them in the `arguments` of script_run, or call a script listed with `parameters` as a tool under its name. ",
-      "",
-    );
-    text = text.replace(
-      "Read those values from the process environment inside a script; never print them.",
-      "The values stay in the process environment; never print them.",
-    );
-  }
-  return text;
+  return STATE_INTRO.replace("`scripts` are this agent's reusable Python files. ", "");
 }
 
 export const REPOSITORIES_INTRO =
   "`repositories` lists the guild's git repositories: `name`, the `path` of your " +
   "working tree, and the `default_branch`. The platform clones a missing one at run " +
-  "start; after that you fetch, branch, commit, and push yourself. Read live git " +
-  "state with `shell`.";
+  "start; after that you fetch, branch, commit, and push yourself.";
+
+/** The guild roster as the State section lists it: each agent and its purpose, then the operators. */
+export function formatStateRoster(state: RunState): string {
+  const agents = state.group.members.map((member) =>
+    member.focus ? `- ${member.name}: ${member.focus}` : `- ${member.name}`,
+  );
+  const operators = state.group.operators.map(
+    (operator) => `- ${operator.name} (${operator.role})`,
+  );
+  const parts: string[] = [];
+  if (agents.length) {
+    parts.push("Agents in this guild, each with its purpose (`focus`):", ...agents);
+  }
+  if (operators.length) {
+    if (parts.length) {
+      parts.push("");
+    }
+    parts.push("Operators:", ...operators);
+  }
+  return parts.join("\n");
+}
 
 function xmlSection(name: string, body: string): string {
   return `<${name}>\n${body.replace(/\s+$/, "")}\n</${name}>`;
@@ -215,11 +203,17 @@ export function composeAgentSystemPrompt(
   memoryEnabled = true,
   memoryWrite = memoryEnabled,
 ): string {
-  return composeSystemPrompt(standingForMemory(standing, memoryEnabled, memoryWrite), task, state, memory, {
-    ...PREVIEW_CAPS,
-    memory: memoryEnabled,
-    memoryWrite,
-  });
+  return composeSystemPrompt(
+    standingForMemory(standing, memoryEnabled, memoryWrite),
+    task,
+    state,
+    memory,
+    {
+      ...PREVIEW_CAPS,
+      memory: memoryEnabled,
+      memoryWrite,
+    },
+  );
 }
 
 /** The `prompt.guidance` of each connector whose tools the run offers, in catalog order. */
@@ -249,11 +243,16 @@ export function composeSystemPrompt(
   ]
     .filter((part): part is string => part !== null)
     .join(" ");
-  const guidelines = [guidelinesBody(standing), ...guidance.map((text) => text.replace(/\s+$/, ""))].join("\n\n");
+  const roster = formatStateRoster(state);
+  const stateBody = [intro, roster, snapshot].filter((part) => part.length > 0).join("\n\n");
+  const guidelines = [
+    guidelinesBody(standing),
+    ...guidance.map((text) => text.replace(/\s+$/, "")),
+  ].join("\n\n");
   const parts = [
     xmlSection("guidelines", guidelines),
     xmlSection("task", `${taskIntroForCapabilities(caps)}\n\n${task.replace(/\s+$/, "")}`),
-    xmlSection("state", `${intro}\n\n${snapshot}`),
+    xmlSection("state", stateBody),
   ];
   if (memoryOn(caps)) {
     parts.push(renderMemorySection(memory, memoryWriteOn(caps)).replace(/\s+$/, ""));
@@ -280,7 +279,11 @@ export function hydrateStanding(options: {
   if (!existsSync(options.systemPath)) {
     throw new PromptError("system.md not found");
   }
-  return attachIdentity(readFileSync(options.systemPath, "utf8"), options.agentName, options.agentId);
+  return attachIdentity(
+    readFileSync(options.systemPath, "utf8"),
+    options.agentName,
+    options.agentId,
+  );
 }
 
 export type PromptNotes = {
@@ -313,9 +316,19 @@ export function hydratePrompts(
   }
   const expander = options.notes?.expandWikilinks?.bind(options.notes);
   if (expander) {
-    system = expander(system, options.orgSlug ?? "", options.guildName ?? "", options.agentName ?? "");
+    system = expander(
+      system,
+      options.orgSlug ?? "",
+      options.guildName ?? "",
+      options.agentName ?? "",
+    );
     if (task !== null) {
-      task = expander(task, options.orgSlug ?? "", options.guildName ?? "", options.agentName ?? "");
+      task = expander(
+        task,
+        options.orgSlug ?? "",
+        options.guildName ?? "",
+        options.agentName ?? "",
+      );
     }
   }
   system = attachIdentity(system, options.agentName ?? "", options.agentId ?? "");

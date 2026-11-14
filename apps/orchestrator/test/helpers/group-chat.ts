@@ -11,6 +11,7 @@ export function groupMessageRow(seq: number, overrides: Partial<GroupMessageRow>
     author_agent_id: null,
     author_user_id: null,
     source_run_id: null,
+    reply_to_seq: null,
     content: "",
     created_at: "2026-01-01T00:00:00.000Z",
     tagged_names: [],

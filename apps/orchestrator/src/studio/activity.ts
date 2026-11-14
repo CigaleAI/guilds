@@ -68,6 +68,7 @@ export type ActivityMessage = {
   // The person who posted an operator row; null for an agent's row.
   author_user_id: string | null;
   source_run_id: string | null;
+  reply_to_seq: number | null;
   tagged: string[];
   preview: string;
   length: number;
@@ -564,6 +565,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
     author_agent_id: row.author_agent_id,
     author_user_id: row.author_user_id,
     source_run_id: row.source_run_id,
+    reply_to_seq: row.reply_to_seq,
     tagged: row.tagged_names,
     preview: previewText(row.content, ACTIVITY_PREVIEW_CHARS),
     length: row.content.length,

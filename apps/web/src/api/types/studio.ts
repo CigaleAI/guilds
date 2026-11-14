@@ -528,6 +528,8 @@ export type ActivityMessage = {
   author_user_id: string | null;
   /** The wake that posted the row; null for the operator's rows. */
   source_run_id: string | null;
+  /** The earlier message in the guild that this row replies to, if any. */
+  reply_to_seq: number | null;
   /** Names the row tags. */
   tagged: string[];
   preview: string;

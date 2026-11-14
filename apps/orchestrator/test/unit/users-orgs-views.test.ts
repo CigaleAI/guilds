@@ -231,6 +231,7 @@ test("run and message views match R0 fixtures", () => {
       author_agent_id: null,
       author_user_id: null,
       source_run_id: null,
+      reply_to_seq: null,
       content: "hello @ada",
       tagged_names: ["ada"],
       tagged_agent_ids: [],

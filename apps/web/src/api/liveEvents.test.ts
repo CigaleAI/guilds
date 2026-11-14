@@ -27,6 +27,7 @@ const groupMessage = {
   author_name: "Scout",
   author_agent_id: "a1",
   source_run_id: null,
+  reply_to_seq: null,
   content: "Done @Ada",
   tagged: ["Ada"],
   tagged_agent_ids: [],
@@ -76,12 +77,14 @@ const studioMessage = {
 
 test("isGroupMessage admits a committed group message", () => {
   assert.equal(isGroupMessage(groupMessage), true);
+  assert.equal(isGroupMessage({ ...groupMessage, reply_to_seq: 2 }), true);
 });
 
 test("isGroupMessage refuses one with a missing tag list or another author type", () => {
   assert.equal(isGroupMessage({ ...groupMessage, tagged: undefined }), false);
   assert.equal(isGroupMessage({ ...groupMessage, author_type: "bot" }), false);
   assert.equal(isGroupMessage({ ...groupMessage, seq: "4" }), false);
+  assert.equal(isGroupMessage({ ...groupMessage, reply_to_seq: "2" }), false);
 });
 
 test("isGroupChatState admits a chat state, with or without the operator's read cursor", () => {

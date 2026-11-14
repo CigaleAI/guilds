@@ -221,10 +221,12 @@ test("studio system prompt states each design rule once and maps it onto Studio 
   const text = readStudioSystemTemplate();
   assert.match(text, /## Narrow agents/);
   assert.match(text, /No file describes every role/);
+  assert.match(text, /another member could also claim/);
   assert.match(text, /`studio_edit_note`/);
   assert.match(text, /studio_edit_access/);
   assert.equal(text.match(/Narrow is not isolated/g)?.length, 1);
   assert.equal(text.match(/costs context on every wake/g)?.length, 1);
+  assert.equal(text.match(/who to tag for a given issue/g)?.length, 1);
   assert.doesNotMatch(text, /inspector|select a Studio target|active target/i);
   assert.doesNotMatch(text, /You cannot create notes/);
 });

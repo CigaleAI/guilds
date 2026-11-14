@@ -13,10 +13,11 @@ export type GroupChatOperatorServices = {
   inbox: { ping(userIds: string[]): Promise<void> };
 };
 
-/** An operator's message to the group chat, and whether it interrupts the runs it targets. */
+/** An operator's message to the group chat, the earlier message it replies to, and whether it interrupts the runs it targets. */
 export const OperatorMessageSchema = Type.Object({
   content: Type.String(),
   interrupt: Type.Optional(Type.Boolean()),
+  reply_to_seq: Type.Optional(Type.Integer({ minimum: 1 })),
 });
 
 export type OperatorMessage = Static<typeof OperatorMessageSchema>;
@@ -64,7 +65,7 @@ export async function markGroupChatRead(
   return { seen_through_seq: seen };
 }
 
-/** Posts the operator's message, interrupting the agents it tags when asked; their own message counts as read. */
+/** Posts the operator's message, interrupting the agents it addresses when asked; their own message counts as read. */
 export async function postOperatorMessage(
   services: GroupChatOperatorServices,
   guildId: string,
@@ -74,8 +75,8 @@ export async function postOperatorMessage(
   const chat = groupChatOf(services);
   const posted =
     message.interrupt === true
-      ? await chat.postUserInterruption(guildId, message.content, author)
-      : await chat.postUser(guildId, message.content, author);
+      ? await chat.postUserInterruption(guildId, message.content, author, message.reply_to_seq)
+      : await chat.postUser(guildId, message.content, author, message.reply_to_seq);
   await markGroupChatSeen(
     services.db,
     { guild_id: guildId, user_id: author.id, seen_through_seq: posted.seq },

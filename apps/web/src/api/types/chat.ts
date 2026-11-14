@@ -37,6 +37,8 @@ export type GroupMessage = {
   author_agent_id: string | null;
   /** The run that produced an agent's post. */
   source_run_id: string | null;
+  /** The earlier message in this guild that this post replies to, if any. */
+  reply_to_seq: number | null;
   /** Markdown. Tags are written inline as `@name`. */
   content: string;
   tagged: string[];
@@ -45,8 +47,8 @@ export type GroupMessage = {
   created_at: string;
 };
 
-/** A group chat post; `interrupt` also stops the group runs it targets. */
-export type GroupMessageInput = { content: string; interrupt?: boolean };
+/** A group chat post; `reply_to_seq` answers an earlier message, and `interrupt` stops the group runs it targets. */
+export type GroupMessageInput = { content: string; interrupt?: boolean; reply_to_seq?: number };
 
 export type MentionNotice = {
   id: number;
