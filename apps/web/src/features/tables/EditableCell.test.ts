@@ -213,7 +213,8 @@ test("a cell's pencil edits its value in place: Cancel and an unchanged Save sen
     assert.equal(patches.length, 1);
     await press("Cancel");
 
-    // A valid change sends only that column, closes the editor, and the grid shows the saved value.
+    // A valid change sends only that column, closes the editor, and the grid shows the saved value
+    // once the records are fetched again.
     patchReply = () => {
       stored = record(7);
       return Response.json({ record: stored, warnings: [] });
@@ -225,7 +226,7 @@ test("a cell's pencil edits its value in place: Cancel and an unchanged Save sen
       path: "/api/collections/c1/records/1",
       body: JSON.stringify({ body: { score: 7 } }),
     });
-    assert.match(scoreCell(), /7/);
+    await until(() => /7/.test(scoreCell()), "the saved score");
 
     // None of it opened the record; a click on the row itself does.
     assert.equal(dialogOpen(), false, "editing in place never opens the record");
