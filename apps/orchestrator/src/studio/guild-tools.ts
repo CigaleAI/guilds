@@ -45,6 +45,7 @@ export const studioListGroupMessages: StudioTool = studioTool({
         author_type: row.author_type,
         author_name: row.author_name,
         author_agent_id: row.author_agent_id,
+        reply_to_seq: row.reply_to_seq,
         created_at: row.created_at,
         content: wrapEvidence({
           source: "group_message",

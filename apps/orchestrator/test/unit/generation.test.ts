@@ -1163,7 +1163,7 @@ describe("generation", { concurrency: 1 }, () => {
     assert.ok(!system.includes("note_find"));
     assert.ok(!system.includes("note_write"));
     assert.ok(!system.includes("<capability"));
-    assert.ok(system.includes("record_search"));
+    assert.ok(system.includes("collections you can read"));
   });
 
   test("generate_refuses_script_create_when_it_was_not_offered", async () => {

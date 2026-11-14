@@ -217,8 +217,10 @@ the recipe records.
   collection whose unique column carries the identity.
 - **Narrow roles.** A role's own rules and working files are notes
   that role alone writes: the role in `writers` and no `guild`. A note
-  the guild reaches holds only what every role that embeds it uses. No note describes each role's
-  job: agents see their peers' `focus` in State. The coach sets
+  the guild reaches holds only what every role that embeds it uses. No
+  note describes each role's job: the coach writes each role's `focus`
+  as the domain it owns, so another agent can tell who to tag, and
+  agents see those lines in State. The coach sets
   `false` in `native_tools` and in each connection role's `tools` for
   every tool a role does not call, and turns `config.scripting` off
   for a role that writes no scripts.

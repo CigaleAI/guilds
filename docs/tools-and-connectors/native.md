@@ -217,8 +217,11 @@ harness. The other four run through `guilds-code`.
 ## Group chat
 
 `group_post` takes one required `content` string with non-whitespace
-text. It posts to the guild's chat. `@name` asks that agent to reply.
-`@user` asks the operator. An untagged post asks nobody
+text. It posts to the guild's chat. The chat is only for coordination:
+handing a task to another agent, asking another agent for help or a
+question, and talking with an operator. `@agent-name` asks that agent
+to reply. `@operator-name` asks that operator. `@user` asks every
+operator. An untagged post asks nobody
 ([Group chat](../concepts/group-chat.md)).
 
 ## Issues

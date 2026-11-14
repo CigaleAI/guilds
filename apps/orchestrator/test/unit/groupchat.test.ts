@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { AgentMessageLimitReached, GroupChatCleared } from "../../src/db/errors.js";
+import { AgentMessageLimitReached, GroupChatCleared, GroupReplyTargetMissing } from "../../src/db/errors.js";
 import type { GroupMessageRow, NewAgentGroupMessage, NewUserGroupMessage } from "../../src/db/group-chat.js";
 import { groupMessageRow } from "../helpers/group-chat.js";
 import { groupMessageItem } from "../../src/db/views.js";
@@ -23,7 +23,12 @@ import {
   type GroupDelivery,
   type GroupRunner,
 } from "../../src/groupchat/delivery.js";
-import { CONTEXT_HISTORY_LIMIT, groupChatHistory } from "../../src/groupchat/history.js";
+import {
+  CONTEXT_HISTORY_LIMIT,
+  defaultHistoryRows,
+  groupChatHistory,
+  historyCandidateRows,
+} from "../../src/groupchat/history.js";
 import { parseTags, recognizedTags } from "../../src/groupchat/tags.js";
 import { groupChatUserMessage, wakeMessage } from "../../src/groupchat/wake.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
@@ -154,6 +159,12 @@ class MemoryGroupDB {
     return this.getGroupChatState(guildId);
   }
 
+  async getGroupMessage(guildId: string, seq: number) {
+    return (
+      this.messages.find((row) => row.guild_id === guildId && Number(row.seq) === seq) ?? null
+    );
+  }
+
   async listGroupMessages(guildId: string, options: { throughSeq?: number | null } = {}) {
     let rows = this.messages.filter((row) => row.guild_id === guildId);
     if (options.throughSeq !== undefined && options.throughSeq !== null) {
@@ -195,11 +206,26 @@ class MemoryGroupDB {
   }
 
   async postUserGroupMessage(input: NewUserGroupMessage, now: Date) {
-    const { guildId, content, taggedNames, taggedAgentIds, taggedUserIds, authorName } = input;
+    const {
+      guildId,
+      content,
+      taggedNames,
+      taggedAgentIds,
+      taggedUserIds,
+      authorName,
+      replyToSeq,
+    } = input;
     return this.lock.run(async () => {
       const guild = this.guilds[guildId];
       if (!guild) {
         return null;
+      }
+      const targetSeq = replyToSeq ?? null;
+      if (
+        targetSeq !== null &&
+        !this.messages.some((row) => row.guild_id === guildId && Number(row.seq) === targetSeq)
+      ) {
+        throw new GroupReplyTargetMissing(targetSeq);
       }
       guild.group_chat_seq = Number(guild.group_chat_seq) + 1;
       guild.group_agent_message_count = 0;
@@ -215,6 +241,7 @@ class MemoryGroupDB {
         taggedAgentIds,
         taggedUserIds,
         now,
+        targetSeq,
       );
     });
   }
@@ -280,6 +307,7 @@ class MemoryGroupDB {
     taggedAgentIds: string[],
     taggedUserIds: string[],
     now: Date,
+    replyToSeq: number | null = null,
   ) {
     const row = {
       id: this.nextId,
@@ -289,6 +317,7 @@ class MemoryGroupDB {
       author_name: authorName,
       author_agent_id: authorAgentId,
       source_run_id: sourceRunId,
+      reply_to_seq: replyToSeq,
       content,
       tagged_names: taggedNames,
       tagged_agent_ids: taggedAgentIds,
@@ -816,6 +845,7 @@ describe("groupchat", { concurrency: 1 }, () => {
       author_agent_id: "a_1",
       author_user_id: null,
       source_run_id: "r_1",
+      reply_to_seq: 3,
       content: "found it",
       tagged_names: ["writer"],
       tagged_agent_ids: ["a_2"],
@@ -824,6 +854,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     });
     assert.equal(item.id, 42);
     assert.equal(item.seq, 7);
+    assert.equal(item.reply_to_seq, 3);
     assert.deepEqual(item.tagged, ["writer"]);
     assert.deepEqual(item.tagged_agent_ids, ["a_2"]);
     assert.equal(item.created_at, now.toISOString());
@@ -846,6 +877,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const info = JSON.parse(content.slice("Group Chat info: ".length)) as Record<string, unknown>;
     assert.deepEqual(Object.keys(info), ["latestMessage", "youWereTagged"]);
     assert.deepEqual(info.latestMessage, {
+      seq: 2,
       sentBy: "agent1",
       content: "I found the relevant constraints.",
       tagged: [],
@@ -874,9 +906,9 @@ describe("groupchat", { concurrency: 1 }, () => {
     );
     assert.deepEqual(groupChatHistory(rows, { limit: 0 }), []);
     assert.deepEqual(groupChatHistory(rows.slice(0, 3), { limit: 10 }), [
-      { sentBy: "user", content: "m1", tagged: [] },
-      { sentBy: "user", content: "m2", tagged: [] },
-      { sentBy: "user", content: "m3", tagged: [] },
+      { seq: 1, sentBy: "user", content: "m1", tagged: [] },
+      { seq: 2, sentBy: "user", content: "m2", tagged: [] },
+      { seq: 3, sentBy: "user", content: "m3", tagged: [] },
     ]);
   });
 
@@ -912,12 +944,19 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("history_names_the_person_who_posted", () => {
     const history = groupChatHistory([
-      { author_type: "user", author_name: "ada", content: "hi", tagged_names: [] },
-      { author_type: "agent", author_name: "writer", content: "@ada done", tagged_names: ["ada"] },
+      { seq: 1, author_type: "user", author_name: "ada", content: "hi", tagged_names: [] },
+      {
+        seq: 2,
+        author_type: "agent",
+        author_name: "writer",
+        content: "@ada done",
+        tagged_names: ["ada"],
+        reply_to_seq: 1,
+      },
     ]);
     assert.deepEqual(history, [
-      { sentBy: "ada", content: "hi", tagged: [] },
-      { sentBy: "writer", content: "@ada done", tagged: ["ada"] },
+      { seq: 1, sentBy: "ada", content: "hi", tagged: [] },
+      { seq: 2, sentBy: "writer", content: "@ada done", tagged: ["ada"], replyToSeq: 1 },
     ]);
   });
 
@@ -1415,6 +1454,96 @@ describe("groupchat", { concurrency: 1 }, () => {
     assert.deepEqual(interruptTargets(["a_1", "a_2"], ["a_2", "a_3"]), ["a_2"]);
     assert.deepEqual(interruptTargets(["a_1", "a_2"], []), ["a_1", "a_2"]);
   });
+
+  test("untagged_reply_to_an_agent_post_wakes_only_that_agent_and_explicit_tags_override", async () => {
+    const { db, chat } = seed();
+    db.addRun("r_1", "a_1");
+    db.addRun("r_2", "a_2");
+    await chat.postFromRun("r_2", "a_2", "guild_1", "writer", "Draft ready.");
+    db.agents.a_1!.group_chat_delivered_through = 1;
+    db.agents.a_2!.group_chat_delivered_through = 1;
+    const runner = new FakeRunner();
+    chat.bind(runner);
+    const reply = await chat.postUser("guild_1", "Ship it.", OPERATOR, 1);
+    assert.equal(reply.reply_to_seq, 1);
+    await waitDispatch(chat);
+    assert.deepEqual(runner.deliveries, [["a_2", 2]]);
+    assert.equal(db.agents.a_1?.group_chat_delivered_through, 2);
+
+    runner.deliveries = [];
+    await chat.postUser("guild_1", "@researcher verify the sources.", OPERATOR, 1);
+    await waitDispatch(chat);
+    assert.deepEqual(runner.deliveries, [["a_1", 3]]);
+    assert.equal(db.agents.a_2?.group_chat_delivered_through, 3);
+  });
+
+  test("reply_to_missing_message_refuses_with_422", async () => {
+    const { chat } = seed();
+    await assert.rejects(
+      () => chat.postUser("guild_1", "Late reply", OPERATOR, 99),
+      (error: unknown) =>
+        error instanceof GroupChatError &&
+        error.status === 422 &&
+        error.detail === "message 99 not found in this guild",
+    );
+  });
+
+  test("interrupting_untagged_reply_to_agent_post_cancels_only_that_agent", async () => {
+    const { db, chat } = seed();
+    db.addRun("r_2", "a_2");
+    await chat.postFromRun("r_2", "a_2", "guild_1", "writer", "Working on v1.");
+    db.agents.a_1!.group_chat_delivered_through = 1;
+    db.agents.a_2!.group_chat_delivered_through = 1;
+    const runner = new FakeRunner();
+    runner.gates.set("a_1", new AsyncEvent());
+    runner.gates.set("a_2", new AsyncEvent());
+    chat.bind(runner);
+    await chat.postUser("guild_1", "@researcher @writer start", OPERATOR);
+    await waitStarted(runner, 2);
+    await chat.postUserInterruption("guild_1", "Change direction.", OPERATOR, 1);
+    assert.deepEqual(runner.cancelled, ["a_2"]);
+    runner.gates.delete("a_2");
+    runner.gates.get("a_1")?.set();
+    await waitDispatch(chat);
+    assert.deepEqual(runner.deliveries.at(-1), ["a_2", 3]);
+  });
+
+  test("group_chat_user_message_includes_replyTo_for_unseen_reply_and_default_history_keeps_window", () => {
+    const rows = Array.from({ length: 50 }, (_, index) =>
+      groupMessageRow(index + 1, {
+        content: `m${index + 1}`,
+        ...(index + 1 === 49 ? { reply_to_seq: 5 } : {}),
+        ...(index + 1 === 50
+          ? { author_type: "agent", author_name: "researcher", author_agent_id: "a_1" }
+          : {}),
+      }),
+    );
+    const [payload, meta] = groupChatUserMessage({
+      members: [
+        { id: "a_1", name: "researcher" },
+        { id: "a_2", name: "writer" },
+      ],
+      rows,
+      viewerName: "writer",
+      deliveredThrough: 48,
+    });
+    const info = JSON.parse(String(payload.content).slice("Group Chat info: ".length)) as {
+      replyTo?: { seq: number; content: string };
+    };
+    assert.deepEqual(info.replyTo, { seq: 5, sentBy: "user", content: "m5", tagged: [] });
+    assert.equal(meta.reply_to_seq, 5);
+
+    const candidates = historyCandidateRows(rows, 48);
+    assert.deepEqual(
+      candidates.slice(0, 5).map((row) => row.seq),
+      [3, 4, 5, 6, 7],
+    );
+    const fallback = defaultHistoryRows(rows, 48, CONTEXT_HISTORY_LIMIT);
+    assert.deepEqual(
+      fallback.map((row) => row.seq),
+      [3, 4, 5, 6, 7, 46, 47, 48, 49, 50],
+    );
+  });
 });
 
 describe("wake message", () => {
@@ -1445,6 +1574,16 @@ describe("wake message", () => {
     const rows = [row(1, "user", []), row(2, "agent", ["a_scout"], "a_writer")];
     assert.equal(wakeMessage(rows, "a_desk", 1)?.id, 2);
     assert.equal(wakeMessage(rows, "a_desk", 2), null);
+  });
+
+  test("an untagged operator reply to an agent's post wakes that agent directly without counting as broadcast", () => {
+    const rows = [
+      row(1, "agent", [], "a_desk"),
+      { ...row(2, "user", []), reply_to_seq: 1 },
+      row(3, "agent", ["a_desk"], "a_scout"),
+    ];
+    assert.equal(wakeMessage(rows.slice(0, 2), "a_desk", 1)?.id, 2);
+    assert.equal(wakeMessage(rows, "a_scout", 1)?.id, 3);
   });
 });
 

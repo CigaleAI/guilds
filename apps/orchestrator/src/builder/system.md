@@ -89,7 +89,7 @@ first working content, as Design describes.
    the roster small. Record each split, or the reason for a single role, in
    `design.specialization` (`narrower_tools`, `narrower_access`,
    `narrower_context`, `volume`, or `other`). Each role gets:
-   - a narrow `focus` and a `task.body` in the Task shape;
+   - a `focus` that names its domain and a `task.body` in the Task shape;
    - the `notes` or `collections` it alone writes and revises
      (playbooks, watchlists, scoring rules, style guides), named in its Task;
    - only the tools its Task calls. Every native tool is offered unless

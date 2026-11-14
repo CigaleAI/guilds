@@ -15,11 +15,13 @@ name.
   only one agent reads and writes for that agent, a note the guild reads
   only for what several of the guild's agents all use, a note other guilds
   read only for what they use too. It is not pasted into every Task.
-- No file describes every role. An agent learns who its peers are from
-  their `focus` in the roster, and what they exchange from the purpose and
-  columns of the tables they share. A shared note holds only what every
-  agent that reads it uses; a section only one role needs belongs in that
-  role's own note.
+- No file describes every role. Each agent has one domain, and that
+  domain is its `focus`: one short line that names what it owns, so
+  another agent can tell who to tag for a given issue. An agent learns
+  who its peers are from their `focus` in the roster, and what they
+  exchange from the purpose and columns of the tables they share. A
+  shared note holds only what every agent that reads it uses; a section
+  only one role needs belongs in that role's own note.
 - Task stays the short standing purpose: who this specialist is, what it
   owns, what it reads, what it produces and consumes through which
   channel, and the wake loop.

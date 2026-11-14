@@ -13,16 +13,17 @@ import {
   type QueuedMessage,
 } from "./messageQueue";
 
-/** For a message's text, the agents in a group run it would wait for. */
+/** For a message's text and optional reply target, the agents in a group run it would wait for. */
 export function useWaitsFor(
   agents: readonly Agent[],
   state: GroupChatState | undefined,
-): (content: string) => string[] {
+): (content: string, replyToAgentName?: string) => string[] {
   const activeAgents = state?.active_agents;
   return useMemo(() => {
     const names = new Set(agents.map((agent) => agent.name));
     const active = (activeAgents ?? []).map((agent) => agent.name);
-    return (content: string) => blockingAgents(content, names, active);
+    return (content: string, replyToAgentName?: string) =>
+      blockingAgents(content, names, active, replyToAgentName);
   }, [agents, activeAgents]);
 }
 
@@ -30,7 +31,7 @@ export function useWaitsFor(
 function sendQueued(
   guildId: string,
   message: QueuedMessage,
-  post: (content: string) => Promise<unknown>,
+  post: (message: QueuedMessage) => Promise<unknown>,
 ): void {
   void sendQueuedMessage(guildId, message, post).then((error) => {
     if (error) {
@@ -53,15 +54,23 @@ export function useSendQueuedMessages(
   const waitsFor = useWaitsFor(agents, state);
   useEffect(() => {
     if (!state || queue.some((message) => message.status === "sending")) return;
-    const next = sendableHead(queue, waitsFor)[0];
-    if (next) sendQueued(guildId, next, (content) => mutateAsync({ content }));
+    const next = sendableHead(queue, (item) => waitsFor(item.content, item.replyToAgentName))[0];
+    if (next) {
+      sendQueued(guildId, next, (item) =>
+        mutateAsync({
+          content: item.content,
+          ...(item.replyToSeq !== undefined ? { reply_to_seq: item.replyToSeq } : {}),
+        }),
+      );
+    }
   }, [guildId, queue, state, waitsFor, mutateAsync]);
 }
 
 function queuedNote(message: QueuedMessage, waiting: readonly string[]): string {
-  if (message.status === "failed") return "Couldn't send";
-  if (message.status === "sending" || !waiting.length) return "Sending…";
-  return `Waits for ${waiting.join(", ")}`;
+  const reply = message.replyToSeq !== undefined ? `Replying to #${message.replyToSeq} · ` : "";
+  if (message.status === "failed") return `${reply}Couldn't send`;
+  if (message.status === "sending" || !waiting.length) return `${reply}Sending…`;
+  return `${reply}Waits for ${waiting.join(", ")}`;
 }
 
 type GroupQueueProps = {
@@ -88,7 +97,7 @@ export function GroupQueue({ guildId, agents, state }: GroupQueueProps) {
             <Icon icon={Clock} size={14} className="mt-0.5 shrink-0 text-muted" />
             <div className="min-w-0 flex-1">
               <p className="type-label text-muted">
-                Queued · {queuedNote(message, waitsFor(message.content))}
+                Queued · {queuedNote(message, waitsFor(message.content, message.replyToAgentName))}
               </p>
               <p className="line-clamp-2 break-words whitespace-pre-wrap">{message.content}</p>
             </div>
@@ -98,8 +107,12 @@ export function GroupQueue({ guildId, agents, state }: GroupQueueProps) {
                 size="xs"
                 disabled={sending}
                 onClick={() =>
-                  sendQueued(guildId, message, (content) =>
-                    mutateAsync({ content, interrupt: true }),
+                  sendQueued(guildId, message, (item) =>
+                    mutateAsync({
+                      content: item.content,
+                      interrupt: true,
+                      ...(item.replyToSeq !== undefined ? { reply_to_seq: item.replyToSeq } : {}),
+                    }),
                   )
                 }
               >

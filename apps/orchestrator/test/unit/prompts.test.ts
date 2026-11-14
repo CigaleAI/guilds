@@ -9,6 +9,7 @@ import {
   STATE_INTRO,
   TASK_INTRO,
   composeSystemPrompt,
+  formatStateRoster,
   hydratePrompts,
   promptHash,
   standingForCapabilities,
@@ -36,7 +37,10 @@ const hydrate = loadJsonFixture<{
 
 class ExpandNotes {
   expandWikilinks(text: string, orgSlug: string, guildName: string, _agentName: string): string {
-    return text.replace("[[hello-guild]]", `[[orgs/${orgSlug}/guilds/${guildName}/shared/hello-guild]]`);
+    return text.replace(
+      "[[hello-guild]]",
+      `[[orgs/${orgSlug}/guilds/${guildName}/shared/hello-guild]]`,
+    );
   }
 }
 
@@ -132,12 +136,7 @@ test("hydrate compose is exact against the R0 fixture", () => {
     agentName: "researcher",
     agentId: "a_1",
   });
-  const composed = composeSystemPrompt(
-    standing,
-    task ?? "",
-    emptyRunState(),
-    EMPTY_MEMORY,
-  );
+  const composed = composeSystemPrompt(standing, task ?? "", emptyRunState(), EMPTY_MEMORY);
   assert.equal(task, "Do the work.\n");
   assert.equal(composed, loadTextFixture("prompts/compose.txt"));
   assert.equal(promptHash(composed), hashes.composed);
@@ -153,39 +152,36 @@ test("system template explains special messages", () => {
   assert.ok(text.includes("one canonical home"));
   assert.ok(text.includes("search the likely destination"));
   assert.ok(text.includes("Run history and group history are the canonical record"));
-  assert.ok(text.includes("Do not `group_post` unless"));
+  assert.ok(text.includes("It is only for coordination"));
+  assert.ok(text.includes("handing a task to another agent"));
+  assert.ok(text.includes("asking another agent for help"));
+  assert.ok(text.includes("asking another agent a question"));
+  assert.ok(text.includes("talking with an operator"));
   assert.ok(text.includes("Call `report_issue` when"));
   assert.ok(text.includes("compare the requested action with your Task"));
-  assert.ok(text.includes("A public reply or update requires"));
-  assert.ok(text.includes("shortest text that finishes your Task"));
+  assert.ok(text.includes("Work products stay in their canonical artifact"));
   assert.ok(text.includes("ELI5"));
-  assert.ok(text.includes("focused coordination surface"));
+  assert.ok(text.includes("every agent in this guild with its purpose"));
+  assert.ok(text.includes("Work toward that goal relentlessly"));
+  assert.ok(text.includes("group.about"));
+  assert.ok(text.includes("group.description"));
   assert.ok(text.includes("Group Chat info:"));
   assert.ok(text.includes('"youWereTagged"'));
   assert.ok(text.includes("Schedule wake-up:"));
   assert.ok(text.includes('"cron"'));
   assert.ok(text.includes('"instruction"'));
-  assert.ok(text.includes("one-line label"));
-  assert.ok(text.includes("schedule_create_cron"));
-  assert.ok(text.includes("schedule_create_window"));
-  assert.ok(text.includes("script_create"));
-  assert.ok(text.includes("browser_navigate"));
-  assert.ok(text.includes("browser_scroll"));
-  assert.ok(text.includes("browser_eval"));
-  assert.ok(text.includes("note_find"));
-  assert.ok(text.includes("note_get"));
-  assert.ok(text.includes("record_search"));
-  assert.ok(text.includes("record_list"));
-  assert.ok(text.includes("record_add"));
-  assert.ok(text.includes("record_update"));
-  assert.ok(text.includes("record_remove"));
   assert.ok(!text.includes("object_put"));
   assert.ok(!text.includes("collection_create"));
   assert.ok(!text.includes("observed_at"));
-  assert.ok(text.includes("Never\ninvent an id") || text.includes("Never invent an id"));
-  assert.ok(text.includes("must end in"));
-  assert.ok(text.includes("Notes have no folders"));
   assert.ok(!text.includes("history-archive"));
+  assert.ok(!text.includes("note_find"));
+  assert.ok(!text.includes("note_write"));
+  assert.ok(!text.includes("record_search"));
+  assert.ok(!text.includes("record_list"));
+  assert.ok(!text.includes("schedule_create_cron"));
+  assert.ok(!text.includes("browser_navigate"));
+  assert.ok(!text.includes("browser_snapshot"));
+  assert.ok(!text.includes("script_create"));
   assert.ok(text.includes("max_tool_calls"));
   assert.ok(text.includes("utc_now"));
   assert.ok(text.includes("utc_date"));
@@ -194,16 +190,15 @@ test("system template explains special messages", () => {
   assert.ok(text.includes(`${LOW_TOOL_CALL_BUDGET} or fewer`));
   assert.ok(text.includes("Do not fire a batch larger"));
   assert.ok(text.includes("Call only the tools this run offered"));
-  assert.ok(text.includes("When this run offers script tools"));
-  assert.ok(text.includes("json.load(sys.stdin)"));
   assert.ok(text.includes('<capability name="notes">'));
   assert.ok(text.includes('<capability name="scripts">'));
-  assert.ok(text.includes('<capability name="browser_standard">'));
-  assert.ok(text.includes('<capability name="browser_optimized">'));
   assert.ok(text.includes('<capability name="memory">'));
+  assert.ok(!text.includes('<capability name="browser_standard">'));
+  assert.ok(!text.includes('<capability name="browser_optimized">'));
+  assert.ok(!text.includes('<capability name="files">'));
 });
 
-test("standing omits script notes and browser guides when those capabilities are off", () => {
+test("standing omits script and note guides when those capabilities are off", () => {
   const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
   const off = standingForCapabilities(text, {
     scripts: false,
@@ -211,50 +206,19 @@ test("standing omits script notes and browser guides when those capabilities are
     browser: false,
     coding: false,
   });
-  assert.ok(!off.includes("script_create"));
-  assert.ok(!off.includes("browser_navigate"));
-  assert.ok(!off.includes("note_find"));
-  assert.ok(!off.includes("note_write"));
+  assert.ok(!off.includes("A script is the only way to execute code"));
+  assert.ok(!off.includes("display paths returned by note tools"));
   assert.ok(!off.includes("<capability"));
-  assert.ok(off.includes("record_search"));
   const on = standingForCapabilities(text, {
     scripts: true,
     notes: true,
     browser: true,
     coding: false,
   });
-  assert.ok(on.includes("script_create"));
-  assert.ok(on.includes("note_find"));
-  assert.ok(on.includes("browser_navigate"));
-  assert.ok(on.includes("browser_scroll"));
-  assert.ok(on.includes("browser_eval"));
   assert.ok(on.includes("A script is the only way to execute code"));
-  assert.ok(!on.includes("shell_status"));
+  assert.ok(on.includes("display paths returned by note tools"));
+  assert.ok(!on.includes("code_task"));
   assert.ok(!on.includes("<capability"));
-});
-
-test("the browser renders the block of its mode and never both", () => {
-  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
-  const caps = { scripts: false, notes: false, browser: true, coding: false };
-  const standard = standingForCapabilities(text, caps);
-  assert.ok(standard.includes("browser_navigate"));
-  assert.ok(standard.includes("browser_eval"));
-  assert.ok(!standard.includes("`browse`"));
-  assert.ok(!standard.includes("needs_confirmation"));
-  assert.ok(!standard.includes("<capability"));
-  assert.equal(standingForCapabilities(text, { ...caps, browserOptimized: false }), standard);
-  const optimized = standingForCapabilities(text, { ...caps, browserOptimized: true });
-  assert.ok(optimized.includes("`browse`"));
-  assert.ok(optimized.includes("browser_eval"));
-  assert.ok(optimized.includes("`authorize: true`"));
-  assert.ok(optimized.includes("needs_confirmation"));
-  assert.ok(optimized.includes("needs_login"));
-  assert.ok(!optimized.includes("browser_navigate"));
-  assert.ok(!optimized.includes("browser_scroll"));
-  assert.ok(!optimized.includes("<capability"));
-  const off = standingForCapabilities(text, { ...caps, browser: false, browserOptimized: true });
-  assert.ok(!off.includes("`browse`"));
-  assert.ok(!off.includes("browser_eval"));
 });
 
 test("the coding block replaces the scripts-only line for coding agents", () => {
@@ -265,8 +229,8 @@ test("the coding block replaces the scripts-only line for coding agents", () => 
     browser: false,
     coding: true,
   });
-  assert.ok(coding.includes("shell_status"));
   assert.ok(coding.includes("code_task"));
+  assert.ok(coding.includes("agent/<your name>/<topic>"));
   assert.ok(!coding.includes("file_edit"));
   assert.ok(coding.includes("run one-off commands with `shell`"));
   assert.ok(!coding.includes("A script is the only way to execute code"));
@@ -277,8 +241,8 @@ test("the coding block replaces the scripts-only line for coding agents", () => 
     browser: false,
     coding: true,
   });
-  assert.ok(noScripts.includes("shell_status"));
-  assert.ok(!noScripts.includes("script_create"));
+  assert.ok(noScripts.includes("code_task"));
+  assert.ok(!noScripts.includes("A script is reusable Python"));
   assert.ok(!noScripts.includes("<capability"));
 });
 
@@ -338,7 +302,10 @@ test("compose omits the memory section when memory is off", () => {
   assert.ok(!composed.includes("<memory>"));
   assert.ok(!composed.includes("memory_write"));
   assert.ok(composed.includes("<task>"));
-  assert.equal(taskIntroForCapabilities(caps), TASK_INTRO.replace("; it is not yours to edit with memory_write", ""));
+  assert.equal(
+    taskIntroForCapabilities(caps),
+    TASK_INTRO.replace("; it is not yours to edit with memory_write", ""),
+  );
   assert.equal(taskIntroForCapabilities({ ...caps, memory: true }), TASK_INTRO);
 });
 
@@ -361,21 +328,23 @@ test("compose keeps memory but omits memory_write when the write tool is off", (
   assert.ok(composed.includes("<memory>"));
   assert.ok(!composed.includes("memory_write"));
   assert.ok(composed.includes("private place for whatever"));
-  assert.equal(taskIntroForCapabilities(caps), TASK_INTRO.replace("; it is not yours to edit with memory_write", ""));
+  assert.equal(
+    taskIntroForCapabilities(caps),
+    TASK_INTRO.replace("; it is not yours to edit with memory_write", ""),
+  );
 });
 
-test("state intro omits note and script lines when those capabilities are off", () => {
+test("state intro omits the scripts line when scripting is off", () => {
   const off = stateIntroForCapabilities({
     scripts: false,
     notes: false,
     browser: false,
     coding: false,
   });
-  assert.ok(off.includes("initial record_list"));
+  assert.ok(off.includes("Call listing tools later"));
   assert.ok(!off.includes("note_find"));
   assert.ok(!off.includes("file_find"));
-  assert.ok(!off.includes("script_list"));
-  assert.ok(!off.includes("scripts/<name>.py"));
+  assert.ok(!off.includes("`scripts` are this agent's reusable"));
   const on = stateIntroForCapabilities({
     scripts: true,
     notes: true,
@@ -384,6 +353,27 @@ test("state intro omits note and script lines when those capabilities are off", 
     coding: false,
   });
   assert.equal(on, STATE_INTRO);
+});
+
+test("the State section lists each agent and its purpose", () => {
+  const state = emptyRunState();
+  state.group.members = [{ name: "researcher", focus: "reads papers" }, { name: "writer" }];
+  state.group.operators = [{ name: "alice", role: "admin" }];
+  assert.equal(
+    formatStateRoster(state),
+    [
+      "Agents in this guild, each with its purpose (`focus`):",
+      "- researcher: reads papers",
+      "- writer",
+      "",
+      "Operators:",
+      "- alice (admin)",
+    ].join("\n"),
+  );
+  const composed = composeSystemPrompt("Be brief.\n", "Do the work.\n", state, EMPTY_MEMORY);
+  assert.ok(composed.includes("- researcher: reads papers"));
+  assert.ok(composed.includes("- alice (admin)"));
+  assert.equal(formatStateRoster(emptyRunState()), "");
 });
 
 test("compose_system_prompt has four parts", () => {

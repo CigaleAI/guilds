@@ -3,11 +3,14 @@ import { nativeTool } from "./types.js";
 import { ToolUnavailableError } from "./errors.js";
 
 const DESCRIPTION =
-  "Post a public message to this agent's guild chat. Format cleanly using " +
-  "Markdown with line breaks, paragraphs, and bullet points where appropriate. " +
-  "Tag @agent-name to ask that agent to reply, or @user to ask the operator. " +
-  "Untagged posts do not ask anyone to reply. content must contain non-whitespace " +
-  "text.";
+  "Post a public message to this agent's guild chat. The chat is only for " +
+  "coordination: handing a task to another agent, asking another agent for help " +
+  "or a question, and talking with an operator. Work products stay in their " +
+  "canonical artifact; do not post them or unsolicited status. Format cleanly " +
+  "using Markdown with line breaks, paragraphs, and bullet points where " +
+  "appropriate. Tag @agent-name to ask that agent to reply, @operator-name to " +
+  "ask that operator, or @user to ask every operator. Untagged posts do not ask " +
+  "anyone to reply. content must contain non-whitespace text.";
 
 export const groupPost = nativeTool({
   name: "group_post",

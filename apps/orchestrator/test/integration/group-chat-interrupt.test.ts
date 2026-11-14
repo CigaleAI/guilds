@@ -81,6 +81,34 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
     });
     assert.equal(posted.statusCode, 202);
     assert.equal(posted.json().content, "new brief");
+    assert.equal(posted.json().reply_to_seq, null);
+
+    const badReplyType = await app.inject({
+      method: "POST",
+      url: `${base}/messages`,
+      headers: OWNER,
+      payload: { content: "follow up", reply_to_seq: 0 },
+    });
+    assert.equal(badReplyType.statusCode, 422);
+    assert.deepEqual(badReplyType.json().detail[0].loc, ["body", "reply_to_seq"]);
+
+    const missingReply = await app.inject({
+      method: "POST",
+      url: `${base}/messages`,
+      headers: OWNER,
+      payload: { content: "follow up", reply_to_seq: 99 },
+    });
+    assert.equal(missingReply.statusCode, 422);
+    assert.equal(missingReply.json().detail, "message 99 not found in this guild");
+
+    const replied = await app.inject({
+      method: "POST",
+      url: `${base}/messages`,
+      headers: OWNER,
+      payload: { content: "replying to first", reply_to_seq: Number(posted.json().seq) },
+    });
+    assert.equal(replied.statusCode, 202);
+    assert.equal(replied.json().reply_to_seq, Number(posted.json().seq));
 
     const state = await app.inject({ method: "GET", url: base, headers: OWNER });
     assert.deepEqual(state.json().active_agents, []);
