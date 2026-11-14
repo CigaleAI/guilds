@@ -91,8 +91,9 @@ section ([System prompt](../system-prompt.md)). It tells the agent to:
 - resume a session with its id to follow up or answer a question,
   rather than start a new one;
 - answer the harness's questions itself when it can, and otherwise ask
-  the operator: in its reply in a direct run, with `group_post` or in
-  its final message in a group or routine run;
+  the operator: in its reply in a direct run, in the group chat when
+  that is coordination, otherwise in its final message in a group or
+  routine run;
 - check the work with the project's tests, build, lint, and
   `git diff` before it reports, and say what ran and what failed;
 - work on a branch named `agent/<its name>/<topic>`, never on the

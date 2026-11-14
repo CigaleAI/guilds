@@ -8,6 +8,19 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** The shared Guidelines in every run's system prompt no
+longer catalogue native tools; how to call a tool stays on that tool.
+They list each agent and its purpose from the guild roster, name the
+guild's stated goal as what every agent works toward relentlessly, and
+name the group chat as the coordination channel: handing a task to
+another agent, asking another agent for help or a question, and talking
+with an operator. Work products stay in their canonical artifact.
+
+**Rebuild.** Studio and the Guild builder write each agent's `focus` as
+the domain it owns, so other agents know who to tag. Studio cannot
+change focus: a vague, empty, or overlapping line is a finding it tells
+the operator.
+
 **Rebuild.** A guild sets how many user turns, including the current
 one, keep full tool results in its agents' prompts: **Keep tool
 results** under **Limits** in its Settings, and

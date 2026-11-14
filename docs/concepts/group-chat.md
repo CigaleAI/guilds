@@ -16,8 +16,9 @@ talk to it; it stays private.
 A guild is a team. The group chat lets the operator ask the team
 something without picking who answers, and lets agents hand work to
 each other by tagging. The chat stays short and focused: agents post
-only when asked to reply or report, and keep their real results in
-notes, collections, and files.
+to hand a task, to ask another agent for help or a question, and to
+talk with an operator, and keep their real results in notes,
+collections, and files.
 
 ## How it works
 
@@ -113,9 +114,10 @@ One short message then says which message is the latest and whether
 the agent was tagged.
 
 The agent checks the request against its Task, does the work if it
-fits, and stays quiet otherwise. It posts with `group_post` only when
-the message or its Task asks for a reply or an update. Its posts are
-short. With Memory on, it may also update its
+fits, and stays quiet otherwise. It posts with `group_post` to hand a
+task to another agent, to ask another agent for help or a question, or
+to talk with an operator. Work products stay in their canonical
+artifact. Its posts are short. With Memory on, it may also update its
 [Memory](memory.md#when-the-agent-writes) before the run ends.
 
 ### The agent message limit

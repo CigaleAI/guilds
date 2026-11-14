@@ -217,25 +217,25 @@ async function createdOptimizedRun(): Promise<{ tools: string[]; system: string 
   return { tools: snapshot.tools.map(toolSchemaName), system: String(db.create_args?.system_content) };
 }
 
-test("a new run with the System One key on freezes browse and the agent-optimized browser's guidance", async () => {
+test("a new run with the System One key on freezes browse without cataloguing it in Guidelines", async () => {
   setInstanceKeys(storeKeys({ "system-one": { api_key: "ts-key" } }));
   const { tools, system } = await createdOptimizedRun();
   for (const name of OPTIMIZED_BROWSER_TOOLS) {
     assert.ok(tools.includes(name), name);
   }
   assert.ok(!tools.includes("browser_navigate"));
-  assert.match(system, /`browse` carries out a\s+whole web task/);
+  assert.doesNotMatch(system, /`browse` carries out a\s+whole web task/);
   assert.doesNotMatch(system, /`browser_snapshot`/);
   assert.doesNotMatch(system, /<capability/);
 });
 
-test("a new run with the System One key off freezes the step-by-step browser tools and their guidance", async () => {
+test("a new run with the System One key off freezes the step-by-step browser tools without cataloguing them in Guidelines", async () => {
   const { tools, system } = await createdOptimizedRun();
   for (const name of BROWSER_TOOLS) {
     assert.ok(tools.includes(name), name);
   }
   assert.ok(!tools.includes(BROWSE_TOOL));
-  assert.match(system, /`browser_snapshot`/);
+  assert.doesNotMatch(system, /`browser_snapshot`/);
   assert.doesNotMatch(system, /`browse` carries out/);
   assert.doesNotMatch(system, /<capability/);
 });

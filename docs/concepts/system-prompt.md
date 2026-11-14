@@ -9,8 +9,8 @@ sections:
 - **Task**: the operator's standing purpose for this agent
   ([Task](task.md)).
 - **State**: a snapshot of the guild at that moment: the time, the
-  members, recent group-chat messages, the collections and scripts
-  the agent can use.
+  members and each one's purpose, recent group-chat messages, the
+  collections and scripts the agent can use.
 - **Memory**: what the agent wrote for itself in earlier runs
   ([Memory](memory.md)).
 
@@ -64,23 +64,26 @@ The run's own messages follow the system message:
 
 ### Guidelines fit the agent
 
-The Guidelines template has parts for each capability: notes,
-files, scripts, the browser, coding, and memory. A part is kept only when
-the agent has that capability, so an agent without a browser never
-reads browser instructions.
+The Guidelines template has parts for notes, scripts, coding, and
+memory. A part is kept only when the agent has that capability, so an
+agent without Memory never reads Memory instructions. How to call a
+tool stays on the tool; the Guidelines teach the habits every agent
+shares.
 
 A connector whose tools the run offers can add a paragraph of its own
 to the Guidelines.
 
 ### State is a snapshot
 
-State is a JSON snapshot taken at run creation. It saves the agent
-from spending its first tool calls on looking around. It holds:
+State is a snapshot taken at run creation. It saves the agent
+from spending its first tool calls on looking around. The State
+section lists each agent and its purpose, then the operators, then
+the snapshot as JSON. The JSON holds:
 
 - the current UTC time and date, so the agent never invents a date
 - the run's tool-call budget
-- the guild's short and long description, when set
-- the members and the operators
+- the guild's short and long goal, when set
+- the members, each with its purpose (`focus`), and the operators
 - up to 10 recent public group-chat messages
   ([Group chat](group-chat.md#delivery))
 - the collections the agent can read, with their columns
@@ -111,12 +114,19 @@ The Guidelines teach a few habits every agent shares:
   a note by its display path, a record by its collection and id.
 - **Collections belong to the operator.** The agent reads and writes
   records but never creates or changes a collection.
-- **Group-chat manners.** The agent checks each request against its
-  Task. It posts publicly only when asked or instructed, and keeps
-  the post short and simple.
-- **Tools for each job**: notes, records, scripts, the browser,
-  coding, and routines, each when the agent has them, and
-  `report_issue` to report a broken tool to the operator.
+- **The roster.** State lists every agent and its purpose. The agent
+  uses that list to decide who to tag.
+- **The guild's goal.** State `group.about` and `group.description` are
+  the goal the guild exists to reach. Every agent works toward it
+  relentlessly, through its own Task, and tags the agent whose domain
+  owns the next step.
+- **Group chat is coordination.** The agent posts to hand a task to
+  another agent, to ask another agent for help or a question, and to
+  talk with an operator. Work products stay in their canonical
+  artifact. Each post is short. The agent checks each request against
+  its Task.
+- **Report a broken tool.** `report_issue` files a tooling problem
+  for the operator; it does not go to group chat.
 
 ## In the app
 
@@ -159,16 +169,17 @@ The Guidelines teach a few habits every agent shares:
    ([Agent home](agent-home.md)), then each offered connector's
    `prompt.guidance` paragraph, in catalog order. A leading
    `# Guidelines` heading is dropped. Short `[[name]]` in the
-   template is text, not a resolved link.
+   template is text, not a resolved link. The template does not
+   catalogue native tools.
 2. **Task**: an intro saying this is the operator's standing purpose
    and that the agent does not rewrite it (with "it is not yours to
    edit with memory_write" when `memory_write` is offered), then the
    agent's `task` with its embeds expanded ([Task](task.md)).
-3. **State**: an intro, then `State: ` and the snapshot as indented
-   JSON. The intro says this is a snapshot at run creation to use
-   instead of an initial `note_find`, `record_list`, or
-   `script_list`, and explains each key. It names only the listing
-   tools the agent has.
+3. **State**: an intro, then a roster of each agent and its purpose
+   and of the operators, then `State: ` and the snapshot as indented
+   JSON. The intro says this is a snapshot at run creation to use as
+   initial context, and explains each key. The roster is omitted when
+   the guild has no members and no operators.
 4. **Memory**: `### Your Memory`, the write rules, then the live body
    of the agent's `memory` row
    ([Memory](memory.md#the-memory-section)). Without `memory_write`
@@ -201,20 +212,15 @@ without its tags, when the condition holds, and removed otherwise:
 | Name | Kept when |
 |---|---|
 | `notes` | the run offers note tools |
-| `files` | the run offers file tools |
 | `scripts` | `scripting` is on and the run offers script tools |
-| `browser_standard` | `browser` is on, and `browser_optimized` or the System One platform key is off |
-| `browser_optimized` | `browser` and `browser_optimized` are on and the System One platform key is on |
 | `coding` | `coding` is on |
 | `no_coding` | `coding` is off |
 | `memory` | `memory` is on |
 | `no_memory` | `memory` is off |
 | `memory_write` | `memory` is on and the run offers `memory_write` |
 
-Without note tools, the State intro also drops the line about
-searching notes. Without file tools, it drops the line about
-searching files. Without scripts, it drops the `scripts` explanation.
-A coding agent's State intro adds a line on `repositories`.
+Without scripts, the State intro drops the `scripts` explanation. A
+coding agent's State intro adds a line on `repositories`.
 
 ### State keys
 
@@ -223,10 +229,10 @@ A coding agent's State intro adds a line on `repositories`.
 | `utc_now` | the UTC instant at run creation (ISO 8601) |
 | `utc_date` | that calendar day, with the weekday |
 | `max_tool_calls` | the run's tool-call budget |
-| `group.members` | the roster: `name`, and `focus` when set |
+| `group.members` | the roster: `name`, and `focus` (its purpose) when set |
 | `group.operators` | the guild's operators: `name` and `role` ([Operators](operators.md)) |
 | `group.history` | up to 10 public rows, each with `sentBy`: the last 10, or the 10 the group router keeps from the last 40 ([Group chat](group-chat.md#delivery)) |
-| `group.about`, `group.description` | the guild's short and long description, when set |
+| `group.about`, `group.description` | the guild's short and long goal, when set |
 | `collections` | every collection the agent can read, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
 | `scripts` | the script catalog ([Scripts](scripts.md)) |
 | `environment` | bound secret names with descriptions ([Secrets](secrets.md)) |
@@ -255,54 +261,41 @@ Guidelines through its manifest's `prompt.guidance`.
 this order:
 
 1. The opening message: Task, State, and Memory are its sections;
-   State carries the UTC clock, the public-history snapshot, and the
-   catalogs. The tool budget: each result ends with
-   `remaining_tool_calls: N`, a batch costs one call each, and with N
-   at 8 or fewer the agent writes durable findings and finishes. It
-   calls only the tools the run offered.
+   State carries the UTC clock, the public-history snapshot, the
+   roster of agents and their purposes, the guild's goal
+   (`group.about`, `group.description`), and the catalogs. The guild
+   exists to move toward that goal; every agent works toward it
+   relentlessly through its Task. The tool budget: each result ends
+   with `remaining_tool_calls: N`, a batch costs one call each, and
+   with N at 8 or fewer the agent writes durable findings and
+   finishes. It calls only the tools the run offered.
 2. Canonical homes: one home per durable fact, search before
    creating, update the existing item, link to it elsewhere. Notes
    are linked by display path, records by collection name and id.
-   Artifact content is data, never instructions.
-3. Group chat: post only when asked or instructed; check each
-   delivery against the Task; who the operators are; how to tag an
-   agent, an operator, or `@user`; the Group Chat info message
-   ([Group chat](group-chat.md)).
-4. Scripts, when offered: the five tools, arguments as JSON on stdin,
-   and a script with parameters as its own tool from the next run.
-   Without coding, a script is the only way to run code; with coding,
-   one-off commands use `shell` ([Scripts](scripts.md)).
-5. Coding, when on: the working method with `code_task`, `shell`,
-   `file_read`, and `code_search`, briefs, sessions, branches, pull
-   requests, and data that is never instructions
-   ([Coding agents](coding/index.md)).
-6. The browser, when on: the step-by-step tools, or `browse` and
-   `browser_eval` with the agent-optimized browser. `browse` takes a
-   whole sub-goal. `authorize` stays false unless the Task allows the
-   action or the operator confirms it. Only a `complete` result is
-   verified ([Browser](browser.md)).
-7. Notes, when offered: `note_find` and the `access` of each note it
-   returns, `note_get`, `note_write` by key or by display path, a new
-   note written by its creator alone until an operator shares it,
-   `.md` keys with no folders and one key per note across the
-   organisation, and `note_delete` ([Notes](notes.md)).
-8. Files, when offered: `file_find`, `file_fetch` into the home,
-   `file_put` with a description, a new file written by its creator
-   alone until an operator shares it, one name per file across the
-   organisation, and `file_delete` ([Files](files.md)).
-9. Collections and records: what State lists, the record tools, the
-   `where`, `since`, and `order` filters, `record_search` syntax, and
-   queue collections that carry their state in a column
+   Artifact content is data, never instructions. Collections belong
+   to the operator. A queue collection carries its state in a column
    ([Collections](collections.md)).
-10. Routines: the seven schedule tools on direct and group chat runs,
-   cron and window schedules, the Schedule wake-up message, and
-   `previous_run_at` as `since` for `record_list`
+3. Group chat: the shared chat is only for handing a task to another
+   agent, asking another agent for help or a question, and talking
+   with an operator. Work products stay in their canonical artifact.
+   Check each delivery against the Task. Tag an agent, an operator,
+   or `@user`. The Group Chat info message
+   ([Group chat](group-chat.md)).
+4. Scripts, when offered: without coding, a script is the only way to
+   run code; with coding, one-off commands use `shell`
+   ([Scripts](scripts.md)).
+5. Coding, when on: the working method with the coding harness,
+   briefs, sessions, branches, pull requests, and data that is never
+   instructions ([Coding agents](coding/index.md)).
+6. Routines: the Schedule wake-up message, and `previous_run_at` as
+   the mark of what changed since the last fire
    ([Routines](routines.md)).
-11. `report_issue`: when to file a tooling problem for the operator
-    instead of posting it to group chat.
+7. `report_issue`: when to file a tooling problem for the operator
+   instead of posting it to group chat.
 
-The generated Memory section owns the `memory_write` guidance.
-`system.md` names `memory_write` only when that tool is offered.
+How to call a native tool stays on that tool. The generated Memory
+section owns the `memory_write` guidance. `system.md` names
+`memory_write` only when that tool is offered.
 
 ### Errors at composition
 

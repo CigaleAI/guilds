@@ -86,8 +86,11 @@ roster headers (task version and hash, routines, latest run, open
 draft, and warnings) and the open draft's header; it repeats no Task
 text.
 
-The agent's focus stays the short summary the app shows. Publishing a
-Task never overwrites it.
+The agent's focus stays the short summary the app shows: the domain it
+owns, so other agents know who to tag. Publishing a Task never
+overwrites it. A focus that is empty, that does not name that domain,
+or that another member could also claim is a finding: the coach tells
+the operator, and does not put the domain into Task to make up for it.
 
 ### Drafting a Task
 
