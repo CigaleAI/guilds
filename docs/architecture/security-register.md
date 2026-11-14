@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-59](#sec-59--every-member-who-saw-a-guild-could-change-how-many-turns-of-tool-results-its-agents-prompts-keep) | Every member who saw a guild could change how many turns of tool results its agents' prompts keep | Fixed 2026-11-14 |
 | [SEC-58](#sec-58--a-recipe-captured-from-a-private-guild-and-an-apply-into-one-were-open-to-every-member) | A recipe captured from a private guild, and an apply into one, were open to every member | Fixed 2026-11-03 |
 | [SEC-57](#sec-57--an-operator-could-see-a-private-guilds-notes-and-files-through-an-organisation-row) | An operator could see a private guild's notes and files through an organisation row | Fixed 2026-11-03 |
 | [SEC-56](#sec-56--deleting-a-private-guild-showed-the-history-of-its-notes-and-files-to-every-operator) | Deleting a private guild showed the history of its notes and files to every operator | Fixed 2026-11-03 |
@@ -67,6 +68,44 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-59 — Every member who saw a guild could change how many turns of tool results its agents' prompts keep
+
+**Status:** fixed 2026-11-14.
+
+**Found:** 2026-11-14, reviewing the guild's tool-result turns.
+
+**Where:** `createAgent` and `reconfigureAgent` in
+`apps/orchestrator/src/agents/service.ts`, which `POST
+/api/guilds/:id/agents` and `PUT /api/agents/:id/config` write an
+agent's config through; `updateGuildSettings` in
+`apps/orchestrator/src/guilds/service.ts`, behind `PUT
+/api/guilds/:id`; `destinationGuild` in
+`apps/orchestrator/src/recipes/plan.ts`, which a preview and an apply
+check their destination with.
+
+**Exposure:** an agent's `keep_tool_result_generations` decides how
+many user turns of full tool output, such as web pages and files,
+each model call replays. Every member who saw the guild set it on any
+of its agents, to any whole number, so an agent's later turns carried
+every earlier tool result and each call grew towards
+`max_input_tokens` on the organisation's model key.
+
+**Fix:** the guild holds the value its agents take
+(`guilds.keep_tool_result_generations`), and an agent's own value is
+optional. Only a guild admin changes the guild's value, creates an
+agent with a value of its own, changes or clears an agent's value,
+or applies into an existing guild a recipe whose roles carry one;
+anyone else gets 403. A save that leaves the value as it is passes.
+Agents change neither: no tool writes a guild's settings or an
+agent's config. `test/integration/tool-result-turns-setting.test.ts`
+pins it.
+
+**Residual risk:** the agent's other run limits, `max_steps`,
+`max_tool_calls`, `max_input_tokens` and `max_wake_ups`, stay open
+to every member who sees the guild. A recipe applied into a new
+guild sets its roles' values; its applier is that guild's first
+admin.
 
 ## SEC-58 — A recipe captured from a private guild, and an apply into one, were open to every member
 

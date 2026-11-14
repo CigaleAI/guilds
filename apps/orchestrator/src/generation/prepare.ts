@@ -1,11 +1,11 @@
 import { existsSync, statSync } from "node:fs";
 import { agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { isOptimizedBrowserOn } from "../agents/config.js";
+import { isOptimizedBrowserOn, resolveAgentConfig } from "../agents/config.js";
 import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";
-import type { AgentConfig, RunTaskSource } from "../db/schema/index.js";
+import type { AgentConfig, ResolvedAgentConfig, RunTaskSource } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
@@ -135,7 +135,11 @@ export class RunPreparation {
    * A run of the agent about to be created. A group run sees the chat through `throughSeq`;
    * any other run sees all of it.
    */
-  async prepare(agentId: string, throughSeq: number | null): Promise<PreparedRun> {
+  async prepare(
+    agentId: string,
+    throughSeq: number | null,
+    deliveredThrough?: number,
+  ): Promise<PreparedRun> {
     const { db, scripts, groupRouter } = this.services;
     const agent = await this.services.generations.runnableAgent(agentId);
     const { config, access } = await this.agentAccess(agent);
@@ -144,7 +148,12 @@ export class RunPreparation {
     const caps = promptCapabilities(config, access.tools);
     const standing = standingForCapabilities(rawStanding, caps);
     const historyRows = await db.listGroupMessages(agent.guild_id, { throughSeq });
-    const history = await groupRouter.history({ rows: historyRows, agentName: agent.name, agentFocus: agent.focus });
+    const history = await groupRouter.history({
+      rows: historyRows,
+      agentName: agent.name,
+      agentFocus: agent.focus,
+      ...(deliveredThrough !== undefined ? { deliveredThrough } : {}),
+    });
     await this.prepareHome(agent);
     const state = this.runState(agent, {
       members,
@@ -175,10 +184,13 @@ export class RunPreparation {
     };
   }
 
-  /** The agent's validated config and the tools, secrets, and connections it is granted; 422 when either fails. */
-  private async agentAccess(agent: AgentRow): Promise<{ config: AgentConfig; access: RuntimeAccess }> {
+  /**
+   * The agent's validated config, resolved against its guild, and the tools, secrets, and
+   * connections it is granted; 422 when either fails.
+   */
+  private async agentAccess(agent: AgentRow): Promise<{ config: ResolvedAgentConfig; access: RuntimeAccess }> {
     try {
-      const config = validateAgentConfig(agent.config);
+      const config = resolveAgentConfig(validateAgentConfig(agent.config), agent.guild_keep_tool_result_generations);
       const access = await this.services.db.agentRuntime(agent, this.services.mcp);
       return { config, access };
     } catch (error) {

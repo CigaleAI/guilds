@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "966cd6711c771e242c2c82287aad906e27f40ff482a4fba69fb717cf56f1a86f"
+      "sha256": "3f204b31528496c6bf01ea5e456dd6a6613c6c3b402666623b8669c1c7a92c84"
     },
     {
       "path": "ids/shape.json",
@@ -71,13 +71,13 @@
       "path": "prompts/compose.txt",
       "source": "src/prompts composeSystemPrompt",
       "generator_version": "1",
-      "sha256": "6b01c29b019035dd21bfd7e894f80c4a5318fdbb1314994e708436bfc78ee53e"
+      "sha256": "c2036c54fcab19f3fa1a68a08c80cef9af62a405f2447b6606515cb63fc711a9"
     },
     {
       "path": "prompts/hashes.json",
       "source": "src/prompts promptHash",
       "generator_version": "1",
-      "sha256": "97b0c2b512cfe87808049db551a184f55057cfb6447537df99dcc8d7b0db9f47"
+      "sha256": "fabcae9adff4bdb6f863bad3d987fefda8ecfc83dc062dfbab9ce5d45701cc63"
     },
     {
       "path": "prompts/hydrate.json",
@@ -113,7 +113,7 @@
       "path": "sse/group.txt",
       "source": "GET /api/guilds/{guild_id}/group-chat/stream",
       "generator_version": "1",
-      "sha256": "7d4d2a1783d9e5abc1866c1d6489921b8daaa9f0edac89d7b8d17b4f5b330db2"
+      "sha256": "2e2c10fea1fc1b31ce8208f0ca7584b808e2c9ae15160ae213b128627dcff44c"
     },
     {
       "path": "sse/run-cancel.txt",
@@ -137,13 +137,13 @@
       "path": "state/snapshot.json",
       "source": "src/state collectRunState",
       "generator_version": "1",
-      "sha256": "da60330afef10f7b4f53fd4a7ebe667e1cf2d1bddaa26c035257606d9cedb8da"
+      "sha256": "769a91d8b53efcdf2e56b86290a4beecf891fc876d3a6e549a9a8bf5b72123e0"
     },
     {
       "path": "views/run-message.json",
       "source": "orchestrator.db:message_item",
       "generator_version": "1",
-      "sha256": "0d9a926ad487e16310228e15c602e54552fa5a292e07ef6c1baae9a8e697d602"
+      "sha256": "fc6367585d43f70234e92bd3958dea2ceff7ff0455f8978dd9d7456ddbbbfc03"
     },
     {
       "path": "ws/browser.json",

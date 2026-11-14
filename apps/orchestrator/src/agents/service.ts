@@ -27,6 +27,7 @@ import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js"
 import type { AgentConfig } from "../db/schema/index.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
+import { requireAdministeredGuild } from "../guilds/access.js";
 import { assertGuildAgentRoom } from "../guilds/service.js";
 import { integrationState, SYSTEM_ONE } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
@@ -248,7 +249,8 @@ export async function addAgent(
 /**
  * Creates an agent in the guild: validated, on a model the organisation has connected, with the
  * agent-optimized browser only while it is ready, within its policy's caps and the guild's agent
- * limit, and on the machine the request names or the organisation's only one.
+ * limit, and on the machine the request names or the organisation's only one. Only a guild admin
+ * gives it tool-result turns of its own.
  */
 export async function createAgent(
   services: AgentServices,
@@ -267,6 +269,9 @@ export async function createAgent(
   const avatarColor = validateAvatarColor(request.avatarColor);
   const config = validateNewAgentConfig(request.config);
   assertCodingAgent(config);
+  if (config.keep_tool_result_generations !== null) {
+    await requireAdministeredGuild(db, guild.id, operator.actorId);
+  }
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
   const needs = { browser: config.browser, coding: config.coding };
@@ -390,7 +395,8 @@ async function moveAgentNotes(
  * that leaves both alone saves without the check; a browser or coding switched on is
  * within the policy's caps; a rename waits while the agent generates and moves its notes folder; a
  * machine the config needs or the patch names moves the agent there. A browser switched off, or on
- * a new language, restarts; switching the agent-optimized browser does not.
+ * a new language, restarts; switching the agent-optimized browser does not. Only a guild admin
+ * changes its tool-result turns.
  */
 export async function reconfigureAgent(
   services: AgentServices,
@@ -401,6 +407,9 @@ export async function reconfigureAgent(
   const config = validateAgentConfig(patch.config);
   const previous = agent.config;
   assertCodingAgent(config, previous);
+  if (config.keep_tool_result_generations !== previous.keep_tool_result_generations) {
+    await requireAdministeredGuild(services.db, agent.guild_id, userId);
+  }
   await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
   await assertBrowserOptimizedChangeReady(services, agent.org_id, config, previous);
   const needs = { browser: config.browser, coding: config.coding };

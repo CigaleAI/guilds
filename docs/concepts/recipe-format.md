@@ -222,6 +222,10 @@ Validation errors with `config.unknown` on any other key.
 - `config.secret_aliases` maps variable names to secret names, under
   the agent configuration's rule (see [Secrets](secrets.md)). It is
   optional.
+- `config.keep_tool_result_generations` is how many user turns keep
+  full tool results, under the agent configuration's rule (see
+  [Runs](runs.md#tool-result-stubbing)). It is optional; without it the
+  agent takes its guild's.
 - `config.model` is a recommendation, kept exactly as written. Apply
   lets the operator pick the model; see
   [Applying recipes](applying-recipes.md#models-and-harnesses).

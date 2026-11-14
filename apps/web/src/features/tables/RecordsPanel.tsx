@@ -26,6 +26,7 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import type { DataTableColumn, DataTableSort } from "@guildsrun/ui";
+import { EditableCell } from "./EditableCell";
 import { RecordDialog } from "./RecordDialog";
 import { fits, whereOf, type ColumnFilter } from "./values";
 
@@ -146,7 +147,8 @@ type RecordsPanelProps = { collection: Collection };
 
 /**
  * A table's records: a ranked search, or filters with sortable, paged rows. A row opens the
- * record to edit; new records and clearing them all start here.
+ * record to edit, and a cell's pencil edits its value in place; new records and clearing them all
+ * start here.
  */
 export function RecordsPanel({ collection }: RecordsPanelProps) {
   const [typed, setTyped] = useState("");
@@ -180,7 +182,11 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
       id: column.name,
       header: column.name,
       sortable: !query && column.type !== "array",
-      cell: (row: CollectionRecord) => <Cell value={row[column.name]} column={column} />,
+      cell: (row: CollectionRecord) => (
+        <EditableCell collectionId={collection.id} record={row} column={column}>
+          <Cell value={row[column.name]} column={column} />
+        </EditableCell>
+      ),
     })),
     {
       id: "updated_at",

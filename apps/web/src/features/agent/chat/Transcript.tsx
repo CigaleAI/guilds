@@ -162,9 +162,11 @@ function UserTurn({ message }: UserTurnProps) {
   const { user } = useIdentity();
   const meta = message.metadata;
   if (meta.source === "group_chat") {
+    const replyNote =
+      meta.reply_to_seq !== undefined ? ` (replying to #${String(meta.reply_to_seq)})` : "";
     return (
       <WakeNote icon={MessageSquare}>
-        {`Woken by the group chat · message ${String(meta.group_seq ?? "")} from ${String(meta.author_name ?? "someone")}`}
+        {`Woken by the group chat · message ${String(meta.group_seq ?? "")} from ${String(meta.author_name ?? "someone")}${replyNote}`}
       </WakeNote>
     );
   }

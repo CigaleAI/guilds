@@ -13,6 +13,52 @@ info icon that says what the tool does in one plain sentence, on
 hover, keyboard focus, or a click or tap. Scripts and connection
 tools are unchanged.
 
+**Rebuild.** A record's value can be changed from the records grid
+without opening the record. Each column cell has a pencil, shown on
+hover or focus, that opens the record dialog's field for that column
+with **Cancel** and **Save changes**. It checks the value as the
+dialog does and sends it only when it changed. `id` and `updated_at`
+have no pencil.
+
+**Rebuild.** Operators can reply to an earlier message in a guild's
+group chat (`reply_to_seq` on `POST /api/guilds/:id/group-chat/messages`
+and on each public message). Each message in the chat has a **Reply**
+action that pins it above the composer, and clicking a reply quote jumps
+to and lights the original message. An untagged operator reply to a
+member agent's post wakes (and, with `interrupt: true`, cancels) only
+that agent; explicit `@` tags override. Woken runs receive `replyTo` in
+`Group Chat info`, `seq` and `replyToSeq` on `group.history` entries,
+and two messages before and after the target in the history candidates
+(ranked by Jev when System One is set).
+
+**Rebuild.** The shared Guidelines in every run's system prompt no
+longer catalogue native tools; how to call a tool stays on that tool.
+They list each agent and its purpose from the guild roster, name the
+guild's stated goal as what every agent works toward relentlessly, and
+name the group chat as the coordination channel: handing a task to
+another agent, asking another agent for help or a question, and talking
+with an operator. Work products stay in their canonical artifact.
+
+**Rebuild.** Studio and the Guild builder write each agent's `focus` as
+the domain it owns, so other agents know who to tag. Studio cannot
+change focus: a vague, empty, or overlapping line is a finding it tells
+the operator.
+
+**Rebuild.** A guild sets how many user turns, including the current
+one, keep full tool results in its agents' prompts: **Keep tool
+results** under **Limits** in its Settings, and
+`keep_tool_result_generations` on `PUT /api/guilds/:id`, a whole
+number from 1 to 2147483647. A new guild starts at 2; a migration sets every
+existing guild to 1. An agent's **Keep tool results** is now optional:
+empty, sent as `keep_tool_result_generations: null`, takes the guild's,
+and a new agent starts empty. Every existing agent keeps its own value.
+Each run snapshots the value it uses. A captured recipe carries an
+agent's own value and leaves out one taken from its guild. Only a
+guild admin changes the guild's value, sets, changes or clears an
+agent's own, or applies into an existing guild a recipe that carries
+one; anyone else gets 403, and the guild's field is read-only for
+them (SEC-59).
+
 **Rebuild.** **Debug in Studio** in an agent's Chat tab opens the run
 on screen in Studio: your latest active session on the guild, on that
 agent's **History** tab at that run and the step open in the chat.

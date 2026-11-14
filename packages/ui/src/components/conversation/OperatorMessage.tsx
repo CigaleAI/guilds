@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../../cn";
 import { identityText, identityTint, type IdentityTone } from "../../identity";
 import { bubble } from "../../primitives/Bubble";
+import { Button } from "../actions/Button";
 import { MarkdownToneContext } from "../content/Markdown";
 import { Avatar } from "../identity/Avatar";
 
@@ -20,6 +21,10 @@ export type OperatorMessageProps = ComponentProps<"article"> & {
   dateTime?: string;
   /** Message sequence number in the chat. */
   seq?: number;
+  /** Starts a reply to this message; shows the "Reply" action. */
+  onReply?: () => void;
+  /** Above the body, such as the message this post replies to. */
+  replyTo?: ReactNode;
   /**
    * `chat` sits at the log's end edge at most 85% wide, as in direct and group chat;
    * `coach` fills the narrow Studio coach column, set in from the start edge.
@@ -36,6 +41,8 @@ export function OperatorMessage({
   time,
   dateTime,
   seq,
+  onReply,
+  replyTo,
   layout = "chat",
   className,
   children,
@@ -73,8 +80,20 @@ export function OperatorMessage({
           </time>
         ) : null}
         {seq !== undefined ? <span className="type-meta text-muted">seq {seq}</span> : null}
+        {onReply ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={onReply}
+            title="Reply to this message"
+            className="h-5 text-2xs font-bold"
+          >
+            Reply
+          </Button>
+        ) : null}
       </header>
       <MarkdownToneContext.Provider value="tinted">
+        {replyTo !== undefined ? <div className="min-w-0">{replyTo}</div> : null}
         <div className="min-w-0">{children}</div>
       </MarkdownToneContext.Provider>
     </article>

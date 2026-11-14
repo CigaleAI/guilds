@@ -33,13 +33,20 @@ test("tagged_message_waits_only_for_tagged_agents_in_a_run", () => {
   ]);
 });
 
+test("untagged_reply_to_an_agent_waits_only_for_that_agent_while_explicit_tags_override", () => {
+  assert.deepEqual(blockingAgents("yes, do that", agents, ["researcher"], "writer"), []);
+  assert.deepEqual(blockingAgents("yes, do that", agents, ["writer"], "writer"), ["writer"]);
+  assert.deepEqual(blockingAgents("@researcher check this", agents, ["writer"], "writer"), []);
+});
+
 test("sendable_head_stops_at_the_first_message_that_waits", () => {
   const queue: QueuedMessage[] = [
     { id: "q_1", content: "first" },
     { id: "q_2", content: "@researcher next" },
     { id: "q_3", content: "last" },
   ];
-  const waitsFor = (content: string) => (content.includes("@researcher") ? ["researcher"] : []);
+  const waitsFor = (message: QueuedMessage) =>
+    message.content.includes("@researcher") ? ["researcher"] : [];
   assert.deepEqual(
     sendableHead(queue, waitsFor).map((message) => message.id),
     ["q_1"],
@@ -62,13 +69,20 @@ test("sendable_head_holds_behind_a_message_being_sent_or_failed", () => {
   );
 });
 
-test("queue_keeps_order_per_guild_and_drops_by_id", () => {
-  const first = queueGroupMessage("g_queue", "one");
+test("queue_keeps_order_per_guild_and_preserves_reply_target", () => {
+  const first = queueGroupMessage("g_queue", "one", { seq: 4, agentName: "writer" });
   const second = queueGroupMessage("g_queue", "two");
   queueGroupMessage("g_other", "elsewhere");
   assert.deepEqual(
-    queuedMessages("g_queue").map((message) => message.content),
-    ["one", "two"],
+    queuedMessages("g_queue").map((message) => [
+      message.content,
+      message.replyToSeq,
+      message.replyToAgentName,
+    ]),
+    [
+      ["one", 4, "writer"],
+      ["two", undefined, undefined],
+    ],
   );
   markQueuedMessage("g_queue", second.id, "failed");
   assert.equal(queuedMessages("g_queue")[1]?.status, "failed");
@@ -78,14 +92,14 @@ test("queue_keeps_order_per_guild_and_drops_by_id", () => {
   assert.equal(queuedMessages("g_other").length, 1);
 });
 
-test("sent_queued_message_leaves_the_queue", async () => {
-  const message = queueGroupMessage("g_send", "hello");
-  const posted: string[] = [];
-  const error = await sendQueuedMessage("g_send", message, async (content) => {
-    posted.push(content);
+test("sent_queued_message_leaves_the_queue_with_its_reply_target", async () => {
+  const message = queueGroupMessage("g_send", "hello", { seq: 7 });
+  const posted: Array<[string, number | undefined]> = [];
+  const error = await sendQueuedMessage("g_send", message, async (item) => {
+    posted.push([item.content, item.replyToSeq]);
   });
   assert.equal(error, null);
-  assert.deepEqual(posted, ["hello"]);
+  assert.deepEqual(posted, [["hello", 7]]);
   assert.deepEqual(queuedMessages("g_send"), []);
 });
 

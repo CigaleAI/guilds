@@ -47,6 +47,7 @@ type Form = {
   maxAgents: string;
   gitAuthorEmail: string;
   messageLimit: string;
+  keepToolResults: string;
   private: boolean;
   routines: boolean;
 };
@@ -69,7 +70,7 @@ function Group({ title, children }: GroupProps) {
 /**
  * What the guild is for and how it runs: its name, description, agent cap, turn limit, visibility
  * and routines; its operators; its git commit author email and repositories; and deleting it.
- * Visibility, operators and deleting are for guild admins.
+ * Visibility, the tool-result turns, operators and deleting are for guild admins.
  */
 export function GuildSettings() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
@@ -91,6 +92,7 @@ export function GuildSettings() {
             maxAgents: String(guild.data.max_agents),
             gitAuthorEmail: guild.data.git_author_email,
             messageLimit: String(chat.data.agent_message_limit),
+            keepToolResults: String(guild.data.keep_tool_result_generations),
             private: guild.data.visibility === "private",
             routines: guild.data.routines_enabled,
           }
@@ -127,7 +129,12 @@ export function GuildSettings() {
         max_agents: Number(form.maxAgents),
         git_author_email: form.gitAuthorEmail.trim(),
         routines_enabled: form.routines,
-        ...(admin ? { visibility: form.private ? ("private" as const) : ("org" as const) } : {}),
+        ...(admin
+          ? {
+              visibility: form.private ? ("private" as const) : ("org" as const),
+              keep_tool_result_generations: Number(form.keepToolResults),
+            }
+          : {}),
       }),
       form.messageLimit !== saved.messageLimit
         ? setLimit.mutateAsync(Number(form.messageLimit))
@@ -160,7 +167,13 @@ export function GuildSettings() {
         </Group>
 
         <PurposeGroup form={form} onChange={set} />
-        <LimitsGroup form={form} errors={errors} agentCount={agentCount} onChange={set} />
+        <LimitsGroup
+          form={form}
+          errors={errors}
+          agentCount={agentCount}
+          admin={admin}
+          onChange={set}
+        />
         <BehaviourGroup form={form} admin={admin} onChange={set} />
 
         {failure ? (
@@ -198,6 +211,7 @@ type FormErrors = {
   name: string | undefined;
   maxAgents: string | undefined;
   messageLimit: string | undefined;
+  keepToolResults: string | undefined;
 };
 
 /** Why each checked field of the form cannot be saved; undefined for one that can. */
@@ -206,6 +220,7 @@ function formErrors(form: Form): FormErrors {
     name: form.name.trim() ? handleError(form.name.trim()) : handleHint,
     maxAgents: positiveInteger(form.maxAgents) ? undefined : "A whole number, 1 or more.",
     messageLimit: positiveInteger(form.messageLimit) ? undefined : "A whole number, 1 or more.",
+    keepToolResults: positiveInteger(form.keepToolResults) ? undefined : "A whole number, 1 or more.",
   };
 }
 
@@ -274,11 +289,16 @@ type LimitsGroupProps = {
   errors: FormErrors;
   /** How many agents the guild has now. */
   agentCount: number;
+  /** Only a guild admin changes the guild's tool-result turns. */
+  admin: boolean;
   onChange: (patch: Partial<Form>) => void;
 };
 
-/** The guild's agent cap and how many agent turns in a row the group chat allows. */
-function LimitsGroup({ form, errors, agentCount, onChange }: LimitsGroupProps) {
+/**
+ * The guild's agent cap, how many agent turns in a row the group chat allows, and how many user
+ * turns keep full tool results for each agent that sets none, read-only but for an admin.
+ */
+function LimitsGroup({ form, errors, agentCount, admin, onChange }: LimitsGroupProps) {
   return (
     <Group title="Limits">
       <div className="grid gap-4 md:grid-cols-2">
@@ -301,6 +321,17 @@ function LimitsGroup({ form, errors, agentCount, onChange }: LimitsGroupProps) {
           value={form.messageLimit}
           onChange={(event) => onChange({ messageLimit: event.currentTarget.value })}
           {...(errors.messageLimit ? { error: errors.messageLimit } : {})}
+        />
+        <TextField
+          tone="surface"
+          label="Keep tool results"
+          type="number"
+          min={1}
+          disabled={!admin}
+          hint={`How many user turns, including the current one, keep full tool output in the model prompt, for every agent whose settings leave it empty. Older large results are stubbed; the stored transcript is unchanged.${admin ? "" : " Only a guild admin can change it."}`}
+          value={form.keepToolResults}
+          onChange={(event) => onChange({ keepToolResults: event.currentTarget.value })}
+          {...(errors.keepToolResults ? { error: errors.keepToolResults } : {})}
         />
       </div>
     </Group>

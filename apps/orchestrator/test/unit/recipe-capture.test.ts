@@ -193,7 +193,7 @@ function captureDeps(options: {
 test("portable role config carries every setting but the browser mode in the order of the config keys", () => {
   const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
   const config = portableRoleConfig(stored);
-  const left = new Set(["secret_aliases", "browser_optimized", "browser_model"]);
+  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model"]);
   assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && !left.has(key)));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);
@@ -206,6 +206,13 @@ test("portable role config leaves out a harness, model and effort left unset, an
   assert.equal("harness_model" in config, false);
   assert.equal("harness_effort" in config, false);
   assert.equal("secret_aliases" in config, false);
+});
+
+test("portable role config carries the agent's own tool-result turns and leaves out the guild's", () => {
+  const own = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL, keep_tool_result_generations: 3 }));
+  assert.equal(own.keep_tool_result_generations, 3);
+  const inherited = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL }));
+  assert.equal("keep_tool_result_generations" in inherited, false);
 });
 
 test("portable role config keeps a coding role's harness and its aliases but its harness tokens", () => {

@@ -119,7 +119,15 @@ function scheduleFields(scheduleId: string | null, metadata: RunMetadata): Pick<
 /** A group chat message as the API and the live stream send it. */
 export type GroupMessageView = Pick<
   GroupMessageRow,
-  "id" | "seq" | "author_type" | "author_name" | "author_agent_id" | "author_user_id" | "source_run_id" | "content"
+  | "id"
+  | "seq"
+  | "author_type"
+  | "author_name"
+  | "author_agent_id"
+  | "author_user_id"
+  | "source_run_id"
+  | "content"
+  | "reply_to_seq"
 > & {
   tagged: string[];
   tagged_agent_ids: string[];
@@ -137,6 +145,7 @@ export function groupMessageItem(row: GroupMessageRow): GroupMessageView {
     author_user_id: row.author_user_id,
     source_run_id: row.source_run_id,
     content: row.content,
+    reply_to_seq: row.reply_to_seq,
     tagged: row.tagged_names,
     tagged_agent_ids: row.tagged_agent_ids,
     tagged_user_ids: row.tagged_user_ids,

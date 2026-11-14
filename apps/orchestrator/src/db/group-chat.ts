@@ -1,6 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { withoutOpenBlockingIssue } from "./blocking-issues.js";
-import { AgentMessageLimitReached, GroupChatCleared, RowMissing } from "./errors.js";
+import { AgentMessageLimitReached, GroupChatCleared, GroupReplyTargetMissing, RowMissing } from "./errors.js";
 import { guildVisibleTo } from "./guilds.js";
 import { tableColumns } from "./columns.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
@@ -64,6 +64,7 @@ export type NewUserGroupMessage = {
   taggedUserIds: string[];
   authorName?: string | undefined;
   authorUserId?: string | null | undefined;
+  replyToSeq?: number | null | undefined;
 };
 
 export type NewAgentGroupMessage = {
@@ -123,6 +124,19 @@ export async function updateGroupAgentMessageLimit(
 /** Where a read of a guild's group transcript stops: at `throughSeq`, or at its end when that is absent. */
 export type GroupTranscriptEnd = { throughSeq?: number | null };
 
+export async function getGroupMessage(
+  pool: Queryable,
+  guildId: string,
+  seq: number,
+): Promise<GroupMessageRow | null> {
+  const result = await pool.query<GroupMessageRow>(
+    `SELECT ${GROUP_MESSAGE_COLUMNS}
+     FROM group_messages WHERE guild_id = $1 AND seq = $2`,
+    [guildId, seq],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function listGroupMessages(
   pool: Queryable,
   guildId: string,
@@ -153,7 +167,7 @@ export async function listGroupMessagesForActivity(
 ): Promise<ActivityGroupMessageRow[]> {
   const result = await pool.query<ActivityGroupMessageRow>(
     `SELECT id, seq, author_type, author_name, author_agent_id, author_user_id, source_run_id,
-            content, tagged_names, created_at
+            content, tagged_names, reply_to_seq, created_at
      FROM group_messages
      WHERE guild_id = $1
        AND created_at <= $3
@@ -312,6 +326,16 @@ export async function postUserGroupMessage(
     if (!guild.rows[0]) {
       return null;
     }
+    const replyToSeq = message.replyToSeq ?? null;
+    if (replyToSeq !== null) {
+      const target = await client.query<{ seq: number }>(
+        `SELECT seq FROM group_messages WHERE guild_id = $1 AND seq = $2`,
+        [message.guildId, replyToSeq],
+      );
+      if (!target.rows[0]) {
+        throw new GroupReplyTargetMissing(replyToSeq);
+      }
+    }
     const seqResult = await client.query<{ group_chat_seq: number }>(
       `UPDATE guilds
        SET group_chat_seq = group_chat_seq + 1,
@@ -329,9 +353,9 @@ export async function postUserGroupMessage(
       `INSERT INTO group_messages (
          guild_id, seq, author_type, author_name,
          author_agent_id, author_user_id, source_run_id, content, tagged_names,
-         tagged_agent_ids, tagged_user_ids, created_at
+         tagged_agent_ids, tagged_user_ids, reply_to_seq, created_at
        )
-       VALUES ($1, $2, 'user', $7, NULL, $9, NULL, $3, $4::jsonb, $5::jsonb, $8::jsonb, $6)
+       VALUES ($1, $2, 'user', $7, NULL, $9, NULL, $3, $4::jsonb, $5::jsonb, $8::jsonb, $10, $6)
        RETURNING ${GROUP_MESSAGE_COLUMNS}`,
       [
         message.guildId,
@@ -343,6 +367,7 @@ export async function postUserGroupMessage(
         message.authorName ?? "user",
         JSON.stringify(message.taggedUserIds),
         message.authorUserId ?? null,
+        replyToSeq,
       ],
     );
     return inserted.rows[0] ?? null;

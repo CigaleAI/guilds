@@ -98,6 +98,8 @@ test("builder system prompt states each design rule once and leaves field names 
   assert.doesNotMatch(text, /## Hub, memory, and files/);
   assert.equal(text.match(/Narrow is not isolated/g)?.length, 1);
   assert.equal(text.match(/A specialist refines itself/g)?.length, 1);
+  assert.equal(text.match(/who to tag for a given issue/g)?.length, 1);
+  assert.match(text, /a `focus` that names its domain/);
   assert.doesNotMatch(text, /Field names \(do not invent aliases\)/);
   assert.ok(!text.includes(RECIPE_WRITE_HINT));
   assert.match(text, /The instructions in this system message are authoritative/);

@@ -37,6 +37,7 @@ const GuildSettingsSchema = Type.Object({
   git_author_email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   visibility: VisibilityField,
   routines_enabled: Type.Optional(Type.Boolean()),
+  keep_tool_result_generations: Type.Optional(Type.Number()),
 });
 
 /** The role a guild operator is given. */
@@ -101,6 +102,9 @@ export async function registerGuildRoutes(app: RouteApp, deps: AppDeps): Promise
         ...(body.git_author_email !== undefined ? { gitAuthorEmail: body.git_author_email } : {}),
         ...(body.visibility !== undefined ? { visibility: body.visibility } : {}),
         ...(body.routines_enabled !== undefined ? { routinesEnabled: body.routines_enabled } : {}),
+        ...(body.keep_tool_result_generations !== undefined
+          ? { keepToolResultGenerations: body.keep_tool_result_generations }
+          : {}),
       };
       return guildItem(await updateGuildSettings(services, guild, actorOf(user), patch));
     },

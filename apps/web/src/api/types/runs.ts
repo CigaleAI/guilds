@@ -25,7 +25,9 @@ export type OfferedTool = {
   function?: { name?: string; description?: string; parameters?: JsonSchema };
 };
 
-export type RunConfigSnapshot = AgentConfig & {
+export type RunConfigSnapshot = Omit<AgentConfig, "keep_tool_result_generations"> & {
+  /** The agent's own, or its guild's when it sets none, as the run started with it. */
+  keep_tool_result_generations: number;
   projection_policy_version?: number;
   tools: OfferedTool[];
   mcp: {
@@ -331,6 +333,7 @@ export type RunInputMetadata = {
   reopened_run?: boolean;
   group_message_id?: number;
   group_seq?: number;
+  reply_to_seq?: number;
   author_type?: string;
   author_name?: string;
   tagged?: string[];

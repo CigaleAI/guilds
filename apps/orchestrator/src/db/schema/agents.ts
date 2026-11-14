@@ -61,7 +61,11 @@ export type AgentConfig = {
   max_input_tokens: number;
   /** The most wake-ups a run may fire. */
   max_wake_ups: number;
-  keep_tool_result_generations: number;
+  /**
+   * How many user turns, including the current one, keep full tool results in the model prompt;
+   * null takes the guild's `keep_tool_result_generations`.
+   */
+  keep_tool_result_generations: number | null;
   max_scripts: number;
   max_workspace_mib: number;
   browser: boolean;
@@ -87,6 +91,11 @@ export type AgentConfig = {
   thinking_level: ThinkingLevel;
 };
 
+/** The settings an agent's runs take: its config with every setting it leaves to its guild taken from the guild. */
+export type ResolvedAgentConfig = Omit<AgentConfig, "keep_tool_result_generations"> & {
+  keep_tool_result_generations: number;
+};
+
 /** A secret a run reaches, as its snapshot names it: never its value. */
 export type SecretRef = { id: string; name: string; description: string };
 
@@ -107,11 +116,11 @@ export type RunScriptSnapshot = {
 };
 
 /**
- * `runs.config_snapshot`: the agent's settings a run is created with, the tools it is offered
+ * `runs.config_snapshot`: the settings a run is created with, the tools it is offered
  * (each an OpenAI function schema, passed to the model as is), the connections and secrets it
  * reaches, and the scripts it pins.
  */
-export type RunConfigSnapshot = Omit<AgentConfig, "max_scripts" | "max_workspace_mib"> & {
+export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib"> & {
   projection_policy_version: number;
   database: boolean;
   tools: FunctionTool[];
@@ -369,6 +378,7 @@ export const groupMessages = pgTable(
     tagged_agent_ids: jsonb("tagged_agent_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     tagged_user_ids: jsonb("tagged_user_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     author_user_id: text("author_user_id"),
+    reply_to_seq: bigint("reply_to_seq", { mode: "number" }),
   },
   (table) => [
     unique("group_messages_guild_id_seq_key").on(table.guild_id, table.seq),
@@ -393,6 +403,11 @@ export const groupMessages = pgTable(
       foreignColumns: [users.id],
       name: "group_messages_author_user_id_fkey",
     }).onDelete("set null"),
+    foreignKey({
+      columns: [table.guild_id, table.reply_to_seq],
+      foreignColumns: [table.guild_id, table.seq],
+      name: "group_messages_reply_to_seq_fkey",
+    }).onDelete("cascade"),
   ],
 );
 

@@ -99,6 +99,7 @@ export function isGroupMessage(data: unknown): data is GroupMessage {
     isAuthorType(data.author_type) &&
     hasFields(data, ["author_name", "content", "created_at"], isString) &&
     hasFields(data, ["author_agent_id", "source_run_id"], isStringOrNull) &&
+    isNumberOrNull(data.reply_to_seq) &&
     hasFields(data, ["tagged", "tagged_agent_ids", "tagged_user_ids"], isStringList)
   );
 }

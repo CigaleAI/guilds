@@ -19,12 +19,12 @@ import {
   Icon,
   type FormFieldText,
 } from "@guildsrun/ui";
-import { fieldText, fits, parseField } from "./values";
+import { fieldText, fits, parseField, recordChanges, recordErrors } from "./values";
 import { LatestChange, useOpenStepInAgent } from "../notes/LatestChange";
 
 const unset = "__unset__";
 
-type FieldProps = {
+type RecordFieldProps = {
   column: Column;
   text: string;
   onChange: (text: string) => void;
@@ -32,7 +32,7 @@ type FieldProps = {
 };
 
 /** A column's field: a pick among its values, a text area for free text, or a typed input. */
-function Field({ column, text, onChange, error }: FieldProps) {
+export function RecordField({ column, text, onChange, error }: RecordFieldProps) {
   const label = column.required ? `${column.name} *` : column.name;
   const labels = { label, hint: column.description, ...(error ? { error } : {}) };
   if (column.type === "boolean" || (column.type === "text" && column.values?.length)) {
@@ -111,6 +111,15 @@ function TypedField({ column, text, onChange, labels }: TypedFieldProps) {
   );
 }
 
+/** The notice after a record saves, naming the values the server says still do not fit. */
+export function toastRecordSaved(recordId: number, warnings: readonly string[]) {
+  toast({
+    kind: warnings.length ? "warning" : "success",
+    title: `Saved record #${recordId}`,
+    ...(warnings.length ? { description: `Still not fitting: ${warnings.join("; ")}` } : {}),
+  });
+}
+
 type RecordDialogProps = {
   collection: Collection;
   /** The record to edit; "new" for a new one; null keeps the dialog closed. */
@@ -177,13 +186,7 @@ function RecordForm({ collection, record, onClose }: RecordFormProps) {
     column,
     result: parseField(texts[column.name] ?? "", column),
   }));
-  const errors = Object.fromEntries(
-    parsed.flatMap(({ column, result }) => {
-      if ("error" in result) return [[column.name, result.error]];
-      if (column.required && result.value === null) return [[column.name, "Required."]];
-      return [];
-    }),
-  );
+  const errors = recordErrors(collection.columns, texts, initial);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -206,13 +209,7 @@ function RecordForm({ collection, record, onClose }: RecordFormProps) {
       });
       return;
     }
-    const body = Object.fromEntries(
-      parsed.flatMap(({ column, result }) =>
-        "value" in result && texts[column.name] !== initial[column.name]
-          ? [[column.name, result.value]]
-          : [],
-      ),
-    );
+    const body = recordChanges(collection.columns, texts, initial);
     if (!Object.keys(body).length) {
       onClose();
       return;
@@ -221,13 +218,7 @@ function RecordForm({ collection, record, onClose }: RecordFormProps) {
       { recordId: record.id, body },
       {
         onSuccess: ({ warnings }) => {
-          toast({
-            kind: warnings.length ? "warning" : "success",
-            title: `Saved record #${record.id}`,
-            ...(warnings.length
-              ? { description: `Still not fitting: ${warnings.join("; ")}` }
-              : {}),
-          });
+          toastRecordSaved(record.id, warnings);
           onClose();
         },
       },
@@ -251,7 +242,7 @@ function RecordForm({ collection, record, onClose }: RecordFormProps) {
         ) : null}
         {collection.columns.map((column) => (
           <div key={column.name} className="flex flex-col gap-1">
-            <Field
+            <RecordField
               column={column}
               text={texts[column.name] ?? ""}
               onChange={(text) => setTexts({ ...texts, [column.name]: text })}

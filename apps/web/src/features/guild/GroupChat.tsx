@@ -1,4 +1,4 @@
-import { ArrowDown, MessageSquare } from "lucide-react";
+import { ArrowDown, MessageSquare, Reply, X } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   useCallback,
@@ -23,6 +23,7 @@ import { isoTime, messageTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";
 import {
   Button,
+  IconButton,
   Markdown,
   Composer,
   AgentMessage,
@@ -41,6 +42,7 @@ import {
 import type { MentionCandidate } from "@guildsrun/ui";
 import { GroupQueue, useWaitsFor } from "./GroupQueue";
 import { queueGroupMessage } from "./messageQueue";
+
 type GroupChatProps = {
   guild: Guild;
   agents: readonly Agent[];
@@ -51,6 +53,66 @@ type GroupChatProps = {
 
 /** How close to the end the log must be to count as "at the bottom". */
 const bottomSlack = 48;
+
+function messageAuthorLabel(message: GroupMessage, viewerName: string): string {
+  if (message.author_type === "user" && message.author_name === viewerName) {
+    return "You";
+  }
+  return message.author_name;
+}
+
+type ReplyQuoteProps = {
+  seq: number;
+  target: GroupMessage | undefined;
+  viewerName: string;
+  onSelect: (seq: number) => void;
+};
+
+/** Compact quote of the earlier message a post replies to; clicking it jumps to that message. */
+function ReplyQuote({ seq, target, viewerName, onSelect }: ReplyQuoteProps) {
+  const label = target ? `${messageAuthorLabel(target, viewerName)} · seq ${seq}` : `seq ${seq}`;
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(seq)}
+      title={`Jump to message ${seq}`}
+      className="flex max-w-full cursor-pointer items-center gap-2 rounded-lg bg-well/80 px-2.5 py-1.5 text-left text-xs text-fg-2 hover:bg-well"
+    >
+      <Icon icon={Reply} size={14} className="shrink-0 text-muted" />
+      <span className="shrink-0 font-mono font-medium text-fg">{label}</span>
+      {target ? <span className="truncate text-muted">{target.content}</span> : null}
+    </button>
+  );
+}
+
+type ReplyBannerProps = {
+  target: GroupMessage;
+  viewerName: string;
+  onCancel: () => void;
+};
+
+/** The message pinned above the composer while the operator writes a reply to it. */
+function ReplyBanner({ target, viewerName, onCancel }: ReplyBannerProps) {
+  const author = messageAuthorLabel(target, viewerName);
+  return (
+    <div className="mb-2 flex items-start gap-2 rounded-xl bg-well px-3 py-2 text-sm">
+      <Icon icon={Reply} size={14} className="mt-0.5 shrink-0 text-muted" />
+      <div className="min-w-0 flex-1">
+        <p className="type-label text-muted">
+          Replying to {author} · seq {target.seq}
+        </p>
+        <p className="line-clamp-1 break-words text-fg-2">{target.content}</p>
+      </div>
+      <IconButton
+        icon={X}
+        label="Cancel reply"
+        variant="ghost"
+        size={24}
+        onClick={onCancel}
+      />
+    </div>
+  );
+}
 
 type GroupChatReadMarker = {
   /** Marks the chat read through its latest message while the operator is at its visible end. */
@@ -170,6 +232,91 @@ function RespondingAgents({ agents, state, onOpenAgent }: RespondingAgentsProps)
   ));
 }
 
+function scrollLogToSeq(el: HTMLDivElement | null, seq: number): boolean {
+  if (!el) return false;
+  const target = el.querySelector<HTMLElement>(`[data-seq="${seq}"]`);
+  if (!target) return false;
+  el.scrollTop +=
+    target.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 3;
+  return true;
+}
+
+type MessageBubbleProps = {
+  message: GroupMessage;
+  replied: GroupMessage | undefined;
+  viewer: { id: string; name: string; color?: string | null };
+  agentById: ReadonlyMap<string, Agent>;
+  colorByName: ReadonlyMap<string, string | null | undefined>;
+  onOpenAgent: (agentId: string, runId?: string) => void;
+  onStartReply: (seq: number) => void;
+  onJumpToSeq: (seq: number) => void;
+};
+
+function MessageBubble({
+  message,
+  replied,
+  viewer,
+  agentById,
+  colorByName,
+  onOpenAgent,
+  onStartReply,
+  onJumpToSeq,
+}: MessageBubbleProps) {
+  const time = messageTime(message.created_at);
+  const dateTime = isoTime(message.created_at);
+  const quote =
+    message.reply_to_seq !== null ? (
+      <ReplyQuote
+        seq={message.reply_to_seq}
+        target={replied}
+        viewerName={viewer.name}
+        onSelect={onJumpToSeq}
+      />
+    ) : undefined;
+  const body = (
+    <Markdown density="compact" mentions={message.tagged}>
+      {message.content}
+    </Markdown>
+  );
+  if (message.author_type === "user") {
+    const mine = message.author_name === viewer.name;
+    return (
+      <OperatorMessage
+        author={mine ? "You" : message.author_name}
+        tone={personTone(mine ? viewer.color : colorByName.get(message.author_name))}
+        time={time}
+        dateTime={dateTime}
+        seq={message.seq}
+        onReply={() => onStartReply(message.seq)}
+        {...(quote ? { replyTo: quote } : {})}
+      >
+        {body}
+      </OperatorMessage>
+    );
+  }
+  const agent = message.author_agent_id ? agentById.get(message.author_agent_id) : undefined;
+  const look = agent ? agentLook(agent) : { tone: "dusk" as const };
+  const agentId = message.author_agent_id;
+  const runId = message.source_run_id;
+  return (
+    <AgentMessage
+      name={message.author_name}
+      tone={look.tone}
+      {...(look.src ? { src: look.src } : {})}
+      time={time}
+      dateTime={dateTime}
+      seq={message.seq}
+      bubble="surface"
+      onReply={() => onStartReply(message.seq)}
+      {...(quote ? { replyTo: quote } : {})}
+      {...(agentId && runId ? { onInspectRun: () => onOpenAgent(agentId, runId) } : {})}
+      {...(agentId ? { onOpenAgent: () => onOpenAgent(agentId) } : {})}
+    >
+      {body}
+    </AgentMessage>
+  );
+}
+
 /** The guild's public conversation: agents post on paper, people in their own colour. */
 export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
   const { user, org } = useIdentity();
@@ -177,9 +324,12 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
   const messages = useGroupMessages(guild.id);
   const post = usePostGroupMessage(guild.id);
   const log = useRef<HTMLDivElement>(null);
+  const composerArea = useRef<HTMLDivElement>(null);
   const atBottom = useRef(focusSeq === undefined);
   const focused = useRef(false);
   const [away, setAway] = useState(false);
+  const [replyState, setReplyState] = useState<{ guildId: string; seq: number } | null>(null);
+  const [jumpedSeq, setJumpedSeq] = useState<number | null>(null);
   const { markIfRead, markReadThrough, unread } = useGroupChatRead(
     guild.id,
     messages.data,
@@ -189,10 +339,19 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
   const firstUnseen = useFirstUnseenSeq(messages.data, state);
 
   const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+  const messageBySeq = useMemo(
+    () => new Map((messages.data ?? []).map((item) => [item.seq, item])),
+    [messages.data],
+  );
   const colorByName = useMemo(
     () => new Map((members.data ?? []).map((member) => [member.name, member.color])),
     [members.data],
   );
+  const replyTarget =
+    replyState && replyState.guildId === guild.id
+      ? (messageBySeq.get(replyState.seq) ?? null)
+      : null;
+  const litSeq = jumpedSeq ?? focusSeq;
 
   // Follow the conversation while the operator is at the end of it.
   useLayoutEffect(() => {
@@ -202,13 +361,9 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
 
   // Opened at a message: bring it into view once, and count the chat read up to it.
   useLayoutEffect(() => {
-    const el = log.current;
-    if (focusSeq === undefined || focused.current || !el || !messages.data) return;
-    const target = el.querySelector<HTMLElement>(`[data-seq="${focusSeq}"]`);
-    if (!target) return;
+    if (focusSeq === undefined || focused.current || !messages.data) return;
+    if (!scrollLogToSeq(log.current, focusSeq)) return;
     focused.current = true;
-    el.scrollTop +=
-      target.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientHeight / 3;
     markReadThrough(focusSeq);
   }, [focusSeq, messages.data, markReadThrough]);
 
@@ -219,6 +374,18 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
     setAway(false);
     el.scrollTop = el.scrollHeight;
     markIfRead();
+  };
+
+  const jumpToSeq = (seq: number) => {
+    if (!scrollLogToSeq(log.current, seq)) return;
+    setJumpedSeq(seq);
+  };
+
+  const startReply = (seq: number) => {
+    setReplyState({ guildId: guild.id, seq });
+    requestAnimationFrame(() => {
+      composerArea.current?.querySelector("textarea")?.focus();
+    });
   };
 
   const mentions = useMemo<MentionCandidate[]>(() => {
@@ -245,13 +412,23 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
   const waitsFor = useWaitsFor(agents, state);
   /** Holds the message back while an agent it targets is in a group run; sends it otherwise. */
   const send = (content: string) => {
-    if (waitsFor(content).length) {
-      queueGroupMessage(guild.id, content);
+    const target = replyTarget;
+    setReplyState(null);
+    const replyAgent =
+      target?.author_type === "agent" && target.author_agent_id && agentById.has(target.author_agent_id)
+        ? target.author_name
+        : undefined;
+    if (waitsFor(content, replyAgent).length) {
+      queueGroupMessage(
+        guild.id,
+        content,
+        target ? { seq: target.seq, ...(replyAgent ? { agentName: replyAgent } : {}) } : undefined,
+      );
       return;
     }
     atBottom.current = true;
     post.mutate(
-      { content },
+      { content, ...(target ? { reply_to_seq: target.seq } : {}) },
       {
         onError: (error) =>
           toast({ kind: "error", title: "Couldn't post to the guild", description: error.message }),
@@ -265,57 +442,22 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
       data-seq={message.seq}
       className={cn(
         "flex flex-col rounded-2xl",
-        message.seq === focusSeq && "ring-2 ring-signal",
+        message.seq === litSeq && "ring-2 ring-signal",
         message.tagged_user_ids.includes(user.id) && "bg-t-sig p-1.5",
       )}
     >
-      {renderBubble(message)}
+      <MessageBubble
+        message={message}
+        replied={message.reply_to_seq !== null ? messageBySeq.get(message.reply_to_seq) : undefined}
+        viewer={user}
+        agentById={agentById}
+        colorByName={colorByName}
+        onOpenAgent={openAgent}
+        onStartReply={startReply}
+        onJumpToSeq={jumpToSeq}
+      />
     </div>
   );
-
-  const renderBubble = (message: GroupMessage) => {
-    const time = messageTime(message.created_at);
-    const dateTime = isoTime(message.created_at);
-    const body = (
-      <Markdown density="compact" mentions={message.tagged}>
-        {message.content}
-      </Markdown>
-    );
-    if (message.author_type === "user") {
-      const mine = message.author_name === user.name;
-      return (
-        <OperatorMessage
-          key={message.seq}
-          author={mine ? "You" : message.author_name}
-          tone={personTone(mine ? user.color : colorByName.get(message.author_name))}
-          time={time}
-          dateTime={dateTime}
-          seq={message.seq}
-        >
-          {body}
-        </OperatorMessage>
-      );
-    }
-    const agent = message.author_agent_id ? agentById.get(message.author_agent_id) : undefined;
-    const look = agent ? agentLook(agent) : { tone: "dusk" as const };
-    const agentId = message.author_agent_id;
-    const runId = message.source_run_id;
-    return (
-      <AgentMessage
-        key={message.seq}
-        name={message.author_name}
-        tone={look.tone}
-        {...(look.src ? { src: look.src } : {})}
-        time={time}
-        dateTime={dateTime}
-        bubble="surface"
-        {...(agentId && runId ? { onInspectRun: () => openAgent(agentId, runId) } : {})}
-        {...(agentId ? { onOpenAgent: () => openAgent(agentId) } : {})}
-      >
-        {body}
-      </AgentMessage>
-    );
-  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -392,16 +534,35 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
           </Button>
         ) : null}
       </div>
-      <div className="px-4 pb-3 md:px-10 md:pb-6">
+      <div
+        ref={composerArea}
+        onKeyDown={(event) => {
+          if (!event.defaultPrevented && event.key === "Escape" && replyTarget) {
+            setReplyState(null);
+          }
+        }}
+        className="px-4 pb-3 md:px-10 md:pb-6"
+      >
         <div className="mx-auto max-w-240">
           <GroupQueue guildId={guild.id} agents={agents} state={state} />
+          {replyTarget ? (
+            <ReplyBanner
+              target={replyTarget}
+              viewerName={user.name}
+              onCancel={() => setReplyState(null)}
+            />
+          ) : null}
         </div>
         <Composer
           className="mx-auto max-w-240"
           variant="inline"
           tone="surface"
           label={`Message ${guild.name}`}
-          placeholder="Message the guild — type @ to mention an agent"
+          placeholder={
+            replyTarget
+              ? `Reply to ${messageAuthorLabel(replyTarget, user.name)} — type @ to mention an agent`
+              : "Message the guild — type @ to mention an agent"
+          }
           onSend={send}
           mentions={mentions}
         />
