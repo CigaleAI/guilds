@@ -337,6 +337,13 @@ does not. A tool called in the window that no agent is offered now
 says **no longer offered**. Filters narrow the list by source, by
 agent, by **Needs a look**, and by search words.
 
+A native tool's name carries an info icon. Hovering it, focusing it,
+or clicking or tapping it shows what the tool does in one plain
+sentence; Esc, a click elsewhere, or moving away closes it. The
+sentences live in
+`apps/web/src/features/studio/tools/nativeToolSummary.ts`; a native
+tool without one shows its catalog description.
+
 A row carries a flag when the tool deserves a look:
 
 | Flag | When |

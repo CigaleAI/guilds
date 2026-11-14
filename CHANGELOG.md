@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** In Studio's **Tools**, each native tool's name carries an
+info icon that says what the tool does in one plain sentence, on
+hover, keyboard focus, or a click or tap. Scripts and connection
+tools are unchanged.
+
 **Rebuild.** **Debug in Studio** in an agent's Chat tab opens the run
 on screen in Studio: your latest active session on the guild, on that
 agent's **History** tab at that run and the step open in the chat.
