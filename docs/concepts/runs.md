@@ -364,10 +364,9 @@ tool-call identity in `file_changes` ([Artifacts](artifacts.md)).
 The run stores an immutable snapshot. It holds the agent's config at
 run creation, less `max_scripts` and `max_workspace_mib`, with the
 guild's `keep_tool_result_generations` when the agent's is null, and
-with `model_source`, the offered `tools`, `mcp`, `secrets`, and the
-`scripts` ([Scripts](scripts.md#snapshot)). `model_source` is `key`
-for a run on a model on a key and `subscription` for a run with no
-`model`; a snapshot without it is of a run on a key.
+with the offered `tools`, `mcp`, `secrets`, and the `scripts`
+([Scripts](scripts.md#snapshot)). Its `model` states the run's model
+source: a model on a key, or null for a subscription agent's run.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `max_wake_ups`, `keep_tool_result_generations`,

@@ -13586,7 +13586,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -14444,7 +14443,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -15415,7 +15413,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -16274,7 +16271,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -17135,7 +17131,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -28696,7 +28691,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -29556,7 +29550,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -30415,7 +30408,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -31275,7 +31267,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -32134,7 +32125,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",
@@ -33185,7 +33175,6 @@
           "config_snapshot": {
             "mcp": [],
             "model": "openrouter/openai/gpt-5.6-luna",
-            "model_source": "key",
             "tools": [
               {
                 "type": "function",

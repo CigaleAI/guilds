@@ -17,8 +17,8 @@ created and saved through the agent routes with `model: null` and its
 the setting is off, on Cursor or Antigravity, or with a model-loop
 setting off its default. Its runs do not start yet: each fails at
 start with `subscription.not_runnable`. An agent's view and its
-guild's list carry `model_source` (`key` or `subscription`), and so
-does a run's `config_snapshot`. `GET /api/harnesses` adds
+guild's list carry `model_source` (`key` or `subscription`), derived
+from its `model`. `GET /api/harnesses` adds
 `subscription_agents` and, per harness, `subscription`. A
 subscription agent needs a machine of the coding minimum whose image
 carries its harness; the machine listing names each agent's

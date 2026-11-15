@@ -184,7 +184,8 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     assert.equal(errors.at(-1)?.operation, "subscription.not_runnable");
     assert.match(String(errors.at(-1)?.message), /subscription agents cannot run yet/);
     const snapshot = (await app.inject({ method: "GET", url: `/api/runs/${runId}`, headers: AUTH })).json().config_snapshot;
-    assert.equal(snapshot.model_source, "subscription");
+    assert.equal(snapshot.model, null);
+    assert.equal("model_source" in snapshot, false);
 
     // A subscription agent switches to a model on a key and back; off, the box keeps it on its subscription.
     const keyed = await reconfigure(agentId, { ...created.json().config, model: TEST_MODEL, harness: null, harness_model: null, harness_effort: null });

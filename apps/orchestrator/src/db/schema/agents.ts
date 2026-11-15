@@ -128,13 +128,11 @@ export type RunScriptSnapshot = {
 };
 
 /**
- * `runs.config_snapshot`: the settings a run is created with, the model source they state, the
- * tools it is offered (each an OpenAI function schema, passed to the model as is), the
- * connections and secrets it reaches, and the scripts it pins.
+ * `runs.config_snapshot`: the settings a run is created with, whose `model` states its model
+ * source as `modelSourceOf` reads it, the tools it is offered (each an OpenAI function schema,
+ * passed to the model as is), the connections and secrets it reaches, and the scripts it pins.
  */
 export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib"> & {
-  /** Where the run's turns run, as `modelSourceOf` reads its settings; a snapshot without it is of a run on a key. */
-  model_source?: ModelSource["kind"];
   projection_policy_version: number;
   database: boolean;
   tools: FunctionTool[];

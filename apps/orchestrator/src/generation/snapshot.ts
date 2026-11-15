@@ -4,14 +4,13 @@ import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
 import type { NewRun, RunRow } from "../db/runs.js";
-import {
-  modelSourceOf,
-  type ResolvedAgentConfig,
-  type RunConfigSnapshot,
-  type RunMetadata,
-  type RunScriptSnapshot,
-  type RunTaskSource,
-  type RunTypesafe,
+import type {
+  ResolvedAgentConfig,
+  RunConfigSnapshot,
+  RunMetadata,
+  RunScriptSnapshot,
+  RunTaskSource,
+  RunTypesafe,
 } from "../db/schema/index.js";
 import { promptHash } from "../prompts/index.js";
 import { schemasFor } from "../toolbox/index.js";
@@ -45,7 +44,6 @@ export function configSnapshot(
   const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = config;
   const snapshot: RunConfigSnapshot = {
     ...settings,
-    model_source: modelSourceOf(config).kind,
     projection_policy_version: RUN_PROJECTION_POLICY_VERSION,
     database: false,
     tools: [
