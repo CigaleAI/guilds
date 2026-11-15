@@ -262,19 +262,25 @@ for an access token. Each token joins the generation's redaction set
 as `GIT_TOKEN_<n>`.
 
 git reads its repository's token through the credential helper,
-`/usr/local/bin/guilds-git-credential`. The image sets it for
-`https://github.com` with `credential.useHttpPath`, so git asks with
-the repository's path and each repository gets its own token. The
-image also sets the helper through `GIT_CONFIG_*` environment
-variables, which git reads after every configuration file: an empty
-helper first drops any helper set before it, such as the one
+`/usr/local/bin/guilds-git-credential`. The image sets it for every
+HTTPS host (`credential.https://`) with `credential.useHttpPath`, so
+git asks with the host and the repository's path, and each repository
+gets its own token. The helper answers with the entry's `username` and
+token only when the host and the path match the entry's; the path
+matches without a trailing `.git` and in any case. It answers nothing
+for an entry whose username or token holds a line break. The image
+also sets the helper through `GIT_CONFIG_*` environment variables,
+which git reads after every configuration file: an empty helper first
+drops any helper set before it for an HTTPS host, such as the one
 `gh auth setup-git` writes into the agent's home, then the guild
-helper follows. The agent's own git configuration cannot replace it.
+helper follows. The agent's own git configuration cannot replace it,
+for any HTTPS host.
 
-`shell` exports the token of the repository that holds the working
-directory as `GH_TOKEN` for `gh`
-([GitHub](../../tools-and-connectors/github.md)). A harness gets no
-GitHub token in its environment
+`shell` exports the token of the GitHub repository that holds the
+working directory as `GH_TOKEN` for `gh`
+([GitHub](../../tools-and-connectors/github.md)). A repository of
+another provider gives no `GH_TOKEN`. A harness gets no repository
+token in its environment
 ([Harness environment](code-tasks.md#harness-environment)).
 
 Before each `shell` command and each code task start and poll, a

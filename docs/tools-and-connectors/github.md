@@ -257,13 +257,15 @@ App token (RS256, 9 minutes) and mints, per connection, an
 installation token limited to the guild's repositories, valid one
 hour ([Repositories](../concepts/coding/repositories.md#tokens)).
 
-`guilds-git-credential` is the credential helper for
-`https://github.com` with `useHttpPath`. It reads
+`guilds-git-credential` is the credential helper for every HTTPS
+host with `useHttpPath`, GitHub's included. It reads
 `/run/guilds/<agent id>/git-tokens.json` for the agent
-`GUILDS_AGENT_HOME` names. It is set in the image's system git
+`GUILDS_AGENT_HOME` names, and answers a GitHub repository with the
+username `x-access-token`. It is set in the image's system git
 configuration and again through `GIT_CONFIG_COUNT`, which git reads
 after every configuration file, so a helper the agent configures,
-such as the one `gh auth setup-git` writes, cannot replace it.
+such as the one `gh auth setup-git` writes, cannot replace it
+([Tokens](../concepts/coding/repositories.md#tokens)).
 
 A login's tool session sends an installation token for every
 repository the login picked, holding every permission the

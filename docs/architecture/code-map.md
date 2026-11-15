@@ -177,7 +177,7 @@ helper that acts for one agent takes its id, or reads its home from
 | `guilds-harness` | The coding harnesses behind `code_task`: `check`, `start`, `poll`, `result`, `stop`, and `log`; one driver per harness (Claude Code, Codex, Cursor, Antigravity); call state under `/run/guilds/<agent id>/harness/` ([Harnesses](../concepts/coding/harnesses.md)) |
 | `agy` | The Antigravity CLI at the pinned version, installed as `/usr/local/bin/agy` |
 | `claude-code-managed-settings.json` | Claude Code's managed settings at `/etc/claude-code/managed-settings.json`: hooks off, no project MCP servers |
-| `guilds-git-credential` | The git credential helper: the installation token of the guild repository git talks to |
+| `guilds-git-credential` | The git credential helper for every HTTPS host: the token and username of the guild repository git talks to, for its host and path only |
 | `git-template/` | The git template whose `prepare-commit-msg` hook adds the `Guild-Run` and `Guild-Agent` trailers |
 | `guilds-script-run` | Runs a named Python script with `GUILDS_SCRIPT_ARGS` on stdin |
 | `agent-browser-start <agent id> <display> <vnc port> <devtools port> <cdp relay port> <novnc port> <language>` | One agent's Xtigervnc display, Chrome, noVNC, and gost DevTools relay, which sets each request's Host to Chrome's, on the display and ports its slot sets |

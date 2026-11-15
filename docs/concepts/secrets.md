@@ -96,8 +96,8 @@ agent's aliases, to every command it runs for the agent:
 Each command also carries the agent's home and port variables
 ([Agent home](agent-home.md#the-environment-of-every-command)). A
 `shell` command whose working folder is inside one of the guild's
-repositories also gets `GH_TOKEN`, set to that repository's
-installation token ([Repositories](coding/repositories.md)).
+repositories with a GitHub login also gets `GH_TOKEN`, set to that
+repository's installation token ([Repositories](coding/repositories.md)).
 
 The machine's container itself holds no secret. Secrets travel with
 each command. So adding, changing, or removing a secret never
@@ -429,8 +429,8 @@ The variables in a harness's own row would each move that harness
 off its subscription sign-in.
 
 `shell` sets `GH_TOKEN` from `/run/guilds/<agent id>/git-tokens.json`
-when its working folder is inside a guild repository, replacing a
-secret of that name. MCP token payloads never enter the environment;
+when its working folder is inside a guild repository with a GitHub
+login, replacing a secret of that name. MCP token payloads never enter the environment;
 they only join run redaction.
 
 Code: `apps/orchestrator/src/access/runtime.ts`, `runtime/guilds-harness`,

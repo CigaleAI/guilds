@@ -195,21 +195,22 @@ COPY guilds-code /usr/local/bin/guilds-code
 COPY guilds-harness /usr/local/bin/guilds-harness
 COPY guilds-git-credential /usr/local/bin/guilds-git-credential
 COPY git-template /usr/local/share/guilds/git-template
-# git asks the credential helper for github.com with the repository path, so each
-# guild repository gets its own token; new clones take the trailer hook.
-RUN git config --system credential.https://github.com.helper /usr/local/bin/guilds-git-credential \
-    && git config --system credential.https://github.com.useHttpPath true \
+# git asks the credential helper for every HTTPS host (`https://` names them all) with the
+# repository path, so each guild repository gets its own token; new clones take the trailer hook.
+RUN git config --system credential.https://.helper /usr/local/bin/guilds-git-credential \
+    && git config --system credential.https://.useHttpPath true \
     && git config --system init.templateDir /usr/local/share/guilds/git-template \
     && git config --system init.defaultBranch main
 # The same helper from the environment, which git reads after every configuration file: the
 # agent's own git configuration cannot replace it. An empty `helper` drops every helper set
-# before it, as `gh auth setup-git` writes into the agent's home; this one is set after it.
+# before it for an HTTPS host, as `gh auth setup-git` writes into the agent's home; this one is
+# set after it.
 ENV GIT_CONFIG_COUNT=3 \
-    GIT_CONFIG_KEY_0=credential.https://github.com.helper \
+    GIT_CONFIG_KEY_0=credential.https://.helper \
     GIT_CONFIG_VALUE_0="" \
-    GIT_CONFIG_KEY_1=credential.https://github.com.helper \
+    GIT_CONFIG_KEY_1=credential.https://.helper \
     GIT_CONFIG_VALUE_1=/usr/local/bin/guilds-git-credential \
-    GIT_CONFIG_KEY_2=credential.https://github.com.useHttpPath \
+    GIT_CONFIG_KEY_2=credential.https://.useHttpPath \
     GIT_CONFIG_VALUE_2=true
 RUN chmod 755 /usr/local/bin/agent-browser-start /usr/local/bin/agent-cli-start /usr/local/bin/agent-stop \
         /usr/local/bin/guilds-browser /usr/local/bin/guilds-script-run /usr/local/bin/guilds-locale \

@@ -7,6 +7,24 @@ import { tempDir } from "./env.js";
 
 export const CODE_HELPER_PATH = path.join(repoRoot(import.meta.url), "runtime/guilds-code");
 export const HARNESS_HELPER_PATH = path.join(repoRoot(import.meta.url), "runtime/guilds-harness");
+export const GIT_CREDENTIAL_HELPER_PATH = path.join(repoRoot(import.meta.url), "runtime/guilds-git-credential");
+
+/**
+ * The image's git credential configuration (`runtime/Dockerfile`): `guilds-git-credential` for
+ * every HTTPS host with the repository path, after an empty helper. The helper reads the tokens
+ * under `runDir`, which `guilds-code` does not hand to the git it runs.
+ */
+export function gitCredentialEnv(runDir: string): Record<string, string> {
+  return {
+    GIT_CONFIG_COUNT: "3",
+    GIT_CONFIG_KEY_0: "credential.https://.helper",
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: "credential.https://.helper",
+    GIT_CONFIG_VALUE_1: `!GUILDS_RUN_DIR='${runDir}' '${GIT_CREDENTIAL_HELPER_PATH}'`,
+    GIT_CONFIG_KEY_2: "credential.https://.useHttpPath",
+    GIT_CONFIG_VALUE_2: "true",
+  };
+}
 
 type Execution = {
   exit_code: number | null;
@@ -16,8 +34,8 @@ type Execution = {
 /**
  * A sandbox whose commands run on this machine: `guilds-code` and `guilds-harness` from
  * `runtime/`, a temporary folder named after the agent as its home, another as
- * `/run/guilds`, and `env` plus each command's own `envs` in the environment. Commands that
- * name neither helper are recorded and answered with empty output.
+ * `/run/guilds`, the image's git credential helper, and `env` plus each command's own `envs` in
+ * the environment. Commands that name neither helper are recorded and answered with empty output.
  */
 export class HostCodeSandbox {
   id = "sbx_host";
@@ -73,6 +91,7 @@ export class HostCodeSandbox {
         // XDG directories are dropped so every per-user path resolves under that home too.
         env: {
           ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("XDG_"))),
+          ...gitCredentialEnv(this.runDir),
           ...this.env,
           ...envs,
           HOME: this.home,
