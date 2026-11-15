@@ -8,7 +8,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
-import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
+import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -76,18 +76,7 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
     assert.equal(preview.json().creates.agents[0].coding, true);
     assert.deepEqual(preview.json().creates.repositories, [{ name: "api", purpose: "" }]);
     assert.equal(preview.json().remaining.coding_agents, null, "nothing caps coding agents here");
-    assert.deepEqual(
-      preview.json().setups,
-      [{ server: "github", integration: "github-app", label: "GitHub App" }],
-      "repositories need the GitHub App, which a platform admin has not stored",
-    );
-    setInstanceKeys(
-      storeKeys({ "github-app": { app_id: "4242", slug: "guilds-run-test", private_key: "pem", client_id: "Iv1.client", client_secret: "client-secret" } }),
-    );
-    const withApp = await call("POST", `/api/recipes/${recipeId}/preview`, {});
-    assert.equal(withApp.statusCode, 200, withApp.body);
-    assert.deepEqual(withApp.json().setups, []);
-    setInstanceKeys({});
+    assert.deepEqual(preview.json().setups, [], "repositories need no GitHub App while the box has none: each is added with its own credential");
 
     const applied = await call("POST", `/api/recipes/${recipeId}/apply`, {
       guild_name: "code-target",
@@ -97,7 +86,7 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
     const apply = applied.json() as { id: string; guild_id: string; checklist: Array<Record<string, unknown>> };
     assert.deepEqual(
       apply.checklist.filter((step) => step.kind === "connection" || step.kind === "repository").map((step) => step.id),
-      ["conn:github", "repo:api"],
+      ["repo:api"],
     );
     const target = await listAgents(db, apply.guild_id);
     assert.equal((target[0]?.config as Record<string, unknown>).coding, true);

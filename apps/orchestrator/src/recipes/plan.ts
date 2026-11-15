@@ -38,7 +38,6 @@ import type { OrgMembershipRow } from "../db/orgs.js";
 import type { RecipeRow } from "../db/recipes.js";
 import { listSecrets } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
-import { GITHUB_SLUG } from "../github/index.js";
 import { canSeeGuild, guildRole } from "../guilds/operators.js";
 import { validateGuildName } from "../guilds/validation.js";
 import { validateAgentName } from "../agents/validation.js";
@@ -380,15 +379,12 @@ function plannedInstalls(recipe: RecipeDocument, ctx: ValidationContext): Planne
 }
 
 /**
- * The connectors the recipe needs that the box has but a platform admin has not set up: a
- * connection's server, and GitHub when the recipe lists repositories. The apply goes on; these
- * steps cannot connect until the integration is filled under Admin, Platform keys.
+ * The connectors the recipe connects that the box has but a platform admin has not set up. The
+ * apply goes on; these steps cannot connect until the integration is filled under Admin,
+ * Platform keys.
  */
 async function setupsNeeded(apply: RecipeApply, orgId: string, recipe: RecipeDocument): Promise<PlatformSetup[]> {
   const wanted = new Set(recipe.connections.map((connection) => connection.server));
-  if (recipe.repositories.length) {
-    wanted.add(GITHUB_SLUG);
-  }
   const rows = (await listServers(apply.db, { owner: { visibleTo: orgId }, enabled: true })).filter(
     (row) => wanted.has(row.slug) && oauthSetupState(row) === "unsupported",
   );

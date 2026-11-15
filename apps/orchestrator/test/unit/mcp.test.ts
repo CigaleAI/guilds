@@ -17,7 +17,7 @@ import { TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
-import type { GithubRepositorySelection, Manifest } from "../../src/db/schema/index.js";
+import type { RepositorySelection, Manifest } from "../../src/db/schema/index.js";
 import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
 import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
 
@@ -605,7 +605,7 @@ const GITHUB_APP_KEYS = {
 };
 const GITHUB_SERVER = serverRow("github", { id: "mcp_github", auth: "oauth", config: { url: "https://api.githubcopilot.com/mcp/" } });
 
-function githubLogin(repositories: GithubRepositorySelection[]): McpConnectionRow {
+function githubLogin(repositories: RepositorySelection[]): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" }, KEY);
   return connectionRow({
     id: "conn_gh",
@@ -619,7 +619,7 @@ function githubLogin(repositories: GithubRepositorySelection[]): McpConnectionRo
   });
 }
 
-const PICKED = [{ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 }];
+const PICKED = [{ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", remote_id: 101 }];
 
 type GithubFakes = {
   /** The body of each token GitHub minted. */

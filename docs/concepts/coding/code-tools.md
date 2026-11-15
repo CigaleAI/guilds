@@ -145,8 +145,9 @@ at the home.
 `shell` runs `bash -c` with stdin closed and `PAGER=cat`,
 `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
 `DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and `GUILD_AGENT_ID`
-in its environment, and `GH_TOKEN` set to the token of the repository
-that holds the working directory ([Repositories](repositories.md#tokens)).
+in its environment, and `GH_TOKEN` set to the token of the GitHub
+repository that holds the working directory
+([Repositories](repositories.md#tokens)).
 On exit it records the shell's directory as the new working directory.
 
 A command past its timeout gets SIGTERM, then SIGKILL two seconds

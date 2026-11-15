@@ -67,7 +67,7 @@ A repository that extends core holds this one as a submodule
 | `mcp/` | `McpPool` (`pool.ts`), the catalog and its policy, MCP sessions, logins and the tools they list, an operator's direct tool call, who sees a connector and a login, and the connect flows (`connect-*.ts`, `github-install.ts`, `github-app-manifest.ts`) |
 | `oauth/` | The OAuth mechanics of a manifest's `auth.oauth` (`index.ts`), and the callback and installation-picker pages (`html.ts`) |
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
-| `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), a coding agent's git side (`git.ts`), the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
+| `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), a coding agent's git side and its git providers (`git.ts`, `github-provider.ts`, `access-token-provider.ts`), the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
 | `machines/` | Tiers, sizes, slots, placement and who may place on a machine, an organisation's machines as its members manage them (`service.ts`), and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
 | `access/` | Binding resolution and its change log, a run's tools, MCP, and secrets (`runtime.ts`), the access view a scope's page shows (`view.ts`), an agent's page (`agent-page.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM and environment fingerprints (`crypto.ts`), owner and secret validation, and the scopes a credential is visible at |
@@ -177,7 +177,7 @@ helper that acts for one agent takes its id, or reads its home from
 | `guilds-harness` | The coding harnesses behind `code_task`: `check`, `start`, `poll`, `result`, `stop`, and `log`; one driver per harness (Claude Code, Codex, Cursor, Antigravity); call state under `/run/guilds/<agent id>/harness/` ([Harnesses](../concepts/coding/harnesses.md)) |
 | `agy` | The Antigravity CLI at the pinned version, installed as `/usr/local/bin/agy` |
 | `claude-code-managed-settings.json` | Claude Code's managed settings at `/etc/claude-code/managed-settings.json`: hooks off, no project MCP servers |
-| `guilds-git-credential` | The git credential helper: the installation token of the guild repository git talks to |
+| `guilds-git-credential` | The git credential helper for every HTTPS host: the token and username of the guild repository git talks to, for its host and path only |
 | `git-template/` | The git template whose `prepare-commit-msg` hook adds the `Guild-Run` and `Guild-Agent` trailers |
 | `guilds-script-run` | Runs a named Python script with `GUILDS_SCRIPT_ARGS` on stdin |
 | `agent-browser-start <agent id> <display> <vnc port> <devtools port> <cdp relay port> <novnc port> <language>` | One agent's Xtigervnc display, Chrome, noVNC, and gost DevTools relay, which sets each request's Host to Chrome's, on the display and ports its slot sets |

@@ -8,6 +8,33 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A recipe that lists repositories no longer asks for a
+GitHub connection: applying it adds no `conn:github` step of its own,
+and its preview names no GitHub App to set up for them. Each
+`repo:<name>` step asks for the repository's HTTPS URL, on any git
+host, and a credential. Coding agents are told to push their branch
+and open the pull or merge request with the host's connector tools.
+
+**Rebuild.** The guild's add-repository form takes a URL on any HTTPS
+host and a **Credential**: a GitHub login, offered for a `github.com`
+URL only, an **Access token** (a secret the operator manages and its
+**Username**), or none. A repository with an access token shows
+"Token · `<secret>`".
+
+**Rebuild.** A guild repository can live on any HTTPS git host, such
+as GitLab, Bitbucket, Gitea or Azure DevOps, and be cloned, checked
+out and pushed with an access token. The token is kept as a secret of
+the organisation; the repository names the secret and the username
+git sends with it (`secret_id` and `username` on
+`POST /api/guilds/:id/repositories`). Only a member who manages the
+secret may add a repository with it, and deleting the secret deletes
+that repository. Each repository payload gains `provider`,
+`secret_id`, `username` and `secret`. The runtime image answers git
+with each repository's own username on every HTTPS host, and no
+longer uses a git credential helper an agent configures for an HTTPS
+host. `shell` sets `GH_TOKEN` only in a repository with a GitHub
+login. Rebuild the orchestrator and the runtime image together.
+
 **Rebuild.** An agent can be a subscription agent: no model, and a
 harness, Claude Code or Codex, on the operator's own subscription as
 its model source. The box offers them only with
@@ -70,6 +97,12 @@ list now refreshes after a refused delete too.
 **Rebuild.** Studio shows why the coach stopped as a toast, as Builder
 does. In every chat, a message the server refuses goes back into the
 composer with its images, unless the operator has typed in it since.
+
+**Breaking for API clients.** The host's id of a repository is
+`remote_id`, no longer `github_id`: on each repository a GitHub login
+picks, in the body and the answer of
+`PUT /api/mcp/connections/:id/github/selected` and in the login's
+`settings.repositories`. Boot renames the stored field.
 
 **Rebuild.** A message posted to a Studio or Builder coach while the
 box or the organisation is at its generation limit is refused with

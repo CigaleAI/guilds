@@ -89,8 +89,8 @@ The checklist lists what the operator still has to do:
 - **Connect** each connector the recipe needs, unless a reused login
   already covers it.
 - **Add each secret** so it reaches every agent that needs it.
-- **Connect GitHub** and **add each repository** in the guild's
-  Settings, when the recipe lists repositories.
+- **Add each repository** in the guild's Settings, with its URL and a
+  credential, when the recipe lists repositories.
 - **Confirm** each external setup step.
 
 Steps the platform can check are verified, not just ticked: **Check**
@@ -126,9 +126,8 @@ it shows:
   admin installs a registry one there (**Install unverified** for an
   unverified one). An owner or admin adds one the recipe carries as
   the organisation's own server (**Add server**).
-- **Connectors to set up**: each connector the box has but a platform
-  admin has not set up, GitHub included when the recipe lists
-  repositories. A platform admin gets a **Set up** link. Anyone else
+- **Connectors to set up**: each connector the recipe connects that
+  the box has but a platform admin has not set up. A platform admin gets a **Set up** link. Anyone else
   reads that a platform admin sets it up under **Admin**,
   **Platform keys**.
 - the new guild's name (**Guild name**)
@@ -341,9 +340,8 @@ on.
   an instance admin installs, or from the recipe (`server`,
   `from: "recipe"`, `display_name`, `description`, `url`, `auth`),
   which an owner or admin adds as the organisation's own server
-- which of the connectors the recipe needs the box has but a platform
-  admin has not set up, GitHub included when the recipe lists
-  repositories. The preview's `setups` lists each one (`server`,
+- which of the connectors the recipe connects the box has but a
+  platform admin has not set up. The preview's `setups` lists each one (`server`,
   `integration`, `label`). The apply goes on; those connections cannot
   connect until the integration is filled under **Admin**,
   **Platform keys** (see
@@ -473,19 +471,18 @@ text, a `closure` (`verified` or `confirmed`), and a `status` (`open`,
 
 A step for a reused login, and its overlay step, start verified.
 
-A recipe with `repositories` adds a `conn:github` step (Connect
-GitHub) when its connections do not already name `github` (see
-[GitHub](../tools-and-connectors/github.md)). It adds one
-`repo:<name>` step per repository. That step's setup is the
-repository's purpose and where to add it (the guild's Settings, under
-Repositories, with that name).
-
-The Connect GitHub setup tells the operator to install the GitHub App
-on the account that owns the repositories, to pick the guild's or
-agent's repositories on the GitHub card in Tools, and to set Commit
-author email in the guild's Settings to a verified email on the
-GitHub account that owns any deploy project. Recipes do not store that
-email.
+A recipe with `repositories` adds one `repo:<name>` step per
+repository, and no connection step. That step's setup is the
+repository's purpose, where to add it (the guild's Settings, under
+Repositories, with that name), and what to add it with: its HTTPS
+URL, on any git host, and a credential, a GitHub login for a GitHub
+repository, an access token kept as a secret for any host, or none
+for a public repository, which then cannot be pushed to
+([Repositories](coding/repositories.md)). It also says to set the
+guild's Commit author email to a verified email of the account that
+owns a deploy project, when a deploy service must recognise the
+commits' author. Recipes do not store that email. A GitHub connection
+the recipe lists keeps its own step.
 
 A secret the operator chose to `skip` has no step.
 

@@ -450,7 +450,7 @@ export const codeTask = nativeTool({
     "content is appended to the brief. Pass session_id to resume an earlier session (to answer " +
     "its question or follow up) in the repository it started in. repo is a name under repos/, " +
     "optional when the guild has one. timeout_minutes defaults to 30, at most 60. The harness " +
-    "may commit but never pushes; check its work, then push and open pull requests yourself.",
+    "may commit but never pushes; check its work, then push and open the pull or merge request yourself.",
   summary: "Delegate code work to your coding harness and return its result.",
   parameters: CodeTaskParameters,
   async handler(services, run, hooks, call) {

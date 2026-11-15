@@ -17,7 +17,7 @@ import {
 } from "../db/mcp.js";
 import { getMembership } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
-import type { GithubRepositorySelection } from "../db/schema/index.js";
+import type { RepositorySelection } from "../db/schema/index.js";
 import {
   GITHUB_SLUG,
   GithubError,
@@ -34,6 +34,7 @@ import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
 import type { McpPool } from "../mcp/pool.js";
 import type { LoginRetirement } from "../mcp/service.js";
+import type { RepositorySecretCheck } from "../secrets/service.js";
 import {
   DEFAULT_BRANCH,
   githubLoginItem,
@@ -50,6 +51,8 @@ export type RepositoryServices = {
   db: Queryable;
   /** Retires a GitHub login whose installation GitHub no longer knows. */
   loginRetirement: LoginRetirement;
+  /** Refuses a secret the user may not give to the guild's repositories as an access token. */
+  secrets: RepositorySecretCheck;
   /** The pool that talks to the connectors; absent on a box that calls none. */
   mcp: Pick<McpPool, "drop"> | null;
   masterKey: Buffer | undefined;
@@ -73,25 +76,30 @@ const RepositoryFields = {
   default_branch: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 };
 
-/** A repository added to a guild, cloned with a GitHub login when `connection_id` names one. */
+/**
+ * A repository added to a guild, cloned with a GitHub login when `connection_id` names one, or
+ * with the access token the secret `secret_id` holds, sent with `username`.
+ */
 export const RepositoryDraftSchema = Type.Object({
   ...RepositoryFields,
   connection_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  secret_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  username: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type RepositoryDraft = Static<typeof RepositoryDraftSchema>;
 
 /** The repositories a GitHub login's coding agents clone, each with GitHub's id when known. */
-export const GithubSelectionSchema = Type.Object({
+export const RepositorySelectionDraftSchema = Type.Object({
   repositories: Type.Array(
     Type.Object({
       ...RepositoryFields,
-      github_id: Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()])),
+      remote_id: Type.Optional(Type.Union([Type.Number(), Type.String(), Type.Null()])),
     }),
   ),
 });
 
-export type GithubSelection = Static<typeof GithubSelectionSchema>["repositories"];
+export type RepositorySelectionDraft = Static<typeof RepositorySelectionDraftSchema>["repositories"];
 
 function proxyUrl(): string {
   return process.env.ADAPTER_PROXY_URL ?? "";
@@ -206,7 +214,7 @@ async function addToGuildLogin(
   db: Queryable,
   guild: GuildRow,
   connectionId: string,
-  entry: GithubRepositorySelection,
+  entry: RepositorySelection,
 ): Promise<void> {
   const connection = await getMcpConnection(db, connectionId);
   if (
@@ -223,8 +231,10 @@ async function addToGuildLogin(
 }
 
 /**
- * Adds a repository to a guild. One cloned with a GitHub login must be reached by it, from a login
- * the guild may use; it takes the repository's default branch unless the request names one.
+ * Adds a repository to a guild, with the credential its provider takes. One cloned with a GitHub
+ * login must be reached by it, from a login the guild may use; it takes the repository's default
+ * branch unless the request names one. One cloned with an access token names a secret of the
+ * guild's organisation that the user manages.
  */
 export async function addGuildRepository(
   services: RepositoryServices,
@@ -235,7 +245,7 @@ export async function addGuildRepository(
   const { db } = services;
   const input = validateRepositoryInput(body);
   let defaultBranch = input.defaultBranch;
-  let githubId: number | null = null;
+  let remoteId: number | null = null;
   if (input.connectionId !== null) {
     const connection = await requireGithubConnection(db, input.connectionId);
     if (!(await usableFromGuild(db, connection, guild, userId))) {
@@ -243,7 +253,11 @@ export async function addGuildRepository(
     }
     const match = reachedRepository(await reachableRepositories(services, connection), input.url);
     defaultBranch ??= match.default_branch;
-    githubId = match.id;
+    remoteId = match.id;
+  }
+  if (input.secretId !== null) {
+    // The secret's value reaches every coding agent of the guild through git.
+    await services.secrets.requireManagedSecret(guild.org_id, input.secretId, userId);
   }
   const branch = defaultBranch ?? DEFAULT_BRANCH;
   const repository = {
@@ -256,7 +270,14 @@ export async function addGuildRepository(
   try {
     const row = await insertGuildRepository(
       db,
-      { ...repository, connectionId: input.connectionId, githubId },
+      {
+        ...repository,
+        provider: input.provider,
+        connectionId: input.connectionId,
+        secretId: input.secretId,
+        username: input.username,
+        remoteId,
+      },
       new Date(),
     );
     if (input.connectionId !== null) {
@@ -264,7 +285,7 @@ export async function addGuildRepository(
         name: input.name,
         url: input.url,
         default_branch: branch,
-        ...(githubId === null ? {} : { github_id: githubId }),
+        ...(remoteId === null ? {} : { remote_id: remoteId }),
       };
       await addToGuildLogin(db, guild, input.connectionId, entry);
     }
@@ -272,6 +293,7 @@ export async function addGuildRepository(
       ...row,
       connection_status: null,
       connection_account: null,
+      secret_name: null,
     };
     return repositoryItem(listed);
   } catch (error) {
@@ -306,16 +328,16 @@ export async function removeGuildRepository(
 
 /** The selection with each repository's GitHub id, and its default branch where the request gave none. */
 function matchSelection(
-  selected: GithubRepositorySelection[],
+  selected: RepositorySelection[],
   reached: GithubRepository[],
-  given: GithubSelection,
+  given: RepositorySelectionDraft,
 ) {
   return selected.map((item, index) => {
     const match = reachedRepository(reached, item.url);
     const keepsBranch = Boolean(given[index]?.default_branch?.trim());
     return {
       ...item,
-      github_id: match.id,
+      remote_id: match.id,
       ...(keepsBranch ? {} : { default_branch: match.default_branch }),
     };
   });
@@ -329,8 +351,8 @@ function matchSelection(
 export async function pickGithubRepositories(
   services: RepositoryServices,
   connection: McpConnectionRow,
-  repositories: GithubSelection,
-): Promise<GithubRepositorySelection[]> {
+  repositories: RepositorySelectionDraft,
+): Promise<RepositorySelection[]> {
   const { db } = services;
   const now = new Date();
   const validated = validateGithubRepositories(repositories);
@@ -348,7 +370,7 @@ export async function pickGithubRepositories(
 async function replaceLoginGuildRepositories(
   db: Queryable,
   connection: McpConnectionRow,
-  selected: GithubRepositorySelection[],
+  selected: RepositorySelection[],
   now: Date,
 ): Promise<void> {
   if (connection.owner_scope !== "guild" || !connection.owner_id) {
@@ -359,7 +381,7 @@ async function replaceLoginGuildRepositories(
     name: item.name,
     url: item.url,
     defaultBranch: item.default_branch,
-    githubId: item.github_id ?? null,
+    remoteId: item.remote_id ?? null,
   }));
   try {
     await replaceConnectionGuildRepositories(

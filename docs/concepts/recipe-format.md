@@ -374,10 +374,6 @@ A connection whose server the box lacks is a blocking error:
   newest version
 - `server.unknown` otherwise
 
-A recipe with `repositories` asks for a GitHub login at apply: its
-GitHub connection's step, or a step of its own when `connections`
-has none, says what the repositories need.
-
 ### secrets and external
 
 - `secrets[]` is `{ name, description, recommended_scope,
@@ -396,6 +392,12 @@ work in, by `name` and a one-line `purpose`.
   folder under `repos/` in each coding agent's home.
 - `purpose` is at most 400 characters.
 - A URL, an owner, or any other key is refused.
+
+At apply, each repository is a step that asks the operator for its
+HTTPS URL, on any git host, and a credential: a GitHub login, an
+access token, or none for a public repository
+([Applying recipes](applying-recipes.md#reference)). Listing
+repositories asks for no GitHub connection.
 
 ### design
 

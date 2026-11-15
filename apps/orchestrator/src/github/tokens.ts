@@ -15,7 +15,7 @@ import {
   type TokenPermissions,
   type TokenRepository,
 } from "./index.js";
-import { githubIdOf, githubRepositoriesOf, type TokenScopedRepository } from "./repositories.js";
+import { remoteIdOf, githubRepositoriesOf, type TokenScopedRepository } from "./repositories.js";
 
 /** A token closer than this to expiry is replaced before it is used again. */
 export const TOKEN_REFRESH_MS = 10 * 60 * 1000;
@@ -95,7 +95,7 @@ function repositoryItems(rows: TokenScopedRepository[]): Item[] {
  * those. A repository the installation does not reach under its path is out of reach.
  */
 async function identifyRepositories(call: InstallationCall, items: Item[]): Promise<Item[]> {
-  const unidentified = items.filter((item) => githubIdOf(item.row) === null);
+  const unidentified = items.filter((item) => remoteIdOf(item.row) === null);
   if (!unidentified.length) {
     return [];
   }
@@ -103,10 +103,10 @@ async function identifyRepositories(call: InstallationCall, items: Item[]): Prom
   for (const item of unidentified) {
     const found = await installationRepository(token, item.path, call.services);
     if (found) {
-      item.row.github_id = found.id;
+      item.row.remote_id = found.id;
     }
   }
-  const missing = unidentified.filter((item) => githubIdOf(item.row) === null);
+  const missing = unidentified.filter((item) => remoteIdOf(item.row) === null);
   if (missing.length) {
     throw outOfReach(call.account, missing);
   }
@@ -125,12 +125,12 @@ async function explainRefusal(call: InstallationCall, items: Item[], error: Gith
   const reached = new Set(
     (await installationRepositories(call.app, call.installationId, call.services, call.now)).map((item) => item.id),
   );
-  const missing = items.filter((item) => !reached.has(githubIdOf(item.row)!));
+  const missing = items.filter((item) => !reached.has(remoteIdOf(item.row)!));
   return missing.length ? outOfReach(call.account, missing) : error;
 }
 
 async function mintScopedToken(call: InstallationCall, items: Item[], permissions: TokenPermissions | undefined) {
-  const repositoryIds = [...new Set(items.map((item) => githubIdOf(item.row)!))];
+  const repositoryIds = [...new Set(items.map((item) => remoteIdOf(item.row)!))];
   try {
     return await installationToken(
       call.app,
@@ -150,7 +150,7 @@ async function mintScopedToken(call: InstallationCall, items: Item[], permission
 function adoptCurrentNames(items: Item[], repositories: TokenRepository[]): Item[] {
   const moved: Item[] = [];
   for (const item of items) {
-    const current = repositories.find((repository) => repository.id === githubIdOf(item.row));
+    const current = repositories.find((repository) => repository.id === remoteIdOf(item.row));
     if (current && current.full_name.toLowerCase() !== item.path.toLowerCase()) {
       item.row.url = `https://github.com/${current.full_name}`;
       item.path = current.full_name;
@@ -196,7 +196,7 @@ export async function mintRepositoryToken(
   for (const item of new Set([...identified, ...adoptCurrentNames(items, minted.repositories)])) {
     await db.recordGithubRepository(
       String(request.connection.id),
-      { name: item.row.name, github_id: githubIdOf(item.row)!, url: item.row.url },
+      { name: item.row.name, remote_id: remoteIdOf(item.row)!, url: item.row.url },
       now,
     );
   }
