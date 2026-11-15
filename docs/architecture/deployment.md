@@ -44,7 +44,10 @@ Cross-organisation and non-member access returns 404.
 `STATE_ROOT` is one absolute host path. `./setup.sh` sets it to
 `.state` in the checkout when `.env` names none. `make` uses `.state`
 under the directory it runs in, unless the environment sets
-`STATE_ROOT`, and passes it to Compose. It holds the host-side trees:
+`STATE_ROOT`, and passes it to Compose. The path is on a Unix
+filesystem: `./setup.sh` tries ownership, permissions, links, and
+reading back a written file from a container, and refuses a path
+where one fails. It holds the host-side trees:
 
 - `workspaces/`: the **sandbox** tree: one directory per machine id,
   bind-mounted at `/home` in that machine's container, with one home

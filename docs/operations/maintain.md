@@ -51,6 +51,8 @@ explains which harnesses an image carries.
 `STATE_ROOT` in `.env` is an absolute path on this host. The
 stack keeps everything under it. Each directory is mounted into the
 container that uses it. The stack creates no named Docker volume.
+The path is on a Unix filesystem, such as APFS or ext4: PostgreSQL
+and the machines need ownership, permissions, and links under it.
 
 | Tree | Holds |
 |---|---|
@@ -142,6 +144,11 @@ It refuses to generate a new secret when `STATE_ROOT/postgres`
 already holds a database. That database was created with values only
 its owner has. Put those values into `.env`, or point `STATE_ROOT` at
 an empty directory.
+
+Each run tries, from a container, what PostgreSQL and the machines
+do under `STATE_ROOT`: write, rename, and run a file, set its owner
+and permissions, and link to it. It refuses a path where one fails,
+before it generates a secret.
 
 `./setup.sh --env-only` writes `.env` and the state directories. It
 builds no image.
@@ -258,6 +265,8 @@ monitor outside the box can poll it.
 |---|---|
 | `run ./setup.sh first, which writes it into .env` | `docker compose` found no `.env`, or one without `STATE_ROOT`, `SECRETS_MASTER_KEY`, `POSTGRES_PASSWORD`, or `OPENSANDBOX_API_KEY` |
 | `STATE_ROOT must be an absolute path` | `./setup.sh` found a relative path in `.env`. The sandbox server mounts machine directories by the absolute one |
+| `STATE_ROOT is on a filesystem the stack cannot run on` | `./setup.sh` tried, from a container, what PostgreSQL and the machines do under `STATE_ROOT`, and the message names the one that failed. Point `STATE_ROOT` at a directory on a Unix filesystem, such as APFS or ext4 |
+| `could not check the filesystem under STATE_ROOT` | `./setup.sh` could not start the container that tries the filesystem. Docker's own message follows: Docker is not running, cannot pull `postgres:17`, or cannot mount the path |
 | `… already holds a database, and .env has no …` | `./setup.sh` would generate a secret over a database created with another one. Put that database's values into `.env`, or point `STATE_ROOT` at an empty directory |
 | `SECRETS_MASTER_KEY is the all-zero development key: set 32 random bytes` | The server refuses the development key outside the development stack ([Security register](../architecture/security-register.md), SEC-14) |
 | `SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)` | The key is not 32 bytes |

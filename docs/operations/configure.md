@@ -39,7 +39,7 @@ does not reach the container.
 
 | Variable | Value |
 |---|---|
-| `STATE_ROOT` | An absolute path on this host. The stack keeps its state under it. A relative path is refused, because the sandbox server mounts each machine's directory by this path |
+| `STATE_ROOT` | An absolute path on this host. The stack keeps its state under it. A relative path is refused, because the sandbox server mounts each machine's directory by this path. The path is on a Unix filesystem: PostgreSQL and the machines need ownership, permissions, and links under it. `./setup.sh` tries them from a container and refuses a path where one fails |
 | `SECRETS_MASTER_KEY` | 32 random bytes, as hex, base64, or base64url (`./setup.sh` writes hex). It encrypts every stored credential: connector logins, model keys, platform keys, and secrets. `.env` holds its only copy. A lost key loses them all. The server refuses to start without it, and refuses the all-zero key unless `ALLOW_ZERO_MASTER_KEY=1` ([Development](#development)) |
 | `POSTGRES_PASSWORD` | The database password. Generated |
 | `OPENSANDBOX_API_KEY` | The key the server and the sandbox server share. Generated |

@@ -3,8 +3,9 @@
 #
 # It writes into .env what the stack cannot start without and nobody should pick by hand: the
 # absolute path the stack keeps its state under, the master key that encrypts stored credentials,
-# the PostgreSQL password, and the OpenSandbox key. It creates the state directories and builds
-# the two images the stack runs under local tags: the OpenSandbox server and the agent runtime.
+# the PostgreSQL password, and the OpenSandbox key. It refuses a state path on a filesystem the
+# stack cannot run on, creates the state directories, and builds the two images the stack runs
+# under local tags: the OpenSandbox server and the agent runtime.
 #
 #   ./setup.sh               everything
 #   ./setup.sh --env-only    .env and the state directories; no image is built
@@ -20,7 +21,7 @@ for arg in "$@"; do
   case "$arg" in
     --env-only) build_images=0 ;;
     -h | --help)
-      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -84,6 +85,42 @@ if [[ -z "$state_root" ]]; then
 fi
 if [[ "$state_root" != /* ]]; then
   echo "STATE_ROOT must be an absolute path (OpenSandbox mounts workspaces by it); .env has: $state_root" >&2
+  exit 1
+fi
+
+# PostgreSQL and the agent machines keep their files in directories of STATE_ROOT that Docker
+# mounts into their containers. A filesystem this host reads and writes without trouble can still
+# fail through that mount, so what they rely on is tried from a container, where they run.
+mkdir -p "$state_root"
+probe_status=0
+probe_output="$(
+  docker run --rm --interactive --volume "$state_root:/state" postgres:17 sh -s 2>&1 <<'PROBE'
+refuse() {
+  echo "unusable: $1"
+  exit 1
+}
+dir=/state/.setup-probe
+rm -rf "$dir"
+mkdir "$dir" || refuse "create a directory"
+trap 'rm -rf "$dir"' EXIT
+cd "$dir" || refuse "enter a directory it created"
+echo probe >written && [ "$(cat written)" = probe ] || refuse "read back a file it wrote"
+mv written renamed && [ "$(cat renamed)" = probe ] || refuse "read a file after renaming it"
+chmod 700 . && [ "$(stat -c %a .)" = 700 ] || refuse "restrict a directory to its owner"
+chown 999:999 renamed && [ "$(stat -c %u:%g renamed)" = 999:999 ] || refuse "change the owner of a file"
+ln renamed linked || refuse "hard-link a file"
+ln -s renamed symlinked && [ "$(cat symlinked)" = probe ] || refuse "read a file through a symbolic link"
+printf '#!/bin/sh\nexit 0\n' >script && chmod 755 script && ./script || refuse "run a script it wrote"
+PROBE
+)" || probe_status=$?
+if [[ "$probe_output" == *"unusable: "* ]]; then
+  echo "STATE_ROOT is on a filesystem the stack cannot run on: under $state_root a container could not ${probe_output##*unusable: }." >&2
+  echo "PostgreSQL and the agent machines keep their files there and need a Unix filesystem: ownership, permissions, links, and a file that is there once written. Point STATE_ROOT in .env at a directory on one." >&2
+  exit 1
+fi
+if [[ $probe_status -ne 0 ]]; then
+  echo "could not check the filesystem under STATE_ROOT ($state_root) from a container:" >&2
+  echo "$probe_output" >&2
   exit 1
 fi
 

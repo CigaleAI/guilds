@@ -12,6 +12,10 @@ guilds.run runs on one machine. Docker is all it needs.
 - git and bash.
 - Free disk space for the images and for agent files. The images
   include a browser and coding tools.
+- A checkout on a Unix filesystem, such as APFS or ext4. The app
+  keeps its state in the checkout, in `.state`. `./setup.sh` refuses
+  a filesystem the app cannot run on
+  ([Configure](../operations/configure.md#required)).
 
 Node and pnpm are for people who
 [change the code](../contributing/development.md) only.
