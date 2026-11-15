@@ -34,6 +34,8 @@ import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAge
 import type { BlockingIssueRow } from "../../src/db/blocking-issues.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
+import { AccessTokenProvider } from "../../src/coding/access-token-provider.js";
+import { GithubProvider } from "../../src/coding/github-provider.js";
 import type { CodingRepository } from "../../src/coding/repositories.js";
 import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { RunWakeRow } from "../../src/db/wakes.js";
@@ -494,7 +496,10 @@ export class FakeDB {
 
   /** A run's repository tokens, minted and recorded through this fake. */
   repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
-    return new RepositoryTokens(this as never, repositories);
+    return new RepositoryTokens(
+      { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
+      repositories,
+    );
   }
 
   async getMcpServer(_serverId: string) {
@@ -737,7 +742,10 @@ export class RecordingDB {
 
   /** A run's repository tokens, minted and recorded through this fake. */
   repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
-    return new RepositoryTokens(this as never, repositories);
+    return new RepositoryTokens(
+      { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
+      repositories,
+    );
   }
 
   async getMcpServer(_serverId: string) {

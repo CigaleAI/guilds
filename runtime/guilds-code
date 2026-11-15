@@ -265,7 +265,7 @@ def _child_env(spec: dict[str, Any], cwd: Path) -> dict[str, str]:
 
 
 def _repository_token(cwd: Path) -> str:
-    """The token of the guild repository that holds `cwd`, for `gh`."""
+    """The token of the GitHub repository that holds `cwd`, for `gh`; another provider's gives none."""
     try:
         tokens = json.loads((AGENT_RUN / "git-tokens.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -278,7 +278,7 @@ def _repository_token(cwd: Path) -> str:
         root = Path(os.path.realpath(HOME / "repos" / str(name)))
         if (real == root or root in real.parents) and isinstance(entry, dict):
             token = entry.get("token")
-            return token if isinstance(token, str) else ""
+            return token if isinstance(token, str) and entry.get("provider") == "github" else ""
     return ""
 
 

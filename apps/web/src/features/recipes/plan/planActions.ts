@@ -53,41 +53,20 @@ export function secretAction(secret: SecretDraft): PlanAction {
   };
 }
 
-/** The GitHub login a recipe's repositories need when no connector of the recipe provides it. */
-const connectGitHub: PlanAction = {
-  kind: "connect",
-  title: "Connect GitHub",
-  detail:
-    "Install the GitHub App on the account that owns the repositories, or reuse an existing install. Pick this login's repositories on the GitHub card in Tools.",
-  path: "repositories",
-  author: null,
-  required: false,
-  server: "github",
-};
+/** How a recipe's repository is added after apply: by its URL, with the credential it is cloned with. */
+const ADD_REPOSITORY =
+  "Add it in the guild's Settings under Repositories, with its HTTPS URL and a credential: a GitHub login, an access token, or none for a public repository.";
 
-/**
- * The steps a recipe's repositories need: connecting GitHub, unless one of the connectors is
- * GitHub, then adding each repository.
- */
-export function repositoryActions(
-  repositories: readonly RepositoryDraft[],
-  connections: readonly ConnectionDraft[],
-): PlanAction[] {
-  const github =
-    repositories.length && !connections.some((connection) => connection.server === "github")
-      ? [connectGitHub]
-      : [];
-  return [
-    ...github,
-    ...repositories.map((repository): PlanAction => ({
-      kind: "repository",
-      title: `Add the ${repository.name ?? ""} repository`,
-      detail: repository.purpose || "Add it in the guild's Settings under Repositories.",
-      path: `repositories.${repository.name ?? ""}`,
-      author: null,
-      required: true,
-    })),
-  ];
+/** The step each repository of a recipe needs: adding it with its URL and a credential. */
+export function repositoryActions(repositories: readonly RepositoryDraft[]): PlanAction[] {
+  return repositories.map((repository): PlanAction => ({
+    kind: "repository",
+    title: `Add the ${repository.name ?? ""} repository`,
+    detail: [repository.purpose, ADD_REPOSITORY].filter(Boolean).join(" "),
+    path: `repositories.${repository.name ?? ""}`,
+    author: null,
+    required: true,
+  }));
 }
 
 /** The login step each browser agent needs, naming the site it logs into. */

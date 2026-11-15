@@ -1,12 +1,7 @@
 import { Type } from "typebox";
 import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
-import {
-  agentGitIdentity,
-  CloneFailure,
-  cloneFailures,
-  repositoryTokens,
-  RepositoryTokenInstallationGoneError,
-} from "../coding/git.js";
+import { agentGitIdentity, CloneFailure, cloneFailures, repositoryTokens } from "../coding/git.js";
+import { RepositoryTokenInstallationGoneError } from "../coding/github-provider.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
 import { codingRepositories, type CodingRepository } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
@@ -156,11 +151,12 @@ export class CodingRuns {
   }
 
   /**
-   * A coding generation's repositories: installation tokens for those with a GitHub
-   * connection (written under /run/guilds and added to the run's redaction values; a login
-   * whose installation GitHub refuses is retired as `installation_gone`), the
-   * agent's git identity, a clone of each one missing from the workspace, and the run's start
-   * checkpoint. The working directory starts in the repository when there is one.
+   * A coding generation's repositories: a token for each one with a git provider, minted
+   * through it (written under /run/guilds and added to the run's redaction values; a GitHub
+   * login whose installation GitHub refuses is retired as `installation_gone`), the agent's git
+   * identity, a clone of each one missing from the workspace, and the run's start checkpoint.
+   * The working directory starts in the repository when there is one. Tokens that expire are
+   * replaced before each command once they near it.
    */
   async prepareRepositories(
     turn: RunGeneration,
@@ -181,7 +177,7 @@ export class CodingRuns {
         throw error;
       }
       tokens.values.forEach((value, index) => {
-        tools.secrets[`GITHUB_TOKEN_${index + 1}`] = value;
+        tools.secrets[`GIT_TOKEN_${index + 1}`] = value;
       });
     };
     try {
@@ -223,7 +219,7 @@ export class CodingRuns {
     if (repositories.length === 1) {
       tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
     }
-    if (tokens.connected.length) {
+    if (tokens.hasExpiringTokens) {
       tools.hooks.before_command = async () => {
         if (!tokens.needsRefresh()) {
           return;

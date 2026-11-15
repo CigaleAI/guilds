@@ -215,6 +215,38 @@ export async function requireMemberSecret(
   return { row, viewer };
 }
 
+/**
+ * Refuses a secret a member may not give to a guild's coding agents as a repository's access
+ * token: one outside the organisation (404), or one the member does not manage (403).
+ */
+export async function requireManagedSecret(
+  db: Queryable,
+  orgId: string,
+  secretId: string,
+  userId: string,
+): Promise<void> {
+  const held = await requireMemberSecret(db, secretId, userId);
+  if (held.row.org_id !== orgId) {
+    throw new SecretError(404, "secret not found");
+  }
+  if (!canManageSecret(held.row, held.viewer)) {
+    throw new SecretError(403, "only a member who manages this secret can give it to a guild's repositories");
+  }
+}
+
+/** The check that a member may give a secret to a guild's repositories, built once on the pool. */
+export type RepositorySecretCheck = {
+  /** Refuses a secret of another organisation, or one the user does not manage (`requireManagedSecret`). */
+  requireManagedSecret: (orgId: string, secretId: string, userId: string) => Promise<void>;
+};
+
+/** The check that a member may give a secret to a guild's repositories, on `db`. */
+export function repositorySecretCheck(db: Queryable): RepositorySecretCheck {
+  return {
+    requireManagedSecret: (orgId, secretId, userId) => requireManagedSecret(db, orgId, secretId, userId),
+  };
+}
+
 export function viewHeldSecret(held: HeldSecret): Secret {
   return secretMetadata(held.row, held.viewer);
 }

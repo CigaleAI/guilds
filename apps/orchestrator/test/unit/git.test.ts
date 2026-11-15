@@ -43,11 +43,20 @@ test("a clone that needed credentials says whether the repository had a token or
       codingRepository({ name: "mirror", url: "https://git.example.com/mirror.git", connection_id: null }),
       codingRepository({ name: "moved", url: "https://git.example.com/moved.git", connection_id: null }),
     ],
-    { picked: { token: "ghs_x", expires_at: "2099-01-01T00:00:00Z", host: "github.com", path: "acme/picked" } },
+    {
+      picked: {
+        token: "ghs_x",
+        expires_at: "2099-01-01T00:00:00Z",
+        host: "github.com",
+        path: "acme/picked",
+        username: "x-access-token",
+        provider: "github",
+      },
+    },
   );
   const parts = detail.split("; ");
   assert.match(parts[0]!, /^private: it has no GitHub login, so it was cloned without credentials: pick a private repository on the GitHub integration instead \(fatal: could not read Username/);
-  assert.match(parts[1]!, /^picked: git did not use the GitHub token issued for it \(fatal: could not read Username/);
+  assert.match(parts[1]!, /^picked: git did not use the token issued for it \(fatal: could not read Username/);
   assert.match(parts[2]!, /^mirror: it was cloned without credentials, which only a public repository allows \(fatal: Authentication failed/);
   assert.equal(parts[3], "moved: fatal: repository 'https://git.example.com/moved.git/' not found");
 });

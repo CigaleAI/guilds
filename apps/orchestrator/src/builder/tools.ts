@@ -425,7 +425,7 @@ const recipeDocumentParameter: ToolSchema = {
     repositories: {
       type: "array",
       description:
-        "Git repositories the guild's coding roles work on, by name and purpose only: no URL and no credential. Apply asks the operator to connect GitHub and add each one.",
+        "Git repositories the guild's coding roles work on, by name and purpose only: no URL and no credential. Apply asks the operator to add each one with its URL and a credential.",
       items: {
         type: "object",
         properties: {

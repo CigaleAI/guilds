@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-61](#sec-61--a-repositorys-access-token-is-long-lived-and-written-to-its-agents-machine) | A repository's access token is long-lived and written to its agents' machine | Open |
 | [SEC-60](#sec-60--text-holding-a-nul-or-an-unpaired-surrogate-failed-the-write-of-a-message) | Text holding a NUL or an unpaired surrogate failed the write of a message | Fixed 2026-11-15 |
 | [SEC-59](#sec-59--every-member-who-saw-a-guild-could-change-how-many-turns-of-tool-results-its-agents-prompts-keep) | Every member who saw a guild could change how many turns of tool results its agents' prompts keep | Fixed 2026-11-14 |
 | [SEC-58](#sec-58--a-recipe-captured-from-a-private-guild-and-an-apply-into-one-were-open-to-every-member) | A recipe captured from a private guild, and an apply into one, were open to every member | Fixed 2026-11-03 |
@@ -69,6 +70,44 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-61 — A repository's access token is long-lived and written to its agents' machine
+
+**Status:** open.
+
+**Found:** 2026-11-15, adding repositories on any HTTPS git host.
+
+**Where:** `AccessTokenProvider` in
+`apps/orchestrator/src/coding/access-token-provider.ts`,
+`/run/guilds/<agent id>/git-tokens.json`, `guilds-git-credential`,
+and `requireManagedSecret` in `apps/orchestrator/src/secrets/service.ts`,
+behind `POST /api/guilds/:id/repositories`.
+
+**Exposure:** a repository added with an access token gives every
+coding agent of its guild the value of the secret it names. The
+orchestrator writes that value to the agent's tokens file at each
+generation start, as it writes a GitHub token. Unlike a GitHub token,
+it does not expire after an hour and is not limited by the box to
+one repository: it carries whatever the host grants it, often every
+repository of an account, until the operator revokes it on the host.
+Any process on the agent's machine can read the file (SEC-10, SEC-24).
+
+**Control in place:** only a member who manages the secret may add a
+repository with it, the rule that guards changing the secret; the
+secret must be one of the guild's organisation. The credential helper
+answers it only to the repository's own host, port included, and
+path, so git does not send it to another host or another repository
+on the same host. It answers no entry whose username or token spans
+lines, and the orchestrator refuses a secret whose value does, so a
+value cannot add fields to git's credential protocol. The secret
+joins no environment unless it is also granted. The token is kept off
+the workspace disk and redacted from tool results.
+
+**Fix to make:** the control-plane git proxy of SEC-10, which would
+keep the token in the orchestrator. Until then the token's reach is
+the host's: an operator gives a token limited to the repository, with
+the shortest expiry the host allows, and rotates the secret's value
+when the token changes.
 
 ## SEC-60 — Text holding a NUL or an unpaired surrogate failed the write of a message
 

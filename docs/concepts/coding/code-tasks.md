@@ -7,7 +7,7 @@ a brief. The harness reads it, works in one of the guild's
 agent then checks the work with the other [code tools](code-tools.md).
 
 A code task may commit on the current branch. It never pushes and
-never opens pull requests: the agent does both itself.
+never opens pull or merge requests: the agent does both itself.
 
 ## When you use it
 

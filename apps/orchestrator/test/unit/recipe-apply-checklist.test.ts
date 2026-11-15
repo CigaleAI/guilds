@@ -111,7 +111,7 @@ test("apply fills sparse builder config so the browser can start", () => {
   assert.equal(prepared.roles[0]!.config.browser, true);
 });
 
-test("a recipe's repositories add a GitHub login and a check per repository", () => {
+test("a recipe's repositories add a check per repository, each asking for its URL and credential, and no GitHub login", () => {
   const recipe = parseRecipe({
     ...huskLeadMatcherRecipe(operatorAuthor()),
     repositories: [
@@ -120,33 +120,30 @@ test("a recipe's repositories add a GitHub login and a check per repository", ()
     ],
   });
   const steps = checklistFromPlan(recipe, applyPlan());
-  const github = steps.find((item) => item.id === "conn:github");
-  assert.equal(github?.kind, "connection");
-  assert.equal(github?.closure, "verified");
-  assert.match(String(github?.setup), /Commit author email/);
+  assert.equal(steps.find((item) => item.id === "conn:github"), undefined);
   const api = steps.find((item) => item.id === "repo:api");
   assert.equal(api?.kind, "repository");
   assert.equal(api?.closure, "verified");
   assert.match(
     String(api?.setup),
-    /^The HTTP service\. Add it in the guild's Settings under Repositories, named api\./,
+    /^The HTTP service\. Add it in the guild's Settings under Repositories, named api, with its HTTPS URL, on any git host, and a credential: a GitHub login for a GitHub repository, an access token kept as a secret for any host, or none for a public repository/,
   );
+  assert.match(String(api?.setup), /Commit author email/);
   assert.match(
     String(steps.find((item) => item.id === "repo:web")?.setup),
     /^Add it in the guild's Settings/,
   );
   assert.deepEqual(
     blockingApplySteps(steps).map((item) => item.id),
-    ["conn:github", "repo:api", "repo:web"],
+    ["repo:api", "repo:web"],
   );
   const skipped = skipApplyChecklistStep(steps, "repo:api");
   assert.equal(skipped.checklist.find((item) => item.id === "repo:api")?.status, "skipped");
 
-  // A recipe that already lists GitHub among its connections keeps that one step, which also
-  // says what the repositories need.
+  // A recipe that lists GitHub among its connections keeps that step as its connection says it.
   const listed = checklistFromPlan(recipe, applyPlan({ connections: [plannedConnection("github", "Install the App.")] }));
   assert.equal(listed.filter((item) => item.id === "conn:github").length, 1);
-  assert.match(String(listed.find((item) => item.id === "conn:github")?.setup), /^Install the App\. .*Commit author email/);
+  assert.equal(listed.find((item) => item.id === "conn:github")?.setup, "Install the App.");
 });
 
 test("apply carries the coding flag and turns a missing one off", () => {

@@ -96,8 +96,14 @@ agent's aliases, to every command it runs for the agent:
 Each command also carries the agent's home and port variables
 ([Agent home](agent-home.md#the-environment-of-every-command)). A
 `shell` command whose working folder is inside one of the guild's
-repositories also gets `GH_TOKEN`, set to that repository's
-installation token ([Repositories](coding/repositories.md)).
+repositories with a GitHub login also gets `GH_TOKEN`, set to that
+repository's installation token ([Repositories](coding/repositories.md)).
+
+A secret can also hold a guild repository's access token. A
+repository that names it gives its value to git on every coding
+agent of the guild, through the agent's tokens file, whoever the
+secret is granted to; only a member who manages the secret may name
+it there ([Access tokens](coding/repositories.md#access-tokens)).
 
 The machine's container itself holds no secret. Secrets travel with
 each command. So adding, changing, or removing a secret never
@@ -429,8 +435,8 @@ The variables in a harness's own row would each move that harness
 off its subscription sign-in.
 
 `shell` sets `GH_TOKEN` from `/run/guilds/<agent id>/git-tokens.json`
-when its working folder is inside a guild repository, replacing a
-secret of that name. MCP token payloads never enter the environment;
+when its working folder is inside a guild repository with a GitHub
+login, replacing a secret of that name. MCP token payloads never enter the environment;
 they only join run redaction.
 
 Code: `apps/orchestrator/src/access/runtime.ts`, `runtime/guilds-harness`,
@@ -456,7 +462,8 @@ Redaction uses:
 - the OAuth tokens, API keys, and signing keys of the connected
   catalog logins the run offers tools from
 - the platform keys that serve platform connector logins
-- a coding run's GitHub installation tokens, once minted
+- a coding run's repository tokens, once minted: GitHub installation
+  tokens and access tokens, each as `GIT_TOKEN_<n>`
 - a value `secret_store` saved during the generation
 
 Every tool result, log line, and repository diff has those strings

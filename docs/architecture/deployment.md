@@ -288,10 +288,12 @@ model key never reaches it. The code tools, `code_task` included,
 run inside the container and never open a path in its home from the
 orchestrator ([Code tools](../concepts/coding/code-tools.md)).
 
-A coding agent's GitHub installation tokens sit in
-`/run/guilds/<agent id>/`, outside every home. They are readable by
-any process on its machine for their hour, whichever agent started
-it. The App's private key and the installation ids stay in the
+A coding agent's repository tokens sit in `/run/guilds/<agent id>/`,
+outside every home: GitHub installation tokens, and the values of the
+secrets that hold its repositories' access tokens. They are readable
+by any process on its machine, whichever agent started it: a GitHub
+token for its hour, an access token until the operator revokes it on
+its host. The App's private key and the installation ids stay in the
 orchestrator.
 
 ### Artifacts

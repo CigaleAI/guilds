@@ -30,6 +30,7 @@ import { repoRoot } from "./lib/paths.js";
 import { coreModelCredentials } from "./llm/credentials.js";
 import { modelsService } from "./llm/models.js";
 import { loginRetirement } from "./mcp/service.js";
+import { repositorySecretCheck } from "./secrets/service.js";
 import { registerClientErrorRoute } from "./observability/client-errors.js";
 import { fastifyRequestIdOptions, registerHttpObservability } from "./observability/http.js";
 
@@ -168,6 +169,7 @@ export async function buildApp(
       modelCredentials,
       models,
       loginRetirement: retirement,
+      repositorySecrets: repositorySecretCheck(deps.db),
       // An absent field is core's own rule: the open policy, core's sign-in modes, core's
       // instance admin.
       ...(policy ? { policy } : {}),

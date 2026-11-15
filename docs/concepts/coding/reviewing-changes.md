@@ -8,8 +8,9 @@ difference between two checkpoints is the diff the operator reviews:
 what the whole run changed, or what one harness turn changed.
 
 Checkpoints are separate from the agent's own commits. The agent
-commits, pushes, and opens pull requests with `shell`, and those go
-through the project's usual review on its git host. A commit made by
+commits and pushes with `shell`, and opens pull or merge requests with
+its host's connector tools. Those go through the project's usual review
+on its git host. A commit made by
 the agent or its [harness](harnesses.md) also names the run and the
 agent in its message.
 
