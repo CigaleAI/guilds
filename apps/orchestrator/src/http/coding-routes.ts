@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { requireVisibleAgent, requireVisibleRun } from "../agents/access.js";
 import {
   addGuildRepository,
-  GithubSelectionSchema,
+  RepositorySelectionDraftSchema,
   RepositoryDraftSchema,
   listGuildRepositoryView,
   pickGithubRepositories,
@@ -103,7 +103,7 @@ export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Prom
 
   app.put(
     "/api/mcp/connections/:connection_id/github/selected",
-    { schema: { params: ConnectionParams, body: GithubSelectionSchema } },
+    { schema: { params: ConnectionParams, body: RepositorySelectionDraftSchema } },
     async (request) => {
       const user = await currentUser(db, request, deps);
       const connectionId = request.params.connection_id;

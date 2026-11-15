@@ -6,7 +6,7 @@ export function codingRepository(overrides: Partial<CodingRepository> = {}): Cod
     name: "shop",
     url: "https://github.com/acme/shop",
     default_branch: "main",
-    github_id: null,
+    remote_id: null,
     connection_id: null,
     connection_status: null,
     connection_account: null,

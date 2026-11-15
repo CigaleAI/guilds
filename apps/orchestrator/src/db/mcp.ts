@@ -5,7 +5,7 @@ import { pickColumns, ownerRefs } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { guildRepositories, mcpConnections, mcpTools, type ConnectionSettings, type GithubRepositorySelection, type ToolInputSchema } from "./schema/index.js";
+import { guildRepositories, mcpConnections, mcpTools, type ConnectionSettings, type RepositorySelection, type ToolInputSchema } from "./schema/index.js";
 
 /** A connection with the guild, agent and organisation its owner resolves to. */
 export type ScopedMcpConnectionRow = InferSelectModel<typeof mcpConnections>;
@@ -78,8 +78,8 @@ export type GuildRepositoryLogin = Pick<GuildRepository, "guild_id"> & {
 };
 
 /** A repository a login lists under `name`, with GitHub's id for it and its current URL. */
-export type IdentifiedGithubRepository = Pick<GithubRepositorySelection, "name" | "url"> &
-  Required<Pick<GithubRepositorySelection, "github_id">>;
+export type IdentifiedGithubRepository = Pick<RepositorySelection, "name" | "url"> &
+  Required<Pick<RepositorySelection, "remote_id">>;
 
 /** A repository a GitHub login gives a guild. */
 export type ConnectionGuildRepository = {
@@ -87,7 +87,7 @@ export type ConnectionGuildRepository = {
   name: string;
   url: string;
   defaultBranch: string;
-  githubId: number | null;
+  remoteId: number | null;
 };
 
 const MCP_CONNECTION_COLUMNS = pickColumns(mcpConnections, MCP_CONNECTION_KEYS);
@@ -384,7 +384,7 @@ export async function updateMcpConnectionSettings(
 export async function updateMcpConnectionGithubRepositories(
   pool: Queryable,
   connectionId: string,
-  repositories: GithubRepositorySelection[],
+  repositories: RepositorySelection[],
   now: Date,
 ): Promise<McpConnectionRow | null> {
   const result = await pool.query<McpConnectionRow>(
@@ -413,7 +413,7 @@ export async function replaceConnectionGuildRepositories(
     );
     for (const repository of repositories) {
       await client.query(
-        `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, connection_id, github_id, created_at, updated_at)
+        `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
         [
           repository.id,
@@ -422,7 +422,7 @@ export async function replaceConnectionGuildRepositories(
           repository.url,
           repository.defaultBranch,
           connectionId,
-          repository.githubId,
+          repository.remoteId,
           stamp(now),
         ],
       );
@@ -443,11 +443,11 @@ export async function recordGithubRepository(
   const { name } = repository;
   await withTransaction(pool, async (client) => {
     await client.query(
-      `UPDATE guild_repositories SET github_id = $3, url = $4, updated_at = $5
+      `UPDATE guild_repositories SET remote_id = $3, url = $4, updated_at = $5
        WHERE connection_id = $1 AND name = $2`,
-      [connectionId, name, repository.github_id, repository.url, stamp(now)],
+      [connectionId, name, repository.remote_id, repository.url, stamp(now)],
     );
-    const current = await client.query<{ repositories: GithubRepositorySelection[] | null }>(
+    const current = await client.query<{ repositories: RepositorySelection[] | null }>(
       "SELECT settings->'repositories' AS repositories FROM mcp_connections WHERE id = $1 FOR UPDATE",
       [connectionId],
     );
@@ -456,7 +456,7 @@ export async function recordGithubRepository(
       return;
     }
     const next = selected.map((item) =>
-      item.name === name ? { ...item, github_id: repository.github_id, url: repository.url } : item,
+      item.name === name ? { ...item, remote_id: repository.remote_id, url: repository.url } : item,
     );
     await client.query(
       "UPDATE mcp_connections SET settings = jsonb_set(settings, '{repositories}', $2::jsonb) WHERE id = $1",

@@ -477,7 +477,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
             url: "https://github.com/acme/skipped",
             defaultBranch: "main",
             connectionId: null,
-            githubId: null,
+            remoteId: null,
           },
           new Date(),
         ),

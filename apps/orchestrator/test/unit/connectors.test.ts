@@ -595,7 +595,7 @@ test("GitHub's State names the repositories a login picked as the owner and repo
   const github = CONNECTORS.bySlug("github")!;
   const settings = {
     repositories: [
-      { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 },
+      { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", remote_id: 101 },
       { name: "docs", url: "https://github.com/acme/docs.git", default_branch: "trunk" },
     ],
   };

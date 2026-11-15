@@ -137,17 +137,17 @@ test("records_githubs_id_and_url_for_a_repository_a_guilds_login_lists", { timeo
   await replaceConnectionGuildRepositories(
     db,
     { connection_id: login.id, guild_id: "guild_git" },
-    [{ id: "repo_site", name: "site", url: listed.url, defaultBranch: "main", githubId: null }],
+    [{ id: "repo_site", name: "site", url: listed.url, defaultBranch: "main", remoteId: null }],
     now,
   );
   const current = "https://github.com/acme/site";
-  await recordGithubRepository(db, login.id, { name: "site", github_id: 102, url: current }, now);
+  await recordGithubRepository(db, login.id, { name: "site", remote_id: 102, url: current }, now);
   const repositories = await listGuildRepositories(db, "guild_git");
   assert.deepEqual(
-    repositories.map((row) => [row.name, row.github_id, row.url, row.connection_id]),
+    repositories.map((row) => [row.name, row.remote_id, row.url, row.connection_id]),
     [["site", 102, current, login.id]],
   );
   assert.deepEqual((await getMcpConnection(db, login.id))?.settings.repositories, [
-    { ...listed, github_id: 102, url: current },
+    { ...listed, remote_id: 102, url: current },
   ]);
 });

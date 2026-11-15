@@ -215,19 +215,19 @@ export type Overrides = {
 };
 
 /** A repository a GitHub login picked for its coding agents to clone. */
-export type GithubRepositorySelection = {
+export type RepositorySelection = {
   name: string;
   url: string;
   default_branch: string;
-  /** GitHub's id for the repository, which a rename of it or its owner keeps. */
-  github_id?: number;
+  /** The host's id for the repository, which a rename of it or its owner keeps. */
+  remote_id?: number;
 };
 
 /**
  * A login's settings: the values its connector's `settings_schema` describes, by property. A
  * GitHub login's also list the repositories it picked; a Drive login's name the folder it picked.
  */
-export type ConnectionSettings = { repositories?: GithubRepositorySelection[]; folder_id?: string; [property: string]: JsonValue | undefined };
+export type ConnectionSettings = { repositories?: RepositorySelection[]; folder_id?: string; [property: string]: JsonValue | undefined };
 
 /** An OAuth client's credentials: its id, and the secret a confidential client holds. */
 export type OAuthClientCredentials = { client_id: string; client_secret: string | null };
@@ -571,7 +571,7 @@ export const guildRepositories = pgTable(
     connection_id: text("connection_id"),
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
-    github_id: bigint("github_id", { mode: "number" }),
+    remote_id: bigint("remote_id", { mode: "number" }),
   },
   (table) => [
     unique("guild_repositories_guild_name_key").on(table.guild_id, table.name),

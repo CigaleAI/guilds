@@ -752,7 +752,7 @@ describe("repositories in a coding generation", () => {
     const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" });
     db.mcp_connection = connectionRow({ id: "conn_gh", mcp_server_id: "mcp_github", account_hint: "acme", ciphertext, nonce });
     db.listGuildRepositories = async () => [
-      { id: "repo_1", guild_id: "guild_1", name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_gh", github_id: 101 },
+      { id: "repo_1", guild_id: "guild_1", name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_gh", remote_id: 101 },
     ];
     const retired: string[] = [];
     Object.assign(db, {

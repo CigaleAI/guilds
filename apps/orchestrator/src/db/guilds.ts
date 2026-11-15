@@ -83,7 +83,7 @@ export type NewGuildRepository = {
   url: string;
   defaultBranch: string;
   connectionId: string | null;
-  githubId: number | null;
+  remoteId: number | null;
 };
 
 export type GuildTextRow = Pick<Guild, "about" | "description">;
@@ -402,7 +402,7 @@ export async function listGuildRepositories(
   guildId: string,
 ): Promise<GuildRepositoryListItemRow[]> {
   const result = await pool.query<GuildRepositoryListItemRow>(
-    `SELECT r.id, r.guild_id, r.name, r.url, r.default_branch, r.connection_id, r.github_id, r.created_at, r.updated_at,
+    `SELECT r.id, r.guild_id, r.name, r.url, r.default_branch, r.connection_id, r.remote_id, r.created_at, r.updated_at,
             c.status AS connection_status, c.account_hint AS connection_account
        FROM guild_repositories r
        LEFT JOIN mcp_connections c ON c.id = r.connection_id
@@ -419,9 +419,9 @@ export async function insertGuildRepository(
   now: Date,
 ): Promise<GuildRepositoryRow> {
   const result = await pool.query<GuildRepositoryRow>(
-    `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, connection_id, github_id, created_at, updated_at)
+    `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
-     RETURNING id, guild_id, name, url, default_branch, connection_id, github_id, created_at, updated_at`,
+     RETURNING id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at`,
     [
       repository.id,
       repository.guildId,
@@ -429,7 +429,7 @@ export async function insertGuildRepository(
       repository.url,
       repository.defaultBranch,
       repository.connectionId,
-      repository.githubId,
+      repository.remoteId,
       stamp(now),
     ],
   );
@@ -447,7 +447,7 @@ export async function deleteGuildRepository(
 ): Promise<GuildRepositoryRow | null> {
   const result = await pool.query<GuildRepositoryRow>(
     `DELETE FROM guild_repositories WHERE guild_id = $1 AND id = $2
-     RETURNING id, guild_id, name, url, default_branch, connection_id, github_id, created_at, updated_at`,
+     RETURNING id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at`,
     [guildId, repositoryId],
   );
   return result.rows[0] ?? null;

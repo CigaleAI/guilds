@@ -29,6 +29,7 @@ const listOnlyPathsDb = uniqueDbName("agent_platform_migrate_list_only_paths");
 const homeGuildDb = uniqueDbName("agent_platform_migrate_home_guild");
 const wakeUpsConfigDb = uniqueDbName("agent_platform_migrate_wake_ups_config");
 const toolResultTurnsDb = uniqueDbName("agent_platform_migrate_tool_result_turns");
+const remoteIdDb = uniqueDbName("agent_platform_migrate_remote_id");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -43,6 +44,7 @@ after(async () => {
   await dropIsolatedDatabase(homeGuildDb);
   await dropIsolatedDatabase(wakeUpsConfigDb);
   await dropIsolatedDatabase(toolResultTurnsDb);
+  await dropIsolatedDatabase(remoteIdDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -418,6 +420,56 @@ test("the guild tool-result turns migration keeps existing guilds at 1, starts n
       pool.query("UPDATE public.guilds SET keep_tool_result_generations = 0 WHERE id = 'guild_new'"),
       /guilds_keep_tool_result_generations_positive/,
     );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the remote id migration renames a repository's GitHub id, on a guild's repository and in each login's picks", async () => {
+  const pool = await createPool(await createIsolatedDatabase(remoteIdDb), reportPoolError);
+  try {
+    const folder = chainBefore("0028_repository_remote_id");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'coders', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      `INSERT INTO public.connectors (id, slug, tool_prefix, manifest, source, installed_at, updated_at)
+       VALUES ('mcp_github', 'github', 'github', '{}', 'core', $1, $1)`,
+      [now],
+    );
+    const picked = { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 };
+    const unidentified = { name: "site", url: "https://github.com/acme/site", default_branch: "main" };
+    for (const [id, scope, owner, settings] of [
+      ["conn_picks", "guild", "guild_1", { repositories: [picked, unidentified], folder_id: "kept" }],
+      ["conn_none", "org", "org_1", { folder_id: "kept" }],
+    ] as const) {
+      await pool.query(
+        `INSERT INTO public.mcp_connections (id, mcp_server_id, owner_scope, owner_id, ciphertext, nonce, created_at, updated_at, rotated_at, settings)
+         VALUES ($1, 'mcp_github', $2, $3, '\\x00', '\\x00', $4, $4, $4, $5)`,
+        [id, scope, owner, now, JSON.stringify(settings)],
+      );
+    }
+    await pool.query(
+      `INSERT INTO public.guild_repositories (id, guild_id, name, url, default_branch, connection_id, github_id, created_at, updated_at)
+       VALUES ('repo_1', 'guild_1', 'shop', 'https://github.com/acme/shop', 'main', 'conn_picks', 101, $1, $1)`,
+      [now],
+    );
+
+    await applyMigrations(pool);
+    const repositories = await pool.query<{ remote_id: string }>("SELECT remote_id FROM public.guild_repositories WHERE id = 'repo_1'");
+    assert.equal(Number(repositories.rows[0]?.remote_id), 101);
+    const logins = await pool.query<{ id: string; settings: Record<string, unknown> }>("SELECT id, settings FROM public.mcp_connections ORDER BY id");
+    assert.deepEqual(logins.rows, [
+      { id: "conn_none", settings: { folder_id: "kept" } },
+      {
+        id: "conn_picks",
+        settings: {
+          repositories: [{ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", remote_id: 101 }, unidentified],
+          folder_id: "kept",
+        },
+      },
+    ]);
   } finally {
     await pool.end();
   }

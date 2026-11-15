@@ -245,7 +245,7 @@ installation reaches: `id`, `name`, `full_name`, `owner`, `private`,
 `PUT /api/mcp/connections/:id/github/selected` stores
 `{ repositories: [{ name, url, default_branch }] }` in the login's
 settings as `repositories`. Each must be one the installation
-reaches, and is stored with GitHub's id for it (`github_id`), which a
+reaches, and is stored with GitHub's id for it (`remote_id`), which a
 rename of the repository or its owner keeps. A guild-owned login
 mirrors its selection into `guild_repositories`.
 

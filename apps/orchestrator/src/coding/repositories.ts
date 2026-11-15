@@ -1,11 +1,11 @@
 import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
-import { githubIdOf, githubRepositoriesOf } from "../github/repositories.js";
+import { remoteIdOf, githubRepositoriesOf } from "../github/repositories.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { GuildRepositoryListItemRow, GuildRepositoryRow } from "../db/guilds.js";
 import type { McpConnectionRow } from "../db/mcp.js";
-import type { GithubRepositorySelection } from "../db/schema/index.js";
-import type { GithubSelection, RepositoryDraft } from "./guild-repositories.js";
+import type { RepositorySelection } from "../db/schema/index.js";
+import type { RepositorySelectionDraft, RepositoryDraft } from "./guild-repositories.js";
 
 export const REPOSITORY_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 /** The branch a repository without a GitHub connection is recorded with when none is given. */
@@ -49,7 +49,7 @@ export type GithubLogin = Pick<McpConnectionRow, "id" | "owner_scope" | "owner_i
  */
 export type CodingRepository = Pick<
   GuildRepositoryListItemRow,
-  "name" | "url" | "default_branch" | "github_id" | "connection_id" | "connection_status" | "connection_account"
+  "name" | "url" | "default_branch" | "remote_id" | "connection_id" | "connection_status" | "connection_account"
 >;
 
 /** A guild repository as a run's state lists it: where it sits in the agent's home. */
@@ -108,24 +108,24 @@ export function repositoryItem(row: GuildRepositoryListItemRow): GuildRepository
 }
 
 /** The repositories stored on a GitHub login. */
-export function validateGithubRepositories(repositories: GithubSelection): GithubRepositorySelection[] {
+export function validateGithubRepositories(repositories: RepositorySelectionDraft): RepositorySelection[] {
   const seen = new Set<string>();
-  const selected: GithubRepositorySelection[] = [];
+  const selected: RepositorySelection[] = [];
   for (const item of repositories) {
     const input = validateRepositoryInput({ ...item, connection_id: "github" });
     if (seen.has(input.name)) {
       throw new RepositoryValidationError(`the login already has a repository named ${input.name}`);
     }
     seen.add(input.name);
-    const githubId = githubIdOf(item);
-    if (item.github_id !== undefined && item.github_id !== null && githubId === null) {
-      throw new RepositoryValidationError("github_id must be a positive integer");
+    const remoteId = remoteIdOf(item);
+    if (item.remote_id !== undefined && item.remote_id !== null && remoteId === null) {
+      throw new RepositoryValidationError("remote_id must be a positive integer");
     }
     selected.push({
       name: input.name,
       url: input.url,
       default_branch: input.defaultBranch ?? DEFAULT_BRANCH,
-      ...(githubId === null ? {} : { github_id: githubId }),
+      ...(remoteId === null ? {} : { remote_id: remoteId }),
     });
   }
   return selected;
@@ -143,7 +143,7 @@ export function codingRepositories(
     name: item.name,
     url: item.url,
     default_branch: item.default_branch,
-    github_id: item.github_id ?? null,
+    remote_id: item.remote_id ?? null,
     connection_id: github?.id ?? null,
     connection_status: github?.status ?? null,
     connection_account: github?.account_hint ?? "",

@@ -161,7 +161,7 @@ The coding strip counts the repositories
 | `url` | The git URL |
 | `default_branch` | The branch recorded for it |
 | `connection_id` | The GitHub connection it was added with, or null; deleting the connection deletes the row |
-| `github_id` | GitHub's id for the repository, which a rename of it or its owner keeps |
+| `remote_id` | The host's id for the repository, which a rename of it or its owner keeps; GitHub's id for a repository with a GitHub login |
 | `created_at`, `updated_at` | Timestamps |
 
 A guild-owned GitHub login mirrors its picked repositories into

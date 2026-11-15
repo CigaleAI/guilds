@@ -43,6 +43,12 @@ list now refreshes after a refused delete too.
 does. In every chat, a message the server refuses goes back into the
 composer with its images, unless the operator has typed in it since.
 
+**Breaking for API clients.** The host's id of a repository is
+`remote_id`, no longer `github_id`: on each repository a GitHub login
+picks, in the body and the answer of
+`PUT /api/mcp/connections/:id/github/selected` and in the login's
+`settings.repositories`. Boot renames the stored field.
+
 **Rebuild.** A message posted to a Studio or Builder coach while the
 box or the organisation is at its generation limit is refused with
 409 and the limit's message
