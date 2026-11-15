@@ -30,6 +30,7 @@ const homeGuildDb = uniqueDbName("agent_platform_migrate_home_guild");
 const wakeUpsConfigDb = uniqueDbName("agent_platform_migrate_wake_ups_config");
 const toolResultTurnsDb = uniqueDbName("agent_platform_migrate_tool_result_turns");
 const remoteIdDb = uniqueDbName("agent_platform_migrate_remote_id");
+const providersDb = uniqueDbName("agent_platform_migrate_providers");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -45,6 +46,7 @@ after(async () => {
   await dropIsolatedDatabase(wakeUpsConfigDb);
   await dropIsolatedDatabase(toolResultTurnsDb);
   await dropIsolatedDatabase(remoteIdDb);
+  await dropIsolatedDatabase(providersDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -470,6 +472,54 @@ test("the remote id migration renames a repository's GitHub id, on a guild's rep
         },
       },
     ]);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the repository providers migration gives each repository with a GitHub login the GitHub provider, and one credential at most", async () => {
+  const pool = await createPool(await createIsolatedDatabase(providersDb), reportPoolError);
+  try {
+    const folder = chainBefore("0029_repository_providers");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'coders', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      `INSERT INTO public.connectors (id, slug, tool_prefix, manifest, source, installed_at, updated_at)
+       VALUES ('mcp_github', 'github', 'github', '{}', 'core', $1, $1)`,
+      [now],
+    );
+    await pool.query(
+      `INSERT INTO public.mcp_connections (id, mcp_server_id, owner_scope, owner_id, ciphertext, nonce, created_at, updated_at, rotated_at)
+       VALUES ('conn_1', 'mcp_github', 'guild', 'guild_1', '\\x00', '\\x00', $1, $1, $1)`,
+      [now],
+    );
+    for (const [id, name, connection] of [
+      ["repo_login", "shop", "conn_1"],
+      ["repo_anonymous", "docs", null],
+    ] as const) {
+      await pool.query(
+        `INSERT INTO public.guild_repositories (id, guild_id, name, url, default_branch, connection_id, created_at, updated_at)
+         VALUES ($1, 'guild_1', $2, 'https://github.com/acme/' || $2, 'main', $3, $4, $4)`,
+        [id, name, connection, now],
+      );
+    }
+
+    await applyMigrations(pool);
+    const rows = await pool.query<{ id: string; provider: string | null }>("SELECT id, provider FROM public.guild_repositories ORDER BY id");
+    assert.deepEqual(rows.rows, [
+      { id: "repo_anonymous", provider: null },
+      { id: "repo_login", provider: "github" },
+    ]);
+    await assert.rejects(
+      pool.query("UPDATE public.guild_repositories SET provider = 'access_token' WHERE id = 'repo_anonymous'"),
+      /guild_repositories_credential_check/,
+    );
+    await assert.rejects(
+      pool.query("UPDATE public.guild_repositories SET provider = NULL WHERE id = 'repo_login'"),
+      /guild_repositories_credential_check/,
+    );
   } finally {
     await pool.end();
   }

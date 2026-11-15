@@ -1,5 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { pickColumns } from "./columns.js";
+import { pickColumns, tableColumns } from "./columns.js";
 import { GuildNameTaken, LastGuildAdmin, RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import {
@@ -10,6 +10,7 @@ import {
   guilds,
   mcpConnections,
   orgs,
+  secrets,
   users,
 } from "./schema/index.js";
 import { deleteGuildUsage } from "./usage.js";
@@ -17,6 +18,7 @@ import { purgePrivateGuildNotesAndFiles } from "./artifact-access.js";
 
 type Guild = InferSelectModel<typeof guilds>;
 type McpConnection = InferSelectModel<typeof mcpConnections>;
+type Secret = InferSelectModel<typeof secrets>;
 type GuildOperator = InferSelectModel<typeof guildOperators>;
 
 export type GuildOperatorRow = Pick<InferSelectModel<typeof guildOperators>, "user_id" | "role"> &
@@ -47,10 +49,17 @@ export type SoleAdminGuildRow = Pick<Guild, "id" | "name" | "org_id">;
 
 export type GuildRepositoryRow = InferSelectModel<typeof guildRepositories>;
 
-/** A repository with the status and account of the login it is reached through, when it has one. */
+const GUILD_REPOSITORY_COLUMNS = tableColumns(guildRepositories);
+const GUILD_REPOSITORY_COLUMNS_R = tableColumns(guildRepositories, "r");
+
+/**
+ * A repository with the status and account of the login it is reached through, and the name of
+ * the secret that holds its access token, when it has one.
+ */
 export type GuildRepositoryListItemRow = GuildRepositoryRow & {
   connection_status: McpConnection["status"] | null;
   connection_account: McpConnection["account_hint"] | null;
+  secret_name: Secret["name"] | null;
 };
 
 export type GuildPatch = {
@@ -82,8 +91,11 @@ export type NewGuildRepository = {
   name: string;
   url: string;
   defaultBranch: string;
-  connectionId: string | null;
-  remoteId: number | null;
+  provider: GuildRepositoryRow["provider"];
+  connectionId: GuildRepositoryRow["connection_id"];
+  secretId: GuildRepositoryRow["secret_id"];
+  username: GuildRepositoryRow["username"];
+  remoteId: GuildRepositoryRow["remote_id"];
 };
 
 export type GuildTextRow = Pick<Guild, "about" | "description">;
@@ -402,10 +414,11 @@ export async function listGuildRepositories(
   guildId: string,
 ): Promise<GuildRepositoryListItemRow[]> {
   const result = await pool.query<GuildRepositoryListItemRow>(
-    `SELECT r.id, r.guild_id, r.name, r.url, r.default_branch, r.connection_id, r.remote_id, r.created_at, r.updated_at,
-            c.status AS connection_status, c.account_hint AS connection_account
+    `SELECT ${GUILD_REPOSITORY_COLUMNS_R},
+            c.status AS connection_status, c.account_hint AS connection_account, s.name AS secret_name
        FROM guild_repositories r
        LEFT JOIN mcp_connections c ON c.id = r.connection_id
+       LEFT JOIN secrets s ON s.id = r.secret_id
       WHERE r.guild_id = $1
       ORDER BY r.name`,
     [guildId],
@@ -419,16 +432,19 @@ export async function insertGuildRepository(
   now: Date,
 ): Promise<GuildRepositoryRow> {
   const result = await pool.query<GuildRepositoryRow>(
-    `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
-     RETURNING id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at`,
+    `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, provider, connection_id, secret_id, username, remote_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+     RETURNING ${GUILD_REPOSITORY_COLUMNS}`,
     [
       repository.id,
       repository.guildId,
       repository.name,
       repository.url,
       repository.defaultBranch,
+      repository.provider,
       repository.connectionId,
+      repository.secretId,
+      repository.username,
       repository.remoteId,
       stamp(now),
     ],
@@ -447,7 +463,7 @@ export async function deleteGuildRepository(
 ): Promise<GuildRepositoryRow | null> {
   const result = await pool.query<GuildRepositoryRow>(
     `DELETE FROM guild_repositories WHERE guild_id = $1 AND id = $2
-     RETURNING id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at`,
+     RETURNING ${GUILD_REPOSITORY_COLUMNS}`,
     [guildId, repositoryId],
   );
   return result.rows[0] ?? null;

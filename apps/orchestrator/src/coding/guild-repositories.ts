@@ -256,7 +256,14 @@ export async function addGuildRepository(
   try {
     const row = await insertGuildRepository(
       db,
-      { ...repository, connectionId: input.connectionId, remoteId },
+      {
+        ...repository,
+        provider: input.connectionId === null ? null : "github",
+        connectionId: input.connectionId,
+        secretId: null,
+        username: null,
+        remoteId,
+      },
       new Date(),
     );
     if (input.connectionId !== null) {
@@ -272,6 +279,7 @@ export async function addGuildRepository(
       ...row,
       connection_status: null,
       connection_account: null,
+      secret_name: null,
     };
     return repositoryItem(listed);
   } catch (error) {

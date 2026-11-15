@@ -413,8 +413,8 @@ export async function replaceConnectionGuildRepositories(
     );
     for (const repository of repositories) {
       await client.query(
-        `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, connection_id, remote_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+        `INSERT INTO guild_repositories (id, guild_id, name, url, default_branch, provider, connection_id, remote_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 'github', $6, $7, $8, $8)`,
         [
           repository.id,
           guildId,

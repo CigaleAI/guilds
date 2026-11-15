@@ -160,9 +160,16 @@ The coding strip counts the repositories
 | `name` | Matches `^[a-z][a-z0-9_-]{0,62}$`, unique per guild |
 | `url` | The git URL |
 | `default_branch` | The branch recorded for it |
-| `connection_id` | The GitHub connection it was added with, or null; deleting the connection deletes the row |
+| `provider` | How its token is minted: `github` through its GitHub login, `access_token` from the secret that holds its access token, or null to clone it without credentials |
+| `connection_id` | The GitHub connection of a `github` repository, else null; deleting the connection deletes the row |
+| `secret_id` | The secret that holds an `access_token` repository's token, else null; deleting the secret deletes the row |
+| `username` | The username git sends with an `access_token` repository's token, else null |
 | `remote_id` | The host's id for the repository, which a rename of it or its owner keeps; GitHub's id for a repository with a GitHub login |
 | `created_at`, `updated_at` | Timestamps |
+
+A check holds each row to its provider's fields: `connection_id` for
+`github`; `secret_id` and `username` for `access_token`; none of them
+without a provider.
 
 A guild-owned GitHub login mirrors its picked repositories into
 `guild_repositories` ([GitHub](../../tools-and-connectors/github.md)).

@@ -572,10 +572,25 @@ export const guildRepositories = pgTable(
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
     remote_id: bigint("remote_id", { mode: "number" }),
+    /** How its token is minted: through its GitHub login, or from its access token's secret; null clones it without credentials. */
+    provider: text("provider", { enum: ["github", "access_token"] }),
+    /** The secret that holds an `access_token` repository's token. */
+    secret_id: text("secret_id"),
+    /** The username git sends with an `access_token` repository's token. */
+    username: text("username"),
   },
   (table) => [
     unique("guild_repositories_guild_name_key").on(table.guild_id, table.name),
     check("guild_repositories_name_check", sql`${table.name} ~ '^[a-z][a-z0-9_-]{0,62}$'`),
+    check("guild_repositories_provider_check", sql`${table.provider} IN ('github', 'access_token')`),
+    check(
+      "guild_repositories_credential_check",
+      sql`CASE ${table.provider}
+        WHEN 'github' THEN ${table.connection_id} IS NOT NULL AND ${table.secret_id} IS NULL AND ${table.username} IS NULL
+        WHEN 'access_token' THEN ${table.connection_id} IS NULL AND ${table.secret_id} IS NOT NULL AND ${table.username} IS NOT NULL
+        ELSE ${table.connection_id} IS NULL AND ${table.secret_id} IS NULL AND ${table.username} IS NULL
+      END`,
+    ),
     foreignKey({
       columns: [table.guild_id],
       foreignColumns: [guilds.id],
@@ -586,6 +601,12 @@ export const guildRepositories = pgTable(
       foreignColumns: [mcpConnections.id],
       name: "guild_repositories_connection_id_fkey",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.secret_id],
+      foreignColumns: [secrets.id],
+      name: "guild_repositories_secret_id_fkey",
+    }).onDelete("cascade"),
     index("guild_repositories_by_connection").on(table.connection_id),
+    index("guild_repositories_by_secret").on(table.secret_id),
   ],
 );

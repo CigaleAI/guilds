@@ -44,12 +44,22 @@ export type GuildRepository = Pick<GuildRepositoryRow, "id" | "guild_id" | "name
 export type GithubLogin = Pick<McpConnectionRow, "id" | "owner_scope" | "owner_id" | "account_hint" | "status">;
 
 /**
- * A repository a coding agent clones: its name, URL and branch, GitHub's id for it when known, and
- * the GitHub login it is cloned with, with that login's status and account, when it has one.
+ * A repository a coding agent clones: its name, URL and branch, its host's id for it when known,
+ * and the provider its token is minted through: its GitHub login, with that login's status and
+ * account, or the secret holding its access token and the username git sends with it.
  */
 export type CodingRepository = Pick<
   GuildRepositoryListItemRow,
-  "name" | "url" | "default_branch" | "remote_id" | "connection_id" | "connection_status" | "connection_account"
+  | "name"
+  | "url"
+  | "default_branch"
+  | "remote_id"
+  | "provider"
+  | "connection_id"
+  | "connection_status"
+  | "connection_account"
+  | "secret_id"
+  | "username"
 >;
 
 /** A guild repository as a run's state lists it: where it sits in the agent's home. */
@@ -144,9 +154,12 @@ export function codingRepositories(
     url: item.url,
     default_branch: item.default_branch,
     remote_id: item.remote_id ?? null,
+    provider: "github",
     connection_id: github?.id ?? null,
     connection_status: github?.status ?? null,
     connection_account: github?.account_hint ?? "",
+    secret_id: null,
+    username: null,
   }));
   const selectedNames = new Set(selected.map((item) => item.name));
   const extras = guildRepos.filter((row) => !selectedNames.has(row.name));
