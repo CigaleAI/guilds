@@ -3,6 +3,7 @@ import { withoutOpenBlockingIssue } from "./blocking-issues.js";
 import { AgentMessageLimitReached, GroupChatCleared, GroupReplyTargetMissing, RowMissing } from "./errors.js";
 import { guildVisibleTo } from "./guilds.js";
 import { tableColumns } from "./columns.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import {
   agents,
@@ -308,7 +309,7 @@ export async function appendGroupChatError(
      SET group_chat_errors = group_chat_errors || $2::jsonb, updated_at = $3
      WHERE id = $1
      RETURNING group_chat_errors`,
-    [guildId, JSON.stringify([entry]), stamp(now)],
+    [guildId, formatJsonb([entry]), stamp(now)],
   );
   return result.rows[0]?.group_chat_errors ?? [];
 }
@@ -361,11 +362,11 @@ export async function postUserGroupMessage(
         message.guildId,
         seq,
         message.content,
-        JSON.stringify(message.taggedNames),
-        JSON.stringify(message.taggedAgentIds),
+        formatJsonb(message.taggedNames),
+        formatJsonb(message.taggedAgentIds),
         stamp(now),
         message.authorName ?? "user",
-        JSON.stringify(message.taggedUserIds),
+        formatJsonb(message.taggedUserIds),
         message.authorUserId ?? null,
         replyToSeq,
       ],
@@ -432,10 +433,10 @@ export async function postAgentGroupMessage(
         message.agentId,
         message.sourceRunId,
         message.content,
-        JSON.stringify(message.taggedNames),
-        JSON.stringify(message.taggedAgentIds),
+        formatJsonb(message.taggedNames),
+        formatJsonb(message.taggedAgentIds),
         stamp(now),
-        JSON.stringify(message.taggedUserIds),
+        formatJsonb(message.taggedUserIds),
       ],
     );
     await client.query(

@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { patchAssignments } from "./columns.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { builderMessages, SessionError } from "./schema/index.js";
 import { usageDelta } from "./usage.js";
@@ -73,8 +74,8 @@ export async function insertConversationMessage(
       message.session_id,
       message.seq,
       message.generation,
-      JSON.stringify(message.payload),
-      JSON.stringify(message.metadata),
+      formatJsonb(message.payload),
+      formatJsonb(message.metadata),
       usageDelta(message.metadata)?.cost_usd ?? null,
       stamp(now),
     ],
@@ -97,7 +98,7 @@ export async function updateConversationMessage(
         SET payload = $3::jsonb, metadata = $4::jsonb
       WHERE session_id = $1 AND seq = $2
       RETURNING ${MESSAGE_COLUMNS}`,
-    [message.session_id, message.seq, JSON.stringify(message.payload), JSON.stringify(message.metadata)],
+    [message.session_id, message.seq, formatJsonb(message.payload), formatJsonb(message.metadata)],
   );
   return result.rows[0] ?? null;
 }

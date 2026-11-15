@@ -4,6 +4,7 @@ import { newId } from "../lib/ids.js";
 import { homeAgentOnlyNotesAndFiles } from "./artifact-access.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import { agents, guilds, machines, orgs, taskRevisions, type Harness, type HarnessLogin, type ToolInputSchema } from "./schema/index.js";
 
@@ -218,7 +219,7 @@ export async function insertAgent(
       agent.agentId,
       agent.guildId,
       agent.name,
-      JSON.stringify(agent.config),
+      formatJsonb(agent.config),
       stamp(now),
       agent.focus ?? "",
       agent.avatarShape ?? "teardrop",
@@ -477,7 +478,7 @@ export async function updateAgentConfig(
        RETURNING id, guild_id, name, config, created_at, updated_at`,
       [
         agentId,
-        JSON.stringify(update.config),
+        formatJsonb(update.config),
         stamp(now),
         update.avatarShape ?? null,
         update.avatarColor ?? null,
@@ -510,7 +511,7 @@ export async function upsertAgentScript(
     if (!agent) {
       throw new RowMissing("agent script upsert failed");
     }
-    const payload = parameters === null ? null : JSON.stringify(parameters);
+    const payload = parameters === null ? null : formatJsonb(parameters);
     const existing = await client.query<{ id: string; deleted_at: string | null }>(
       `SELECT id, deleted_at FROM artifacts
         WHERE agent_id = $1 AND kind = 'script' AND path = 'scripts' AND key = $2

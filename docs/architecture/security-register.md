@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-60](#sec-60--text-holding-a-nul-or-an-unpaired-surrogate-failed-the-write-of-a-message) | Text holding a NUL or an unpaired surrogate failed the write of a message | Fixed 2026-11-15 |
 | [SEC-59](#sec-59--every-member-who-saw-a-guild-could-change-how-many-turns-of-tool-results-its-agents-prompts-keep) | Every member who saw a guild could change how many turns of tool results its agents' prompts keep | Fixed 2026-11-14 |
 | [SEC-58](#sec-58--a-recipe-captured-from-a-private-guild-and-an-apply-into-one-were-open-to-every-member) | A recipe captured from a private guild, and an apply into one, were open to every member | Fixed 2026-11-03 |
 | [SEC-57](#sec-57--an-operator-could-see-a-private-guilds-notes-and-files-through-an-organisation-row) | An operator could see a private guild's notes and files through an organisation row | Fixed 2026-11-03 |
@@ -68,6 +69,36 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-60 — Text holding a NUL or an unpaired surrogate failed the write of a message
+
+**Status:** fixed 2026-11-15.
+
+**Found:** 2026-11-12, from production errors where PostgreSQL
+refused a run's tool-call message.
+
+**Where:** every `JSONB` parameter the orchestrator writes under
+`apps/orchestrator/src/db/` and `apps/orchestrator/src/seed/`: run,
+Studio and Builder messages and the other `JSONB` columns.
+
+**Exposure:** `JSON.stringify` writes a NUL character as `\u0000`
+and an unpaired UTF-16 surrogate as its `\u` escape, and PostgreSQL
+refuses both in `JSONB`. Text a model writes, a tool returns, or a
+web page, file or connector supplies reached a message's payload or
+metadata unchanged, so one such character failed the message's
+write and the run or session that wrote it.
+
+**Fix:** `formatJsonb` in `apps/orchestrator/src/db/codecs.ts`
+writes every `JSONB` parameter and stores each NUL and unpaired
+surrogate, in a string or an object key, as U+FFFD. Every other
+character, escape-like text included, is stored as it is.
+`test/unit/codecs.test.ts` and
+`test/integration/jsonb-text.test.ts` pin it.
+
+**Residual risk:** a stored value differs from the written one at
+each replaced character, and two object keys that differ only there
+become one key. A NUL in a `TEXT` parameter is still refused by
+PostgreSQL.
 
 ## SEC-59 — Every member who saw a guild could change how many turns of tool results its agents' prompts keep
 

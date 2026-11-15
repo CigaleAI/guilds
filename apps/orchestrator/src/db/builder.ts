@@ -3,6 +3,7 @@ import type pg from "pg";
 import { patchAssignments, tableColumns } from "./columns.js";
 import { CONVERSATION_SESSION_COLUMNS, type ConversationSessionPatch } from "./conversations.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { RecipeRow } from "./recipes.js";
 import { builderSessions } from "./schema/index.js";
@@ -44,7 +45,7 @@ export async function insertBuilderSession(
       session.createdByUserId,
       session.createdByName,
       session.recipeId,
-      JSON.stringify(session.configSnapshot),
+      formatJsonb(session.configSnapshot),
       stamp(now),
     ],
   );

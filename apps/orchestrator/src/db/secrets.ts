@@ -2,6 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { pickColumns } from "./columns.js";
 import { RowMissing, SecretNameTaken } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { isUniqueViolation, type Queryable, stamp, withTransaction } from "./pg.js";
 import { agents, guilds, secretGrants, secrets, users } from "./schema/index.js";
 
@@ -361,7 +362,7 @@ export async function listActiveRunAgentIdsForSecret(
      FROM runs
      WHERE status = 'active'
        AND config_snapshot->'secrets' @> $1::jsonb`,
-    [JSON.stringify([{ id: secretId }])],
+    [formatJsonb([{ id: secretId }])],
   );
   return result.rows.map((row) => row.agent_id);
 }

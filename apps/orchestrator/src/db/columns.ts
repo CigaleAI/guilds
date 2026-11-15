@@ -1,6 +1,7 @@
 import { getTableColumns, type InferSelectModel } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { isJsonObject, type JsonValue } from "../lib/json.js";
+import { formatJsonb } from "./codecs.js";
 
 /** A column of `table`: a schema key is its column's name in the database. */
 export type ColumnName<T extends PgTable> = keyof InferSelectModel<T> & string;
@@ -50,7 +51,7 @@ export function patchAssignments<K extends string>(
     const value = patch[column];
     const json = Array.isArray(value) || isJsonObject(value);
     sets.push(`${column} = $${first + values.length}${json ? "::jsonb" : ""}`);
-    values.push(value instanceof Date ? value.toISOString() : json ? JSON.stringify(value) : value);
+    values.push(value instanceof Date ? value.toISOString() : json ? formatJsonb(value) : value);
   }
   return { sets, values };
 }

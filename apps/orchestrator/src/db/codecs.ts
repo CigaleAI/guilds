@@ -1,3 +1,5 @@
+import type { JsonValue } from "../lib/json.js";
+
 export function parseInt8(value: string): number {
   if (!/^-?\d+$/.test(value)) {
     throw new RangeError(`int8 is not an integer: ${value}`);
@@ -7,6 +9,19 @@ export function parseInt8(value: string): number {
     throw new RangeError(`int8 exceeds Number.MAX_SAFE_INTEGER: ${value}`);
   }
   return parsed;
+}
+
+// A backslash in JSON.stringify's output only opens an escape inside a string, so each match is
+// one whole escape: a NUL or an unpaired surrogate, which jsonb refuses, or any other escape.
+const JSON_ESCAPE = /\\(?:u(?:0000|d[89a-f][0-9a-f]{2})|[^u])/g;
+
+/**
+ * `value` as the text of a jsonb parameter. jsonb holds neither a NUL character nor an unpaired
+ * surrogate, so each one, in a string or a key, is written as U+FFFD; every other character is
+ * written as it is.
+ */
+export function formatJsonb(value: JsonValue): string {
+  return JSON.stringify(value).replace(JSON_ESCAPE, (escape) => (escape.length === 2 ? escape : "\\ufffd"));
 }
 
 const OFFSET = /([+-])(\d{2})(?::?(\d{2}))?$/;

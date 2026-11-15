@@ -659,6 +659,13 @@ application data insert.
 | `BYTEA` | never returned as UTF-8 text on list/get |
 | `JSONB` | object; defaults applied before validation |
 
+Every `JSONB` parameter is written through `formatJsonb` in
+`db/codecs.ts`. `JSONB` holds neither a NUL character nor an
+unpaired UTF-16 surrogate, so each one in a string or an object key
+is stored as U+FFFD; every other character is stored as it is. A
+value read back holds U+FFFD where the written value held one of
+them.
+
 Column timestamps in REST (`created_at`, `updated_at`,
 `next_run_at`, `last_run_at`, `rotated_at`) use
 `YYYY-MM-DDTHH:MM:SS[.ffffff]+00:00`.

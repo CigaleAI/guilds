@@ -4,6 +4,7 @@ import { newId } from "../lib/ids.js";
 import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
 import { ARTIFACT_RETURNING, ARTIFACT_SELECT, type ArtifactOrTombstoneRow, type ArtifactRow } from "./artifacts.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { artifactCollections, artifacts, CollectionColumn, ColumnType, guilds, RecordBody } from "./schema/index.js";
 
@@ -108,7 +109,7 @@ export async function insertCollection(
       collection.guild_id,
       collection.name,
       collection.purpose,
-      JSON.stringify(collection.columns),
+      formatJsonb(collection.columns),
       actor.actorType,
       actor.actorId,
       actor.actorName,
@@ -204,7 +205,7 @@ export async function updateCollection(db: Queryable, patch: CollectionPatch, no
   await db.query(
     `UPDATE artifact_collections SET name = $2, purpose = $3, columns = $4::json, guild_id = $5, updated_at = $6
       WHERE id = $1 AND deleted_at IS NULL`,
-    [patch.id, patch.name, patch.purpose, JSON.stringify(patch.columns), patch.guild_id, stamp(now)],
+    [patch.id, patch.name, patch.purpose, formatJsonb(patch.columns), patch.guild_id, stamp(now)],
   );
 }
 
@@ -343,7 +344,7 @@ export async function insertRecord(
       record.origin_guild_id,
       record.collection_id,
       record.key,
-      JSON.stringify(record.body),
+      formatJsonb(record.body),
       record.content_hash,
       actor.actorType,
       actor.actorId,
@@ -378,7 +379,7 @@ export async function updateRecordBody(
       RETURNING ${ARTIFACT_RETURNING}`,
     [
       record.id,
-      JSON.stringify(record.body),
+      formatJsonb(record.body),
       record.search_blob,
       record.identity,
       record.content_hash,
@@ -707,11 +708,11 @@ function whereClauseSql(clause: WhereClause, values: unknown[]): RecordPredicate
     if (clause.op === "like") {
       return fuzzyArraySql(clause.term, column, values);
     }
-    values.push(JSON.stringify([clause.term]));
+    values.push(formatJsonb([clause.term]));
     return { where: `a.content_json -> $${column} @> $${values.length}::jsonb`, score: null };
   }
   if (clause.type === "boolean") {
-    values.push(JSON.stringify(clause.term));
+    values.push(formatJsonb(clause.term));
     return { where: `a.content_json -> $${column} = $${values.length}::jsonb`, score: null };
   }
   if (clause.type === "number") {

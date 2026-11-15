@@ -3,6 +3,7 @@ import type pg from "pg";
 import { patchAssignments, tableColumns } from "./columns.js";
 import { CONVERSATION_SESSION_COLUMNS, type ConversationSessionPatch } from "./conversations.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp } from "./pg.js";
 import { agents, runs, studioDrafts, studioSessions } from "./schema/index.js";
 
@@ -140,8 +141,8 @@ export async function insertStudioSession(
       session.created_by_name,
       session.mode,
       session.source_guild_id,
-      JSON.stringify(session.source_guild_snapshot),
-      JSON.stringify(session.config_snapshot),
+      formatJsonb(session.source_guild_snapshot),
+      formatJsonb(session.config_snapshot),
       session.selected_target_agent_id ?? null,
       session.parent_session_id ?? null,
       session.status,
@@ -258,7 +259,7 @@ export async function insertStudioDraft(
       draft.org_id,
       draft.source_guild_id,
       draft.target_agent_id,
-      JSON.stringify(draft.target_snapshot),
+      formatJsonb(draft.target_snapshot),
       draft.source_artifact_id,
       draft.source_display_path,
       draft.base_version,
@@ -266,9 +267,9 @@ export async function insertStudioDraft(
       draft.base_content,
       draft.proposed_content,
       draft.rationale,
-      JSON.stringify(draft.evidence_refs),
-      JSON.stringify(draft.evidence_warnings),
-      JSON.stringify(draft.risks),
+      formatJsonb(draft.evidence_refs),
+      formatJsonb(draft.evidence_warnings),
+      formatJsonb(draft.risks),
       draft.status,
       draft.draft_number,
       draft.supersedes_draft_id,

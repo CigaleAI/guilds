@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp } from "./pg.js";
 import { recipes } from "./schema/index.js";
 
@@ -50,7 +51,7 @@ export async function insertRecipe(pool: Queryable, recipe: NewRecipe, now: Date
       recipe.description,
       recipe.visibility,
       recipe.status,
-      JSON.stringify(recipe.body),
+      formatJsonb(recipe.body),
       recipe.sourceKind,
       recipe.sourceGuildId,
       recipe.sourceBuilderSessionId,
@@ -109,7 +110,7 @@ export async function writeRecipeBody(
     [
       version.id,
       version.body_version,
-      JSON.stringify(edit.body),
+      formatJsonb(edit.body),
       edit.name ?? null,
       edit.description ?? null,
       edit.status ?? "draft",

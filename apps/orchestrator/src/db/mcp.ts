@@ -3,6 +3,7 @@ import { newId } from "../lib/ids.js";
 import { upsertMcpBinding, type CoveredScope, type McpConnectionBinding } from "./bindings.js";
 import { pickColumns, ownerRefs } from "./columns.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import { guildRepositories, mcpConnections, mcpTools, type ConnectionSettings, type GithubRepositorySelection, type ToolInputSchema } from "./schema/index.js";
 
@@ -175,7 +176,7 @@ export async function connectMcp(
   now: Date,
 ): Promise<McpConnectionRow> {
   const oauthState = connection.oauthState ?? null;
-  const settings = connection.settings === undefined ? null : JSON.stringify(connection.settings);
+  const settings = connection.settings === undefined ? null : formatJsonb(connection.settings);
   const bind = connection.bind ?? true;
   const status = connection.status ?? "pending";
   const accountHint = connection.accountHint ?? "";
@@ -370,7 +371,7 @@ export async function updateMcpConnectionSettings(
      RETURNING ${MCP_CONNECTION_COLUMNS}`,
     [
       connectionId,
-      JSON.stringify(patch.settings),
+      formatJsonb(patch.settings),
       stamp(now),
       patch.status ?? null,
       patch.account_hint ?? "",
@@ -391,7 +392,7 @@ export async function updateMcpConnectionGithubRepositories(
      SET settings = jsonb_set(settings, '{repositories}', $2::jsonb), updated_at = $3
      WHERE id = $1
      RETURNING ${MCP_CONNECTION_COLUMNS}`,
-    [connectionId, JSON.stringify(repositories), stamp(now)],
+    [connectionId, formatJsonb(repositories), stamp(now)],
   );
   return result.rows[0] ?? null;
 }
@@ -459,7 +460,7 @@ export async function recordGithubRepository(
     );
     await client.query(
       "UPDATE mcp_connections SET settings = jsonb_set(settings, '{repositories}', $2::jsonb) WHERE id = $1",
-      [connectionId, JSON.stringify(next)],
+      [connectionId, formatJsonb(next)],
     );
   });
 }
@@ -556,7 +557,7 @@ export async function replaceMcpTools(
           tool.remote_name,
           tool.namespaced_name,
           tool.description,
-          JSON.stringify(tool.input_schema),
+          formatJsonb(tool.input_schema),
           stamp(now),
           tool.read_only_hint ?? null,
           tool.destructive_hint ?? null,

@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import type pg from "pg";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
+import { formatJsonb } from "../db/codecs.js";
 import { newId } from "../lib/ids.js";
 import { keepMatching } from "../lib/decode.js";
 import type { JsonObject } from "../lib/json.js";
@@ -38,7 +39,7 @@ export async function projectConnectors(pool: pg.Pool, now = new Date()): Promis
       [
         entry.id,
         entry.manifest.slug,
-        JSON.stringify(entry.manifest),
+        formatJsonb(entry.manifest),
         entry.source,
         entry.verified,
         entry.publisher,

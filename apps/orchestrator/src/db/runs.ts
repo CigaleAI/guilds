@@ -1,5 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import { messages, runs, type MessageMetadata, type MessagePayload, type RunError, type RunMetadata, type RunScriptSnapshot, type SecretRef } from "./schema/index.js";
 import { incrementUsage, messageCostUsd } from "./usage.js";
@@ -252,14 +253,14 @@ export async function insertRun(pool: Queryable, run: NewRun, now: Date): Promis
       [
         run.runId,
         run.agentId,
-        JSON.stringify(run.configSnapshot),
+        formatJsonb(run.configSnapshot),
         stamp(now),
         run.systemPromptHash,
         run.taskPromptHash,
         run.memoryPromptHash,
         run.kind,
         run.groupChatThroughSeq ?? null,
-        JSON.stringify(run.runMetadata ?? {}),
+        formatJsonb(run.runMetadata ?? {}),
         run.scheduleId ?? null,
         run.wakeGroupMessageId ?? null,
         run.startedByUserId ?? null,
@@ -272,8 +273,8 @@ export async function insertRun(pool: Queryable, run: NewRun, now: Date): Promis
         [
           run.runId,
           seq,
-          JSON.stringify(payload),
-          JSON.stringify(metadata),
+          formatJsonb(payload),
+          formatJsonb(metadata),
           stamp(now),
           messageCostUsd(metadata),
         ],
@@ -370,8 +371,8 @@ export async function insertMessage(
       [
         message.runId,
         message.seq,
-        JSON.stringify(message.payload),
-        JSON.stringify(message.metadata),
+        formatJsonb(message.payload),
+        formatJsonb(message.metadata),
         stamp(now),
         messageCostUsd(message.metadata),
       ],
@@ -445,7 +446,7 @@ export async function appendRunError(
      SET errors = errors || $2::jsonb, updated_at = $3
      WHERE id = $1
      RETURNING errors`,
-    [runId, JSON.stringify([entry]), stamp(now)],
+    [runId, formatJsonb([entry]), stamp(now)],
   );
   return result.rows[0]?.errors ?? [];
 }
@@ -460,7 +461,7 @@ export async function mergeRunMetadata(
     `UPDATE runs
      SET metadata = metadata || $2::jsonb, updated_at = $3
      WHERE id = $1`,
-    [runId, JSON.stringify(extra), stamp(now)],
+    [runId, formatJsonb(extra), stamp(now)],
   );
 }
 
@@ -478,7 +479,7 @@ export async function reopenRun(pool: Queryable, runId: string, now: Date): Prom
          metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
          updated_at = $3
      WHERE id = $1 AND status = 'completed'`,
-    [runId, JSON.stringify({ resumed_at: now.toISOString() }), stamp(now)],
+    [runId, formatJsonb({ resumed_at: now.toISOString() }), stamp(now)],
   );
 }
 
@@ -497,7 +498,7 @@ export async function reopenForWake(
     `UPDATE runs
      SET status = 'active', metadata = metadata || $2::jsonb, updated_at = $3
      WHERE id = $1 AND status = 'completed'`,
-    [runId, JSON.stringify({ wake_reopened_generation: generation }), stamp(now)],
+    [runId, formatJsonb({ wake_reopened_generation: generation }), stamp(now)],
   );
   return Boolean(result.rowCount);
 }
@@ -532,7 +533,7 @@ export async function updateRunSecrets(
      SET config_snapshot = jsonb_set(config_snapshot, '{secrets}', $2::jsonb),
          updated_at = $3
      WHERE id = $1`,
-    [runId, JSON.stringify(secrets), stamp(now)],
+    [runId, formatJsonb(secrets), stamp(now)],
   );
 }
 
@@ -547,6 +548,6 @@ export async function updateRunScripts(
      SET config_snapshot = jsonb_set(config_snapshot, '{scripts}', $2::jsonb),
          updated_at = $3
      WHERE id = $1`,
-    [runId, JSON.stringify(scripts), stamp(now)],
+    [runId, formatJsonb(scripts), stamp(now)],
   );
 }

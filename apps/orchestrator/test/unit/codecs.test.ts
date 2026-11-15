@@ -5,6 +5,7 @@ import { describe, test } from "node:test";
 import {
   compareColumnTimestamps,
   formatColumnTimestamp,
+  formatJsonb,
   formatOperationalTimestamp,
   parseInt8,
   sortableColumnTimestamp,
@@ -72,5 +73,17 @@ describe("codecs", () => {
     assert.equal(parseInt8(String(fixture.bigint_id)), fixture.bigint_id);
     assert.throws(() => parseInt8("9007199254740992"), /MAX_SAFE_INTEGER/);
     assert.throws(() => parseInt8("1.5"), /not an integer/);
+  });
+
+  test("jsonb text writes a NUL and an unpaired surrogate as U+FFFD, in values and keys", () => {
+    assert.deepEqual(JSON.parse(formatJsonb({ "a\u0000b": ["x\u0000", "\ud800", "y\udc00z", "\udc00\ud800"] })), {
+      "a\ufffdb": ["x\ufffd", "\ufffd", "y\ufffdz", "\ufffd\ufffd"],
+    });
+  });
+
+  test("jsonb text keeps paired surrogates, other escapes and escape-like text as they are", () => {
+    const value = { text: "😀 \\u0000 \\ud83d \u0001 \"q\" \n \ufdd0 \ufffd", n: 1.5, ok: true, none: null };
+    assert.deepEqual(JSON.parse(formatJsonb(value)), value);
+    assert.deepEqual(JSON.parse(formatJsonb(["\\\ud800"])), ["\\\ufffd"]);
   });
 });

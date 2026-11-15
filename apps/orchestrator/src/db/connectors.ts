@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import {
   connectorCalls,
@@ -103,7 +104,7 @@ export async function setConnectorOauthClient(
      SET oauth_client = $2::jsonb, updated_at = $3
      WHERE id = $1
      RETURNING ${CONNECTOR_COLUMNS}`,
-    [serverId, JSON.stringify(client), stamp(now)],
+    [serverId, formatJsonb(client), stamp(now)],
   );
   return result.rows[0] ?? null;
 }
@@ -208,7 +209,7 @@ export async function insertConnector(
       connector.slug,
       connector.toolPrefix,
       connector.ownerOrgId,
-      JSON.stringify(connector.manifest),
+      formatJsonb(connector.manifest),
       connector.source,
       connector.version ?? "",
       connector.verified,
@@ -248,8 +249,8 @@ export async function updateConnector(
     [
       serverId,
       patch.slug ?? null,
-      patch.manifest === undefined ? null : JSON.stringify(patch.manifest),
-      patch.overrides === undefined ? null : JSON.stringify(patch.overrides),
+      patch.manifest === undefined ? null : formatJsonb(patch.manifest),
+      patch.overrides === undefined ? null : formatJsonb(patch.overrides),
       patch.enabled ?? null,
       stamp(now),
       patch.version ?? null,

@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp } from "./pg.js";
 import { recipeApplies, type ApplyPlan, type ApplyPreview, type ApplyStep, type ApplyWarning } from "./schema/index.js";
 
@@ -38,10 +39,10 @@ export async function insertRecipeApply(db: Queryable, apply: NewRecipeApply, no
       apply.guildId,
       apply.createdGuild,
       apply.recipeBodyVersion,
-      JSON.stringify(apply.preview),
-      JSON.stringify(apply.plan),
-      JSON.stringify(apply.checklist),
-      JSON.stringify(apply.warnings),
+      formatJsonb(apply.preview),
+      formatJsonb(apply.plan),
+      formatJsonb(apply.checklist),
+      formatJsonb(apply.warnings),
       stamp(now),
     ],
   );
@@ -85,7 +86,7 @@ export async function setApplyChecklist(
   const result = await db.query<RecipeApplyRow>(
     `UPDATE recipe_applies SET checklist = $2::jsonb, warnings = $3::jsonb, updated_at = $4 WHERE id = $1
      RETURNING ${APPLY_COLUMNS}`,
-    [applyId, JSON.stringify(progress.checklist), JSON.stringify(progress.warnings), stamp(now)],
+    [applyId, formatJsonb(progress.checklist), formatJsonb(progress.warnings), stamp(now)],
   );
   return result.rows[0] ?? null;
 }
@@ -100,7 +101,7 @@ export async function markApplyReady(
   const result = await db.query<RecipeApplyRow>(
     `UPDATE recipe_applies SET status = 'ready', checklist = $2::jsonb, updated_at = $3 WHERE id = $1
      RETURNING ${APPLY_COLUMNS}`,
-    [applyId, JSON.stringify(checklist), stamp(now)],
+    [applyId, formatJsonb(checklist), stamp(now)],
   );
   return result.rows[0] ?? null;
 }

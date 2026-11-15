@@ -2,6 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { withoutOpenBlockingIssue } from "./blocking-issues.js";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
+import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp } from "./pg.js";
 import { agents, guilds, schedules, type WakeWindow } from "./schema/index.js";
 
@@ -90,7 +91,7 @@ export async function insertSchedule(
       schedule.scheduleId,
       schedule.agentId,
       schedule.timing.cron,
-      schedule.timing.window ? JSON.stringify(schedule.timing.window) : null,
+      schedule.timing.window ? formatJsonb(schedule.timing.window) : null,
       schedule.description,
       schedule.instruction,
       stamp(schedule.wake.at),
@@ -212,7 +213,7 @@ export async function updateSchedule(
       key.scheduleId,
       key.agentId,
       update.timing.cron,
-      update.timing.window ? JSON.stringify(update.timing.window) : null,
+      update.timing.window ? formatJsonb(update.timing.window) : null,
       update.description,
       update.instruction,
       update.paused,
