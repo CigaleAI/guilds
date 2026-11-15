@@ -76,6 +76,7 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
   harness: null,
   harness_model: null,
   harness_effort: null,
+  repositories: [],
   secret_aliases: {},
   scripting: true,
   memory: true,
@@ -88,7 +89,7 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
  */
 export function runSnapshot(config: AgentConfig = AGENT_CONFIG): RunConfigSnapshot {
   const resolved = resolveAgentConfig(config, DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS);
-  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = resolved;
+  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, repositories: _repositories, ...settings } = resolved;
   return { ...settings, projection_policy_version: 1, database: false, tools: [], mcp: [], secrets: [] };
 }
 

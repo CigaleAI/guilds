@@ -8,6 +8,22 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking.** A coding agent works on the repositories it picks, not
+on every repository of its guild. Agent config gains `repositories`, a
+list of names in the order a run clones them; a create or a settings
+change may pick only a repository the agent can use (its guild's, or
+one picked on its GitHub login), and only on a coding agent. A coding
+run clones, checkpoints, gets tokens for, and lists in State only
+those. A run whose agent picks none fails at start with
+`coding.repositories_missing`; one whose agent picks a repository it
+can no longer use fails with `coding.repositories_gone`, naming it.
+The migration gives each coding agent every repository it cloned
+before. `GET /api/agents/:id/harness` lists the picks a run clones as
+`repositories` and the ones the agent can use as
+`usable_repositories`. A client that saves an agent's config without
+`repositories` unpicks them all. Rebuild the orchestrator and the
+operator app together.
+
 **Rebuild.** A recipe that lists repositories no longer asks for a
 GitHub connection: applying it adds no `conn:github` step of its own,
 and its preview names no GitHub App to set up for them. Each

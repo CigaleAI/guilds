@@ -1,6 +1,5 @@
 import { isOptimizedBrowserOn } from "../agents/config.js";
 import { agentActor } from "../artifacts/actors.js";
-import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
@@ -21,7 +20,12 @@ import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
-import { codingRepositoriesDatabase, loadUsableRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
+import {
+  agentRepositoriesProblem,
+  codingRepositoriesDatabase,
+  loadAgentRepositories,
+  type CodingRepositoriesDatabase,
+} from "../coding/agent-repositories.js";
 import type { CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import {
@@ -328,7 +332,7 @@ export class RunGenerator {
       await this.runSteps(gen, ready.tools);
     } finally {
       if (gen.snapshot.coding) {
-        await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox);
+        await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox, ready.tools.run.code_repositories);
       }
       if (!generations.isCancelled(gen.runId)) {
         logOperationFailure(await workspace.recordSize(gen.runId, gen.agent, ready.sandbox), "warn");
@@ -357,7 +361,7 @@ export class RunGenerator {
     return (await this.isReady(gen, sandboxes.machine, tools)) ? { tools, sandbox: sandboxes.machine } : null;
   }
 
-  /** A coding run starts only with a harness picked and a repository in its guild. */
+  /** A coding run starts only with a harness picked and repositories its agent picks and can use. */
   private async isStartable(gen: Generation): Promise<boolean> {
     const { db, events } = this.services;
     if (!gen.snapshot.coding) {
@@ -368,8 +372,9 @@ export class RunGenerator {
       await events.recordError(gen, missing.code, missing);
       return false;
     }
-    if (!(await loadUsableRepositories(db, gen.agent)).length) {
-      await events.recordError(gen, REPOSITORIES_MISSING, new Error(REPOSITORIES_MISSING_MESSAGE));
+    const problem = agentRepositoriesProblem(await loadAgentRepositories(db, gen.agent));
+    if (problem !== null) {
+      await events.recordError(gen, problem.code, problem);
       return false;
     }
     return true;

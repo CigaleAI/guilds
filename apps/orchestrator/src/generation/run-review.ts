@@ -11,7 +11,9 @@ import {
   type MessageMetadata,
   type RunRepositoryChange,
 } from "../db/schema/index.js";
+import { codingRepositoriesDatabase, loadUsableRepositories } from "../coding/agent-repositories.js";
 import { harnessEffortOf } from "../coding/harness-models.js";
+import { pickedRepositories } from "../coding/repositories.js";
 import {
   HARNESS_INFO,
   harnessLoginOf,
@@ -30,7 +32,7 @@ import { RunRequestError } from "./errors.js";
 export type RunReviewServices = {
   db: Queryable;
   /** The coding runs whose machines hold the repositories; absent on a box without a generation loop. */
-  coding: Pick<CodingRuns, "runDiff" | "harnessLog" | "repositoryNames" | "checkHarness"> | null;
+  coding: Pick<CodingRuns, "runDiff" | "harnessLog" | "checkHarness"> | null;
 };
 
 /**
@@ -50,7 +52,8 @@ export type HarnessCredential = Pick<HarnessInfo, "harness" | "label" | "secret"
 
 /**
  * A coding agent's harness, model and effort, the harness CLIs its machine carries (null before
- * the machine first started), the repositories it works in, and each harness's credentials.
+ * the machine first started), the repositories a coding run clones (those it picks and can use, in
+ * its order), the repositories it can use, and each harness's credentials.
  */
 export type AgentHarness = {
   harness: Harness | null;
@@ -58,6 +61,7 @@ export type AgentHarness = {
   harness_effort: Effort | null;
   machine_harnesses: Harness[] | null;
   repositories: string[];
+  usable_repositories: string[];
   harnesses: HarnessCredential[];
 };
 
@@ -118,9 +122,13 @@ function harnessView(
   };
 }
 
-/** A coding agent's harness, model and effort, the repositories it works in, and each harness's secret and login. */
+/**
+ * A coding agent's harness, model and effort, the repositories it works in and those it can use,
+ * and each harness's secret and login.
+ */
 export async function loadHarnessView(services: RunReviewServices, agent: AgentRow): Promise<AgentHarness> {
   const config = agent.config;
+  const usable = await loadUsableRepositories(codingRepositoriesDatabase(services.db), agent);
   const granted = new Set(
     (await agentSecrets(services.db, agent)).map((secret) => secret.name),
   );
@@ -134,7 +142,8 @@ export async function loadHarnessView(services: RunReviewServices, agent: AgentR
     harness_model: harnessModelOf(config),
     harness_effort: harnessEffortOf(config),
     machine_harnesses: carried,
-    repositories: (await services.coding?.repositoryNames(agent)) ?? [],
+    repositories: pickedRepositories(usable, config.repositories).repositories.map((row) => row.name),
+    usable_repositories: usable.map((row) => row.name),
     harnesses: HARNESSES.map((harness) => harnessView(harness, logins, aliases, granted)),
   };
 }

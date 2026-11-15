@@ -139,6 +139,8 @@ export type AgentConfig = {
   harness_model: string | null;
   /** The effort the harness runs its model at; null leaves it to the harness. */
   harness_effort: HarnessEffort | null;
+  /** The repositories a coding agent works on, by name, in this order; empty on any other agent. */
+  repositories: string[];
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
   scripting: boolean;
@@ -176,8 +178,13 @@ export type AgentHarness = {
   harnesses: HarnessCredential[];
   /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
   machine_harnesses: Harness[] | null;
-  /** The guild repositories a coding run clones, by name; a coding run of a guild with none fails at start. */
+  /**
+   * The repositories a coding run clones, by name: those the agent picks and can use, in its
+   * order. A coding run fails at start without one, or while the agent picks one it cannot use.
+   */
   repositories: string[];
+  /** The repositories the agent can use, by name: its guild's, and those picked on its GitHub login. */
+  usable_repositories: string[];
 };
 
 /** `POST /api/agents/:id/harness/check`: what the agent's machine has for a harness, outside a run. */

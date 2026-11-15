@@ -31,6 +31,7 @@ const wakeUpsConfigDb = uniqueDbName("agent_platform_migrate_wake_ups_config");
 const toolResultTurnsDb = uniqueDbName("agent_platform_migrate_tool_result_turns");
 const remoteIdDb = uniqueDbName("agent_platform_migrate_remote_id");
 const providersDb = uniqueDbName("agent_platform_migrate_providers");
+const agentRepositoriesDb = uniqueDbName("agent_platform_migrate_agent_repositories");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -47,6 +48,7 @@ after(async () => {
   await dropIsolatedDatabase(toolResultTurnsDb);
   await dropIsolatedDatabase(remoteIdDb);
   await dropIsolatedDatabase(providersDb);
+  await dropIsolatedDatabase(agentRepositoriesDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -520,6 +522,75 @@ test("the repository providers migration gives each repository with a GitHub log
       pool.query("UPDATE public.guild_repositories SET provider = NULL WHERE id = 'repo_login'"),
       /guild_repositories_credential_check/,
     );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the agent repositories migration gives each coding agent every repository it cloned, in its login's order then by name, and any other agent none", async () => {
+  const pool = await createPool(await createIsolatedDatabase(agentRepositoriesDb), reportPoolError);
+  try {
+    const folder = chainBefore("0030_agent_repositories");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    for (const guild of ["guild_1", "guild_2"]) {
+      await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ($1, $1, 'org_1', $2, $2)", [guild, now]);
+    }
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    await pool.query(
+      `INSERT INTO public.connectors (id, slug, tool_prefix, manifest, source, installed_at, updated_at)
+       VALUES ('mcp_github', 'github', 'github', '{}', 'core', $1, $1)`,
+      [now],
+    );
+    const login = (id: string, scope: string, owner: string, status: string, names: string[]) =>
+      pool.query(
+        `INSERT INTO public.mcp_connections (id, mcp_server_id, owner_scope, owner_id, status, settings, ciphertext, nonce, created_at, updated_at, rotated_at)
+         VALUES ($1, 'mcp_github', $2, $3, $4, $5, '\\x00', '\\x00', $6, $6, $6)`,
+        [id, scope, owner, status, JSON.stringify({ repositories: names.map((name) => ({ name, url: `https://github.com/acme/${name}`, default_branch: "main" })) }), now],
+      );
+    await login("conn_guild", "guild", "guild_1", "connected", ["site", "shop"]);
+    await login("conn_own", "agent", "own", "connected", ["api"]);
+    await login("conn_dropped", "agent", "fallback", "disconnected", ["old"]);
+    await login("conn_org", "org", "org_1", "connected", ["handbook"]);
+    for (const [id, guild, name] of [
+      ["repo_shop", "guild_1", "shop"],
+      ["repo_docs", "guild_1", "docs"],
+      ["repo_billing", "guild_1", "billing"],
+      ["repo_wiki", "guild_2", "wiki"],
+    ] as const) {
+      await pool.query(
+        `INSERT INTO public.guild_repositories (id, guild_id, name, url, default_branch, created_at, updated_at)
+         VALUES ($1, $2, $3, 'https://git.example.com/' || $3, 'main', $4, $4)`,
+        [id, guild, name, now],
+      );
+    }
+    const { repositories: _repositories, ...coding } = agentConfig({ coding: true, harness: "codex" });
+    const { repositories: _none, ...plain } = agentConfig();
+    const agent = (id: string, guild: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, $2, $1, $3, $4, $4, 'org_1', '', '', $4, 'mach_1', $5)`,
+        [id, guild, JSON.stringify(config), now, slot],
+      );
+    await agent("coder", "guild_1", 0, coding);
+    await agent("own", "guild_1", 1, coding);
+    await agent("fallback", "guild_1", 2, coding);
+    await agent("other", "guild_2", 3, coding);
+    await agent("plain", "guild_1", 4, plain);
+
+    await applyMigrations(pool);
+    const rows = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const repositories = new Map(rows.rows.map((row) => [row.id, row.config.repositories]));
+    assert.deepEqual(repositories.get("coder"), ["site", "shop", "billing", "docs"]);
+    assert.deepEqual(repositories.get("own"), ["api", "billing", "docs", "shop"]);
+    assert.deepEqual(repositories.get("fallback"), ["site", "shop", "billing", "docs"], "a disconnected login of its own leaves the guild's");
+    assert.deepEqual(repositories.get("other"), ["handbook", "wiki"], "a guild without a login takes the organisation's");
+    assert.deepEqual(repositories.get("plain"), []);
+    assert.deepEqual(rows.rows.find((row) => row.id === "plain")?.config, agentConfig());
   } finally {
     await pool.end();
   }

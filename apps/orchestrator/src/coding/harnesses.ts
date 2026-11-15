@@ -103,12 +103,6 @@ export function harnessModelOf(config: AgentConfig | RecipeRole["config"] | null
   return isHarnessModel(config?.harness_model) ? config.harness_model : null;
 }
 
-/** A coding run whose guild has no repository fails at start with this. */
-export const REPOSITORIES_MISSING = "coding.repositories_missing";
-
-export const REPOSITORIES_MISSING_MESSAGE =
-  "this guild has no repositories: add one in the guild's Repositories, then send again";
-
 /** The login record for a harness as stored, or none. */
 export function harnessLoginOf(logins: HarnessLogins, harness: Harness): HarnessLogin {
   return logins[harness] ?? { seen_at: null, account: null };

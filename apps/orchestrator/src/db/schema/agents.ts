@@ -81,6 +81,11 @@ export type AgentConfig = {
   /** The effort the harness runs its model at; null leaves it to the harness. */
   harness_effort: Effort | null;
   /**
+   * The repositories a coding agent works on, by name, in this order: each one the agent can use
+   * (its guild's, or one picked on the GitHub login it clones with). Empty on any other agent.
+   */
+  repositories: string[];
+  /**
    * Variable names the agent's commands see beside the secrets reaching it, each holding the
    * value of the secret it names: `{ CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" }`. An alias wins over
    * a secret of its own name.
@@ -118,9 +123,10 @@ export type RunScriptSnapshot = {
 /**
  * `runs.config_snapshot`: the settings a run is created with, the tools it is offered
  * (each an OpenAI function schema, passed to the model as is), the connections and secrets it
- * reaches, and the scripts it pins.
+ * reaches, and the scripts it pins. A coding run reads its repositories from its agent when it
+ * starts, as it reads the guild's.
  */
-export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib"> & {
+export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib" | "repositories"> & {
   projection_policy_version: number;
   database: boolean;
   tools: FunctionTool[];

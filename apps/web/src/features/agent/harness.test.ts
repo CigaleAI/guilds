@@ -84,6 +84,7 @@ function status(patch: Partial<AgentHarness> = {}): AgentHarness {
     harness_effort: null,
     machine_harnesses: ["codex", "claude-code"],
     repositories: ["shop"],
+    usable_repositories: ["shop"],
     harnesses: [
       credential("claude-code", {
         secret: "CLAUDE_CODE_OAUTH_TOKEN",
@@ -120,15 +121,15 @@ test("no harness picked is a problem; the image and credential then go unchecked
   assert.deepEqual(problems, [{ kind: "harness" }, { kind: "repositories" }]);
   assert.equal(
     codingProblemsText(problems),
-    "Coding isn't ready: no harness is picked; the guild has no repositories. Fix it in Settings.",
+    "Coding isn't ready: no harness is picked; no repository is picked. Fix it in Settings.",
   );
   assert.equal(
     codingProblemsSentence(problems),
-    "No harness is picked; the guild has no repositories.",
+    "No harness is picked; no repository is picked.",
   );
 });
 
-test("a missing credential, a harness the image lacks, and a guild without repositories are each named", () => {
+test("a missing credential, a harness the image lacks, and no repository picked are each named", () => {
   const problems = codingProblems(
     status({
       harnesses: [credential("claude-code")],
@@ -142,7 +143,7 @@ test("a missing credential, a harness the image lacks, and a guild without repos
   );
   assert.equal(
     codingProblemsText(problems),
-    "Coding isn't ready: this machine's image doesn't carry Claude Code; Claude Code has no credential; the guild has no repositories. Fix it in Settings.",
+    "Coding isn't ready: this machine's image doesn't carry Claude Code; Claude Code has no credential; no repository is picked. Fix it in Settings.",
   );
 });
 

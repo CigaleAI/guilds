@@ -84,6 +84,12 @@ export type CodingRepository = Pick<
 /** A guild repository as a run's state lists it: where it sits in the agent's home. */
 export type StateRepository = { name: string; path: string; default_branch: string };
 
+/**
+ * The repositories an agent's config picks, in its order: those the agent can use, and the names
+ * of those it can no longer use.
+ */
+export type PickedRepositories = { repositories: CodingRepository[]; gone: string[] };
+
 /** The GitHub login `connectionId` as a repository's credential, for `url`; only a `https://github.com/<owner>/<repository>` URL takes one. */
 function validateGithubCredential(connectionId: string, url: string): RepositoryCredential {
   if (parseGithubUrl(url) === null) {
@@ -232,6 +238,21 @@ export function usableRepositories(
   return [...selected, ...extras];
 }
 
+/** The repositories `names` picks among `usable`, in the order of `names`, and the names `usable` lacks. */
+export function pickedRepositories(usable: CodingRepository[], names: readonly string[]): PickedRepositories {
+  const byName = new Map(usable.map((repository) => [repository.name, repository]));
+  const picked: PickedRepositories = { repositories: [], gone: [] };
+  for (const name of names) {
+    const repository = byName.get(name);
+    if (repository === undefined) {
+      picked.gone.push(name);
+    } else {
+      picked.repositories.push(repository);
+    }
+  }
+  return picked;
+}
+
 /** A GitHub login a guild may use when adding repositories. */
 export function githubLoginItem(row: McpConnectionRow): GithubLogin {
   return {
@@ -243,7 +264,7 @@ export function githubLoginItem(row: McpConnectionRow): GithubLogin {
   };
 }
 
-/** State's `repositories`: where each guild repository sits in the agent's home. */
+/** State's `repositories`: where each of the run's repositories sits in the agent's home. */
 export function stateRepositories(rows: CodingRepository[], agentId: string): StateRepository[] {
   return rows.map((row) => ({
     name: row.name,

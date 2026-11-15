@@ -17,6 +17,7 @@ import {
   updateAgentConfig,
   type AgentConfigPatch,
   type AgentPlacement,
+  type AgentPlaceRow,
   type AgentRow,
   type NewAgent,
 } from "../db/agents.js";
@@ -25,6 +26,7 @@ import { recordFileChange } from "../db/file-changes.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { AgentConfig } from "../db/schema/index.js";
+import { codingRepositoriesDatabase, loadUsableRepositories } from "../coding/agent-repositories.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
 import { requireAdministeredGuild } from "../guilds/access.js";
@@ -44,6 +46,7 @@ import { AgentError } from "./errors.js";
 import {
   AgentValidationError,
   assertCodingAgent,
+  assertUsableRepositories,
   validateAgentConfig,
   validateNewAgentConfig,
   validateAgentName,
@@ -133,6 +136,23 @@ async function assertBrowserOptimizedChangeReady(
     return;
   }
   await assertBrowserOptimizedReady(services, orgId, config);
+}
+
+/**
+ * Refuses a config whose repositories name one the agent cannot use; one its `previous` config
+ * already lists stays.
+ */
+async function assertRepositoriesUsable(
+  db: Queryable,
+  agent: AgentPlaceRow,
+  config: AgentConfig,
+  previous?: AgentConfig,
+): Promise<void> {
+  if (!config.repositories.length) {
+    return;
+  }
+  const usable = await loadUsableRepositories(codingRepositoriesDatabase(db), agent);
+  assertUsableRepositories(config, usable.map((repository) => repository.name), previous);
 }
 
 function generationOf(services: AgentServices): NonNullable<AgentServices["generation"]> {
@@ -248,9 +268,9 @@ export async function addAgent(
 
 /**
  * Creates an agent in the guild: validated, on a model the organisation has connected, with the
- * agent-optimized browser only while it is ready, within its policy's caps and the guild's agent
- * limit, and on the machine the request names or the organisation's only one. Only a guild admin
- * gives it tool-result turns of its own.
+ * agent-optimized browser only while it is ready, with repositories it can use, within its
+ * policy's caps and the guild's agent limit, and on the machine the request names or the
+ * organisation's only one. Only a guild admin gives it tool-result turns of its own.
  */
 export async function createAgent(
   services: AgentServices,
@@ -274,6 +294,8 @@ export async function createAgent(
   }
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
+  const agentId = newId("a");
+  await assertRepositoriesUsable(db, { id: agentId, guild_id: guild.id, org_id: guild.org_id }, config);
   const needs = { browser: config.browser, coding: config.coding };
   await assertCanCreateAgent(policy, db, guild.org_id, needs);
   await assertGuildAgentRoom(db, guild.id, 1);
@@ -286,7 +308,6 @@ export async function createAgent(
       needs,
     },
   );
-  const agentId = newId("a");
   const draft: AgentDraft = {
     agent: { agentId, guildId: guild.id, name, config, focus, wakeTriggers, avatarShape, avatarColor },
     task: focus,
@@ -392,7 +413,8 @@ async function moveAgentNotes(
 /**
  * Changes an agent's config and profile. A new config is validated and its model connected; the
  * agent-optimized browser turned on, or given another browser model, must be ready, while an edit
- * that leaves both alone saves without the check; a browser or coding switched on is
+ * that leaves both alone saves without the check; a repository newly picked is one the agent can
+ * use; a browser or coding switched on is
  * within the policy's caps; a rename waits while the agent generates and moves its notes folder; a
  * machine the config needs or the patch names moves the agent there. A browser switched off, or on
  * a new language, restarts; switching the agent-optimized browser does not. Only a guild admin
@@ -412,6 +434,7 @@ export async function reconfigureAgent(
   }
   await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
   await assertBrowserOptimizedChangeReady(services, agent.org_id, config, previous);
+  await assertRepositoriesUsable(services.db, agent, config, previous);
   const needs = { browser: config.browser, coding: config.coding };
   const placement = await placeAgent(services, agent.org_id, userId, {
     requested: patch.machineId,

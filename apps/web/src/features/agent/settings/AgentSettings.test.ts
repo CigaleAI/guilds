@@ -34,6 +34,7 @@ const status: AgentHarness = {
   harnesses: [],
   machine_harnesses: ["claude-code"],
   repositories: [],
+  usable_repositories: [],
 };
 
 test("an empty name reads as the rule a name follows", () => {

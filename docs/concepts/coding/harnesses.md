@@ -341,7 +341,8 @@ harness). The CLI names a Cursor model starts under stay on the server.
 | `harness_model` | Its model, or null |
 | `harness_effort` | Its effort, or null |
 | `machine_harnesses` | The harness CLIs the agent's machine carries; null until its container first started |
-| `repositories` | The names of the guild repositories a coding run clones |
+| `repositories` | The names of the repositories a coding run clones: those the agent picks and can use, in its order |
+| `usable_repositories` | The names of the repositories the agent can use ([Repositories](repositories.md#an-agents-picks)) |
 | `harnesses` | One entry per harness, below |
 
 Each entry of `harnesses`:

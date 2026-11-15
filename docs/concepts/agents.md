@@ -24,7 +24,7 @@ There are two kinds of agent:
 - an **agent** talks, researches, and works with tools and connectors
   on one of the organisation's models;
 - a **coding agent** also leads code work in the guild's
-  repositories, delegated to a coding harness. See
+  repositories it picks, delegated to a coding harness. See
   [Coding agents](coding/index.md).
 
 ## How it works
@@ -289,6 +289,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness |
+| Repositories | only on a coding agent; each one the agent can use ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation |
 | Kimi Code models | only on a coding agent |
@@ -301,7 +302,7 @@ saves.
 
 ### Configuration keys
 
-Agent configuration is a JSON object of twenty-two keys. A missing key
+Agent configuration is a JSON object of twenty-three keys. A missing key
 takes its default, then the check runs. `model` has no default, so a
 configuration without it is 422 `missing keys: model`. Unknown keys
 are rejected. The tier, CPU, and memory belong to the machine, not to
@@ -328,6 +329,7 @@ the agent.
 | `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_effort` | effort or null; needs a harness | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
+| `repositories` | list of repository names, each once, that the agent can use; only on a coding agent | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
 | `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
 | `scripting` | boolean | `true` | [Scripts](scripts.md) |
 | `memory` | boolean | `true` | [Memory](memory.md) |
@@ -345,7 +347,8 @@ Native tools come from bindings (instance → organisation → guild →
 agent) and sandbox environment values from secret grants, not from
 this JSON ([Access](access.md), [Secrets](secrets.md)). A login's
 settings, such as the folder a Drive login reads or the repositories a
-GitHub login picks, live on that login in Tools. The browser, code,
+GitHub login picks, live on that login in Tools; a coding agent picks
+among them, and among its guild's repositories, in `repositories`. The browser, code,
 script (when `scripting` is off), and memory (when `memory` is off)
 tools follow their flags, not only the bindings.
 

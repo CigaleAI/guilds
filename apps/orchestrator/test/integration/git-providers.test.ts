@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
@@ -57,11 +58,21 @@ const pushOnce = (async function* stream(options: { messages: Array<Record<strin
   yield ["done", completion] as ["done", Completion];
 }) as unknown as typeof live.streamCompletion;
 
-test("a private repository on another host clones, checkpoints and pushes a branch with its stored access token", { timeout: 180_000 }, async () => {
+/** A model that answers at once. */
+const answerOnce = (async function* stream() {
+  const completion: Completion = {
+    payload: { role: "assistant", content: "nothing to do" },
+    metadata: completionMetadata({ finish_reason: "stop", response_id: "c" }),
+  };
+  yield ["done", completion] as ["done", Completion];
+}) as unknown as typeof live.streamCompletion;
+
+test("a private repository on another host clones, checkpoints and pushes a branch with its stored access token; each agent of the guild gets only its own repositories", { timeout: 180_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const server = new GitServer("oauth2", "glpat-private-token");
   const host = await server.listen();
   const bare = server.createRepository("team/app.git");
+  server.createRepository("team/site.git");
   const database = await connect(await createIsolatedDatabase(dbName));
   const db = database.pool;
   const notes = new NotesStore(tempDir("guilds-git-providers-notes-"), templatesRoot());
@@ -131,26 +142,30 @@ test("a private repository on another host clones, checkpoints and pushes a bran
     assert.deepEqual(added.json().secret, { id: tokenSecret, name: "GIT_HOST_TOKEN" });
     assert.equal(added.json().connection, null);
     assert.equal(added.json().default_branch, "main");
+    assert.equal((await add({ name: "site", url: `${host}/team/site.git`, secret_id: tokenSecret, username: "oauth2" })).statusCode, 201);
 
     // Deleting a secret deletes the repositories whose token it holds.
     const spareSecret = await createSecret("SPARE_TOKEN", "spare");
     assert.equal((await add({ name: "spare", url: `${host}/team/spare.git`, secret_id: spareSecret, username: "git" })).statusCode, 201);
     assert.equal((await app.inject({ method: "DELETE", url: `/api/secrets/${spareSecret}`, headers: READER })).statusCode, 204);
     const listed = await app.inject({ method: "GET", url: base, headers: READER });
-    assert.deepEqual(listed.json().repositories.map((row: { name: string }) => row.name), ["app"]);
+    assert.deepEqual(listed.json().repositories.map((row: { name: string }) => row.name), ["app", "site"]);
 
     await codeDefaultMachine(app, OWNER);
-    const agent = await app.inject({
-      method: "POST",
-      url: `/api/guilds/${String(guild.json().id)}/agents`,
-      headers: OWNER,
-      payload: {
-        name: "coder",
-        config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code", thinking_level: "none" },
-      },
-    });
-    assert.equal(agent.statusCode, 201, agent.body);
-    const agentId = String(agent.json().id);
+    const createCoder = async (name: string, repositories: string[]) => {
+      const created = await app.inject({
+        method: "POST",
+        url: `/api/guilds/${String(guild.json().id)}/agents`,
+        headers: OWNER,
+        payload: {
+          name,
+          config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code", thinking_level: "none", repositories },
+        },
+      });
+      assert.equal(created.statusCode, 201, created.body);
+      return String(created.json().id);
+    };
+    const agentId = await createCoder("coder", ["app"]);
     const used = new HostCodeSandbox(agentId, { GIT_SSL_CAINFO: server.caFile });
     // The harness is ready; the repository's clone and checkpoints run for real.
     answerOps(used, { check: { installed: true, version: "9.9.9 (stub)", credential: "secret" } });
@@ -164,6 +179,7 @@ test("a private repository on another host clones, checkpoints and pushes a bran
     const run = await getRun(db, runId);
     assert.deepEqual((run?.metadata as { errors?: unknown[] }).errors ?? [], [], "the run starts without a token or clone error");
     const tokens = JSON.parse(readFileSync(used.local(`/run/guilds/${agentId}/git-tokens.json`), "utf8"));
+    assert.deepEqual(Object.keys(tokens.repositories), ["app"], "the guild's other repository has no token in this agent's run");
     assert.deepEqual(tokens.repositories.app, {
       token: "glpat-private-token",
       expires_at: null,
@@ -184,6 +200,24 @@ test("a private repository on another host clones, checkpoints and pushes a bran
     assert.equal(repos[0]?.name, "app");
     assert.equal(repos[0]?.branch, "agent/coder/notes");
     assert.equal(repos[0]?.files_changed, 1, "the end checkpoint records what the run changed");
+    assert.deepEqual(repos.map((repo) => repo.name), ["app"]);
+    assert.equal(existsSync(path.join(used.home, "repos", "site")), false, "the agent clones only the repositories it picks");
+
+    // Another agent of the guild picks the other repository, and its run reaches that one only.
+    const reviewerId = await createCoder("reviewer", ["site"]);
+    const reviewing = new HostCodeSandbox(reviewerId, { GIT_SSL_CAINFO: server.caFile });
+    answerOps(reviewing, { check: { installed: true, version: "9.9.9 (stub)", credential: "secret" } });
+    sandbox = reviewing;
+    live.streamCompletion = answerOnce;
+    const reviewRunId = String((await loop.runs.createRun(reviewerId, null)).id);
+    await loop.addMessage(reviewRunId, "look at the site");
+    await loop.generations.task(reviewRunId);
+    const reviewRun = await getRun(db, reviewRunId);
+    assert.deepEqual((reviewRun?.metadata as { errors?: unknown[] }).errors ?? [], []);
+    const reviewTokens = JSON.parse(readFileSync(reviewing.local(`/run/guilds/${reviewerId}/git-tokens.json`), "utf8"));
+    assert.deepEqual(Object.keys(reviewTokens.repositories), ["site"], "the reviewer's tokens hold no entry for the coder's repository");
+    assert.equal(existsSync(path.join(reviewing.home, "repos", "site", ".git")), true);
+    assert.equal(existsSync(path.join(reviewing.home, "repos", "app")), false);
   } finally {
     await loop.close();
     await app.close();

@@ -377,8 +377,8 @@ describe("code_task with the Claude Code driver", () => {
   test("an unknown repository is an error naming the guild's repositories", async () => {
     const { sandbox } = harnessSandbox("claude", () => recorded("claude-code"), { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
     const { ctx } = context(sandbox, { code_repositories: ["app", "site"] });
-    assert.match((await codeTask(ctx, { brief: "x", repo: "api" })).text, /unknown repository api; the guild's repositories are app, site/);
-    assert.match((await codeTask(ctx, { brief: "x" })).text, /repo is required: the guild's repositories are app, site/);
+    assert.match((await codeTask(ctx, { brief: "x", repo: "api" })).text, /unknown repository api; your repositories are app, site/);
+    assert.match((await codeTask(ctx, { brief: "x" })).text, /repo is required: your repositories are app, site/);
   });
 
   test("output the driver does not parse fails with that reason", async () => {
@@ -893,7 +893,7 @@ describe("code_task arguments", () => {
 
   test("a guild without repositories is an error naming where the operator adds them", async () => {
     const { ctx } = context(new HostCodeSandbox(), { code_repositories: [] });
-    assert.match((await codeTask(ctx, { brief: "x" })).text, /^ERROR: this guild has no repositories; the operator adds them/);
+    assert.match((await codeTask(ctx, { brief: "x" })).text, /^ERROR: this agent has no repositories; the operator picks them/);
   });
 
   test("notes are a list of display paths, trimmed and without repeats", async () => {

@@ -193,7 +193,7 @@ function captureDeps(options: {
 test("portable role config carries every setting but the browser mode in the order of the config keys", () => {
   const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
   const config = portableRoleConfig(stored);
-  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model"]);
+  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model", "repositories"]);
   assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && !left.has(key)));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);

@@ -1,6 +1,7 @@
 import { normalizeAvatarColor, normalizeAvatarShape } from "../avatars/index.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { HARNESS_MODEL_RE, harnessOffMessage, isHarness, isHarnessOff } from "../coding/harnesses.js";
+import { REPOSITORY_NAME_RE } from "../coding/repositories.js";
 import { SECRET_NAME } from "../credentials/validate.js";
 import {
   EFFORTS,
@@ -273,6 +274,49 @@ export function isValidSecretAliases(value: unknown): value is AgentConfig["secr
 }
 
 /**
+ * The repositories a coding agent works on: a list of repository names, each once. Any other
+ * agent works on none, so a list on it is refused.
+ */
+function requireRepositories(value: unknown, coding: boolean): AgentConfig["repositories"] {
+  if (!Array.isArray(value)) {
+    throw new AgentValidationError("repositories must be a list of repository names");
+  }
+  const names: string[] = [];
+  for (const name of value) {
+    if (typeof name !== "string" || !REPOSITORY_NAME_RE.test(name)) {
+      throw new AgentValidationError(`repositories: ${String(name)} is not a repository name`);
+    }
+    if (names.includes(name)) {
+      throw new AgentValidationError(`repositories: ${name} is listed twice`);
+    }
+    names.push(name);
+  }
+  if (names.length && !coding) {
+    throw new AgentValidationError("repositories are only for coding agents");
+  }
+  return names;
+}
+
+/**
+ * Refuses a config whose repositories name one outside `usable`, the repositories the agent can
+ * use, naming each. One the agent's `previous` config already lists stays when the agent can no
+ * longer use it; its coding runs fail at start until it is unpicked.
+ */
+export function assertUsableRepositories(
+  config: AgentConfig,
+  usable: readonly string[],
+  previous?: AgentConfig,
+): void {
+  const kept = new Set(previous?.repositories ?? []);
+  const outside = config.repositories.filter((name) => !usable.includes(name) && !kept.has(name));
+  if (outside.length) {
+    throw new AgentValidationError(
+      `repositories: the agent cannot use ${outside.join(", ")}: add it to the guild's Repositories first`,
+    );
+  }
+}
+
+/**
  * A coding agent needs a harness: every create and update is refused without one, and an update
  * cannot switch a coding agent's coding off. A stored coding agent without one still validates;
  * it is not ready, and its coding runs fail at start.
@@ -353,6 +397,7 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     harness,
     harness_model: harnessModel,
     harness_effort: requireHarnessEffort(filled.harness_effort, harness, harnessModel),
+    repositories: requireRepositories(filled.repositories, coding),
     secret_aliases: requireSecretAliases(filled.secret_aliases),
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),

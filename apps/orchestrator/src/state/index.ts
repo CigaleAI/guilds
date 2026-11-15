@@ -72,7 +72,7 @@ export type RunStateInputs = {
   maxToolCalls?: number;
   /** The entries connectors' State hooks returned, by key. A key core uses is not one of them. */
   connectors?: JsonObject;
-  /** A coding agent's guild repositories; other agents' State has no `repositories`. */
+  /** The repositories a coding agent picks; other agents' State has no `repositories`. */
   repositories?: StateRepository[] | null;
   now?: Date;
 };
