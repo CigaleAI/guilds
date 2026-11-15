@@ -28,6 +28,7 @@ import {
   BROWSER_LANGUAGES,
   CODING_AGENT_CONFIG_DEFAULTS,
   CONFIG_KEYS,
+  MODEL_LOOP_SETTINGS,
   SECRET_ALIASES_MAX,
   type AgentConfigDefaults,
 } from "./config.js";
@@ -225,15 +226,6 @@ function rejectUnsoundModelSource(model: string | null, coding: boolean, harness
     throw new AgentValidationError(subscriptionHarnessMessage(harness));
   }
 }
-
-/** The settings that shape the orchestrator's own model loop, which a subscription agent does not run. */
-const MODEL_LOOP_SETTINGS = [
-  "temperature",
-  "thinking_level",
-  "max_tokens",
-  "max_input_tokens",
-  "keep_tool_result_generations",
-] as const satisfies ReadonlyArray<keyof AgentConfigDefaults>;
 
 /** Refuses a model-loop setting a subscription agent's config gives a value other than its default. */
 function rejectModelLoopSettings(config: AgentConfig): void {

@@ -269,7 +269,7 @@ and nothing is created while a role has none (`choose a model for …`).
 A chosen model must be `{provider}/{model}` and offered to that role,
 or it is refused. The Builder writes the coach's model into the roles
 it drafts without one. Capturing a guild keeps each agent's live
-model.
+model; a subscription agent's role carries its harness and no model.
 
 A coding role's `config.harness` works the same way, with no default.
 The preview shows a harness picker per coding role, preselected with
@@ -284,6 +284,15 @@ condition, and only when its model runs at that effort; otherwise the
 model runs at its default effort. A role's `secret_aliases` apply as written when they
 validate; otherwise apply leaves them out.
 
+A subscription role ([Recipe format](recipe-format.md)) takes no
+model: the preview lists none for it, and a model chosen for it is
+refused with `models.<role>: a subscription role takes no model`. It
+takes a harness as a coding role does, from Claude Code and Codex
+only: a recipe's Cursor or Antigravity is not preselected, and a
+chosen one is refused. Its agent is created with no model, `coding`
+off, and its harness. While the box turns subscription agents off, a
+subscription role is the blocking error `subscription.off`.
+
 Agents from roles with `config.coding: true` are created with coding
 on.
 
@@ -296,13 +305,15 @@ on.
 - each role's name: the operator's, else `name_suggestion`, against the
   charset and reserved `user`. A name any agent on the box already
   holds is listed in `collisions`
-- each role's model and each coding role's harness, as
-  [Models and harnesses](#models-and-harnesses) describes. The
-  preview's `models` lists each role's `recommended` and resolved
-  `model`; its `harnesses` lists each coding role's `recommended` and
-  resolved `harness`
+- each role's model and each coding or subscription role's harness,
+  as [Models and harnesses](#models-and-harnesses) describes. The
+  preview's `models` lists each role's but a subscription role's
+  `recommended` and resolved `model`; its `harnesses` lists each
+  coding or subscription role's `recommended` and resolved `harness`,
+  and `subscription`, whether the role runs on a subscription
 - the organisation's remaining capacity for the whole batch: agents,
-  browser agents, and coding agents (roles with `config.coding: true`),
+  browser agents, and coding agents (roles with `config.coding: true`,
+  and subscription roles),
   each against the organisation's limit, `null` where nothing caps it.
   The preview's `remaining` carries `agents`, `browser_agents`, and
   `coding_agents`

@@ -213,6 +213,15 @@ Validation errors with `config.unknown` on any other key.
 - `config.harness` names a coding role's
   [harness](coding/harnesses.md): `claude-code`, `codex`, `cursor`, or
   `antigravity`. It is optional; apply asks for it.
+- A role with a `config.harness`, no `config.model`, and no
+  `config.coding` is a **subscription role**: its agent is a
+  [subscription agent](agents.md#model-source), whose harness is its
+  model source. Its harness is `claude-code` or `codex`. It takes no
+  model at apply, and none of the model loop's settings:
+  `temperature`, `thinking_level`, `max_tokens`, `max_input_tokens`,
+  and `keep_tool_result_generations` other than their defaults are
+  left out. It counts as a coding agent against the organisation's
+  limit.
 - `config.harness_model` names the model that harness runs, under the
   agent configuration's rule. It is optional; without it the harness
   runs its subscription's default.
@@ -227,7 +236,8 @@ Validation errors with `config.unknown` on any other key.
   [Runs](runs.md#tool-result-stubbing)). It is optional; without it the
   agent takes its guild's.
 - `config.model` is a recommendation, kept exactly as written. Apply
-  lets the operator pick the model; see
+  lets the operator pick the model of every role but a subscription
+  role; see
   [Applying recipes](applying-recipes.md#models-and-harnesses).
 - `config.browser_optimized` and `config.browser_model` are
   configuration keys, so a recipe may carry them. Apply ignores them:
@@ -430,7 +440,7 @@ findings `collection.conflict` and `machine.*`
 
 | Code | Severity | When |
 |---|---|---|
-| `capacity.agents`, `capacity.browser`, `capacity.coding` | error | The roles, the browser roles, or the coding roles exceed what the organisation may still create under its limits. A limit that is not set never fires. Core sets none |
+| `capacity.agents`, `capacity.browser`, `capacity.coding` | error | The roles, the browser roles, or the coding and subscription roles exceed what the organisation may still create under its limits. A limit that is not set never fires. Core sets none |
 | `config.unknown` | error | A role's `config` has a key that is not an agent configuration key |
 | `coding.flag` | error | `config.coding` is not a boolean |
 | `repositories.unused` | warning | Repositories are listed and no role sets `config.coding` |
@@ -439,8 +449,11 @@ findings `collection.conflict` and `machine.*`
 | `model.not_connected` | warning | The model's provider is not connected for the organisation; apply asks for another |
 | `harness.unknown` | warning | `config.harness` is not one of the four harnesses; apply asks for one |
 | `harness.off` | warning | `config.harness` names a harness the box turns off; apply asks for another |
-| `harness.coding` | warning | A role without `coding` names a harness; apply leaves it out |
-| `harness.credential` | warning | On every coding role: the harness runs on a subscription credential that cannot be known before apply. It names the fix after apply: the secret to grant, or the login to run in the agent's CLI tab |
+| `harness.coding` | warning | A role with a model and without `coding` names a harness; apply leaves it out |
+| `harness.credential` | warning | On every coding role and subscription role: the harness runs on a subscription credential that cannot be known before apply. It names the fix after apply: the secret to grant, or the login to run in the agent's CLI tab |
+| `subscription.off` | error | A subscription role while the box turns subscription agents off (`SUBSCRIPTION_AGENTS`): give the role a model on a key |
+| `subscription.harness` | warning | A subscription role names `cursor` or `antigravity`, which run no subscription agent; apply asks for Claude Code or Codex |
+| `subscription.setting` | warning | A subscription role sets a model-loop setting off its default; apply leaves it out |
 | `harness_model.invalid` | warning | `config.harness_model` is not a model name; apply leaves it out |
 | `harness_model.harness` | warning | A role names a harness model and no `config.harness`; apply leaves it out |
 | `harness_effort.invalid` | warning | `config.harness_effort` is not an effort; apply leaves it out |

@@ -25,7 +25,11 @@ carries its harness; the machine listing names each agent's
 `model_source`, and the apply preview refuses a machine without a
 subscription role's harness with `machine.harness`. A subscription
 agent counts against an organisation's `maxCodingAgents`, as a coding
-agent does.
+agent does. A recipe role with a harness, no model, and no `coding` is
+a subscription role: capture writes one for a subscription agent, the
+apply preview asks it for a harness and no model (`harnesses` entries
+carry `subscription`), and validation reports `subscription.off`,
+`subscription.harness`, and `subscription.setting`.
 
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit
