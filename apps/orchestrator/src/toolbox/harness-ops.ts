@@ -1,4 +1,5 @@
 import { Type, type Static } from "typebox";
+import { harnessLaunch } from "../coding/harness-models.js";
 import type { Effort, Harness } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
 import { isObjectNode } from "../lib/json.js";
@@ -150,6 +151,42 @@ export async function stopHarness(
   const stop = await harnessOp(ops, callId, "stop", { harness }).catch(() => null);
   const stopped = stop !== null && keepMatching(HarnessStop, stop.meta)?.exited !== false;
   return { stopped, result: stopped ? await readResult(ops, callId, harness) : null };
+}
+
+/**
+ * What a harness CLI is started with: the harness, the prompt it reads on stdin or from its file,
+ * the repository it runs in, the session it resumes, and the model and effort the agent sets for
+ * it, each null to leave it to the harness.
+ */
+export type HarnessStart = {
+  harness: Harness;
+  prompt: string;
+  repository: string;
+  session_id: string | null;
+  model: string | null;
+  effort: Effort | null;
+};
+
+/** Starts the harness CLI for the call `callId` names on the machine, under the model name and effort the CLI takes. */
+export async function launchHarness(ops: ToolRun, callId: string, start: HarnessStart): Promise<void> {
+  const launch = harnessLaunch(start.harness, start.model, start.effort);
+  const resume = start.session_id ? { session_id: start.session_id } : {};
+  const model = launch.model ? { model: launch.model } : {};
+  const effort = launch.effort ? { effort: launch.effort } : {};
+  await harnessOp(ops, callId, "start", {
+    harness: start.harness,
+    repository: start.repository,
+    prompt: start.prompt,
+    ...resume,
+    ...model,
+    ...effort,
+  });
+}
+
+/** One `poll` of the call `callId` names, from the log's byte `offset`. */
+export async function pollHarness(ops: ToolRun, callId: string, harness: Harness, offset: number): Promise<HarnessPoll> {
+  const poll = await harnessOp(ops, callId, "poll", { harness, offset });
+  return keepMatching(HarnessPoll, poll.meta) ?? {};
 }
 
 /** The raw event log the app reads of one `code_task` call, at most this much of it. */

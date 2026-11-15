@@ -1,22 +1,21 @@
 import { Type, type Static } from "typebox";
-import { harnessLaunch } from "../coding/harness-models.js";
 import type { Harness } from "../db/schema/index.js";
-import { keepMatching } from "../lib/decode.js";
 import { errorMessage, writeLog } from "../observability/log.js";
-import { callSegment, type CodeResult } from "./code.js";
+import { callSegment } from "./code.js";
 import { buildBrief } from "./harness-brief.js";
 import {
   checkpoint,
-  harnessOp,
-  HarnessPoll,
+  launchHarness,
   opsRun,
   pause,
+  pollHarness,
   readResult,
   shownProgressLines,
   stopHarness,
   stringOrNull,
   type CheckpointRepository,
   type HarnessExit,
+  type HarnessPoll,
 } from "./harness-ops.js";
 import { codeTaskText, failureDetail, isChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
 import { checkHarness, requiredHarness } from "./harness-setup.js";
@@ -201,18 +200,14 @@ async function rememberTurn(services: ToolServices, run: ToolRun, turn: HarnessT
 }
 
 async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<void> {
-  const resume = turn.session ? { session_id: turn.session } : {};
   await hooks.before_command?.();
-  const launch = harnessLaunch(turn.harness, run.harness_model, run.harness_effort);
-  const model = launch.model ? { model: launch.model } : {};
-  const effort = launch.effort ? { effort: launch.effort } : {};
-  await harnessOp(turn.ops, turn.call_id, "start", {
+  await launchHarness(turn.ops, turn.call_id, {
     harness: turn.harness,
-    repository: turn.repository,
     prompt: turn.prompt,
-    ...resume,
-    ...model,
-    ...effort,
+    repository: turn.repository,
+    session_id: turn.session,
+    model: run.harness_model,
+    effort: run.harness_effort,
   });
   await rememberTurn(services, run, turn);
 }
@@ -269,15 +264,15 @@ async function applyPoll(
 }
 
 async function pollOnce(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<Settled | null> {
-  let poll: CodeResult;
+  let poll: HarnessPoll;
   try {
     await hooks.before_command?.();
-    poll = await harnessOp(turn.ops, turn.call_id, "poll", { harness: turn.harness, offset: turn.offset });
+    poll = await pollHarness(turn.ops, turn.call_id, turn.harness, turn.offset);
   } catch (error) {
     return countFailedPoll(turn, errorMessage(error));
   }
   turn.failures = 0;
-  return applyPoll(services, run, turn, keepMatching(HarnessPoll, poll.meta) ?? {});
+  return applyPoll(services, run, turn, poll);
 }
 
 /** Polls the harness, publishing its progress, until it exits, is lost, or must be stopped. */
