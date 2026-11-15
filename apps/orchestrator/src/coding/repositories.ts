@@ -208,10 +208,10 @@ export function validateGithubRepositories(repositories: RepositorySelectionDraf
 }
 
 /**
- * What a coding agent clones: the effective GitHub login's selected repositories, plus this
- * guild's other git URLs (anonymous, or a login that is not that effective one).
+ * The repositories an agent can use: the selected repositories of the GitHub login it clones
+ * with, plus its guild's other git URLs (anonymous, or a login that is not that one).
  */
-export function codingRepositories(
+export function usableRepositories(
   guildRepos: CodingRepository[],
   github: McpConnectionRow | null | undefined,
 ): CodingRepository[] {

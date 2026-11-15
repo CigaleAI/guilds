@@ -21,7 +21,8 @@ import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
 import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
-import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase, type CodingRuns } from "./coding.js";
+import { codingRepositoriesDatabase, loadUsableRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
+import type { CodingRuns } from "./coding.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import {
   GenerationBlocked,
@@ -367,7 +368,7 @@ export class RunGenerator {
       await events.recordError(gen, missing.code, missing);
       return false;
     }
-    if (!(await guildRepositories(db, gen.agent)).length) {
+    if (!(await loadUsableRepositories(db, gen.agent)).length) {
       await events.recordError(gen, REPOSITORIES_MISSING, new Error(REPOSITORIES_MISSING_MESSAGE));
       return false;
     }

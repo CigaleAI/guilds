@@ -3,17 +3,16 @@ import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
 import { agentGitIdentity, CloneFailure, cloneFailures, repositoryTokens } from "../coding/git.js";
 import { RepositoryTokenInstallationGoneError } from "../coding/github-provider.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
-import { codingRepositories, type CodingRepository } from "../coding/repositories.js";
+import { codingRepositoriesDatabase, loadUsableRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
-import { getGuild, listGuildRepositories } from "../db/guilds.js";
-import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
+import { getGuild } from "../db/guilds.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
 import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall } from "../db/schema/index.js";
 import { assertMatches, keepMatching } from "../lib/decode.js";
 import { isObjectNode, type JsonValue } from "../lib/json.js";
 import { RepositoryAccessError } from "../github/tokens.js";
-import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentRunDir } from "../sandbox/index.js";
@@ -37,46 +36,6 @@ export const RUN_DIFF_MAX_BYTES = 256 * 1024;
 
 /** A diff the agent's machine produced: at most `RUN_DIFF_MAX_BYTES` of it, redacted, and whether it was cut. */
 export type CodeDiff = { diff: string; truncated: boolean };
-
-/** The db/ functions a coding run's repositories are read through. */
-export type CodingRepositoriesDatabase = {
-  listGuildRepositories: BoundQuery<typeof listGuildRepositories>;
-  getMcpConnectionForOwner: BoundQuery<typeof getMcpConnectionForOwner>;
-};
-
-/** The db/ functions a coding run's repositories are read through, on `db`. */
-export function codingRepositoriesDatabase(db: Queryable): CodingRepositoriesDatabase {
-  return {
-    listGuildRepositories: bindQuery(db, listGuildRepositories),
-    getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
-  };
-}
-
-/** The GitHub connection a coding run of the agent clones with: the agent's, else its guild's, else its organisation's. */
-async function githubConnectionOf(
-  db: CodingRepositoriesDatabase,
-  agent: AgentRow,
-): Promise<McpConnectionRow | null> {
-  for (const [scope, ownerId] of [
-    ["agent", agent.id],
-    ["guild", agent.guild_id],
-    ["org", agent.org_id],
-  ] as const) {
-    const row = ownerId ? await db.getMcpConnectionForOwner(GITHUB_SERVER_ID, scope, ownerId) : null;
-    if (row !== null && row.status === "connected") {
-      return row;
-    }
-  }
-  return null;
-}
-
-/** The guild repositories a coding run of the agent clones, with what its GitHub connection reaches. */
-export async function guildRepositories(
-  db: CodingRepositoriesDatabase,
-  agent: AgentRow,
-): Promise<CodingRepository[]> {
-  return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
-}
 
 /** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens. */
 export type CodingRunsDatabase = CodingRepositoriesDatabase & {
@@ -165,7 +124,7 @@ export class CodingRuns {
     tools: GenerationTools,
   ): Promise<boolean> {
     const { db, events } = this.services;
-    const repositories = await guildRepositories(db, agent);
+    const repositories = await loadUsableRepositories(db, agent);
     const tokens = db.repositoryTokens(repositories);
     const mint = async () => {
       try {
@@ -286,7 +245,7 @@ export class CodingRuns {
 
   /** The guild repositories a coding run of the agent clones, by their folder under `repos/`. */
   async repositoryNames(agent: AgentRow): Promise<string[]> {
-    return (await guildRepositories(this.services.db, agent)).map((row) => String(row.name));
+    return (await loadUsableRepositories(this.services.db, agent)).map((row) => String(row.name));
   }
 
   /**

@@ -31,7 +31,7 @@ import { collectRunState, type RunState, type RunStateInputs } from "../state/in
 import { SCRIPT_TOOLS } from "../toolbox/script.js";
 import { serializeHistoryDecision } from "../typesafe/group.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase } from "./coding.js";
+import { codingRepositoriesDatabase, loadUsableRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
@@ -166,7 +166,7 @@ export class RunPreparation {
       scripts: caps.scripts ? await scripts.catalog(agent.id) : [],
       maxToolCalls: config.max_tool_calls,
       connectors: await this.connectorState(agent),
-      repositories: caps.coding ? stateRepositories(await guildRepositories(db, agent), agent.id) : null,
+      repositories: caps.coding ? stateRepositories(await loadUsableRepositories(db, agent), agent.id) : null,
     });
     return {
       agent,

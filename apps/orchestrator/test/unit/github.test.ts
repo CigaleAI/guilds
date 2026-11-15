@@ -8,7 +8,7 @@ import { GithubProvider, RepositoryTokenInstallationGoneError } from "../../src/
 import { AccessTokenProvider } from "../../src/coding/access-token-provider.js";
 import { mintLoginToken, RepositoryAccessError, TOKEN_REFRESH_MS, type MintOptions } from "../../src/github/tokens.js";
 import {
-  codingRepositories,
+  usableRepositories,
   validateGithubRepositories,
   validateRepositoryInput,
   type CodingRepository,
@@ -622,7 +622,7 @@ test("a GitHub login stores the repositories its coding agents clone", () => {
     account_hint: "acme",
     settings: { repositories: selected },
   });
-  const cloned = codingRepositories(
+  const cloned = usableRepositories(
     [
       codingRepository({ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_front" }),
       codingRepository({ name: "docs", url: "https://git.example.com/docs.git", default_branch: "main", connection_id: null }),
