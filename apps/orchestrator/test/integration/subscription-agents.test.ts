@@ -25,7 +25,7 @@ const SUBSCRIPTION = { model: null, harness: "codex", harness_model: "gpt-6-luna
 const dbName = uniqueDbName("agent_platform_subscription_agents");
 
 after(async () => {
-  installSubscriptionAgents("off");
+  installSubscriptionAgents(false);
   await dropIsolatedDatabase(dbName);
 });
 
@@ -84,7 +84,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     const defaultMachineId = String(machines.json().find((item: { name: string }) => item.name === "default").id);
 
     // While the box turns subscription agents off, none is created and the catalog says so.
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     const offCatalog = await app.inject({ method: "GET", url: "/api/harnesses", headers: AUTH });
     assert.equal(offCatalog.json().subscription_agents, false);
     const refused = await createAgent("refused", SUBSCRIPTION);
@@ -92,7 +92,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     assert.match(refused.json().detail, /subscription agents are turned off on this box: give the agent a model on a key/);
 
     // With them on, an agent without a model runs on its harness: Claude Code or Codex.
-    installSubscriptionAgents("on");
+    installSubscriptionAgents(true);
     const catalog = await app.inject({ method: "GET", url: "/api/harnesses", headers: AUTH });
     assert.equal(catalog.json().subscription_agents, true);
     assert.deepEqual(
@@ -194,7 +194,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     const back = await reconfigure(agentId, { ...keyed.json().config, ...SUBSCRIPTION });
     assert.equal(back.statusCode, 200, back.body);
     assert.equal(back.json().model_source, "subscription");
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     const kept = await reconfigure(agentId, { ...back.json().config, harness_effort: "low" });
     assert.equal(kept.statusCode, 200, kept.body);
     assert.equal(kept.json().config.harness_effort, "low");
@@ -204,7 +204,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     assert.equal(offBack.statusCode, 422, offBack.body);
     assert.match(offBack.json().detail, /subscription agents are turned off on this box/);
   } finally {
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     await app.close();
     await generation.close();
     await database.close();

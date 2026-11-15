@@ -143,8 +143,8 @@ and no code tools.
 - Only Claude Code and Codex run a subscription agent. Cursor and
   Antigravity stay harnesses of coding agents only.
 - The box offers subscription agents only with
-  `SUBSCRIPTION_AGENTS=on` ([Configure](../../operations/configure.md)).
-  Off, the default, a create or a switch to a subscription is refused
+  `SUBSCRIPTION_AGENTS=1` ([Configure](../../operations/configure.md)).
+  Without it, the default, a create or a switch to a subscription is refused
   with 422 "subscription agents are turned off on this box: give the
   agent a model on a key". An agent already on a subscription keeps
   it.
@@ -297,7 +297,7 @@ machine that has it."
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
 | Subscription harness | Claude Code or Codex |
-| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=on`; their runs fail at start |
+| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; their runs fail at start |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |

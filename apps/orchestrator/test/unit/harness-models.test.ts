@@ -111,12 +111,12 @@ test("the catalogue lists every harness's models without the CLI names they star
 
 test("the harness offer says whether the box offers subscription agents", () => {
   try {
-    installSubscriptionAgents("on");
+    installSubscriptionAgents(true);
     assert.equal(harnessOffer().subscription_agents, true);
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     assert.equal(harnessOffer().subscription_agents, false);
     assert.deepEqual(harnessOffer().harnesses, harnessCatalog());
   } finally {
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
   }
 });

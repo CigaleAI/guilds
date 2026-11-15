@@ -261,11 +261,11 @@ test("a subscription role is refused while the box turns them off, warned on Cur
       .map((item) => [item.code, item.severity, item.path, item.message]);
   };
   try {
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     assert.deepEqual(findings({ harness: "codex" }), [
       ["subscription.off", "error", `roles.${role.role}.config.harness`, "subscription agents are turned off on this box: give the role a model on a key"],
     ]);
-    installSubscriptionAgents("on");
+    installSubscriptionAgents(true);
     assert.deepEqual(findings({ harness: "codex" }), []);
     assert.deepEqual(findings({ harness: "cursor" }), [
       [
@@ -291,7 +291,7 @@ test("a subscription role is refused while the box turns them off, warned on Cur
     assert.equal(capacity({ harness: "codex" }).length, 1, "a subscription role takes a coding agent");
     assert.equal(capacity({ model: TEST_MODEL }).length, 0);
   } finally {
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
   }
 });
 

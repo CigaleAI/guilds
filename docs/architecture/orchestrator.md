@@ -61,8 +61,8 @@ variable, and boot stops.
 - `TOOL_RESULT_MAX_BYTES` (default 65536)
 - `HARNESSES_OFF` (coding harnesses this box does not offer,
   separated by commas or spaces; an unknown name stops boot)
-- `SUBSCRIPTION_AGENTS` (`on` or `off`, off by default: whether the
-  box offers subscription agents; another value stops boot)
+- `SUBSCRIPTION_AGENTS` (`1` offers subscription agents; unset by
+  default)
 - `HOST` (default `0.0.0.0`)
 - `PORT` (default 8080)
 

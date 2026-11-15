@@ -71,7 +71,7 @@ On a subscription, the agent names a harness, its model, and its
 effort ([Harnesses](coding/harnesses.md#subscription-agents)), and
 the harness runs on the operator's own subscription. Only Claude Code
 and Codex run one, and the box offers subscription agents only with
-`SUBSCRIPTION_AGENTS=on` ([Configure](../operations/configure.md)).
+`SUBSCRIPTION_AGENTS=1` ([Configure](../operations/configure.md)).
 The settings of the orchestrator's model loop do not apply to it:
 temperature, thinking level, max output tokens, max input tokens, and
 keep tool results stay at their defaults. A subscription agent has no
@@ -324,7 +324,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
-| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=on`; loop settings at their defaults; its runs fail at start |
+| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; its runs fail at start |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
 | Kimi Code models | only on a coding agent |
@@ -384,7 +384,7 @@ The model source is checked on every create and update, each a 422:
 | no `model`, no `harness` | `an agent without a model is a subscription agent: it needs a harness` |
 | no `model`, `harness` `cursor` or `antigravity` | `<Harness> cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model` |
 | no `model`, and `temperature`, `thinking_level`, `max_tokens`, `max_input_tokens`, or `keep_tool_result_generations` off its default | `a subscription agent takes no <keys>: they set the model loop, which its harness replaces` |
-| no `model` on create or on a switch to it, with `SUBSCRIPTION_AGENTS` off | `subscription agents are turned off on this box: give the agent a model on a key` |
+| no `model` on create or on a switch to it, without `SUBSCRIPTION_AGENTS=1` | `subscription agents are turned off on this box: give the agent a model on a key` |
 
 An agent already on a subscription keeps it while the box turns
 subscription agents off. A switch from a subscription to a model on

@@ -3,7 +3,6 @@
  * turn on. Each runs headless in the agent's sandbox on the user's own subscription: a token
  * granted to the agent as a secret, or a login stored in the agent's home.
  */
-import type { SettingSwitch } from "../config/index.js";
 import {
   HARNESSES,
   type AgentConfig,
@@ -89,16 +88,16 @@ export function subscriptionHarnessMessage(harness: Harness): string {
   return `${HARNESS_INFO[harness].label} cannot run a subscription agent: pick ${offered}, or give the agent a model`;
 }
 
-/** Whether the box offers subscription agents; off until boot installs the setting. */
-let subscriptionAgents: SettingSwitch = "off";
+/** Whether the box offers subscription agents; it does not until boot installs the setting. */
+let offersSubscriptionAgents = false;
 
 /** Sets whether the box offers subscription agents, once at boot. */
-export function installSubscriptionAgents(setting: SettingSwitch): void {
-  subscriptionAgents = setting;
+export function installSubscriptionAgents(offered: boolean): void {
+  offersSubscriptionAgents = offered;
 }
 
 export function areSubscriptionAgentsOn(): boolean {
-  return subscriptionAgents === "on";
+  return offersSubscriptionAgents;
 }
 
 /** Why an agent cannot be created on, or switched to, a subscription while the box turns them off. */

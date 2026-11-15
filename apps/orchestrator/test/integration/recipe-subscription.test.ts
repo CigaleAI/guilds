@@ -19,7 +19,7 @@ const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const dbName = uniqueDbName("agent_platform_recipe_subscription");
 
 after(async () => {
-  installSubscriptionAgents("off");
+  installSubscriptionAgents(false);
   await dropIsolatedDatabase(dbName);
 });
 
@@ -43,7 +43,7 @@ test("a captured subscription role applies on its harness, and is refused while 
         : { method, url, headers: { ...AUTH, "content-type": "application/json" }, payload: payload as object },
     );
   try {
-    installSubscriptionAgents("on");
+    installSubscriptionAgents(true);
     const source = await call("POST", "/api/guilds", { name: "subscription-source" });
     assert.equal(source.statusCode, 201, source.body);
     await codeDefaultMachine(app, AUTH);
@@ -80,7 +80,7 @@ test("a captured subscription role applies on its harness, and is refused while 
     assert.match(String(modelled.json().detail), /models\.writer: a subscription role takes no model/);
 
     // While the box turns subscription agents off, the role blocks the apply.
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     const off = await call("POST", `/api/recipes/${recipeId}/preview`, {});
     assert.equal(off.statusCode, 200, off.body);
     assert.deepEqual(off.json().errors.map((item: { code: string }) => item.code), ["subscription.off"]);
@@ -88,7 +88,7 @@ test("a captured subscription role applies on its harness, and is refused while 
     assert.equal(refused.statusCode, 422, refused.body);
     assert.match(String(refused.json().detail), /subscription agents are turned off on this box/);
 
-    installSubscriptionAgents("on");
+    installSubscriptionAgents(true);
     const applied = await call("POST", `/api/recipes/${recipeId}/apply`, {
       guild_name: "subscription-target",
       names: [{ role: "writer", name: "writer-two" }],
@@ -102,7 +102,7 @@ test("a captured subscription role applies on its harness, and is refused while 
     assert.equal(created?.config.harness, "claude-code");
     assert.equal(created?.config.harness_model, null, "another harness takes its default model");
   } finally {
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     await app.close();
     await database.close();
   }

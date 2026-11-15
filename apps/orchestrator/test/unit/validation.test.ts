@@ -381,12 +381,12 @@ test("a subscription agent is created or switched to only while the box offers t
   const subscription = validateAgentConfig({ model: null, harness: "codex" });
   const keyed = validateAgentConfig({ model: VALID_CONFIG.model });
   try {
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     assert.throws(() => assertSubscriptionAgent(subscription), /subscription agents are turned off on this box: give the agent a model on a key/);
     assert.throws(() => assertSubscriptionAgent(subscription, keyed), /subscription agents are turned off on this box/);
     assert.doesNotThrow(() => assertSubscriptionAgent(subscription, subscription), "an agent on a subscription keeps it");
     assert.doesNotThrow(() => assertSubscriptionAgent(keyed));
-    installSubscriptionAgents("on");
+    installSubscriptionAgents(true);
     assert.doesNotThrow(() => assertSubscriptionAgent(subscription));
     assert.doesNotThrow(() => assertSubscriptionAgent(subscription, keyed));
     installHarnessesOff(["codex"]);
@@ -394,7 +394,7 @@ test("a subscription agent is created or switched to only while the box offers t
     assert.doesNotThrow(() => assertSubscriptionAgent(subscription, subscription), "an agent on the harness keeps it");
     assert.doesNotThrow(() => assertSubscriptionAgent({ ...subscription, harness: null }), "a config without a harness is no subscription to offer");
   } finally {
-    installSubscriptionAgents("off");
+    installSubscriptionAgents(false);
     installHarnessesOff([]);
   }
 });

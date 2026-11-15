@@ -11,7 +11,7 @@ commands for each effect are in
 **Rebuild.** An agent can be a subscription agent: no model, and a
 harness, Claude Code or Codex, on the operator's own subscription as
 its model source. The box offers them only with
-`SUBSCRIPTION_AGENTS=on`, off by default. A subscription agent is
+`SUBSCRIPTION_AGENTS=1`, unset by default. A subscription agent is
 created and saved through the agent routes with `model: null` and its
 `harness`, `harness_model`, and `harness_effort`, and refused while
 the setting is off, on Cursor or Antigravity, or with a model-loop

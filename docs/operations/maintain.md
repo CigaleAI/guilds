@@ -272,7 +272,6 @@ monitor outside the box can poll it.
 | `SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)` | The key is not 32 bytes |
 | `AUTH_MODE must be compat-cookie, trusted-header` | `.env` names a mode core does not have |
 | `HARNESSES_OFF names an unknown harness …` | `HARNESSES_OFF` names something other than `claude-code`, `codex`, `cursor`, or `antigravity` |
-| `SUBSCRIPTION_AGENTS must be on or off, not …` | `SUBSCRIPTION_AGENTS` is set to something other than `on` or `off` |
 | `MAX_CONCURRENT_GENERATIONS must be a non-negative integer` | The value is negative or not a whole number |
 | `OPERATOR_EMAIL must be an email address` | The value is set and is not an address |
 | `TRUSTED_PROXY_SECRET is required when AUTH_MODE=trusted-header`, and the same for `PUBLIC_BASE_URL` and `OPERATOR_EMAIL` | The proxy mode is missing one of its three settings ([Remote access](remote-access.md)) |

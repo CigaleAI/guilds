@@ -63,7 +63,7 @@ export async function createServer(
   installIntegrations(extensions.flatMap((extension) => [...(extension.integrations ?? [])]));
   // A harness listed here stays in the image. It is neither offered nor run.
   installHarnessesOff(config.harnessesOff);
-  installSubscriptionAgents(config.subscriptionAgents);
+  installSubscriptionAgents(config.offersSubscriptionAgents);
   // Core's migrations and seed, then each extension's, before a service reads the database.
   const database = await connect(config.databaseUrl, extensions);
   // Samples until close. The two paths are the disks it reports.
