@@ -9,9 +9,17 @@ its coding agents can run.
 A repository comes from one of two places. It is picked on a
 [GitHub](../../tools-and-connectors/github.md) login, under **Tools**,
 at the organisation, the guild, or the agent. That login gives the
-agent a token to clone, push, and open pull requests. Or it is added
-by URL on the guild's Settings: with a GitHub login, or anonymously,
-which clones a public repository and gives no credential.
+agent a token to clone and push. Or it is added by an HTTPS URL on
+the guild's Settings, on any git host, with one credential: a GitHub
+login, an access token kept as a [secret](../secrets.md), or none,
+which clones a public repository.
+
+The repository's credential decides its git provider: GitHub for a
+GitHub login, the access-token provider for an access token, none
+without a credential. The provider gives the agent a token for that
+repository at each run. git only clones, fetches and pushes; a pull
+or merge request is opened with the host's connector tools, such as
+the GitHub connector's.
 
 ## Why it exists
 
@@ -30,8 +38,9 @@ The list a coding run clones is:
 1. the repositories picked on the agent's effective GitHub login: the
    agent's own login, else its guild's, else its organisation's, the
    first that is connected;
-2. plus the guild's other repositories, anonymous or added with any
-   GitHub login. A name already in the first list wins.
+2. plus the guild's other repositories, added anonymously, with any
+   GitHub login, or with an access token. A name already in the first
+   list wins.
 
 A narrower scope inherits the wider login's repositories until it
 connects its own login and picks a different set
@@ -71,11 +80,41 @@ guild's **Commit author email** when it is set, otherwise
 the author from that address, so a guild that deploys previews sets it
 to a verified email on the GitHub account that owns the project.
 
+### Access tokens
+
+An access token serves a repository on any HTTPS git host: GitLab,
+Bitbucket, Gitea, Azure DevOps, or GitHub itself. The token is kept
+as a secret of the organisation, and the repository names that
+secret and the username git sends with the token. The username is
+the one the host asks for with that kind of token:
+
+| Host | Token | Username |
+| --- | --- | --- |
+| GitLab | A personal, project, or group access token with `read_repository` and `write_repository` | `oauth2` |
+| Bitbucket Cloud | A repository, project, or workspace access token with repository write | `x-token-auth` |
+| Gitea, Forgejo | An access token with repository write | The account's username |
+| Azure DevOps | A personal access token with Code read and write | Any name that is not empty |
+
+The orchestrator reads the secret's value when a coding generation
+starts. A changed value reaches the next generation. The value is not
+added to the agents' environment unless the secret is also granted to
+them. The token never expires on the box's side and is never
+refreshed; the host's own expiry, when the token has one, still
+applies.
+
+Only a member who manages the secret may add a repository with it:
+an organisation owner or admin, or a member for a secret granted only
+in guilds they see ([Secrets](../secrets.md)). The token reaches every
+coding agent of the guild through git, so the rule is the one that
+guards changing the secret.
+
 ### Removing a repository
 
 Removing a repository leaves the working trees already cloned in the
 agents' homes. Deleting a guild deletes its repositories. Deleting a
-GitHub connection deletes the repositories added through it.
+GitHub connection deletes the repositories added through it, and
+deleting a secret deletes the repositories whose access token it
+holds.
 
 ## In the app
 
@@ -140,10 +179,13 @@ The coding strip counts the repositories
 | Rule | Value or behaviour |
 | --- | --- |
 | Name | `^[a-z][a-z0-9_-]{0,62}$`, unique in the guild; also the folder under `repos/` |
-| URL | `https`, without credentials, query, or fragment |
+| URL | `https` on any host, without credentials, query, or fragment; SSH is refused |
+| Credential | One at most: a GitHub login, or an access token's secret and username |
 | With a GitHub login | `https://github.com/<owner>/<repository>`, reachable by that login's installation |
+| With an access token | Any HTTPS URL; a secret of the guild's organisation that the member manages; a username of one line without spaces, at most 256 characters |
 | Default branch | The one given; without one, GitHub's for a login-backed repository, else `main` |
 | Anonymous repository | Cloned without credentials: only a public one clones |
+| Access token | Read at each generation start; never refreshed |
 | Who may change them | Any operator who sees the guild |
 | Clone timeout | 600 seconds per repository |
 | Token refresh | Replaced within 10 minutes of expiry |
@@ -194,16 +236,21 @@ the caller can see in the organisation: `id`, `owner_scope`,
 `owner_id`, `account_hint`, `status`.
 
 A repository payload carries `id`, `guild_id`, `name`, `url`,
-`default_branch`, `connection_id`, `connection` (`id`, `status`,
-`account_hint`, or null), `created_at`, and `updated_at`.
+`default_branch`, `provider` (`github`, `access_token`, or null),
+`connection_id`, `connection` (`id`, `status`, `account_hint`, or
+null), `secret_id`, `username`, `secret` (`id`, `name`, or null),
+`created_at`, and `updated_at`.
 
-`POST` takes `{ name, url, default_branch?, connection_id? }` and
-returns 201 with the repository.
+`POST` takes `{ name, url, default_branch?, connection_id?, secret_id?, username? }`
+and returns 201 with the repository.
 
-- `name` and `url` are strings, `default_branch` and `connection_id`
-  a string or null; another type is 422 naming the field.
+- `name` and `url` are strings, `default_branch`, `connection_id`,
+  `secret_id` and `username` a string or null; another type is 422
+  naming the field. An empty string is the same as null.
 - A bad name, URL, or branch is 422. `default_branch` must be a valid
   branch name.
+- A `connection_id` with a `secret_id` or a `username` is 422 "a
+  repository takes one credential: a GitHub login or an access token".
 - A name the guild already has is 409.
 - With a `connection_id`: the URL must be
   `https://github.com/<owner>/<repository>` (422). The connection must
@@ -218,7 +265,15 @@ returns 201 with the repository.
   repository is also added to the login's selection. GitHub refusing
   the installation marks the connection disconnected (422); another
   GitHub error is 502.
-- Without a connection, `default_branch` defaults to `main`, and the
+- With a `secret_id`: a `username` is required, of one line without
+  spaces or control characters and at most 256 characters, and the
+  other way round (422 "an access token takes secret_id and a username
+  of one line without spaces, of at most 256 characters"). The secret
+  must be one of the guild's organisation (404 "secret not found") that
+  the caller manages (403 "only a member who manages this secret can
+  give it to a guild's repositories"). The provider is `access_token`,
+  and `default_branch` defaults to `main`.
+- Without either, `default_branch` defaults to `main`, and the
   repository is cloned anonymously.
 
 `DELETE` returns 204, or 404 for an unknown repository. A repository
@@ -335,6 +390,8 @@ agent's tokens, identity, clone errors),
 `apps/orchestrator/src/coding/access-token-provider.ts` (an access
 token's), `apps/orchestrator/src/github/tokens.ts` (minting a login's
 installation token),
+`apps/orchestrator/src/secrets/service.ts` (`requireManagedSecret`,
+who may give a secret to a guild's repositories),
 `apps/orchestrator/src/coding/guild-repositories.ts` (a guild's
 repositories and the GitHub logins they use, and
 `retireInstallationGone`, which retires a login whose installation

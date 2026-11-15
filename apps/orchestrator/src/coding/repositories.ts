@@ -8,9 +8,11 @@ import type { RepositorySelection } from "../db/schema/index.js";
 import type { RepositorySelectionDraft, RepositoryDraft } from "./guild-repositories.js";
 
 export const REPOSITORY_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
-/** The branch a repository without a GitHub connection is recorded with when none is given. */
+/** The branch a repository without a GitHub login is recorded with when none is given. */
 export const DEFAULT_BRANCH = "main";
 const BRANCH_RE = /^(?!\/|.*\/\/|.*\.\.|.*@\{|.*\/$|.*\.lock$)[A-Za-z0-9._/-]{1,200}$/;
+/** A username git can send with an access token: one line without spaces or control characters. */
+const USERNAME_RE = /^[^\s\p{Cc}]{1,256}$/u;
 
 export class RepositoryValidationError extends Error {
   status: number;
@@ -22,20 +24,37 @@ export class RepositoryValidationError extends Error {
   }
 }
 
-export type RepositoryInput = {
+/**
+ * The credential a repository is cloned with, by its provider: a GitHub login, the secret that
+ * holds an access token and the username sent with it, or none.
+ */
+export type RepositoryCredential = {
+  provider: GuildRepositoryRow["provider"];
+  connectionId: string | null;
+  secretId: string | null;
+  username: string | null;
+};
+
+export type RepositoryInput = RepositoryCredential & {
   name: string;
   url: string;
   defaultBranch: string | null;
-  connectionId: string | null;
 };
 
-/** A git repository of a guild as the operator app reads it, with the GitHub login it is cloned with when it has one. */
-export type GuildRepository = Pick<GuildRepositoryRow, "id" | "guild_id" | "name" | "url" | "default_branch" | "connection_id"> & {
+/**
+ * A git repository of a guild as the operator app reads it, with its provider: the GitHub login
+ * it is cloned with, or the secret holding its access token and its username, when it has one.
+ */
+export type GuildRepository = Pick<
+  GuildRepositoryRow,
+  "id" | "guild_id" | "name" | "url" | "default_branch" | "provider" | "connection_id" | "secret_id" | "username"
+> & {
   connection: {
     id: string;
     status: GuildRepositoryListItemRow["connection_status"];
     account_hint: McpConnectionRow["account_hint"];
   } | null;
+  secret: { id: string; name: string } | null;
   created_at: string;
   updated_at: string;
 };
@@ -65,6 +84,37 @@ export type CodingRepository = Pick<
 /** A guild repository as a run's state lists it: where it sits in the agent's home. */
 export type StateRepository = { name: string; path: string; default_branch: string };
 
+/**
+ * The credential a repository's draft names, for its `url`: a GitHub login, which only a
+ * `https://github.com/<owner>/<repository>` URL takes; an access token's secret and username, on
+ * any host; or none. A draft naming both, or half an access token, is refused.
+ */
+function validateRepositoryCredential(body: RepositoryDraft, url: string): RepositoryCredential {
+  const connectionId = body.connection_id || null;
+  const secretId = body.secret_id || null;
+  const username = body.username?.trim() || null;
+  if (connectionId !== null && (secretId !== null || username !== null)) {
+    throw new RepositoryValidationError("a repository takes one credential: a GitHub login or an access token");
+  }
+  if (connectionId !== null) {
+    if (parseGithubUrl(url) === null) {
+      throw new RepositoryValidationError(
+        "with a GitHub connection, url must be https://github.com/<owner>/<repository>",
+      );
+    }
+    return { provider: "github", connectionId, secretId: null, username: null };
+  }
+  if (secretId === null && username === null) {
+    return { provider: null, connectionId: null, secretId: null, username: null };
+  }
+  if (secretId === null || username === null || !USERNAME_RE.test(username)) {
+    throw new RepositoryValidationError(
+      "an access token takes secret_id and a username of one line without spaces, of at most 256 characters",
+    );
+  }
+  return { provider: "access_token", connectionId: null, secretId, username };
+}
+
 export function validateRepositoryInput(body: RepositoryDraft): RepositoryInput {
   const name = body.name.trim();
   if (!REPOSITORY_NAME_RE.test(name)) {
@@ -86,13 +136,7 @@ export function validateRepositoryInput(body: RepositoryDraft): RepositoryInput 
   if (defaultBranch !== null && !BRANCH_RE.test(defaultBranch)) {
     throw new RepositoryValidationError("default_branch is not a valid branch name");
   }
-  const connectionId = body.connection_id || null;
-  if (connectionId !== null && parseGithubUrl(url) === null) {
-    throw new RepositoryValidationError(
-      "with a GitHub connection, url must be https://github.com/<owner>/<repository>",
-    );
-  }
-  return { name, url, defaultBranch, connectionId };
+  return { name, url, defaultBranch, ...validateRepositoryCredential(body, url) };
 }
 
 export function repositoryItem(row: GuildRepositoryListItemRow): GuildRepository {
@@ -103,6 +147,7 @@ export function repositoryItem(row: GuildRepositoryListItemRow): GuildRepository
     name: row.name,
     url: row.url,
     default_branch: row.default_branch,
+    provider: row.provider,
     connection_id: connectionId,
     connection:
       connectionId === null
@@ -112,6 +157,9 @@ export function repositoryItem(row: GuildRepositoryListItemRow): GuildRepository
             status: row.connection_status,
             account_hint: row.connection_account ?? "",
           },
+    secret_id: row.secret_id,
+    username: row.username,
+    secret: row.secret_id === null ? null : { id: row.secret_id, name: row.secret_name ?? "" },
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
   };

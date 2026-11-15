@@ -99,6 +99,12 @@ Each command also carries the agent's home and port variables
 repositories with a GitHub login also gets `GH_TOKEN`, set to that
 repository's installation token ([Repositories](coding/repositories.md)).
 
+A secret can also hold a guild repository's access token. A
+repository that names it gives its value to git on every coding
+agent of the guild, through the agent's tokens file, whoever the
+secret is granted to; only a member who manages the secret may name
+it there ([Access tokens](coding/repositories.md#access-tokens)).
+
 The machine's container itself holds no secret. Secrets travel with
 each command. So adding, changing, or removing a secret never
 replaces a container.
@@ -456,7 +462,8 @@ Redaction uses:
 - the OAuth tokens, API keys, and signing keys of the connected
   catalog logins the run offers tools from
 - the platform keys that serve platform connector logins
-- a coding run's GitHub installation tokens, once minted
+- a coding run's repository tokens, once minted: GitHub installation
+  tokens and access tokens, each as `GIT_TOKEN_<n>`
 - a value `secret_store` saved during the generation
 
 Every tool result, log line, and repository diff has those strings

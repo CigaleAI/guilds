@@ -8,6 +8,20 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A guild repository can live on any HTTPS git host, such
+as GitLab, Bitbucket, Gitea or Azure DevOps, and be cloned, checked
+out and pushed with an access token. The token is kept as a secret of
+the organisation; the repository names the secret and the username
+git sends with it (`secret_id` and `username` on
+`POST /api/guilds/:id/repositories`). Only a member who manages the
+secret may add a repository with it, and deleting the secret deletes
+that repository. Each repository payload gains `provider`,
+`secret_id`, `username` and `secret`. The runtime image answers git
+with each repository's own username on every HTTPS host, and no
+longer uses a git credential helper an agent configures for an HTTPS
+host. `shell` sets `GH_TOKEN` only in a repository with a GitHub
+login. Rebuild the orchestrator and the runtime image together.
+
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit
 selection mode** turns off, clearing the column and the selection. In

@@ -53,6 +53,7 @@ export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Prom
   const repositories: RepositoryServices = {
     db,
     loginRetirement: deps.loginRetirement,
+    secrets: deps.repositorySecrets,
     mcp: deps.mcp ?? null,
     masterKey: deps.masterKey,
   };

@@ -34,6 +34,7 @@ import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
 import type { McpPool } from "../mcp/pool.js";
 import type { LoginRetirement } from "../mcp/service.js";
+import type { RepositorySecretCheck } from "../secrets/service.js";
 import {
   DEFAULT_BRANCH,
   githubLoginItem,
@@ -50,6 +51,8 @@ export type RepositoryServices = {
   db: Queryable;
   /** Retires a GitHub login whose installation GitHub no longer knows. */
   loginRetirement: LoginRetirement;
+  /** Refuses a secret the user may not give to the guild's repositories as an access token. */
+  secrets: RepositorySecretCheck;
   /** The pool that talks to the connectors; absent on a box that calls none. */
   mcp: Pick<McpPool, "drop"> | null;
   masterKey: Buffer | undefined;
@@ -73,10 +76,15 @@ const RepositoryFields = {
   default_branch: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 };
 
-/** A repository added to a guild, cloned with a GitHub login when `connection_id` names one. */
+/**
+ * A repository added to a guild, cloned with a GitHub login when `connection_id` names one, or
+ * with the access token the secret `secret_id` holds, sent with `username`.
+ */
 export const RepositoryDraftSchema = Type.Object({
   ...RepositoryFields,
   connection_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  secret_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  username: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type RepositoryDraft = Static<typeof RepositoryDraftSchema>;
@@ -223,8 +231,10 @@ async function addToGuildLogin(
 }
 
 /**
- * Adds a repository to a guild. One cloned with a GitHub login must be reached by it, from a login
- * the guild may use; it takes the repository's default branch unless the request names one.
+ * Adds a repository to a guild, with the credential its provider takes. One cloned with a GitHub
+ * login must be reached by it, from a login the guild may use; it takes the repository's default
+ * branch unless the request names one. One cloned with an access token names a secret of the
+ * guild's organisation that the user manages.
  */
 export async function addGuildRepository(
   services: RepositoryServices,
@@ -245,6 +255,10 @@ export async function addGuildRepository(
     defaultBranch ??= match.default_branch;
     remoteId = match.id;
   }
+  if (input.secretId !== null) {
+    // The secret's value reaches every coding agent of the guild through git.
+    await services.secrets.requireManagedSecret(guild.org_id, input.secretId, userId);
+  }
   const branch = defaultBranch ?? DEFAULT_BRANCH;
   const repository = {
     id: newId("repo"),
@@ -258,10 +272,10 @@ export async function addGuildRepository(
       db,
       {
         ...repository,
-        provider: input.connectionId === null ? null : "github",
+        provider: input.provider,
         connectionId: input.connectionId,
-        secretId: null,
-        username: null,
+        secretId: input.secretId,
+        username: input.username,
         remoteId,
       },
       new Date(),

@@ -367,7 +367,10 @@ test("a repository needs a valid name and an https URL; a GitHub connection need
     name: "shop",
     url: "https://git.example.com/shop.git",
     defaultBranch: null,
+    provider: null,
     connectionId: null,
+    secretId: null,
+    username: null,
   });
   assert.throws(() => validateRepositoryInput({ name: "Shop", url: "https://github.com/a/b" }), /name must match/);
   assert.throws(() => validateRepositoryInput({ name: "shop", url: "git@github.com:a/b.git" }), /https git URL/);
