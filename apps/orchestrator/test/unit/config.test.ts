@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConfigError, decodeMasterKey, loadConfig, loadToolConfig, parseHarnessesOff } from "../../src/config/index.js";
+import {
+  ConfigError,
+  decodeMasterKey,
+  loadConfig,
+  loadToolConfig,
+  parseHarnessesOff,
+  parseSubscriptionAgents,
+} from "../../src/config/index.js";
 import { HEX_MASTER_KEY, tempDir, testEnv } from "../helpers/env.js";
 
 test("loadConfig requires env, existing dirs, and a 32-byte master key", () => {
@@ -180,5 +187,22 @@ test("a name in HARNESSES_OFF that is not a harness fails the configuration", ()
   assert.throws(
     () => loadConfig(testEnv("postgresql://example", { HARNESSES_OFF: "claude" })),
     /HARNESSES_OFF names an unknown harness claude/,
+  );
+});
+
+test("SUBSCRIPTION_AGENTS turns subscription agents on or off, and is off unset or blank", () => {
+  assert.equal(parseSubscriptionAgents("on"), "on");
+  assert.equal(parseSubscriptionAgents(" off "), "off");
+  assert.equal(parseSubscriptionAgents(undefined), "off");
+  assert.equal(parseSubscriptionAgents(" "), "off");
+  assert.equal(loadConfig(testEnv("postgresql://example", { SUBSCRIPTION_AGENTS: "on" })).subscriptionAgents, "on");
+  assert.equal(loadConfig(testEnv("postgresql://example")).subscriptionAgents, "off");
+});
+
+test("a SUBSCRIPTION_AGENTS value other than on or off fails the configuration", () => {
+  assert.throws(() => parseSubscriptionAgents("yes"), { message: "SUBSCRIPTION_AGENTS must be on or off, not yes" });
+  assert.throws(
+    () => loadConfig(testEnv("postgresql://example", { SUBSCRIPTION_AGENTS: "1" })),
+    /SUBSCRIPTION_AGENTS must be on or off, not 1/,
   );
 });

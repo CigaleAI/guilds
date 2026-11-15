@@ -8,10 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
-**Rebuild.** A run's `config_snapshot` records its model source,
-`model_source`: `key` for a run on a model on one of the
-organisation's keys, `subscription` for a run of an agent without a
-model, which fails at start with `subscription.not_runnable`.
+**Rebuild.** An agent can be a subscription agent: no model, and a
+harness, Claude Code or Codex, on the operator's own subscription as
+its model source. The box offers them only with
+`SUBSCRIPTION_AGENTS=on`, off by default. A subscription agent is
+created and saved through the agent routes with `model: null` and its
+`harness`, `harness_model`, and `harness_effort`, and refused while
+the setting is off, on Cursor or Antigravity, or with a model-loop
+setting off its default. Its runs do not start yet: each fails at
+start with `subscription.not_runnable`. An agent's view and its
+guild's list carry `model_source` (`key` or `subscription`), and so
+does a run's `config_snapshot`. `GET /api/harnesses` adds
+`subscription_agents` and, per harness, `subscription`.
 
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit

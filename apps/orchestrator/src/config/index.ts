@@ -35,7 +35,12 @@ export type AppConfig = {
   attachmentsRoot: string;
   /** The coding harnesses the box turns off: kept in the image, neither offered nor run. */
   harnessesOff: Harness[];
+  /** Whether the box offers subscription agents, whose turns run on a harness on the operator's own subscription. */
+  subscriptionAgents: SettingSwitch;
 };
+
+/** The value of a setting that turns something on or off. */
+export type SettingSwitch = "on" | "off";
 
 /** What an extension adds to core's settings: the modes it identifies requests in. */
 export type ConfigExtension = {
@@ -157,6 +162,18 @@ export function parseHarnessesOff(value: string | undefined): Harness[] {
   return [...new Set(harnesses)];
 }
 
+/** A `SUBSCRIPTION_AGENTS` value: `on` or `off`, off when it is unset or blank; throws on anything else. */
+export function parseSubscriptionAgents(value: string | undefined): SettingSwitch {
+  const text = (value ?? "").trim();
+  if (text === "" || text === "off") {
+    return "off";
+  }
+  if (text === "on") {
+    return "on";
+  }
+  throw new ConfigError("SUBSCRIPTION_AGENTS", `SUBSCRIPTION_AGENTS must be on or off, not ${text}`);
+}
+
 /** `TEMPLATES_ROOT`, or the templates the package ships; either must be a directory. */
 function readTemplatesRoot(env: NodeJS.ProcessEnv): string {
   const templatesRoot = env.TEMPLATES_ROOT ? readDir(env, "TEMPLATES_ROOT") : defaultTemplatesRoot();
@@ -264,6 +281,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, extension: Conf
     maxConcurrentGenerations,
     attachmentsRoot: attachmentsRoot ? path.resolve(attachmentsRoot) : "",
     harnessesOff: parseHarnessesOff(env.HARNESSES_OFF),
+    subscriptionAgents: parseSubscriptionAgents(env.SUBSCRIPTION_AGENTS),
   };
 }
 

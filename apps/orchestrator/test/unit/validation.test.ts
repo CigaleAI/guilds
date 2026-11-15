@@ -17,6 +17,7 @@ import {
 import {
   AgentValidationError,
   assertCodingAgent,
+  assertSubscriptionAgent,
   isValidSecretAliases,
   validateAgentConfig,
   validateNewAgentConfig,
@@ -27,6 +28,7 @@ import {
   validateAgentName,
   validateWakeTriggers,
 } from "../../src/agents/validation.js";
+import { installHarnessesOff, installSubscriptionAgents } from "../../src/coding/harnesses.js";
 import type { GuildOperatorRow, GuildRow } from "../../src/db/guilds.js";
 import { canSeeGuild, guildRole } from "../../src/guilds/operators.js";
 import {
@@ -322,7 +324,79 @@ test("harness is one of the coding harnesses, and only a coding agent has one", 
   assert.equal(validateAgentConfig({ model }).harness, null);
   assert.equal(validateAgentConfig({ model, coding: true, harness: "codex" }).harness, "codex");
   assert.throws(() => validateAgentConfig({ model, coding: true, harness: "opencode" }), /harness must be one of/);
-  assert.throws(() => validateAgentConfig({ model, coding: false, harness: "cursor" }), /only for coding agents/);
+  assert.throws(
+    () => validateAgentConfig({ model, coding: false, harness: "cursor" }),
+    /harness is for a coding agent, or a subscription agent, which has no model/,
+  );
+});
+
+test("an agent without a model is a subscription agent on its harness, which is Claude Code or Codex", () => {
+  const subscription = validateAgentConfig({ model: null, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "high" });
+  assert.equal(subscription.model, null);
+  assert.equal(subscription.coding, false);
+  assert.equal(subscription.harness, "codex");
+  assert.equal(subscription.harness_model, "gpt-6-luna");
+  assert.equal(subscription.harness_effort, "high");
+  assert.equal(validateAgentConfig({ model: null, harness: "claude-code" }).harness, "claude-code");
+  assert.throws(() => validateAgentConfig({ model: null }), /an agent without a model is a subscription agent: it needs a harness/);
+  assert.throws(
+    () => validateAgentConfig({ model: null, coding: true, harness: "codex" }),
+    /a coding agent needs a model: the lead model it runs on a key/,
+  );
+  assert.throws(
+    () => validateAgentConfig({ model: null, harness: "cursor" }),
+    /Cursor cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model/,
+  );
+  assert.throws(() => validateAgentConfig({ model: null, harness: "antigravity" }), /Antigravity cannot run a subscription agent/);
+  assert.throws(() => validateAgentConfig({ model: "  " }), /model must be a non-empty string, or null for a subscription agent/);
+  assert.throws(() => validateAgentConfig({ harness: "codex" }), /missing keys: model/);
+});
+
+test("a subscription agent takes none of the model loop's settings but their defaults", () => {
+  const subscription = { model: null, harness: "claude-code" };
+  const defaults = { temperature: 1, thinking_level: "none", max_tokens: 8192, max_input_tokens: 100_000, keep_tool_result_generations: null };
+  assert.doesNotThrow(() => validateAgentConfig({ ...subscription, ...defaults }));
+  assert.doesNotThrow(() => validateAgentConfig({ ...subscription, max_steps: 5, max_tool_calls: 5, max_wake_ups: 2 }));
+  const refused: Array<[string, number | string]> = [
+    ["temperature", 0.2],
+    ["thinking_level", "high"],
+    ["max_tokens", 1000],
+    ["max_input_tokens", 5000],
+    ["keep_tool_result_generations", 3],
+  ];
+  for (const [key, value] of refused) {
+    assert.throws(
+      () => validateAgentConfig({ ...subscription, [key]: value }),
+      new RegExp(`a subscription agent takes no ${key}: they set the model loop, which its harness replaces`),
+    );
+  }
+  assert.throws(
+    () => validateAgentConfig({ ...subscription, temperature: 0, max_tokens: 10 }),
+    /a subscription agent takes no temperature, max_tokens:/,
+  );
+  assert.equal(validateAgentConfig({ model: VALID_CONFIG.model, temperature: 0.2, thinking_level: "high" }).temperature, 0.2);
+});
+
+test("a subscription agent is created or switched to only while the box offers them, on a harness it does not turn off", () => {
+  const subscription = validateAgentConfig({ model: null, harness: "codex" });
+  const keyed = validateAgentConfig({ model: VALID_CONFIG.model });
+  try {
+    installSubscriptionAgents("off");
+    assert.throws(() => assertSubscriptionAgent(subscription), /subscription agents are turned off on this box: give the agent a model on a key/);
+    assert.throws(() => assertSubscriptionAgent(subscription, keyed), /subscription agents are turned off on this box/);
+    assert.doesNotThrow(() => assertSubscriptionAgent(subscription, subscription), "an agent on a subscription keeps it");
+    assert.doesNotThrow(() => assertSubscriptionAgent(keyed));
+    installSubscriptionAgents("on");
+    assert.doesNotThrow(() => assertSubscriptionAgent(subscription));
+    assert.doesNotThrow(() => assertSubscriptionAgent(subscription, keyed));
+    installHarnessesOff(["codex"]);
+    assert.throws(() => assertSubscriptionAgent(subscription, keyed), /Codex is turned off on this box/);
+    assert.doesNotThrow(() => assertSubscriptionAgent(subscription, subscription), "an agent on the harness keeps it");
+    assert.doesNotThrow(() => assertSubscriptionAgent({ ...subscription, harness: null }), "a config without a harness is no subscription to offer");
+  } finally {
+    installSubscriptionAgents("off");
+    installHarnessesOff([]);
+  }
 });
 
 test("harness_model is a model name for a set harness; blank or missing leaves the subscription's default", () => {

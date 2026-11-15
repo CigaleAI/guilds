@@ -61,6 +61,8 @@ variable, and boot stops.
 - `TOOL_RESULT_MAX_BYTES` (default 65536)
 - `HARNESSES_OFF` (coding harnesses this box does not offer,
   separated by commas or spaces; an unknown name stops boot)
+- `SUBSCRIPTION_AGENTS` (`on` or `off`, off by default: whether the
+  box offers subscription agents; another value stops boot)
 - `HOST` (default `0.0.0.0`)
 - `PORT` (default 8080)
 
@@ -176,8 +178,8 @@ sequenceDiagram
 
 `createServer` runs these steps in order:
 
-1. install the extensions' connectors and integrations, and the
-   `HARNESSES_OFF` list
+1. install the extensions' connectors and integrations, the
+   `HARNESSES_OFF` list, and the `SUBSCRIPTION_AGENTS` setting
 2. connect to PostgreSQL: core's migrations, then each extension's;
    then seed the system catalog, then each extension's seed, then
    the operator and its organisation on a box that still has no user;

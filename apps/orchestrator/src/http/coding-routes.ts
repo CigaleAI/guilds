@@ -10,7 +10,7 @@ import {
   removeGuildRepository,
   type RepositoryServices,
 } from "../coding/guild-repositories.js";
-import { harnessCatalog } from "../coding/harness-models.js";
+import { harnessOffer } from "../coding/harness-models.js";
 import {
   checkAgentHarness,
   listRunChanges,
@@ -115,7 +115,7 @@ export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Prom
 
   app.get("/api/harnesses", async (request) => {
     await currentUser(db, request, deps);
-    return { harnesses: harnessCatalog() };
+    return harnessOffer();
   });
 
   app.get("/api/agents/:agent_id/harness", { schema: { params: AgentParams } }, async (request) => {

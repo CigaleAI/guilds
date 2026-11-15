@@ -1107,6 +1107,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -3419,6 +3420,7 @@
           "avatar_color": "#7c5cff",
           "browser": true,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -5731,6 +5733,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -8027,6 +8030,7 @@
             "avatar_color": "#7c5cff",
             "browser": false,
             "coding": false,
+            "model_source": "key",
             "machine_id": "<id:mach:1>",
             "machine": {
               "id": "<id:mach:1>",
@@ -8044,6 +8048,7 @@
             "avatar_color": "#7c5cff",
             "browser": true,
             "coding": false,
+            "model_source": "key",
             "machine_id": "<id:mach:1>",
             "machine": {
               "id": "<id:mach:1>",
@@ -8061,6 +8066,7 @@
             "avatar_color": "#7c5cff",
             "browser": false,
             "coding": false,
+            "model_source": "key",
             "machine_id": "<id:mach:1>",
             "machine": {
               "id": "<id:mach:1>",
@@ -8099,6 +8105,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -10411,6 +10418,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",

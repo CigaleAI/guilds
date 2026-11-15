@@ -44,6 +44,7 @@ import { AgentError } from "./errors.js";
 import {
   AgentValidationError,
   assertCodingAgent,
+  assertSubscriptionAgent,
   validateAgentConfig,
   validateNewAgentConfig,
   validateAgentName,
@@ -262,8 +263,8 @@ export async function addAgent(
 }
 
 /**
- * Creates an agent in the guild: validated, on a model the organisation has connected, with the
- * agent-optimized browser only while it is ready, within its policy's caps and the guild's agent
+ * Creates an agent in the guild: validated, on a model the organisation has connected or on a
+ * subscription the box offers, with the agent-optimized browser only while it is ready, within its policy's caps and the guild's agent
  * limit, and on the machine the request names or the organisation's only one. Only a guild admin
  * gives it tool-result turns of its own.
  */
@@ -284,6 +285,7 @@ export async function createAgent(
   const avatarColor = validateAvatarColor(request.avatarColor);
   const config = validateNewAgentConfig(request.config);
   assertCodingAgent(config);
+  assertSubscriptionAgent(config);
   if (config.keep_tool_result_generations !== null) {
     await requireAdministeredGuild(db, guild.id, operator.actorId);
   }
@@ -405,7 +407,8 @@ async function moveAgentNotes(
 }
 
 /**
- * Changes an agent's config and profile. A new config is validated and its model connected; the
+ * Changes an agent's config and profile. A new config is validated and its model connected, or its
+ * subscription offered by the box unless the agent is already on one; the
  * agent-optimized browser turned on, or given another browser model, must be ready, while an edit
  * that leaves both alone saves without the check; a browser or coding switched on is
  * within the policy's caps; a rename waits while the agent generates and moves its notes folder; a
@@ -422,6 +425,7 @@ export async function reconfigureAgent(
   const config = validateAgentConfig(patch.config);
   const previous = agent.config;
   assertCodingAgent(config, previous);
+  assertSubscriptionAgent(config, previous);
   if (config.keep_tool_result_generations !== previous.keep_tool_result_generations) {
     await requireAdministeredGuild(services.db, agent.guild_id, userId);
   }

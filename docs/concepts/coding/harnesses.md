@@ -2,6 +2,8 @@
 
 A harness is the coding CLI that writes the code for a
 [coding agent](index.md): Claude Code, Codex, Cursor, or Antigravity.
+A [subscription agent](../agents.md#model-source) has a harness too,
+as its model source instead of a model.
 It runs headless in the agent's sandbox, in one of the guild's
 [repositories](repositories.md), on the operator's own subscription.
 The agent picks one harness, and optionally the model it runs and the
@@ -128,6 +130,28 @@ stays in the runtime image, but it is not offered and not run:
 A name in `HARNESSES_OFF` that is not a harness stops the box from
 starting. The coding readiness warning and the coding strip do not
 show a harness turned off.
+
+### Subscription agents
+
+A subscription agent has no model: its harness is its model source
+([Agents](../agents.md#model-source)). It names the harness, its
+model, and its effort in the same `harness`, `harness_model`, and
+`harness_effort` as a coding agent, and its credential, login record,
+harness check, and readiness read the same way. It has no repository
+and no code tools.
+
+- Only Claude Code and Codex run a subscription agent. Cursor and
+  Antigravity stay harnesses of coding agents only.
+- The box offers subscription agents only with
+  `SUBSCRIPTION_AGENTS=on` ([Configure](../../operations/configure.md)).
+  Off, the default, a create or a switch to a subscription is refused
+  with 422 "subscription agents are turned off on this box: give the
+  agent a model on a key". An agent already on a subscription keeps
+  it.
+- A harness turned off with `HARNESSES_OFF` is refused as a new pick
+  for a subscription agent as for a coding agent.
+- A subscription agent's runs do not start: each fails at start with
+  `subscription.not_runnable` ([Runs](../runs.md#generation)).
 
 ### Managed configuration
 
@@ -262,7 +286,9 @@ machine that has it."
 | Rule | Value or behaviour |
 | --- | --- |
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
-| Harness | Only for coding agents, and required on them |
+| Harness | Only for coding agents and subscription agents, and required on them |
+| Subscription harness | Claude Code or Codex |
+| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=on`; their runs fail at start |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |
@@ -279,7 +305,9 @@ machine that has it."
 ### Configuration
 
 - `harness`: `claude-code`, `codex`, `cursor`, `antigravity`, or null.
-  Rules and errors are in [Coding agents](index.md#configuration-keys).
+  Rules and errors are in [Coding agents](index.md#configuration-keys),
+  and for a subscription agent in
+  [Agents](../agents.md#configuration-keys).
 - `harness_model`: matches
   `^[A-Za-z0-9][A-Za-z0-9._:/=,[\]-]{0,119}$`, or null. A blank value
   saves as null. Otherwise 422 `harness_model must be a model name: up
@@ -326,9 +354,11 @@ GET  /api/agents/:id/harness
 POST /api/agents/:id/harness/check
 ```
 
-`GET /api/harnesses` returns `{ harnesses }`, the catalogue for any
-signed-in user. Each entry holds `harness`, `label`, `enabled` (false
-when the box turns it off), `models`, and `unlisted_efforts`: the
+`GET /api/harnesses` returns `{ harnesses, subscription_agents }` for
+any signed-in user: the catalogue, and whether the box offers
+subscription agents. Each entry holds `harness`, `label`, `enabled`
+(false when the box turns it off), `subscription` (whether a
+subscription agent runs on it), `models`, and `unlisted_efforts`: the
 efforts the default model or a custom name runs at. Each model holds
 `id`, `label`, `efforts`, and `default_effort` (null leaves it to the
 harness). The CLI names a Cursor model starts under stay on the server.

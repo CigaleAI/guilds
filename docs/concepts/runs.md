@@ -422,7 +422,7 @@ a generation-start error.
 ### Generation
 
 A run whose snapshot has no `model` is a subscription agent's
-([Agents](agents.md#model)). Its generation fails first, with
+([Agents](agents.md#model-source)). Its generation fails first, with
 `subscription.not_runnable`, "subscription agents cannot run yet",
 before the machine is woken or a model is called. Every other run
 goes on.
