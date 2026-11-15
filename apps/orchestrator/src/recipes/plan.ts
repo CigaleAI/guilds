@@ -418,9 +418,9 @@ type ModelOffer = { connected: Set<string>; defaultModel: string | null };
  */
 function resolveModels(recipe: RecipeDocument, decisions: ModelDecision[], offer: ModelOffer): RoleModel[] {
   const chosen = new Map(decisions.map((item) => [item.role, String(item.model ?? "").trim()]));
-  for (const role of chosen.keys()) {
+  for (const [role, model] of chosen) {
     const found = recipe.roles.find((item) => item.role === role);
-    if (found && roleRunsOnSubscription(found)) {
+    if (model && found && roleRunsOnSubscription(found)) {
       throw new RecipeError(`models.${role}: a subscription role takes no model`);
     }
   }

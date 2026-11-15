@@ -92,6 +92,7 @@ test("a captured subscription role applies on its harness, and is refused while 
     const applied = await call("POST", `/api/recipes/${recipeId}/apply`, {
       guild_name: "subscription-target",
       names: [{ role: "writer", name: "writer-two" }],
+      models: [{ role: "writer", model: "" }],
       harnesses: [{ role: "writer", harness: "claude-code" }],
     });
     assert.equal(applied.statusCode, 201, applied.body);
