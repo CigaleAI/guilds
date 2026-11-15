@@ -41,6 +41,10 @@ test("the composer says why it takes no images", () => {
   );
 });
 
+test("a subscription agent's composer takes no images", () => {
+  assert.equal(attachmentsNote(modelsWith(true), null), "A subscription agent takes no images");
+});
+
 test("a chat link opens at the call or message sequence it names", () => {
   assert.deepEqual(revealOf({ run: "r1", call: "c1" }), { call: "c1" });
   assert.deepEqual(revealOf({ seq: 4 }), { seq: 4 });

@@ -188,10 +188,16 @@ is disabled once the guild is full. Each agent row shows:
 1. **Identity**: the name (it can change later in Settings), an
    optional focus, and an avatar picker: a mascot set, a random
    variant, and one of six identity colours.
-2. **Model**: the model, from the organisation's chosen models grouped
-   by provider, preselected with its default when it has one. With no
-   provider connected, the step shows a guide to **Model keys** in its
-   place. Then the thinking level and the temperature, each switched
+2. **Model**: while the box offers subscription agents, it starts with
+   **Model source**: **Model on a key** or **Subscription**, with a
+   line saying a subscription agent's runs fail at start. On a key, the
+   model, from the organisation's chosen models grouped by provider,
+   preselected with its default when it has one. With no provider
+   connected, the step shows a guide to **Model keys** in its place.
+   On a subscription, the step is titled **Harness** and holds the
+   harness, Claude Code or Codex, its model and effort, the
+   capabilities, and the run limits a harness keeps; no provider is
+   needed. Then the thinking level and the temperature, each switched
    off only for a model that does not take it. Then **Agent
    capabilities**, three buttons: Browser, scripting, and Memory.
    Scripting and Memory start on; Browser starts off. The browser
@@ -266,15 +272,22 @@ keeps it as `?section=` (`identity`, `model`, `machine`, `harness`,
 or `repositories`), so a link can open Settings on one section.
 Without one, Settings opens on Identity. A section the agent's kind
 lacks opens where its content lives: `harness` or `repositories`
-opens Model on an agent without Coding.
+opens Model on an agent on a key without Coding, and `model` or
+`repositories` opens Harness on a subscription agent.
 
 An agent has **Identity**, **Model**, and **Machine**. A coding agent
 has **Identity**, **Machine**, **Harness**, **Lead model**, and
-**Repositories**. The sections follow the form's Coding button, so
-turning Coding on changes them before the save. A step whose fields
+**Repositories**. A subscription agent has **Identity**, **Harness**,
+and **Machine** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
+The sections follow the form's Coding button and its **Model source**,
+so turning Coding on or picking another source changes them before
+the save. **Model source** shows at the top of an agent's Model, and
+of a subscription agent's Harness, while the box offers subscription
+agents or the agent is on one. A step whose fields
 have an error, or that holds a coding-readiness problem to fix,
 carries a warning in place of its number. A coding agent that is not
-ready opens on a banner that lists what is missing. One **Save** and
+ready opens on a banner that lists what is missing; so does a
+subscription agent whose harness is not ready. One **Save** and
 one **Discard** at the bottom cover every section. Enter in a field
 saves.
 

@@ -1,5 +1,5 @@
 import type { JsonSchema } from "../wire";
-import type { AgentConfig, Harness } from "./agents";
+import type { AgentConfig, Harness, ModelSource } from "./agents";
 import type { SecretRef } from "./secrets";
 
 /**
@@ -28,6 +28,8 @@ export type OfferedTool = {
 export type RunConfigSnapshot = Omit<AgentConfig, "keep_tool_result_generations"> & {
   /** The agent's own, or its guild's when it sets none, as the run started with it. */
   keep_tool_result_generations: number;
+  /** Where the run's turns run; a snapshot without it is of a run on a key. */
+  model_source?: ModelSource;
   projection_policy_version?: number;
   tools: OfferedTool[];
   mcp: {

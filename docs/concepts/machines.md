@@ -186,8 +186,8 @@ The organisation's **Settings** page has a **Machines** tab. It lists
 every machine of the organisation with:
 
 - its tier, CPUs, and memory
-- the agents on it, each with its guild and its Browser and Coding
-  flags; an agent's name opens its Settings on the Machine section
+- the agents on it, each with its guild and its Browser, Coding, and
+  Subscription flags; an agent's name opens its Settings on the Machine section
 - the planned load bars, CPU and memory, against its capacity
 - the disk it uses against its disk cap
 
@@ -215,7 +215,8 @@ or pick another machine. One line says that agents on one machine can
 read each other's files and sessions.
 
 The coding agent dialog's Machine step hints that coding agents need
-a Code machine.
+a Code machine. A subscription agent's Settings hint that subscription
+agents need one.
 
 **Disk** shows under the picker. It sets the agent's own disk cap
 ([Agent home](agent-home.md#in-the-app)).

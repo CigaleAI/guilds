@@ -55,8 +55,16 @@ export function blockedCapabilities(
   codingToggle: boolean,
 ): BlockedCapability[] {
   if (!machine) return [];
-  const coding = agentMinimum({ browser: form.browser, coding: true });
-  const browser = agentMinimum({ browser: true, coding: form.coding });
+  const coding = agentMinimum({
+    browser: form.browser,
+    coding: true,
+    model_source: form.model_source,
+  });
+  const browser = agentMinimum({
+    browser: true,
+    coding: form.coding,
+    model_source: form.model_source,
+  });
   return [
     ...(codingToggle && !form.coding && !sizeMeets(machine, coding)
       ? [{ what: "Coding" as const, minimum: coding }]

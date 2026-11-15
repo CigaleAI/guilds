@@ -24,6 +24,7 @@ export type Agent = {
   browser: boolean;
   /** Code work through a harness, with Node.js, build tools and git on its machine. */
   coding: boolean;
+  model_source: ModelSource;
   /** The organisation's machine it runs on. */
   machine_id: string;
   machine: MachineRef;
@@ -50,6 +51,7 @@ export type MachineAgent = {
   guild_name: string;
   browser: boolean;
   coding: boolean;
+  model_source: ModelSource;
 };
 
 /** `GET /api/orgs/:id/machines`: one of the organisation's machines, its agents, and what they use. */
@@ -120,7 +122,8 @@ export type HarnessCatalog = {
 export type HarnessOffer = { harnesses: HarnessCatalog[]; subscription_agents: boolean };
 
 export type AgentConfig = {
-  model: string;
+  /** The `{provider}/{model}` the agent runs on, on a key; null for a subscription agent. */
+  model: string | null;
   temperature: number;
   max_tokens: number;
   max_steps: number;
@@ -144,7 +147,7 @@ export type AgentConfig = {
   /** The `{provider}/{model}` the agent-optimized browser plans and reads with; null unless `browser_optimized`. */
   browser_model: string | null;
   coding: boolean;
-  /** The harness a coding agent runs; null when coding is off. */
+  /** The harness a coding agent delegates to, or a subscription agent runs on; null for any other agent. */
   harness: Harness | null;
   /** The model the harness runs; null leaves it to the harness's subscription. */
   harness_model: string | null;

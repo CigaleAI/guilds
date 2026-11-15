@@ -30,6 +30,11 @@ a subscription role: capture writes one for a subscription agent, the
 apply preview asks it for a harness and no model (`harnesses` entries
 carry `subscription`), and validation reports `subscription.off`,
 `subscription.harness`, and `subscription.setting`.
+In the operator app, while the box offers subscription agents, the
+create dialog's Model step and an agent's Settings choose the **Model
+source**: a model on a key, or a subscription on Claude Code or Codex.
+A subscription agent's Settings show its **Harness** section with its
+credential and readiness in place of **Model**.
 
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit

@@ -4,6 +4,9 @@ import type { HarnessCatalog, Machine } from "../../../api/types/agents";
 import {
   configErrors,
   configFormOf,
+  offersModelSource,
+  takesHarness,
+  withModelSource,
   configOf,
   defaultAgentConfig,
   withCoding,
@@ -11,7 +14,7 @@ import {
 } from "./configForm";
 
 test("switching coding on moves default limits to the coding budgets and back", () => {
-  const form = configFormOf(defaultAgentConfig);
+  const form = configFormOf(defaultAgentConfig, "key");
   assert.equal(form.scripting, true);
   assert.equal(form.memory, true);
   assert.equal(form.browser, false);
@@ -32,7 +35,7 @@ test("switching coding on moves default limits to the coding budgets and back", 
 });
 
 test("a new agent's form starts on the step-by-step browser with no browser model", () => {
-  const form = configFormOf(defaultAgentConfig);
+  const form = configFormOf(defaultAgentConfig, "key");
   assert.equal(form.browser_optimized, false);
   assert.equal(form.browser_model, "");
   const sent = configOf(form, undefined);
@@ -48,7 +51,7 @@ test("the agent-optimized browser and its model round-trip through the form", ()
     browser_optimized: true,
     browser_model: "openrouter/openai/gpt-5-mini",
   };
-  const form = configFormOf(stored);
+  const form = configFormOf(stored, "key");
   assert.equal(form.browser_optimized, true);
   assert.equal(form.browser_model, "openrouter/openai/gpt-5-mini");
   const sent = configOf(form, undefined);
@@ -71,12 +74,12 @@ test("the agent-optimized browser and its model round-trip through the form", ()
 });
 
 test("a config sent from the form carries no CLI flag", () => {
-  const coding = withCoding(configFormOf(defaultAgentConfig), true);
+  const coding = withCoding(configFormOf(defaultAgentConfig, "key"), true);
   assert.equal("cli" in configOf(coding, undefined), false);
 });
 
 test("turning coding off drops a Kimi Code model for the organisation's default, or nothing", () => {
-  const form = { ...configFormOf(defaultAgentConfig), model: "kimi/kimi-for-coding", coding: true };
+  const form = { ...configFormOf(defaultAgentConfig, "key"), model: "kimi/kimi-for-coding", coding: true };
   const off = withCoding(form, false);
   assert.equal(off.model, "");
   assert.equal(off.coding, false);
@@ -89,7 +92,7 @@ test("turning coding off drops a Kimi Code model for the organisation's default,
 });
 
 test("a model is required, must fit the coding flag, and must have its provider connected", () => {
-  const form = configFormOf(defaultAgentConfig);
+  const form = configFormOf(defaultAgentConfig, "key");
   assert.equal(configErrors(form).model, "Choose a model.");
   const models = {
     default: null,
@@ -147,7 +150,7 @@ test("the agent-optimized browser needs a browser model the organisation's key r
     models: [],
   };
   const form = {
-    ...configFormOf(defaultAgentConfig),
+    ...configFormOf(defaultAgentConfig, "key"),
     model: "openai/gpt-5",
     browser: true,
     browser_optimized: true,
@@ -178,24 +181,24 @@ test("the agent-optimized browser needs a browser model the organisation's key r
 });
 
 test("max wake-ups starts at 10 for every agent, round-trips, and takes a whole number of 1 or more", () => {
-  const form = configFormOf(defaultAgentConfig);
+  const form = configFormOf(defaultAgentConfig, "key");
   assert.equal(form.max_wake_ups, "10");
   assert.equal(withCoding(form, true).max_wake_ups, "10");
   assert.equal(configOf({ ...form, max_wake_ups: "4" }, undefined).max_wake_ups, 4);
-  assert.equal(configFormOf({ ...defaultAgentConfig, max_wake_ups: 4 }).max_wake_ups, "4");
+  assert.equal(configFormOf({ ...defaultAgentConfig, max_wake_ups: 4 }, "key").max_wake_ups, "4");
   assert.equal(configErrors({ ...form, max_wake_ups: "0" }).max_wake_ups, "A whole number, 1 or more.");
   assert.equal(configErrors({ ...form, max_wake_ups: "2.5" }).max_wake_ups, "A whole number, 1 or more.");
   assert.equal(configErrors(form).max_wake_ups, undefined);
 });
 
 test("keep tool results starts empty for the guild's, round-trips, and takes a whole number of 1 or more", () => {
-  const form = configFormOf(defaultAgentConfig);
+  const form = configFormOf(defaultAgentConfig, "key");
   assert.equal(form.keep_tool_result_generations, "");
   assert.equal(configOf(form, undefined).keep_tool_result_generations, null);
   assert.equal(configOf({ ...form, keep_tool_result_generations: " " }, undefined).keep_tool_result_generations, null);
   assert.equal(configOf({ ...form, keep_tool_result_generations: "3" }, undefined).keep_tool_result_generations, 3);
   assert.equal(
-    configFormOf({ ...defaultAgentConfig, keep_tool_result_generations: 3 }).keep_tool_result_generations,
+    configFormOf({ ...defaultAgentConfig, keep_tool_result_generations: 3 }, "key").keep_tool_result_generations,
     "3",
   );
   assert.equal(configErrors(form).keep_tool_result_generations, undefined);
@@ -208,7 +211,7 @@ test("keep tool results starts empty for the guild's, round-trips, and takes a w
 });
 
 test("limits the operator already changed stay as typed", () => {
-  const form = { ...configFormOf(defaultAgentConfig), max_steps: "80" };
+  const form = { ...configFormOf(defaultAgentConfig, "key"), max_steps: "80" };
   const coding = withCoding(form, true);
   assert.equal(coding.max_steps, "80");
   assert.equal(coding.max_tool_calls, "200");
@@ -233,9 +236,9 @@ function machine(id: string, box: Machine["box"]): Machine {
 }
 
 test("the form holds the agent's machine and the config sent carries no machine or box", () => {
-  const form = configFormOf(defaultAgentConfig, "mach_a");
+  const form = configFormOf(defaultAgentConfig, "key", "mach_a");
   assert.equal(form.machine_id, "mach_a");
-  assert.equal(configFormOf(defaultAgentConfig).machine_id, "");
+  assert.equal(configFormOf(defaultAgentConfig, "key").machine_id, "");
   const sent = configOf(form, undefined);
   assert.equal("machine_id" in sent, false);
   assert.equal("box" in sent, false);
@@ -244,7 +247,7 @@ test("the form holds the agent's machine and the config sent carries no machine 
 });
 
 test("the only machine stands in for a choice; among several one must be picked", () => {
-  const form = { ...configFormOf(defaultAgentConfig), model: "openai/gpt-5" };
+  const form = { ...configFormOf(defaultAgentConfig, "key"), model: "openai/gpt-5" };
   assert.equal(configErrors(form).machine, undefined);
   assert.equal(configErrors(form, { machines: [machine("solo", "standard")] }).machine, undefined);
   const two = [machine("one", "standard"), machine("two", "code")];
@@ -257,12 +260,12 @@ test("the only machine stands in for a choice; among several one must be picked"
 });
 
 test("an organisation without machines leaves nothing to pick", () => {
-  const form = { ...configFormOf(defaultAgentConfig), model: "openai/gpt-5" };
+  const form = { ...configFormOf(defaultAgentConfig, "key"), model: "openai/gpt-5" };
   assert.equal(configErrors(form, { machines: [] }).machine, "Choose a machine.");
 });
 
 test("a coding agent needs a harness, and turning coding off clears it", () => {
-  const form = withCoding(configFormOf(defaultAgentConfig), true);
+  const form = withCoding(configFormOf(defaultAgentConfig, "key"), true);
   assert.equal(form.harness, "");
   assert.equal(configErrors(form).harness, "Pick a harness.");
   const picked = { ...form, harness: "codex" as const };
@@ -276,10 +279,10 @@ test("a coding agent needs a harness, and turning coding off clears it", () => {
 });
 
 test("a stored harness reaches the form and back", () => {
-  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "claude-code" });
+  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "claude-code" }, "key");
   assert.equal(form.harness, "claude-code");
   assert.equal(configOf(form, undefined).harness, "claude-code");
-  assert.equal(configFormOf({ ...defaultAgentConfig, coding: true, harness: null }).harness, "");
+  assert.equal(configFormOf({ ...defaultAgentConfig, coding: true, harness: null }, "key").harness, "");
 });
 
 test("a harness model reaches the form and back, trimmed; empty sends the subscription's default", () => {
@@ -289,7 +292,7 @@ test("a harness model reaches the form and back, trimmed; empty sends the subscr
     harness: "claude-code" as const,
     harness_model: "opus",
   };
-  const form = configFormOf(stored);
+  const form = configFormOf(stored, "key");
   assert.equal(form.harness_model, "opus");
   assert.equal(configOf(form, undefined).harness_model, "opus");
   assert.equal(
@@ -297,7 +300,7 @@ test("a harness model reaches the form and back, trimmed; empty sends the subscr
     "sonnet",
   );
   assert.equal(configOf({ ...form, harness_model: "  " }, undefined).harness_model, null);
-  assert.equal(configFormOf({ ...stored, harness_model: null }).harness_model, "");
+  assert.equal(configFormOf({ ...stored, harness_model: null }, "key").harness_model, "");
   assert.equal(
     configOf({ ...form, harness: "" }, undefined).harness_model,
     null,
@@ -313,11 +316,11 @@ test("a harness effort reaches the form and back; empty sends the harness's defa
     harness_model: "gpt-6-luna",
     harness_effort: "high" as const,
   };
-  const form = configFormOf(stored);
+  const form = configFormOf(stored, "key");
   assert.equal(form.harness_effort, "high");
   assert.equal(configOf(form, undefined).harness_effort, "high");
   assert.equal(configOf({ ...form, harness_effort: "" }, undefined).harness_effort, null);
-  assert.equal(configFormOf({ ...stored, harness_effort: null }).harness_effort, "");
+  assert.equal(configFormOf({ ...stored, harness_effort: null }, "key").harness_effort, "");
   assert.equal(
     configOf({ ...form, harness: "" }, undefined).harness_effort,
     null,
@@ -352,7 +355,7 @@ test("another harness model keeps the effort while it runs at it, else goes back
     harness: "codex",
     harness_model: "gpt-6-luna",
     harness_effort: "high",
-  });
+  }, "key");
   assert.equal(withHarnessModel(form, "gpt-5.6-terra", CODEX_CATALOG).harness_effort, "");
   assert.equal(withHarnessModel(form, "gpt-custom", CODEX_CATALOG).harness_effort, "high");
   assert.equal(withHarnessModel(form, "", CODEX_CATALOG).harness_model, "");
@@ -364,7 +367,7 @@ test("another harness model keeps the effort while it runs at it, else goes back
 });
 
 test("a harness model must be a model name, and turning coding off clears it", () => {
-  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "cursor" });
+  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "cursor" }, "key");
   assert.equal(
     configErrors({ ...form, harness_model: "claude-opus-4-8[context=1m]" }).harness_model,
     undefined,
@@ -388,7 +391,7 @@ test("secret aliases reach the form and back, and turning coding off keeps them"
     ...defaultAgentConfig,
     secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" },
   };
-  const form = configFormOf(stored);
+  const form = configFormOf(stored, "key");
   assert.deepEqual(form.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
   assert.notEqual(form.secret_aliases, stored.secret_aliases, "the form holds its own copy");
   assert.deepEqual(configOf(form, undefined).secret_aliases, {
@@ -398,4 +401,74 @@ test("secret aliases reach the form and back, and turning coding off keeps them"
     withCoding({ ...form, coding: true }, false).secret_aliases,
     form.secret_aliases,
   );
+});
+
+const SUBSCRIPTION_CATALOG: HarnessCatalog[] = [
+  { harness: "codex", label: "Codex", enabled: true, subscription: true, models: [], unlisted_efforts: [] },
+  { harness: "cursor", label: "Cursor", enabled: true, subscription: false, models: [], unlisted_efforts: [] },
+];
+
+test("a stored subscription agent opens on its harness with no model", () => {
+  const form = configFormOf({ ...defaultAgentConfig, model: null, harness: "codex" }, "subscription");
+  assert.equal(form.model_source, "subscription");
+  assert.equal(form.model, "");
+  assert.equal(form.harness, "codex");
+  assert.equal(takesHarness(form), true);
+  assert.equal(takesHarness(configFormOf(defaultAgentConfig, "key")), false);
+});
+
+test("a subscription sends no model, its harness, and the model loop's settings at their defaults", () => {
+  const form = {
+    ...configFormOf(defaultAgentConfig, "subscription"),
+    model: "openai/gpt-5",
+    harness: "codex" as const,
+    harness_model: "gpt-6-luna",
+    harness_effort: "high" as const,
+    temperature: "0.2",
+    thinking: "high" as const,
+    max_tokens: "100",
+    max_input_tokens: "1000",
+    keep_tool_result_generations: "3",
+    max_steps: "12",
+  };
+  const config = configOf(form, undefined);
+  assert.equal(config.model, null);
+  assert.equal(config.coding, false);
+  assert.equal(config.harness, "codex");
+  assert.equal(config.harness_model, "gpt-6-luna");
+  assert.equal(config.harness_effort, "high");
+  assert.equal(config.temperature, 1);
+  assert.equal(config.thinking_level, "none");
+  assert.equal(config.max_tokens, 8192);
+  assert.equal(config.max_input_tokens, 100000);
+  assert.equal(config.keep_tool_result_generations, null);
+  assert.equal(config.max_steps, 12);
+});
+
+test("a subscription needs a harness and no model", () => {
+  const form = configFormOf(defaultAgentConfig, "subscription");
+  const errors = configErrors(form);
+  assert.equal(errors.harness, "Pick a harness.");
+  assert.equal(errors.model, undefined);
+  assert.equal(configErrors({ ...form, harness: "codex" }).harness, undefined);
+});
+
+test("switching the model source keeps a harness only for a subscription that runs on it", () => {
+  const keyed = { ...configFormOf(defaultAgentConfig, "key"), model: "openai/gpt-5" };
+  const onCodex = withModelSource({ ...keyed, harness: "codex" }, "subscription", SUBSCRIPTION_CATALOG);
+  assert.equal(onCodex.model_source, "subscription");
+  assert.equal(onCodex.harness, "codex");
+  assert.equal(onCodex.model, "openai/gpt-5", "the model stays for a switch back");
+  assert.equal(withModelSource({ ...keyed, harness: "cursor" }, "subscription", SUBSCRIPTION_CATALOG).harness, "");
+  const back = withModelSource({ ...onCodex, harness_model: "gpt-6-luna" }, "key", SUBSCRIPTION_CATALOG);
+  assert.equal(back.model_source, "key");
+  assert.equal(back.harness, "");
+  assert.equal(back.harness_model, "");
+});
+
+test("the model source is offered while the box offers subscriptions, and to an agent already on one", () => {
+  assert.equal(offersModelSource(true, "key"), true);
+  assert.equal(offersModelSource(false, "key"), false);
+  assert.equal(offersModelSource(undefined, "key"), false);
+  assert.equal(offersModelSource(false, "subscription"), true);
 });

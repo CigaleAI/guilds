@@ -242,6 +242,11 @@ function MachineAgentRow({ agent }: MachineAgentRowProps) {
           Coding
         </Tag>
       ) : null}
+      {agent.model_source === "subscription" ? (
+        <Tag tone="signal" font="sans">
+          Subscription
+        </Tag>
+      ) : null}
     </li>
   );
 }

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { blockedCapabilities } from "./CapabilitiesFields";
 import { configFormOf, defaultAgentConfig } from "./configForm";
 
-const form = configFormOf(defaultAgentConfig);
+const form = configFormOf(defaultAgentConfig, "key");
 const tiny = { cpu: 0.1, memory_mib: 64 };
 const large = { cpu: 64, memory_mib: 262144 };
 

@@ -246,6 +246,15 @@ the same way.
 
 ### Harness section of Settings
 
+A subscription agent's Settings have **Identity**, **Harness**, and
+**Machine**. Its **Harness** section starts with **Model source**, to
+move it to a model on a key, then the harness buttons, Claude Code and
+Codex only, with the harness's model and effort, then **Agent
+capabilities** without Coding and **Run limits** without the model
+loop's: max steps, max tool calls, max wake-ups, and **Max scripts**.
+A subscription agent that is not ready opens on the banner "The
+subscription isn't ready", listing what its harness lacks.
+
 Under the harness buttons, Settings shows what the harness still
 needs:
 

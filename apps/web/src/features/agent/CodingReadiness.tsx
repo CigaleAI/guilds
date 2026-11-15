@@ -2,7 +2,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
 import { Banner, IconButton } from "@guildsrun/ui";
 import { useAgentHarness } from "../../api/queries/agents";
-import { codingProblems, codingProblemsSentence, codingProblemsText } from "./harness";
+import {
+  codingProblems,
+  codingProblemsSentence,
+  codingProblemsText,
+  type CodingProblem,
+} from "./harness";
 import { problemSection } from "./settings/sections";
 
 type CodingNotReadyButtonProps = { guildId: string; agentId: string };
@@ -36,15 +41,16 @@ export function CodingNotReadyButton({ guildId, agentId }: CodingNotReadyButtonP
   );
 }
 
-type CodingReadinessBannerProps = { agentId: string };
+type CodingReadinessBannerProps = { title: string; problems: readonly CodingProblem[] };
 
-/** A banner at the top of a coding agent's Settings while its saved setup would fail a coding run at start. */
-export function CodingReadinessBanner({ agentId }: CodingReadinessBannerProps) {
-  const status = useAgentHarness(agentId);
-  const problems = status.data ? codingProblems(status.data) : [];
+/**
+ * A banner at the top of a coding or subscription agent's Settings while its saved setup would fail
+ * its harness at start, naming every problem; nothing without one.
+ */
+export function CodingReadinessBanner({ title, problems }: CodingReadinessBannerProps) {
   if (!problems.length) return null;
   return (
-    <Banner tone="warning" title="Coding isn't ready">
+    <Banner tone="warning" title={title}>
       {codingProblemsSentence(problems)}
     </Banner>
   );
