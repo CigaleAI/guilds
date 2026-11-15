@@ -7,14 +7,16 @@ import { callSegment, type CodeResult } from "./code.js";
 import { buildBrief } from "./harness-brief.js";
 import {
   checkpoint,
-  HarnessExit,
   harnessOp,
   HarnessPoll,
-  HarnessStop,
   opsRun,
+  pause,
+  readResult,
   shownProgressLines,
+  stopHarness,
   stringOrNull,
   type CheckpointRepository,
+  type HarnessExit,
 } from "./harness-ops.js";
 import { codeTaskText, failureDetail, isChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
 import { checkHarness, requiredHarness } from "./harness-setup.js";
@@ -23,7 +25,6 @@ import type { ToolServices } from "./services.js";
 import {
   callActor,
   nativeTool,
-  type CancelEvent,
   type ToolHooks,
   type ToolInvocation,
   type ToolRun,
@@ -216,25 +217,6 @@ async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHoo
   await rememberTurn(services, run, turn);
 }
 
-/** Waits `ms`, or until the run is cancelled. */
-async function pause(ms: number, cancel: CancelEvent | null): Promise<void> {
-  let timer: NodeJS.Timeout | undefined;
-  const elapsed = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, ms);
-  });
-  if (cancel === null) {
-    await elapsed;
-    return;
-  }
-  const abort = new AbortController();
-  try {
-    await Promise.race([elapsed, cancel.wait(abort.signal).catch(() => undefined)]);
-  } finally {
-    clearTimeout(timer);
-    abort.abort();
-  }
-}
-
 function interruption(run: ToolRun, turn: HarnessTurn): Settled | null {
   if (run.cancel_event?.aborted) {
     return "cancelled";
@@ -307,24 +289,6 @@ async function pollUntilSettled(services: ToolServices, run: ToolRun, hooks: Too
     }
     await pause(Math.min(harnessTiming.pollMs, Math.max(0, turn.deadline - Date.now())), run.cancel_event);
   }
-}
-
-/** The `result` op's meta, which also clears the call's state once the harness exited; null when unread. */
-async function readResult(ops: ToolRun, callId: string, harness: Harness): Promise<HarnessExit | null> {
-  const result = await harnessOp(ops, callId, "result", { harness }).catch(() => null);
-  const exit = result === null ? null : (keepMatching(HarnessExit, result.meta) ?? {});
-  return exit === null || exit.missing === true ? null : exit;
-}
-
-/** Stops the harness and, once it has exited, reads its result. A call with no state left has nothing to stop. */
-async function stopHarness(
-  ops: ToolRun,
-  callId: string,
-  harness: Harness,
-): Promise<{ stopped: boolean; result: HarnessExit | null }> {
-  const stop = await harnessOp(ops, callId, "stop", { harness }).catch(() => null);
-  const stopped = stop !== null && keepMatching(HarnessStop, stop.meta)?.exited !== false;
-  return { stopped, result: stopped ? await readResult(ops, callId, harness) : null };
 }
 
 async function endTurn(turn: HarnessTurn, settled: Settled): Promise<TurnEnding> {

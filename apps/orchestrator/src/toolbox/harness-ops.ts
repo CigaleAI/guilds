@@ -5,7 +5,7 @@ import { isObjectNode } from "../lib/json.js";
 import { errorMessage, writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 import { HARNESS_HELPER, runCodeHelper, type CodeResult } from "./code.js";
-import { createToolHooks, type ToolRun } from "./types.js";
+import { createToolHooks, type CancelEvent, type ToolRun } from "./types.js";
 
 const HARNESS_OP_TIMEOUT_SECONDS = 60;
 const CHECKPOINT_TIMEOUT_SECONDS = 300;
@@ -113,6 +113,43 @@ export async function harnessOp(ops: ToolRun, callId: string, op: string, args: 
     { ...args, op, call_id: callId },
     { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS },
   );
+}
+
+/** Waits `ms`, or until the run is cancelled. */
+export async function pause(ms: number, cancel: CancelEvent | null): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const elapsed = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  if (cancel === null) {
+    await elapsed;
+    return;
+  }
+  const abort = new AbortController();
+  try {
+    await Promise.race([elapsed, cancel.wait(abort.signal).catch(() => undefined)]);
+  } finally {
+    clearTimeout(timer);
+    abort.abort();
+  }
+}
+
+/** The `result` op's meta, which also clears the call's state once the harness exited; null when unread. */
+export async function readResult(ops: ToolRun, callId: string, harness: Harness): Promise<HarnessExit | null> {
+  const result = await harnessOp(ops, callId, "result", { harness }).catch(() => null);
+  const exit = result === null ? null : (keepMatching(HarnessExit, result.meta) ?? {});
+  return exit === null || exit.missing === true ? null : exit;
+}
+
+/** Stops the harness and, once it has exited, reads its result. A call with no state left has nothing to stop. */
+export async function stopHarness(
+  ops: ToolRun,
+  callId: string,
+  harness: Harness,
+): Promise<{ stopped: boolean; result: HarnessExit | null }> {
+  const stop = await harnessOp(ops, callId, "stop", { harness }).catch(() => null);
+  const stopped = stop !== null && keepMatching(HarnessStop, stop.meta)?.exited !== false;
+  return { stopped, result: stopped ? await readResult(ops, callId, harness) : null };
 }
 
 /** The raw event log the app reads of one `code_task` call, at most this much of it. */
