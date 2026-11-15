@@ -45,7 +45,7 @@ body:
     id: size
     attributes:
       label: Size
-      description: The one domain directory under src/ it touches. Three commits or fewer, or split it.
+      description: "The one pull request it is: a single change, complete on its own. Two such changes are two issues."
     validations:
       required: true
   - type: textarea

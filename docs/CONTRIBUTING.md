@@ -50,11 +50,13 @@ field holds a question:
 - **Verification.** The test that fails today and passes when done,
   as suite and assertion. For a view, the steps a person runs in
   the app and what they see.
-- **Size.** One domain directory under `src/`, with its routes,
-  tests, and docs page; no concept the [glossary](GLOSSARY.md)
-  lacks; no schema change unless the issue is the migration and
-  nothing else; three commits or fewer. A larger need is split into
-  issues each complete on its own.
+- **Size.** One pull request
+  ([Pull requests](contributing/pull-requests.md#size)): a single
+  feature, fix, or chore, complete on its own, with its routes,
+  tests, and docs pages; no concept the [glossary](GLOSSARY.md)
+  lacks. Its steps are that pull request's commits. A need that
+  holds two such changes is two issues, neither waiting on the
+  other.
 - **Out of scope.** What stays as it is.
 - **Breaks.** None, or the route, event, type, export, or storage
   format that changes.

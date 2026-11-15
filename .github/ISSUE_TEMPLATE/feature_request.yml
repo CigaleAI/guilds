@@ -37,7 +37,7 @@ body:
     id: size
     attributes:
       label: Size
-      description: The one domain directory under src/ it touches, with its routes, tests, and docs page. Three commits or fewer, or split it.
+      description: "The one pull request it is: a single change, complete on its own, with its routes, tests, and docs pages. Two such changes are two issues."
   - type: textarea
     id: out-of-scope
     attributes:
