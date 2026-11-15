@@ -23,7 +23,9 @@ does a run's `config_snapshot`. `GET /api/harnesses` adds
 subscription agent needs a machine of the coding minimum whose image
 carries its harness; the machine listing names each agent's
 `model_source`, and the apply preview refuses a machine without a
-subscription role's harness with `machine.harness`.
+subscription role's harness with `machine.harness`. A subscription
+agent counts against an organisation's `maxCodingAgents`, as a coding
+agent does.
 
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit

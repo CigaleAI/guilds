@@ -491,7 +491,8 @@ rules.
 `machine <name> is full`) and a machine below what the agent needs
 (`<what> needs a machine with at least <size>; <machine> has <size>`).
 The organisation policy of an extension may cap agents, browser
-agents, and coding agents per organisation; core sets no cap. A
+agents, and coding agents per organisation, a subscription agent
+counting as a coding agent; core sets no cap. A
 policy refusal is 409 `<source> limit reached: <cap>`.
 
 ### Create

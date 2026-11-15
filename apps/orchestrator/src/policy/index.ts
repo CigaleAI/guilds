@@ -1,11 +1,12 @@
 import {
   countOrgAgents,
   countOrgBrowserAgents,
-  countOrgCodingAgents,
   countOrgGuilds,
+  listOrgAgentHarnessConfigs,
+  type OrgAgentHarnessConfig,
 } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { CoachRunLimits } from "../db/schema/index.js";
+import { modelSourceOf, type AgentConfig, type CoachRunLimits } from "../db/schema/index.js";
 import { countMachineAgents } from "../db/machines.js";
 import { claimMonthlyStudioBuilderRun } from "../db/usage.js";
 
@@ -94,6 +95,19 @@ export const OPEN_POLICY: OrgPolicy = {
   },
 };
 
+/**
+ * Whether an agent counts against `maxCodingAgents`: a coding agent does, and so does a
+ * subscription agent, which holds a harness as a coding agent does.
+ */
+export function countsAsCodingAgent(config: OrgAgentHarnessConfig): boolean {
+  return config.coding || modelSourceOf(config).kind === "subscription";
+}
+
+/** How many of the organisation's agents count against `maxCodingAgents`. */
+export async function countOrgCodingAgents(db: Queryable, orgId: string): Promise<number> {
+  return (await listOrgAgentHarnessConfigs(db, orgId)).filter(countsAsCodingAgent).length;
+}
+
 /** The live counts the caps are checked against. */
 function orgCounts(db: Queryable) {
   return {
@@ -120,11 +134,11 @@ export function remaining(limit: number | null, count: number): number | null {
   return limit === null ? null : Math.max(0, limit - count);
 }
 
-/** The agents a create adds, and how many of them have Browser and Coding on. */
+/** The agents a create adds, and how many of them have Browser on and count as coding agents. */
 export type AddedAgents = { agents: number; browserAgents: number; codingAgents: number };
 
-/** Whether a new agent has Browser and Coding on. */
-export type AgentFlags = { browser: boolean; coding: boolean };
+/** The settings of a new agent its caps are checked by. */
+export type CappedAgentConfig = Pick<AgentConfig, "browser"> & OrgAgentHarnessConfig;
 
 export async function assertCanCreateAgents(
   policy: OrgPolicy,
@@ -169,9 +183,9 @@ export async function assertCanCreateAgent(
   policy: OrgPolicy,
   db: Queryable,
   orgId: string,
-  flags: AgentFlags,
+  config: CappedAgentConfig,
 ): Promise<void> {
-  await assertCanCreateAgentThrough(policy, orgCounts(db), orgId, flags);
+  await assertCanCreateAgentThrough(policy, orgCounts(db), orgId, config);
 }
 
 /** `assertCanCreateAgent` through `counts`, the dependencies object a unit test fakes. */
@@ -179,12 +193,12 @@ export async function assertCanCreateAgentThrough(
   policy: OrgPolicy,
   counts: OrgCounts,
   orgId: string,
-  flags: AgentFlags,
+  config: CappedAgentConfig,
 ): Promise<void> {
   await assertCanCreateAgentsThrough(policy, counts, orgId, {
     agents: 1,
-    browserAgents: flags.browser ? 1 : 0,
-    codingAgents: flags.coding ? 1 : 0,
+    browserAgents: config.browser ? 1 : 0,
+    codingAgents: countsAsCodingAgent(config) ? 1 : 0,
   });
 }
 
@@ -277,7 +291,7 @@ export async function assertCanEnableBrowserThrough(
   }
 }
 
-/** Turning `coding` on for an existing agent takes one more of the organisation's coding agents. */
+/** Turning `coding` on, or a subscription, for an existing agent takes one more of the organisation's coding agents. */
 export async function assertCanEnableCoding(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
   await assertCanEnableCodingThrough(policy, orgCounts(db), orgId);
 }

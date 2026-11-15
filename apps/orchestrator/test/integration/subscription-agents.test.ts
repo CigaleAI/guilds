@@ -15,6 +15,7 @@ import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { connectModelProvider, TEST_MODEL } from "../helpers/models.js";
+import { limitedPolicy } from "../helpers/policy.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
@@ -54,6 +55,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: mcpPool(db),
     generation,
+    policy: limitedPolicy({ maxCodingAgents: 1 }),
   });
   let guildId = "";
   let machineId = "";
@@ -125,17 +127,29 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     assert.equal(created.json().config.coding, false);
     assert.equal(created.json().config.harness, "codex");
     assert.equal(created.json().model_source, "subscription");
+    // It holds one of the plan's coding agents, as a coding agent does.
+    const second = await createAgent("second", SUBSCRIPTION);
+    assert.equal(second.statusCode, 409, second.body);
+    assert.match(second.json().detail, /limit reached: coding agents/);
     const listed = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/agents`, headers: AUTH });
     assert.deepEqual(
       listed.json().map((item: { name: string; model_source: string }) => [item.name, item.model_source]),
       [["subscriber", "subscription"]],
     );
+    const plain = await createAgent("plain", { model: TEST_MODEL });
+    assert.equal(plain.statusCode, 201, plain.body);
+    const plainSwitched = await reconfigure(String(plain.json().id), { ...plain.json().config, ...SUBSCRIPTION });
+    assert.equal(plainSwitched.statusCode, 409, plainSwitched.body);
+    assert.match(plainSwitched.json().detail, /limit reached: coding agents/);
 
     // Its machine lists it on its subscription, and keeps the size it needs.
     const hosting = await app.inject({ method: "GET", url: "/api/orgs/org_home/machines", headers: AUTH });
     const builder = hosting.json().find((item: { id: string }) => item.id === machineId);
-    assert.deepEqual(builder.agents.map((item: { name: string; model_source: string }) => [item.name, item.model_source]), [["subscriber", "subscription"]]);
-    assert.equal(builder.planned_cpu, 2);
+    assert.deepEqual(builder.agents.map((item: { name: string; model_source: string }) => [item.name, item.model_source]), [
+      ["subscriber", "subscription"],
+      ["plain", "key"],
+    ]);
+    assert.equal(builder.planned_cpu, 2.5);
     const shrunk = await app.inject({
       method: "PATCH",
       url: `/api/orgs/org_home/machines/${machineId}`,

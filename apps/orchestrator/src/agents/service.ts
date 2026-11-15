@@ -39,6 +39,7 @@ import {
   assertCanCreateAgent,
   assertCanEnableBrowser,
   assertCanEnableCoding,
+  countsAsCodingAgent,
   type OrgPolicy,
 } from "../policy/index.js";
 import { AgentError } from "./errors.js";
@@ -289,8 +290,8 @@ export async function createAgent(
   }
   await assertModelSourceConnected(services, guild.org_id, config);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
+  await assertCanCreateAgent(policy, db, guild.org_id, config);
   const needs = agentNeedsOf(config);
-  await assertCanCreateAgent(policy, db, guild.org_id, needs);
   await assertGuildAgentRoom(db, guild.id, 1);
   const { machine, maxAgentsPerMachine } = await placeAgent(
     services,
@@ -327,7 +328,10 @@ function validateAgentProfile(patch: AgentSettingsPatch): AgentConfigPatch {
   };
 }
 
-/** Refuses switching on a browser or coding the agent did not have when the policy's caps are reached. */
+/**
+ * Refuses switching on a browser the agent did not have, or what makes it count as a coding agent
+ * when it did not, when the policy's caps are reached.
+ */
 async function assertCanEnable(
   services: AgentServices,
   agent: AgentRow,
@@ -337,7 +341,7 @@ async function assertCanEnable(
   if (config.browser && !previous.browser) {
     await assertCanEnableBrowser(services.policy, services.db, agent.org_id, false);
   }
-  if (config.coding && !previous.coding) {
+  if (countsAsCodingAgent(config) && !countsAsCodingAgent(previous)) {
     await assertCanEnableCoding(services.policy, services.db, agent.org_id);
   }
 }
