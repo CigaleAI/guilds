@@ -86,9 +86,6 @@
     }
   },
   "src/coding/git.ts": {
-    "limits/bumpy-road": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }

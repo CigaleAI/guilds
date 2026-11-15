@@ -42,11 +42,13 @@ connects its own login and picks a different set
 At each generation of a coding agent, after the sandbox is up and the
 workspace and harness checks pass:
 
-1. **Tokens.** For each GitHub login the repositories use, the
+1. **Tokens.** Each repository with a git provider gets its token
+   from that provider. For each GitHub login the repositories use, the
    orchestrator mints a short-lived token limited to those repositories,
-   with contents and pull requests write. It writes the tokens on the
-   agent's machine, outside every home, and adds them to the run's
-   redaction.
+   with contents and pull requests write. For a repository with an
+   access token, it reads the value of the secret the repository names.
+   It writes the tokens on the agent's machine, outside every home, and
+   adds them to the run's redaction.
 2. **Identity and clone.** The agent's git identity is written into
    its home, and each repository missing from `repos/` is cloned. A
    clone already there whose `origin` names another URL on the same
@@ -58,7 +60,8 @@ After that the agent fetches, branches, commits, and pushes itself.
 The orchestrator never runs git in its own process: a repository's
 hooks and configuration are the agent's.
 
-The tokens are refreshed while the run goes on ([Tokens](#tokens)).
+A token that expires is refreshed while the run goes on
+([Tokens](#tokens)).
 
 ### Git identity
 
@@ -231,18 +234,32 @@ domain`), and at most 254 characters.
 
 ### Tokens
 
-For each GitHub connection the repositories use, the orchestrator
-mints an installation access token limited to those repositories by
-their GitHub ids, with contents and pull requests write. A repository
-stored without an id gets the one GitHub lists under its path. GitHub's
-answer names every repository as it is now: a repository whose name or
-owner changed gets its current URL, on the guild repository and in the
-login's selection.
+The repository's `provider` mints its token. A repository without one
+gets no token.
+
+- `github`: for each GitHub connection the repositories use, the
+  orchestrator mints an installation access token limited to those
+  repositories by their GitHub ids, with contents and pull requests
+  write. A repository stored without an id gets the one GitHub lists
+  under its path. GitHub's answer names every repository as it is now:
+  a repository whose name or owner changed gets its current URL, on
+  the guild repository and in the login's selection. The token lives
+  one hour.
+- `access_token`: the value of the secret `secret_id` names, read when
+  the generation starts, sent with the repository's `username`. It has
+  no expiry and is never refreshed. The secret is not added to the
+  agent's environment; an agent gets it there only when the secret is
+  also granted to it ([Secrets](../secrets.md)).
 
 The tokens are written through the sandbox file API to
 `/run/guilds/<agent id>/git-tokens.json`, outside every home, as
-`{ repositories: { <name>: { token, expires_at, host, path } } }`. Each
-joins the generation's redaction set.
+`{ repositories: { <name>: { token, expires_at, host, path, username, provider } } }`.
+`host` and `path` are where git may use the token: `github.com` and
+the repository's `<owner>/<repository>` for GitHub; for an access
+token, the URL's host, with its port when it is not 443, and the URL's
+path. `username` is `x-access-token` for GitHub. `expires_at` is null
+for an access token. Each token joins the generation's redaction set
+as `GIT_TOKEN_<n>`.
 
 git reads its repository's token through the credential helper,
 `/usr/local/bin/guilds-git-credential`. The image sets it for
@@ -272,7 +289,13 @@ The generation-start error `repository.token` covers:
 - an installation that does not reach a repository: "the GitHub App
   installed for `<account>` does not reach `<name>` (`<owner>`/`<repository>`):
   give the App access to it on GitHub, or pick it again on the GitHub
-  integration".
+  integration";
+- an access token's secret that is gone: "`<name>`: the secret that
+  holds its access token is gone";
+- one that cannot be decrypted: "`<name>`: the secret `<secret>` that
+  holds its access token cannot be read";
+- one whose value holds a line break: "`<name>`: the secret `<secret>`
+  holds a line break, which git cannot send as a token".
 
 ### Identity and clone
 
@@ -284,7 +307,7 @@ fails with `repository.clone`, "clone failed: `<name>`: `<error>`". When
 git wanted credentials, the error says which case it is:
 
 - the repository had a token git left unused: "git did not use the
-  GitHub token issued for it";
+  token issued for it";
 - a `github.com` repository without a login: "it has no GitHub login,
   so it was cloned without credentials: pick a private repository on
   the GitHub integration instead";
@@ -300,9 +323,12 @@ A coding agent's State carries `repositories`:
 ### Code
 
 `apps/orchestrator/src/coding/repositories.ts` (validation, the clone
-list), `apps/orchestrator/src/coding/git.ts` (the agent's tokens,
-identity, clone errors), `apps/orchestrator/src/github/tokens.ts`
-(minting a login's installation token),
+list), `apps/orchestrator/src/coding/git.ts` (the git provider, the
+agent's tokens, identity, clone errors),
+`apps/orchestrator/src/coding/github-provider.ts` (GitHub's tokens),
+`apps/orchestrator/src/coding/access-token-provider.ts` (an access
+token's), `apps/orchestrator/src/github/tokens.ts` (minting a login's
+installation token),
 `apps/orchestrator/src/coding/guild-repositories.ts` (a guild's
 repositories and the GitHub logins they use, and
 `retireInstallationGone`, which retires a login whose installation
