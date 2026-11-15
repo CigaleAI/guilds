@@ -18,7 +18,6 @@ import type {
 } from "../db/schema/index.js";
 import { getSecretByName, listAgentSecrets, setSecretAccess } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
-import { GITHUB_SLUG } from "../github/index.js";
 import { type ChangeActor, userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
@@ -36,9 +35,9 @@ export function browserLoginSetup(role: RecipeRole, site?: string): string {
   return `This role has no native connector. After apply, open the agent and take control of its Chromium to log into ${target}. Session cookies stay in the browser profile. Mark the reminder as done once you have — we cannot tell when you are finished.`;
 }
 
-/** What connecting GitHub takes for a recipe's repositories, beside whatever its GitHub connection says. */
-const REPOSITORIES_GITHUB_SETUP =
-  "Install the GitHub App on the account that owns the repositories (once per account; later logins reuse that install), so the coding agents clone, push, and open pull requests. Public repositories clone without it; pushing to them still needs it. On the GitHub card in Tools, pick this guild's or agent's repositories. In the guild's Settings, set Commit author email to a verified email on the GitHub account that owns any deploy project (Vercel, etc.).";
+/** What adding a recipe's repository takes, after its name: its URL and the credential it is cloned with. */
+const REPOSITORY_SETUP =
+  "with its HTTPS URL, on any git host, and a credential: a GitHub login for a GitHub repository, an access token kept as a secret for any host, or none for a public repository, which then cannot be pushed to. When a deploy service must recognise the commits' author, set the guild's Commit author email to a verified email of the account that owns the deploy project.";
 
 function connectionSteps(plan: ApplyPlan): ApplyStep[] {
   return plan.connections.flatMap((connection): ApplyStep[] => {
@@ -64,30 +63,14 @@ function connectionSteps(plan: ApplyPlan): ApplyStep[] {
   });
 }
 
-/** The GitHub connection the recipe's repositories need, joined to the recipe's own GitHub step when it has one. */
+/** A step per repository the recipe lists, each asking for the repository's URL and credential. */
 function addRepositorySteps(steps: ApplyStep[], recipe: RecipeDocument): void {
-  if (!recipe.repositories.length) {
-    return;
-  }
-  const github = steps.find((step) => step.id === `conn:${GITHUB_SLUG}`);
-  if (github) {
-    github.setup = [github.setup, REPOSITORIES_GITHUB_SETUP].filter(Boolean).join(" ");
-  } else {
-    steps.push({
-      id: `conn:${GITHUB_SLUG}`,
-      kind: "connection",
-      title: "Connect GitHub",
-      setup: REPOSITORIES_GITHUB_SETUP,
-      closure: "verified",
-      status: "open",
-    });
-  }
   for (const repository of recipe.repositories) {
     steps.push({
       id: `repo:${repository.name}`,
       kind: "repository",
       title: `Add the ${repository.name} repository`,
-      setup: `${repository.purpose ? `${repository.purpose} ` : ""}Add it in the guild's Settings under Repositories, named ${repository.name}.`,
+      setup: `${repository.purpose ? `${repository.purpose} ` : ""}Add it in the guild's Settings under Repositories, named ${repository.name}, ${REPOSITORY_SETUP}`,
       closure: "verified",
       status: "open",
     });

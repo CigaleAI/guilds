@@ -114,9 +114,11 @@ the change of that one harness turn.
 ## Good to know
 
 - An anonymous repository lets the agent clone and change its copy.
-  To push branches and open pull requests, connect GitHub and pick the
-  repository there. [GitHub](../tools-and-connectors/github.md) shows
-  how.
+  To push branches, add the repository with a credential: a GitHub
+  login, which [GitHub](../tools-and-connectors/github.md) shows how to
+  connect, or an access token from its git host, kept as a secret.
+  [Repositories](../concepts/coding/repositories.md#access-tokens)
+  shows which username each host takes.
 - A token works instead of a login. Run `claude setup-token` on your
   own computer. In the agent's **Harness** settings, click **Add
   token**. Paste the token as the **Value** and click **Add secret**.

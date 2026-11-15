@@ -245,10 +245,10 @@ login_failure_policy }`. That is what creates the apply take-control login
   guild works in at the top level as `repositories: [{ name, purpose }]`:
   `name` is the folder under `repos/` in each coding agent's home (`^[a-z][a-z0-9_-]{0,62}$`),
   `purpose` one line on what the repository holds. Never a URL, an owner, or
-  a credential; apply asks the operator to connect GitHub and add each one.
+  a credential; apply asks the operator to add each one with its URL and a credential.
   Each coding role's Task names the repositories it works in, the checks it
   runs before handing work over, and how work reaches its reviewer (a branch
-  and a pull request, recorded where the guild tracks work). Coding roles
+  and a pull or merge request, recorded where the guild tracks work). Coding roles
   count against the organisation's coding agents (`remaining.coding_agents`
   from `builder_list_capabilities`; `null` means no limit).
 

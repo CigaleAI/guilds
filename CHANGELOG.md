@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A recipe that lists repositories no longer asks for a
+GitHub connection: applying it adds no `conn:github` step of its own,
+and its preview names no GitHub App to set up for them. Each
+`repo:<name>` step asks for the repository's HTTPS URL, on any git
+host, and a credential. Coding agents are told to push their branch
+and open the pull or merge request with the host's connector tools.
+
 **Rebuild.** The guild's add-repository form takes a URL on any HTTPS
 host and a **Credential**: a GitHub login, offered for a `github.com`
 URL only, an **Access token** (a secret the operator manages and its

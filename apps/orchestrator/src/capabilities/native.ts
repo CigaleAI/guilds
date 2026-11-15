@@ -96,7 +96,7 @@ export const CODING_CAPABILITY = {
   id: "coding",
   label: "Coding",
   description:
-    "A coding agent clones the guild's repositories into its sandbox, delegates code changes to a coding harness (Claude Code, Codex, Cursor, or Antigravity, on the operator's own subscription) with code_task, checks the harness's work with shell, file_read, and code_search, and hands work over through git branches and pull requests. Set config.coding on the role, config.harness when the operator named one, and list the repositories the guild needs in the recipe's repositories (name and purpose; no URL or credential). Node.js, build tools, git, gh, and mise are in the sandbox; the workspace, caches, and toolchains persist. A run near its input limit continues in a new run from the agent's own hand-off.",
+    "A coding agent clones the guild's repositories into its sandbox, delegates code changes to a coding harness (Claude Code, Codex, Cursor, or Antigravity, on the operator's own subscription) with code_task, checks the harness's work with shell, file_read, and code_search, and hands work over through pushed git branches, opening pull or merge requests with the repository host's connector tools. Set config.coding on the role, config.harness when the operator named one, and list the repositories the guild needs in the recipe's repositories (name and purpose; no URL or credential). Node.js, build tools, git, gh, and mise are in the sandbox; the workspace, caches, and toolchains persist. A run near its input limit continues in a new run from the agent's own hand-off.",
   tools: [...CODING_TOOLS, ...HARNESS_TOOLS],
   costs: {
     sandbox: "a code box, 2 CPU, 4 GiB",
@@ -106,7 +106,7 @@ export const CODING_CAPABILITY = {
     kind: "repository",
     deferrable: false,
     description:
-      "Apply asks the operator to connect GitHub at the organisation or the guild, then to add each repository in the guild's Settings; a repository without a GitHub login is cloned anonymously.",
+      "Apply asks the operator to add each repository in the guild's Settings with its HTTPS URL, on any git host, and a credential: a GitHub login, an access token kept as a secret, or none for a public repository, which is cloned anonymously.",
   },
 };
 
