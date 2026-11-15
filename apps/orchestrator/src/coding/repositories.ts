@@ -84,26 +84,21 @@ export type CodingRepository = Pick<
 /** A guild repository as a run's state lists it: where it sits in the agent's home. */
 export type StateRepository = { name: string; path: string; default_branch: string };
 
+/** The GitHub login `connectionId` as a repository's credential, for `url`; only a `https://github.com/<owner>/<repository>` URL takes one. */
+function validateGithubCredential(connectionId: string, url: string): RepositoryCredential {
+  if (parseGithubUrl(url) === null) {
+    throw new RepositoryValidationError(
+      "with a GitHub connection, url must be https://github.com/<owner>/<repository>",
+    );
+  }
+  return { provider: "github", connectionId, secretId: null, username: null };
+}
+
 /**
- * The credential a repository's draft names, for its `url`: a GitHub login, which only a
- * `https://github.com/<owner>/<repository>` URL takes; an access token's secret and username, on
- * any host; or none. A draft naming both, or half an access token, is refused.
+ * An access token's secret and username as a repository's credential, on any host, or none when
+ * neither is given. Half of one, or a username git cannot send, is refused.
  */
-function validateRepositoryCredential(body: RepositoryDraft, url: string): RepositoryCredential {
-  const connectionId = body.connection_id || null;
-  const secretId = body.secret_id || null;
-  const username = body.username?.trim() || null;
-  if (connectionId !== null && (secretId !== null || username !== null)) {
-    throw new RepositoryValidationError("a repository takes one credential: a GitHub login or an access token");
-  }
-  if (connectionId !== null) {
-    if (parseGithubUrl(url) === null) {
-      throw new RepositoryValidationError(
-        "with a GitHub connection, url must be https://github.com/<owner>/<repository>",
-      );
-    }
-    return { provider: "github", connectionId, secretId: null, username: null };
-  }
+function validateAccessTokenCredential(secretId: string | null, username: string | null): RepositoryCredential {
   if (secretId === null && username === null) {
     return { provider: null, connectionId: null, secretId: null, username: null };
   }
@@ -115,12 +110,26 @@ function validateRepositoryCredential(body: RepositoryDraft, url: string): Repos
   return { provider: "access_token", connectionId: null, secretId, username };
 }
 
-export function validateRepositoryInput(body: RepositoryDraft): RepositoryInput {
-  const name = body.name.trim();
-  if (!REPOSITORY_NAME_RE.test(name)) {
-    throw new RepositoryValidationError("name must match ^[a-z][a-z0-9_-]{0,62}$");
+/**
+ * The credential a repository's draft names, for its `url`: a GitHub login, an access token's
+ * secret and username, or none. A draft naming both is refused.
+ */
+function validateRepositoryCredential(body: RepositoryDraft, url: string): RepositoryCredential {
+  const connectionId = body.connection_id || null;
+  const secretId = body.secret_id || null;
+  const username = body.username?.trim() || null;
+  if (connectionId !== null && (secretId !== null || username !== null)) {
+    throw new RepositoryValidationError("a repository takes one credential: a GitHub login or an access token");
   }
-  const url = body.url.trim();
+  if (connectionId !== null) {
+    return validateGithubCredential(connectionId, url);
+  }
+  return validateAccessTokenCredential(secretId, username);
+}
+
+/** A repository's URL, trimmed: an https git URL on any host, without credentials, query, or fragment. */
+function validateRepositoryUrl(raw: string): string {
+  const url = raw.trim();
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -132,6 +141,15 @@ export function validateRepositoryInput(body: RepositoryDraft): RepositoryInput 
       "url must be an https git URL without credentials, query, or fragment",
     );
   }
+  return url;
+}
+
+export function validateRepositoryInput(body: RepositoryDraft): RepositoryInput {
+  const name = body.name.trim();
+  if (!REPOSITORY_NAME_RE.test(name)) {
+    throw new RepositoryValidationError("name must match ^[a-z][a-z0-9_-]{0,62}$");
+  }
+  const url = validateRepositoryUrl(body.url);
   const defaultBranch = body.default_branch?.trim() || null;
   if (defaultBranch !== null && !BRANCH_RE.test(defaultBranch)) {
     throw new RepositoryValidationError("default_branch is not a valid branch name");
