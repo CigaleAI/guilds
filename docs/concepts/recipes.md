@@ -142,8 +142,10 @@ Below the header is the plan: everything the recipe creates and needs.
   icon when the checks flag the agent's routines; its hover gives the
   coach's advice.
 - A **Capabilities** row lists **Browser**, whose hover gives the
-  login step and notes, and **Coding**, with the
-  [harness](coding/harnesses.md) the role names, or *no harness yet*.
+  login step and notes, **Coding**, with the
+  [harness](coding/harnesses.md) the role names, or *no harness yet*,
+  and **Subscription** for a subscription role, with its harness the
+  same way.
 - Each agent's **Task** folds open. It has a copy button and
   **Edit Task**, which lets you rewrite it and **Save Task**. Each
   script folds open under it.

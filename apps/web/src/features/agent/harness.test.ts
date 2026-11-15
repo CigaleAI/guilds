@@ -14,6 +14,8 @@ import {
   harnessEffortsFor,
   harnessLabel,
   harnessOffered,
+  harnessProblems,
+  runsSubscription,
   harnessOptions,
   isHarnessEffort,
   listedHarnessModel,
@@ -253,6 +255,7 @@ const CATALOG: HarnessCatalog[] = [
     harness: "codex",
     label: "Codex",
     enabled: true,
+    subscription: true,
     models: [
       { id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" },
     ],
@@ -262,6 +265,7 @@ const CATALOG: HarnessCatalog[] = [
     harness: "cursor",
     label: "Cursor",
     enabled: false,
+    subscription: false,
     models: [{ id: "composer-2.5", label: "Composer 2.5", efforts: [], default_effort: null }],
     unlisted_efforts: [],
   },
@@ -295,4 +299,16 @@ test("leaving the effort unset names the model's default effort, else the harnes
   const codex = catalogFor(CATALOG, "codex");
   assert.equal(defaultEffortLabel(listedHarnessModel(codex, "gpt-6-luna")), "Default (Low)");
   assert.equal(defaultEffortLabel(undefined), "Harness default");
+});
+
+test("a subscription is offered the harnesses the catalogue says run one, every one before it loads", () => {
+  assert.equal(runsSubscription(CATALOG, "codex"), true);
+  assert.equal(runsSubscription(CATALOG, "cursor"), false);
+  assert.equal(runsSubscription(undefined, "cursor"), true);
+});
+
+test("a harness's problems leave out the repositories only code tasks need", () => {
+  assert.deepEqual(harnessProblems(status({ harness: null, repositories: [] })), [
+    { kind: "harness" },
+  ]);
 });

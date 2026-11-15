@@ -137,17 +137,19 @@ it shows:
   the recipe's agents add, and its `machine.*` findings.
 - the plan, as on the recipe's page, with only the sections that have
   entries. Each agent's card adds its **Agent name**, its **Model**,
-  and for a coding agent its **Harness**. The model list is the
-  organisation's chosen models, with a hint naming the recipe's
-  recommendation. The agent's **Coding** chip names the harness
-  picked. A taken name says *An agent already has this name. Rename
+  and for a coding agent its **Harness**. A subscription agent's card
+  has a **Harness** among Claude Code and Codex, and no **Model**. The
+  model list is the organisation's chosen models, with a hint naming
+  the recipe's recommendation. The agent's **Coding** or
+  **Subscription** chip names the harness picked. A taken name says *An agent already has this name. Rename
   it before creating.* Each connector card adds a **Login**: a live
   login to reuse, or **Connect after the guild exists**.
 
-**Create guild** waits until every agent has a model, every coding
-agent has a harness, and, with several machines, one is chosen. While
-no model provider is connected, a guide to
-[Model keys](model-keys.md) stands in for the model pickers. The
+**Create guild** waits until every agent on a key has a model, every
+coding or subscription agent has a harness, and, with several
+machines, one is chosen. While no model provider is connected and an
+agent is on a key, a guide to [Model keys](model-keys.md) stands in
+for the model pickers. The
 preview leaves out `connection.missing`, which is a note on how the
 recipe is written.
 

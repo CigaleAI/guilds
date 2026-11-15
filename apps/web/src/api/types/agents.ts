@@ -6,6 +6,12 @@
 import type { AgentAccess } from "./access";
 import type { SecretRef } from "./secrets";
 
+/**
+ * Where an agent's turns run: a model on one of the organisation's keys, or its harness on the
+ * operator's own subscription. The server states it; a subscription agent stores no model.
+ */
+export type ModelSource = "key" | "subscription";
+
 export type Agent = {
   id: string;
   guild_id: string;
@@ -79,7 +85,7 @@ export type MachineInput = {
 /** The fields to change on one machine. */
 export type MachineUpdate = { machineId: string; input: Partial<MachineInput> };
 
-/** The coding CLI a coding agent delegates code work to through `code_task`. */
+/** The coding CLI a coding agent delegates code work to through `code_task`, and a subscription agent runs every turn on. */
 export type Harness = "claude-code" | "codex" | "cursor" | "antigravity";
 
 /** The reasoning efforts a harness can run a model at, lowest first. */
@@ -103,10 +109,15 @@ export type HarnessCatalog = {
   label: string;
   /** False when the box turns the harness off: offered only to an agent already on it. */
   enabled: boolean;
+  /** Whether a subscription agent may run on the harness. */
+  subscription: boolean;
   models: HarnessCatalogModel[];
   /** The efforts for the subscription's default model or a custom one; empty when the model name carries it. */
   unlisted_efforts: HarnessEffort[];
 };
+
+/** `GET /api/harnesses`: every harness's catalog, and whether the box offers subscription agents. */
+export type HarnessOffer = { harnesses: HarnessCatalog[]; subscription_agents: boolean };
 
 export type AgentConfig = {
   model: string;

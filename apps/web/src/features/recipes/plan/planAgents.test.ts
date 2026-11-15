@@ -131,6 +131,29 @@ test("a coding agent lists its harness as a capability, pending until one is nam
   assert.equal(coding?.label, "Coding · no harness yet");
   assert.equal(coding?.pending, true);
   assert.equal(coder("vim").agents[0]?.harness, null);
-  const writer = planFromRecipe({ roles: [{ role: "w", config: { harness: "codex" } }] });
+  const writer = planFromRecipe({
+    roles: [{ role: "w", config: { model: "m", harness: "codex" } }],
+  });
   assert.equal(writer.agents[0]?.harness, null);
+  assert.equal(writer.agents[0]?.model_source, "key");
+});
+
+test("a role with a harness, no model, and no coding runs on a subscription, its harness listed as a capability", () => {
+  const plan = planFromRecipe({ roles: [{ role: "w", config: { harness: "codex" } }] });
+  const [agent] = plan.agents;
+  assert.equal(agent?.model_source, "subscription");
+  assert.equal(agent?.harness, "codex");
+  assert.deepEqual(agentCard(agent!, plan, []).capabilities, [
+    {
+      id: "subscription",
+      label: "Subscription · Codex",
+      hint: ["Every turn runs on Codex, on your own subscription."],
+      reviewer: null,
+      pending: false,
+    },
+  ]);
+  const coder = planFromRecipe({
+    roles: [{ role: "c", config: { coding: true, harness: "codex" } }],
+  });
+  assert.equal(coder.agents[0]?.model_source, "key", "a coding role is on a key");
 });
