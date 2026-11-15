@@ -495,6 +495,14 @@ pinned to the CLI version the image installs.
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
 | Antigravity | `agy --output-format stream-json --dangerously-skip-permissions --disable-slash-commands --add-dir <run folder> -p "Read your task in <prompt file> and follow it."` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | the prompt file, named in `-p`; `--add-dir` lets the CLI's tools reach it outside the repository |
 
+A request with a `system_prompt` starts Claude Code with
+`--system-prompt-file <run folder>/<call id>.system.md`, after
+`--settings` and before the model, so that text replaces Claude Code's
+own system prompt. `start` writes the file with mode 0600 beside the
+prompt file, and `result` removes both with the call's state. Codex,
+Cursor, and Antigravity refuse a system prompt (`<harness> takes no
+system prompt`) before the call starts.
+
 The orchestrator resolves the agent's model and effort through the
 catalogue before the call: a listed Cursor model becomes its CLI name
 for the effort. The model is passed as one argument. Without a model

@@ -9,10 +9,13 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
   run on.
 - `start`: removes the harness's local configuration and memory from the agent's home, then
   forks a supervisor in its own session and returns at once. The supervisor starts
-  the CLI in its own process group in the repository directory, writes the CLI's raw events
-  to the log, waits for it, and records its exit code.
-- `poll`: the normalised progress lines after a byte offset into the log, the new offset,
-  the session id once the harness has reported one, and whether the CLI has exited.
+  the CLI in its own process group in the repository directory, or in the home when the
+  request names no repository, writes the CLI's raw events to the log, waits for it, and
+  records its exit code. A request with a `system_prompt` starts a CLI that takes one with
+  that system prompt in place of its own; any other CLI refuses it.
+- `poll`: the raw events after a byte offset into the log, their normalised progress lines,
+  the new offset, the session id once the harness has reported one, and whether the CLI has
+  exited.
 - `result`: the final message, the session id, and how the turn ended, read from the log.
 - `stop`: SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the
   supervisor to record the exit.
@@ -26,7 +29,8 @@ deletes. The helper prints one base64 JSON envelope: {"ok": true, "text": ..., "
 A call's state lives in /run/guilds/<agent id>/harness/: `<call id>.json` (what was started),
 `<call id>.pid` (the CLI's pid, its process group), `<call id>.exit` (its exit code),
 `<call id>.session` (the session id once seen), `<call id>.stderr`. The raw event log is
-`.runs/<run id>/<call id>.harness.jsonl` in the agent's home.
+`.runs/<run id>/<call id>.harness.jsonl` in the agent's home, beside the call's private prompt
+files, `<call id>.prompt.md` and `<call id>.system.md`, which go with its state.
 """
 from __future__ import annotations
 
@@ -160,13 +164,18 @@ class Driver:
                 removed.append(str(found.relative_to(HOME)))
         return removed
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
-        """The CLI's command line; an empty model leaves the model to the subscription."""
+    def command(self, session_id: str, prompt_path: Path, launch: Launch, system_path: Path | None) -> list[str]:
+        """The CLI's command line; an empty model leaves the model to the subscription, and a
+        system prompt file replaces the CLI's own system prompt."""
         raise NotImplementedError
 
     def effort_args(self, effort: str) -> list[str]:
         """The arguments that set the model's effort."""
         raise ToolError(f"{self.name} takes its effort in the model name")
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        """The arguments that replace the CLI's system prompt with the file at `path`."""
+        raise ToolError(f"{self.name} takes no system prompt")
 
     def model_args(self, launch: Launch) -> list[str]:
         """`--model` with the model, then the effort's arguments; nothing for what is empty."""
@@ -246,7 +255,7 @@ class ClaudeCode(Driver):
         ".claude/projects/*/memory",
     )
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    def command(self, session_id: str, prompt_path: Path, launch: Launch, system_path: Path | None) -> list[str]:
         argv = [
             self.binary,
             "-p",
@@ -261,6 +270,7 @@ class ClaudeCode(Driver):
             "--settings",
             json.dumps(self.settings),
         ]
+        argv += self.system_prompt_args(system_path) if system_path else []
         argv += self.model_args(launch)
         if session_id:
             argv += ["--resume", session_id]
@@ -268,6 +278,9 @@ class ClaudeCode(Driver):
 
     def effort_args(self, effort: str) -> list[str]:
         return ["--effort", effort]
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        return ["--system-prompt-file", str(path)]
 
     def credential(self, env: dict[str, str]) -> str | None:
         if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
@@ -366,7 +379,7 @@ class Codex(Driver):
         ".codex/hooks.json",
     )
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    def command(self, session_id: str, prompt_path: Path, launch: Launch, system_path: Path | None) -> list[str]:
         argv = [self.binary, "exec"]
         if session_id:
             argv.append("resume")
@@ -470,7 +483,7 @@ class Cursor(Driver):
         ".cursor/plugins",
     )
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    def command(self, session_id: str, prompt_path: Path, launch: Launch, system_path: Path | None) -> list[str]:
         argv = [self.binary, "-p", "--force", "--trust", "--output-format", "stream-json"]
         argv += self.model_args(launch)
         if session_id:
@@ -595,7 +608,7 @@ class Antigravity(Driver):
         path.write_text(json.dumps(self.settings), encoding="utf-8")
         return removed
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    def command(self, session_id: str, prompt_path: Path, launch: Launch, system_path: Path | None) -> list[str]:
         argv = [
             self.binary,
             "--output-format",
@@ -847,18 +860,34 @@ def _launch(spec: dict[str, Any]) -> Launch:
 
 
 def _start_request(spec: dict[str, Any]) -> tuple[Driver, str, str, Path, str, str]:
-    """The validated start request: driver, call id, run id, repository directory, prompt, session id."""
+    """The validated start request: driver, call id, run id, working directory, prompt, session id."""
     driver = _driver(spec)
     call_id = _safe_segment(spec.get("call_id"), "call_id")
     run_id = _safe_segment(spec.get("run_id"), "run_id")
-    repository = _safe_segment(spec.get("repository"), "repository")
-    cwd = REPOS / repository
-    if not cwd.is_dir():
-        raise ToolError(f"no repository {repository} under {REPOS}")
+    cwd = _working_dir(spec)
     prompt = spec.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         raise ToolError("prompt is required")
     return driver, call_id, run_id, cwd, prompt, _session_id(spec)
+
+
+def _working_dir(spec: dict[str, Any]) -> Path:
+    """The directory of the repository the request names, or the agent's home when it names none."""
+    if not spec.get("repository"):
+        return HOME
+    repository = _safe_segment(spec.get("repository"), "repository")
+    cwd = REPOS / repository
+    if not cwd.is_dir():
+        raise ToolError(f"no repository {repository} under {REPOS}")
+    return cwd
+
+
+def _system_prompt(spec: dict[str, Any]) -> str:
+    """The system prompt the request starts the CLI with in place of its own; empty for none."""
+    system_prompt = spec.get("system_prompt") or ""
+    if not isinstance(system_prompt, str):
+        raise ToolError("system_prompt is invalid")
+    return system_prompt
 
 
 def _session_id(spec: dict[str, Any]) -> str:
@@ -914,8 +943,12 @@ def _wait_for_pid(paths: dict[str, Path]) -> int | None:
 def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     driver, call_id, run_id, cwd, prompt, session_id = _start_request(spec)
     launch = _launch(spec)
-    # Refuses an effort the harness cannot take before anything is claimed or reset.
+    system_prompt = _system_prompt(spec)
+    system_path = RUNS / run_id / f"{call_id}.system.md" if system_prompt else None
+    # Refuses an effort or a system prompt the harness cannot take before anything is claimed or reset.
     driver.model_args(launch)
+    if system_path:
+        driver.system_prompt_args(system_path)
     if shutil.which(driver.binary) is None:
         raise ToolError(f"{driver.binary} is not installed in this image")
     paths = _claim_call(call_id)
@@ -923,15 +956,18 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     run_dir = _run_dir(run_id)
     prompt_path = run_dir / f"{call_id}.prompt.md"
     _write_prompt(prompt_path, prompt)
+    if system_path:
+        _write_prompt(system_path, system_prompt)
     state = {
         "call_id": call_id,
         "run_id": run_id,
         "harness": driver.name,
-        "repository": cwd.name,
+        "repository": cwd.name if cwd != HOME else None,
         "cwd": str(cwd),
-        "argv": driver.command(session_id, prompt_path, launch),
+        "argv": driver.command(session_id, prompt_path, launch, system_path),
         "stdin": str(prompt_path) if driver.prompt_on_stdin else None,
         "prompt_path": str(prompt_path),
+        "system_prompt_path": str(system_path) if system_path else None,
         "log_path": str(run_dir / f"{call_id}.harness.jsonl"),
         "started_at": time.time(),
         "supervisor_pid": None,
@@ -941,7 +977,7 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     _write(paths["state"], json.dumps(state))
     pid = _wait_for_pid(paths)
     exited, code = _exit_code(call_id, state)
-    text = f"started {driver.name} in {cwd.name}" + (f" (pid {pid})" if pid else "")
+    text = f"started {driver.name} in {cwd}" + (f" (pid {pid})" if pid else "")
     meta = {"pid": pid, "log_path": state["log_path"], "exited": exited and pid is None, "exit_code": code, "reset": reset}
     return {"text": text, "meta": meta}
 
@@ -1063,9 +1099,12 @@ def op_poll(spec: dict[str, Any]) -> dict[str, Any]:
     if state is None:
         return {"text": f"no harness call {call_id}", "meta": {"missing": True}}
     offset = spec.get("offset")
+    start = offset if isinstance(offset, int) and offset >= 0 else 0
     exited, code = _exit_code(call_id, state)
     log = Path(state["log_path"])
-    events, new_offset, _ = _events(log, exited, offset if isinstance(offset, int) and offset >= 0 else 0)
+    data = _read_log(log, start, exited)
+    events, _ = _parse_events(data)
+    new_offset = start + len(data)
     lines = _progress_lines(driver, events)
     meta = {
         "missing": False,
@@ -1076,7 +1115,7 @@ def op_poll(spec: dict[str, Any]) -> dict[str, Any]:
         "exited": exited and _log_read_through(log, new_offset),
         "exit_code": code,
     }
-    return {"text": "\n".join(lines), "meta": meta}
+    return {"text": data.decode("utf-8", errors="replace"), "meta": meta}
 
 
 def _stderr_tail(path: Path) -> str:
@@ -1090,8 +1129,10 @@ def _stderr_tail(path: Path) -> str:
 
 
 def _clear_call(state: dict[str, Any], paths: dict[str, Path]) -> None:
-    """Removes the call's state files and its prompt file."""
-    Path(state["prompt_path"]).unlink(missing_ok=True)
+    """Removes the call's state files and its prompt files."""
+    for private in (state.get("prompt_path"), state.get("system_prompt_path")):
+        if private:
+            Path(private).unlink(missing_ok=True)
     for path in paths.values():
         path.unlink(missing_ok=True)
 
