@@ -316,8 +316,9 @@ on.
   `planned_mib`, number of `agents`, and `fits`, whether it meets that
   minimum. `adds_cpu` and `adds_mib` are the planned load the roles
   add. On the chosen machine it is a blocking finding when the machine
-  is below a role's minimum (`machine.size`, one per role), when the
-  roles would take the machine past 32 agents or the policy's agents
+  is below a role's minimum (`machine.size`, one per role), when its
+  image lacks the harness of a subscription role (`machine.harness`,
+  one per role), when the roles would take the machine past 32 agents or the policy's agents
   per machine (`machine.full`), and when the machine hosts an agent of
   a guild the operator cannot see (`machine.private`). An unknown
   `machine_id` is 404. Apply without a machine is refused

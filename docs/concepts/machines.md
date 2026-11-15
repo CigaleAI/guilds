@@ -68,14 +68,14 @@ runs on:
 | --- | --- | --- |
 | Every agent | 0.5 | 256 MiB |
 | Browser | 1 | 2 GiB |
-| Coding | 2 | 4 GiB |
+| Coding, or a subscription | 2 | 4 GiB |
 
 An agent's minimum is the largest of the minimums of what it has on,
 CPU and memory each. It is not their sum: Chrome and the coding
 toolchains run only while the agent works. A machine below an agent's
 minimum refuses it. With these values a Standard machine takes browser
-agents, a Code machine takes coding agents, and a Custom machine takes
-whatever its size meets.
+agents, a Code machine takes coding agents and subscription agents,
+and a Custom machine takes whatever its size meets.
 
 **Overcommit.** A machine's planned load is the sum of its agents'
 minimums. Few agents work at once, so a machine takes more than it
@@ -108,7 +108,10 @@ An agent is placed on a machine when it is created. With one machine
 in the organisation the agent goes on it. With more, the operator
 picks one. An agent goes only on a machine at or above its minimum.
 Turning the browser or coding on is refused when the agent's machine
-is below the minimum that sets.
+is below the minimum that sets. A subscription agent
+([Agents](agents.md#model-source)) goes only on a machine whose image
+carries its harness; a machine whose container never started is taken
+to carry it.
 
 Each agent holds a slot on its machine, the lowest free one from 0
 to 31. So a machine holds at most 32 agents. The slot sets everything
@@ -239,7 +242,8 @@ The recipe apply preview has the same picker, and warns the same way
 | Custom size | 0.5 to 8 CPUs in steps of 0.25; 512 to 8192 MiB |
 | Machine disk cap | 10240 MiB by default |
 | Agents on one machine | at most 32, whatever the organisation's plan says |
-| Agent minimum | 0.5 CPU and 256 MiB; 1 CPU and 2 GiB with a browser; 2 CPUs and 4 GiB with coding |
+| Agent minimum | 0.5 CPU and 256 MiB; 1 CPU and 2 GiB with a browser; 2 CPUs and 4 GiB with coding or on a subscription |
+| Subscription agent | only on a machine whose image carries its harness |
 | Overcommit | planned load up to 5× the CPUs and 3× the memory; past it the app warns but saves |
 | Disk reservation | agents' caps past the machine's cap: the app warns but saves |
 | Who manages machines | owners and admins; other members read |
@@ -282,7 +286,7 @@ the machine's `cpu` and `memory_mib` for `custom`. Its directory on the host is
 
 | Route | Who | Body or result |
 | --- | --- | --- |
-| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `allocated_workspace_mib`, `harnesses`, `planned_cpu` and `planned_mib` (its planned load), `agents` (`id`, `name`, `guild_id`, `guild_name`, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
+| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `allocated_workspace_mib`, `harnesses`, `planned_cpu` and `planned_mib` (its planned load), `agents` (`id`, `name`, `guild_id`, `guild_name`, `browser`, `coding`, `model_source`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
 | `POST /api/orgs/:id/machines` | owners, admins | `name`, `box`, `cpu`?, `memory_mib`?, `max_workspace_mib`?; 201 with the machine |
 | `PATCH /api/orgs/:id/machines/:machine_id` | owners, admins | the same fields; the body fills in what it leaves out from the machine |
 | `DELETE /api/orgs/:id/machines/:machine_id` | owners, admins | 204 |
@@ -344,6 +348,10 @@ when it names another machine. Agent payloads carry `machine_id` and
 - Turning `browser` or `coding` on is 422 when the agent's machine is
   below the minimum that sets.
 - Moving an agent to a machine below its minimum is 422.
+- Creating, switching, or moving a subscription agent onto a machine
+  whose image lacks its harness is 422 `a subscription agent runs on
+  <Harness>, which <machine>'s image does not carry. Pick another
+  machine, or build the runtime image with it`.
 - Agent create, a `machine_id` in `PUT /api/agents/:id/config`, and a
   move are 403 on a machine that hosts an agent of a guild the caller
   cannot see

@@ -32,6 +32,7 @@ import { assertGuildAgentRoom } from "../guilds/service.js";
 import { integrationState, SYSTEM_ONE } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
 import { assertModelConnected, type ModelCredentialsProvider } from "../llm/credentials.js";
+import { agentNeedsOf } from "../machines/index.js";
 import { freeSlot, placeAgent, placementMachine, type Placement } from "../machines/placement.js";
 import type { NotesStore } from "../notes/store.js";
 import {
@@ -221,10 +222,7 @@ export async function addAgent(
     if (!row) {
       throw new RowMissing("agent insert failed: guild not found");
     }
-    const machine = await placementMachine(client, row.org_id, placement.machineId, {
-      browser: agent.config.browser === true,
-      coding: agent.config.coding === true,
-    });
+    const machine = await placementMachine(client, row.org_id, placement.machineId, agentNeedsOf(agent.config));
     const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
     const inserted = await insertAgent(
       client,
@@ -291,7 +289,7 @@ export async function createAgent(
   }
   await assertModelSourceConnected(services, guild.org_id, config);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
-  const needs = { browser: config.browser, coding: config.coding };
+  const needs = agentNeedsOf(config);
   await assertCanCreateAgent(policy, db, guild.org_id, needs);
   await assertGuildAgentRoom(db, guild.id, 1);
   const { machine, maxAgentsPerMachine } = await placeAgent(
@@ -365,7 +363,7 @@ async function writeAgentSettings(
   change: AgentSettings,
 ): Promise<void> {
   const { machine, maxAgentsPerMachine, moves } = placement;
-  const needs = { browser: change.config.browser, coding: change.config.coding };
+  const needs = agentNeedsOf(change.config);
   if (moves) {
     await generationOf(services).machines.moveAgent(agent.id, machine.id, { maxAgentsPerMachine, needs });
   }
@@ -379,9 +377,8 @@ async function writeAgentSettings(
     );
   } catch (error) {
     if (moves) {
-      const previous = agent.config;
       await generationOf(services).machines.moveAgent(agent.id, agent.machine_id, {
-        needs: { browser: Boolean(previous.browser), coding: Boolean(previous.coding) },
+        needs: agentNeedsOf(agent.config),
       });
     }
     throw isNameConflict(error) ? nameConflictError(error) : error;
@@ -431,7 +428,7 @@ export async function reconfigureAgent(
   }
   await assertModelSourceConnected(services, agent.org_id, config);
   await assertBrowserOptimizedChangeReady(services, agent.org_id, config, previous);
-  const needs = { browser: config.browser, coding: config.coding };
+  const needs = agentNeedsOf(config);
   const placement = await placeAgent(services, agent.org_id, userId, {
     requested: patch.machineId,
     needs,
@@ -474,10 +471,9 @@ export async function moveAgentToMachine(
   if (machineId === undefined || machineId === null) {
     throw new AgentError(422, "machine_id is required");
   }
-  const config = agent.config;
   const { machine, maxAgentsPerMachine, moves } = await placeAgent(services, agent.org_id, userId, {
     requested: machineId,
-    needs: { browser: config.browser === true, coding: config.coding === true },
+    needs: agentNeedsOf(agent.config),
     machineId: agent.machine_id,
   });
   if (moves) {

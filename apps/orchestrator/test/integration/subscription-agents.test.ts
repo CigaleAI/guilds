@@ -78,6 +78,8 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     });
     assert.equal(machine.statusCode, 201, machine.body);
     machineId = String(machine.json().id);
+    const machines = await app.inject({ method: "GET", url: "/api/orgs/org_home/machines", headers: AUTH });
+    const defaultMachineId = String(machines.json().find((item: { name: string }) => item.name === "default").id);
 
     // While the box turns subscription agents off, none is created and the catalog says so.
     installSubscriptionAgents("off");
@@ -101,6 +103,21 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     const tuned = await createAgent("tuned", { ...SUBSCRIPTION, temperature: 0.3 });
     assert.equal(tuned.statusCode, 422, tuned.body);
     assert.match(tuned.json().detail, /a subscription agent takes no temperature/);
+
+    // It needs a machine of the coding minimum whose image carries its harness.
+    const standard = await app.inject({
+      method: "POST",
+      url: `/api/guilds/${guildId}/agents`,
+      headers: JSON_AUTH,
+      payload: { name: "small", config: SUBSCRIPTION, machine_id: defaultMachineId },
+    });
+    assert.equal(standard.statusCode, 422, standard.body);
+    assert.match(standard.json().detail, /a subscription agent needs a machine with at least 2 CPUs and 4 GiB; default has 1 CPU and 2 GiB/);
+    await db.query("UPDATE machines SET harnesses = $2 WHERE id = $1", [machineId, ["claude-code"]]);
+    const uncarried = await createAgent("uncarried", SUBSCRIPTION);
+    assert.equal(uncarried.statusCode, 422, uncarried.body);
+    assert.match(uncarried.json().detail, /a subscription agent runs on Codex, which builder's image does not carry/);
+    await db.query("UPDATE machines SET harnesses = $2 WHERE id = $1", [machineId, ["claude-code", "codex"]]);
     const created = await createAgent("subscriber", SUBSCRIPTION);
     assert.equal(created.statusCode, 201, created.body);
     const agentId = String(created.json().id);
@@ -113,6 +130,19 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
       listed.json().map((item: { name: string; model_source: string }) => [item.name, item.model_source]),
       [["subscriber", "subscription"]],
     );
+
+    // Its machine lists it on its subscription, and keeps the size it needs.
+    const hosting = await app.inject({ method: "GET", url: "/api/orgs/org_home/machines", headers: AUTH });
+    const builder = hosting.json().find((item: { id: string }) => item.id === machineId);
+    assert.deepEqual(builder.agents.map((item: { name: string; model_source: string }) => [item.name, item.model_source]), [["subscriber", "subscription"]]);
+    assert.equal(builder.planned_cpu, 2);
+    const shrunk = await app.inject({
+      method: "PATCH",
+      url: `/api/orgs/org_home/machines/${machineId}`,
+      headers: JSON_AUTH,
+      payload: { box: "standard" },
+    });
+    assert.equal(shrunk.statusCode, 409, shrunk.body);
 
     // Its harness, model, effort and credentials read as a coding agent's do.
     const harness = await app.inject({ method: "GET", url: `/api/agents/${agentId}/harness`, headers: AUTH });

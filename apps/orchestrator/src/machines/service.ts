@@ -4,7 +4,7 @@ import {
   getMachine,
   getMachineWithAgents,
   insertMachine,
-  listHostedNeeds,
+  listHostedAgentConfigs,
   listMachines,
   lockMachine,
   machineHostsAgents,
@@ -13,11 +13,13 @@ import {
 } from "../db/machines.js";
 import { lockOrg, type OrgMembershipRow } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
+import { modelSourceOf, type ModelSource } from "../db/schema/index.js";
 import type { AgentMachines } from "../generation/machines.js";
 import { canManageSettings } from "../organisations/index.js";
 import { machineCap, type HeldCap, type OrgPolicy } from "../policy/index.js";
 import { visibleGuildIds } from "./access.js";
 import {
+  agentNeedsOf,
   agentsMinimum,
   allocatedWorkspaceMib,
   MachineError,
@@ -48,8 +50,10 @@ export type MachineServices = {
 /** A member of the organisation acting on its machines: their membership, and who they are. */
 export type MachineMember = { membership: OrgMembershipRow; userId: string };
 
-/** An agent on a machine as the viewer sees it: who it is, its guild, and what it runs there. */
-export type MachineItemAgent = Pick<MachineAgent, "id" | "name" | "guild_id" | "guild_name" | "browser" | "coding">;
+/** An agent on a machine as the viewer sees it: who it is, its guild, its model source, and what it runs there. */
+export type MachineItemAgent = Pick<MachineAgent, "id" | "name" | "guild_id" | "guild_name" | "browser" | "coding"> & {
+  model_source: ModelSource["kind"];
+};
 
 /**
  * A machine as the operator app shows it: its size, the agents on it, their planned load (the sum
@@ -73,7 +77,7 @@ export function machineItem(
 ): MachineItem {
   const size = machineSize(machine);
   const visible = machine.agents.filter((agent) => visibleGuildIds.has(agent.guild_id));
-  const planned = plannedLoad(machine.agents);
+  const planned = plannedLoad(machine.agents.map(agentNeedsOf));
   return {
     id: machine.id,
     name: machine.name,
@@ -93,6 +97,7 @@ export function machineItem(
       guild_name: agent.guild_name,
       browser: agent.browser,
       coding: agent.coding,
+      model_source: modelSourceOf(agent).kind,
     })),
     hidden_agents: machine.agents.length - visible.length,
   };
@@ -172,8 +177,8 @@ async function resizeMachine(
       if (current === null) {
         return null;
       }
-      const hosted = await listHostedNeeds(client, machineId);
-      const minimum = agentsMinimum(hosted);
+      const hosted = await listHostedAgentConfigs(client, machineId);
+      const minimum = agentsMinimum(hosted.map(agentNeedsOf));
       if (hosted.length && !sizeMeets(machineSize(machine), minimum)) {
         throw new MachineError(
           409,

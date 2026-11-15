@@ -2,9 +2,15 @@ import path from "node:path";
 import { Type, type Static } from "typebox";
 import { NAME_RE } from "../lib/names.js";
 import { numberOrNull } from "../lib/numbers.js";
-import { isHarness } from "../coding/harnesses.js";
+import { HARNESS_INFO, isHarness } from "../coding/harnesses.js";
 import type { MachineAgentQueryRow, MachineQueryRow, MachineWithAgentsQueryRow } from "../db/machines.js";
-import { DEFAULT_MACHINE_BOX, DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type Harness } from "../db/schema/index.js";
+import {
+  DEFAULT_MACHINE_BOX,
+  DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
+  modelSourceOf,
+  type AgentConfig,
+  type Harness,
+} from "../db/schema/index.js";
 
 /**
  * An organisation's machines (docs/concepts/machines.md): one sandbox container
@@ -36,7 +42,8 @@ export const MAX_AGENTS_PER_MACHINE = 32;
 
 /**
  * Machine sizing (docs/concepts/machines.md#machine-sizing). The smallest machine an
- * agent runs on, by what it has on: every agent has `base`, and `browser` and `coding` raise it.
+ * agent runs on, by what it has on: every agent has `base`, `browser` raises it, and `coding`
+ * raises it for a coding agent and for a subscription agent, whose harness runs every turn.
  * An agent's minimum is the largest of these, CPUs and memory each, not their sum: Chrome and the
  * coding toolchain only run while the agent works. Placement refuses a machine below the minimum.
  */
@@ -54,8 +61,20 @@ export const AGENT_MINIMUMS = {
  */
 export const OVERCOMMIT = { cpu: 5, memory: 3 } as const;
 
-/** What an agent has on that sets its minimum. */
-export type AgentNeeds = { browser: boolean; coding: boolean };
+/**
+ * What an agent needs of its machine: Chrome, the coding toolchain, and the harness CLI its every
+ * turn runs on, which the machine's image must carry: a subscription agent's, else null.
+ */
+export type AgentNeeds = { browser: boolean; coding: boolean; harness: Harness | null };
+
+/** What an agent with this config needs of its machine. */
+export function agentNeedsOf(config: Pick<AgentConfig, "browser" | "coding" | "model" | "harness">): AgentNeeds {
+  return {
+    browser: config.browser,
+    coding: config.coding,
+    harness: modelSourceOf(config).kind === "subscription" ? config.harness : null,
+  };
+}
 
 /** A refused machine request or placement, with the HTTP status it answers with. */
 export class MachineError extends Error {
@@ -99,25 +118,36 @@ export function machineSizeChanged(before: MachineRow, after: MachineRow): boole
   return before.box !== after.box || from.cpu !== to.cpu || from.memory_mib !== to.memory_mib;
 }
 
-/** The smallest machine an agent runs on: the largest of the minimums of what it has on. */
-export function agentMinimum(needs: AgentNeeds): MachineSize {
-  const parts: MachineSize[] = [
-    AGENT_MINIMUMS.base,
-    ...(needs.browser ? [AGENT_MINIMUMS.browser] : []),
-    ...(needs.coding ? [AGENT_MINIMUMS.coding] : []),
-  ];
+/** The largest of these sizes, CPUs and memory each. */
+function largestSize(parts: readonly MachineSize[]): MachineSize {
   return {
     cpu: Math.max(...parts.map((part) => part.cpu)),
     memory_mib: Math.max(...parts.map((part) => part.memory_mib)),
   };
 }
 
+/** The smallest machine an agent runs on: the largest of the minimums of what it has on. */
+export function agentMinimum(needs: AgentNeeds): MachineSize {
+  return largestSize([
+    AGENT_MINIMUMS.base,
+    ...(needs.browser ? [AGENT_MINIMUMS.browser] : []),
+    ...(needs.coding || needs.harness !== null ? [AGENT_MINIMUMS.coding] : []),
+  ]);
+}
+
 /** The smallest machine every one of these agents runs on. */
 export function agentsMinimum(agents: readonly AgentNeeds[]): MachineSize {
-  return agentMinimum({
-    browser: agents.some((agent) => agent.browser),
-    coding: agents.some((agent) => agent.coding),
-  });
+  return largestSize([AGENT_MINIMUMS.base, ...agents.map(agentMinimum)]);
+}
+
+/** Whether the machine's image carries the harness; a machine whose container never started is taken to. */
+export function carriesHarness(machine: Pick<MachineRow, "harnesses">, harness: Harness): boolean {
+  return machine.harnesses === null || machine.harnesses.includes(harness);
+}
+
+/** Why an agent whose turns run on a harness cannot go on a machine whose image lacks it. */
+export function harnessMissingMessage(what: string, harness: Harness, machine: Pick<MachineRow, "name">): string {
+  return `${what} runs on ${HARNESS_INFO[harness].label}, which ${machine.name}'s image does not carry`;
 }
 
 /** Whether a machine of this size meets a minimum, CPUs and memory both. */

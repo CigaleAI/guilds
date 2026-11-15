@@ -19,7 +19,11 @@ setting off its default. Its runs do not start yet: each fails at
 start with `subscription.not_runnable`. An agent's view and its
 guild's list carry `model_source` (`key` or `subscription`), and so
 does a run's `config_snapshot`. `GET /api/harnesses` adds
-`subscription_agents` and, per harness, `subscription`.
+`subscription_agents` and, per harness, `subscription`. A
+subscription agent needs a machine of the coding minimum whose image
+carries its harness; the machine listing names each agent's
+`model_source`, and the apply preview refuses a machine without a
+subscription role's harness with `machine.harness`.
 
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit

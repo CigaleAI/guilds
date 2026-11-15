@@ -66,6 +66,16 @@ export function roleCodes(role: RecipeRole): boolean {
   return role.config.coding === true;
 }
 
+/** Whether a role's agent runs on a subscription: it names a harness, no model, and does not code. */
+export function roleRunsOnSubscription(role: RecipeRole): boolean {
+  return !roleCodes(role) && harnessOf(role.config) !== null && recommendedModelOf(role.config) === null;
+}
+
+/** The harness a subscription role's agent runs every turn on; null for any other role. */
+export function subscriptionHarnessOf(role: RecipeRole): Harness | null {
+  return roleRunsOnSubscription(role) ? harnessOf(role.config) : null;
+}
+
 /** The harness the recipe names, while the role applies with it; else null. */
 function keptRecipeHarness(roleConfig: RecipeRole["config"], applied: Harness | null): Harness | null {
   return applied !== null && applied === harnessOf(roleConfig) ? applied : null;

@@ -42,6 +42,8 @@ import {
   agentMinimum,
   agentsMinimum,
   belowMinimumMessage,
+  carriesHarness,
+  harnessMissingMessage,
   machineSize,
   machineWithAgentsFromRow,
   plannedLoad,
@@ -63,7 +65,14 @@ import { validationContext } from "./apply.js";
 import { RecipeError } from "./errors.js";
 import { recommendedModelOf } from "./parse-roles.js";
 import type { ValidationContext } from "./findings.js";
-import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
+import {
+  prepareRecipeForApply,
+  roleBrowses,
+  roleCodes,
+  roleTaskText,
+  schedulesForRole,
+  subscriptionHarnessOf,
+} from "./prepare.js";
 import { unreviewedFields } from "./review.js";
 import { applyBlockingErrors, validateRecipe } from "./validate.js";
 
@@ -91,14 +100,20 @@ function machineChoice(machine: MachineWithAgents, minimum: MachineSize): Machin
   };
 }
 
-/** What each role of the recipe has on that sets its minimum. */
+/** What each role of the recipe needs of its machine. */
 function rolesNeeds(recipe: RecipeDocument): Array<AgentNeeds & { role: string }> {
-  return recipe.roles.map((role) => ({ role: role.role, browser: roleBrowses(role), coding: roleCodes(role) }));
+  return recipe.roles.map((role) => ({
+    role: role.role,
+    browser: roleBrowses(role),
+    coding: roleCodes(role),
+    harness: subscriptionHarnessOf(role),
+  }));
 }
 
 /**
- * What blocks the roles on a machine: a role whose minimum the machine is below, more roles than
- * the machine has room for under `maxAgents`, or agents of a guild the operator cannot see on it.
+ * What blocks the roles on a machine: a role whose minimum the machine is below, a role whose
+ * harness the machine's image lacks, more roles than the machine has room for under `maxAgents`,
+ * or agents of a guild the operator cannot see on it.
  */
 export function machineFindings(
   recipe: RecipeDocument,
@@ -114,6 +129,14 @@ export function machineFindings(
         severity: "error",
         path: "machine_id",
         message: belowMinimumMessage(needs.role, needs, machine),
+      });
+    }
+    if (needs.harness !== null && !carriesHarness(machine, needs.harness)) {
+      findings.push({
+        code: "machine.harness",
+        severity: "error",
+        path: "machine_id",
+        message: harnessMissingMessage(needs.role, needs.harness, machine),
       });
     }
   }
