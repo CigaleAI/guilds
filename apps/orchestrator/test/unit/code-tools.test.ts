@@ -488,6 +488,20 @@ describe("coding runs in the generation loop", () => {
     assert.equal(plain.llm_histories.length, 1);
   });
 
+  test("a subscription agent's run fails at start, before its machine wakes or a model is called", async () => {
+    const config: ResolvedAgentConfig = { ...AGENT_CONFIG, model: null, harness: "codex" };
+    const db = new FakeDB(configSnapshot(config, { tools: [], secrets: [], mcp: [] }, "schedule"));
+    db.agent.config = { ...config };
+    live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
+    const { sandboxes, machines } = codingSandboxes(new HostCodeSandbox());
+    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes).generator.generate("r_1", 1);
+    assert.equal(db.llm_histories.length, 0);
+    assert.equal(machines.length, 0, "the machine is not woken");
+    const errors = db.run.errors as Array<Record<string, unknown>>;
+    assert.equal(errors.at(-1)?.operation, "subscription.not_runnable");
+    assert.match(String(errors.at(-1)?.message), /subscription agents cannot run yet: give the agent a model on a key/);
+  });
+
   test("a secret alias reaches the run's commands with the value of the secret it names", async () => {
     const sandbox = readySandbox();
     const aliases = { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" };

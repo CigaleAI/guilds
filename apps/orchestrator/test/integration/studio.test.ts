@@ -470,6 +470,28 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       "an organisation manager publishes a draft whose session's operator is gone",
     );
 
+    // A subscription agent has no model to check a composed prompt against: its draft does not publish.
+    await db.query(`UPDATE agents SET config = config || '{"model": null, "harness": "codex"}'::jsonb WHERE id = 'a_studio'`);
+    const unchecked = await studio.deps.drafts.createFromTool(
+      db,
+      {
+        session: (await getStudioSession(db, session.id))!,
+        user: userRow({ id: "user_operator", name: "operator" }),
+        orgId: "org_home",
+        sourceGuildId: "guild_studio",
+        hidden: NO_HIDDEN_GUILDS,
+        generation: 1,
+      },
+      { agent_id: "writer", proposed_content: "Write notes on a subscription.\n", rationale: "Shorter.", evidence_refs: [] },
+    );
+    const refused = await app.inject({
+      method: "POST",
+      url: `/api/studio/drafts/${String(unchecked.draft_id)}/publish`,
+      headers: AUTH,
+    });
+    assert.equal(refused.statusCode, 422, refused.body);
+    assert.match(refused.json().detail, /a subscription agent has no model to check the composed prompt against/);
+
     // An active session whose source guild is gone is recorded blocked when it is opened.
     const orphanable = await app.inject({
       method: "POST",

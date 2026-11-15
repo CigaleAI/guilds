@@ -24,7 +24,7 @@ import { GuildNameTaken, RowMissing } from "../db/errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
-import type { AgentConfig } from "../db/schema/index.js";
+import { modelSourceOf, type AgentConfig } from "../db/schema/index.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
 import { requireAdministeredGuild } from "../guilds/access.js";
@@ -99,6 +99,21 @@ export type AgentSettingsPatch = {
 
 /** An agent's validated config and the profile fields it changes. */
 export type AgentSettings = { config: AgentConfig; profile: AgentConfigPatch };
+
+/**
+ * Refuses a model on a key whose provider the organisation has not connected; a subscription
+ * agent has no model to connect.
+ */
+async function assertModelSourceConnected(
+  services: AgentServices,
+  orgId: string,
+  config: AgentConfig,
+): Promise<void> {
+  const source = modelSourceOf(config);
+  if (source.kind === "key") {
+    await assertModelConnected(services.modelCredentials, orgId, source.model);
+  }
+}
 
 /**
  * Refuses the agent-optimized browser while the System One key is not on, or while its model's
@@ -272,7 +287,7 @@ export async function createAgent(
   if (config.keep_tool_result_generations !== null) {
     await requireAdministeredGuild(db, guild.id, operator.actorId);
   }
-  await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
+  await assertModelSourceConnected(services, guild.org_id, config);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
   const needs = { browser: config.browser, coding: config.coding };
   await assertCanCreateAgent(policy, db, guild.org_id, needs);
@@ -410,7 +425,7 @@ export async function reconfigureAgent(
   if (config.keep_tool_result_generations !== previous.keep_tool_result_generations) {
     await requireAdministeredGuild(services.db, agent.guild_id, userId);
   }
-  await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
+  await assertModelSourceConnected(services, agent.org_id, config);
   await assertBrowserOptimizedChangeReady(services, agent.org_id, config, previous);
   const needs = { browser: config.browser, coding: config.coding };
   const placement = await placeAgent(services, agent.org_id, userId, {

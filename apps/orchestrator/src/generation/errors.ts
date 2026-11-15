@@ -42,6 +42,19 @@ export class GenerationBlocked extends Error {
   }
 }
 
+/**
+ * A run of a subscription agent, which fails at start: core runs an agent's turns only on a model
+ * on a key.
+ */
+export class SubscriptionRunUnavailable extends Error {
+  readonly code = "subscription.not_runnable";
+
+  constructor() {
+    super("subscription agents cannot run yet: give the agent a model on a key in its Settings to run it");
+    this.name = "SubscriptionRunUnavailable";
+  }
+}
+
 export class RunRequestError extends Error {
   status: number;
   detail: string;

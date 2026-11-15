@@ -319,8 +319,8 @@ URLs.
 name in `X-Filename`. It returns 201 with `id`, `filename`, `mime`,
 `bytes`, `kind`, `url`, and `created_at`. It refuses an empty file or
 one over 10 MiB (422). Sending refs refuses a model that does not take
-attachments, more than four refs, or a repeated ref (422), and an
-unknown ref (404). `GET /api/attachments/:id` serves the bytes to the
+attachments, a subscription agent, which has no model, more than four
+refs, or a repeated ref (422), and an unknown ref (404). `GET /api/attachments/:id` serves the bytes to the
 same organisation.
 
 ### Metadata
@@ -364,9 +364,10 @@ tool-call identity in `file_changes` ([Artifacts](artifacts.md)).
 The run stores an immutable snapshot. It holds the agent's config at
 run creation, less `max_scripts` and `max_workspace_mib`, with the
 guild's `keep_tool_result_generations` when the agent's is null, and
-with
-`projection_policy_version`, the offered `tools`, `mcp`, `secrets`,
-and the `scripts` ([Scripts](scripts.md#snapshot)).
+with `model_source`, the offered `tools`, `mcp`, `secrets`, and the
+`scripts` ([Scripts](scripts.md#snapshot)). `model_source` is `key`
+for a run on a model on a key and `subscription` for a run with no
+`model`; a snapshot without it is of a run on a key.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `max_wake_ups`, `keep_tool_result_generations`,
@@ -419,6 +420,12 @@ an existing direct run. A deleted, missing, or undecryptable secret is
 a generation-start error.
 
 ### Generation
+
+A run whose snapshot has no `model` is a subscription agent's
+([Agents](agents.md#model)). Its generation fails first, with
+`subscription.not_runnable`, "subscription agents cannot run yet",
+before the machine is woken or a model is called. Every other run
+goes on.
 
 At start, the loop cancels the machine's idle timer, ensures the
 machine is up, and checks the disk caps. A home or machine over its

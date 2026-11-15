@@ -123,6 +123,14 @@ test("configSnapshot offers each connection tool's schema and keeps the connecti
   assert.deepEqual(snapshot.mcp[0]?.tools, [{ name: "ok", remote_name: "r" }]);
 });
 
+test("configSnapshot records the model source the agent's settings state", () => {
+  const access = { tools: [], secrets: [], mcp: [] };
+  assert.equal(configSnapshot(AGENT_CONFIG, access, "schedule").model_source, "key");
+  const subscription = configSnapshot({ ...AGENT_CONFIG, model: null, harness: "codex" }, access, "schedule");
+  assert.equal(subscription.model_source, "subscription");
+  assert.equal(subscription.model, null);
+});
+
 test("mcpRedactions skips missing connections and decrypt failures", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ access_token: "tok-live" });

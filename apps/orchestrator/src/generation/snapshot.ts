@@ -4,21 +4,22 @@ import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
 import type { NewRun, RunRow } from "../db/runs.js";
-import type {
-  ResolvedAgentConfig,
-  RunConfigSnapshot,
-  RunMetadata,
-  RunScriptSnapshot,
-  RunTaskSource,
-  RunTypesafe,
+import {
+  modelSourceOf,
+  type ResolvedAgentConfig,
+  type RunConfigSnapshot,
+  type RunMetadata,
+  type RunScriptSnapshot,
+  type RunTaskSource,
+  type RunTypesafe,
 } from "../db/schema/index.js";
 import { promptHash } from "../prompts/index.js";
 import { schemasFor } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
 import { firstClassScriptSchemas } from "../toolbox/script.js";
 
-// The config a run is created with. A run reads its model, limits, tools and secrets from this
-// snapshot for its whole life, whatever the agent's settings become.
+// The config a run is created with. A run reads its model source, limits, tools and secrets from
+// this snapshot for its whole life, whatever the agent's settings become.
 
 /** A run's kind: opened by an operator, delivered from the group chat, or woken by a schedule. */
 export type RunKind = RunRow["kind"];
@@ -44,6 +45,7 @@ export function configSnapshot(
   const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = config;
   const snapshot: RunConfigSnapshot = {
     ...settings,
+    model_source: modelSourceOf(config).kind,
     projection_policy_version: RUN_PROJECTION_POLICY_VERSION,
     database: false,
     tools: [
