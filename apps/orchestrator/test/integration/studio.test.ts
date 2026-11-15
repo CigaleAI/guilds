@@ -19,6 +19,7 @@ import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { agentScripts } from "../../src/scripts/catalog.js";
 import { agentSchedules } from "../../src/schedules/service.js";
+import { AdmissionCoordinator } from "../../src/admission/coordinator.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { StudioFocusRequest } from "../../src/studio/focus.js";
 import { generationLive } from "../../src/studio/runner.js";
@@ -52,6 +53,7 @@ import { newId } from "../../src/lib/ids.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
+import { limitedPolicy } from "../helpers/policy.js";
 import { installCountingTokenEncodingLoader, restoreTokenEncodingLoader } from "../helpers/tokens.js";
 import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 import {
@@ -107,6 +109,7 @@ const tablesDbName = uniqueDbName("agent_platform_studio_tables");
 const narrowDbName = uniqueDbName("agent_platform_studio_narrow");
 const routinesDbName = uniqueDbName("agent_platform_studio_routines");
 const historyDbName = uniqueDbName("agent_platform_studio_history");
+const admissionDbName = uniqueDbName("agent_platform_studio_admission");
 const originalStream = generationLive.streamCompletion;
 
 after(async () => {
@@ -119,6 +122,7 @@ after(async () => {
   await dropIsolatedDatabase(narrowDbName);
   await dropIsolatedDatabase(routinesDbName);
   await dropIsolatedDatabase(historyDbName);
+  await dropIsolatedDatabase(admissionDbName);
 });
 
 test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 }, async () => {
@@ -2636,6 +2640,123 @@ test("studio records provider-reported input tokens per turn, sums them across t
     assert.ok(encoding.counts.length > firstCounts);
   } finally {
     restoreTokenEncodingLoader();
+    generationLive.streamCompletion = previousStream;
+    await app?.close();
+    await database?.close();
+  }
+});
+
+/** The Studio and Builder runs the organisation has claimed this month. */
+async function monthlyCoachRuns(db: Database["pool"], orgId: string): Promise<number> {
+  const result = await db.query<{ studio_builder_runs: number }>(
+    "SELECT studio_builder_runs FROM org_monthly_usage WHERE org_id = $1",
+    [orgId],
+  );
+  return result.rows[0]?.studio_builder_runs ?? 0;
+}
+
+test("a post the admission refuses answers 409 and records nothing; a turn that fails to record gives its slot back", { timeout: 60_000 }, async () => {
+  const previousStream = generationLive.streamCompletion;
+  generationLive.streamCompletion = async function* stream() {
+    yield ["done", completionReply("Admitted and answered.")];
+  };
+  let database: Database | null = null;
+  let app: FastifyInstance | null = null;
+  try {
+    database = await connect(await createIsolatedDatabase(admissionDbName));
+    const notes = new NotesStore(tempDir("guilds-studio-admission-"), templatesRoot());
+    await notes.ensureSystemPrompt();
+    const db = database.pool;
+    await connectModelProvider(db, "org_home", "deepinfra");
+    const artifacts = artifactStore(database.pool, templatesRoot());
+    const scripts = agentScripts(db);
+    const schedules = agentSchedules(db);
+    const admission = new AdmissionCoordinator();
+    const caps: { maxConcurrentRuns: number; monthlyCoachRuns: number | null } = {
+      maxConcurrentRuns: 1,
+      monthlyCoachRuns: null,
+    };
+    const studio = new StudioService({
+      db,
+      artifacts,
+      scripts,
+      schedules,
+      notesSystemPath: notes.systemPath(),
+      admission,
+      policy: limitedPolicy(caps),
+    });
+    const server = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
+    app = server;
+    const now = new Date();
+    await insertGuild(db, { guildId: "guild_admit", name: "admission-guild", orgId: "org_home", about: "Admission" }, now);
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId: "a_admit", guildId: "guild_admit", name: "writer", config: CONFIG, focus: "Write notes" }, task: "Write notes", placement: {} },
+      systemActor("org_home", { guildId: "guild_admit", agentId: "a_admit" }),
+      now,
+    );
+    const created = await server.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: { mode: "optimize", source_guild_id: "guild_admit", coach_config: { model: TEST_MODEL, temperature: 0.2 } },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    const session = created.json() as { id: string };
+    const post = () =>
+      server.inject({
+        method: "POST",
+        url: `/api/studio/sessions/${session.id}/messages`,
+        headers: AUTH,
+        payload: { content: "What should change in the standing task?" },
+      });
+    const recorded = async () => {
+      const row = await getStudioSession(db, session.id);
+      return {
+        messages: await listConversationMessages(db, "studio", session.id),
+        generation_number: row?.generation_number,
+        generation_state: row?.generation_state,
+        errors: row?.errors,
+        coachRuns: await monthlyCoachRuns(db, "org_home"),
+      };
+    };
+
+    await admission.acquire("agent", "run_blocking", "org_home");
+    const before = await recorded();
+    const events = studio.runner.subscribe(session.id);
+    const refused = await post();
+    assert.equal(refused.statusCode, 409, refused.body);
+    assert.deepEqual(refused.json(), { detail: "plan limit reached: concurrent generations" });
+    assert.deepEqual(await recorded(), before);
+    assert.equal(events.empty(), true);
+    assert.equal(admission.isBusy("studio", session.id), false);
+    studio.runner.unsubscribe(session.id, events);
+
+    admission.release("agent", "run_blocking");
+    const admitted = await post();
+    assert.equal(admitted.statusCode, 200, admitted.body);
+    await studio.runner.wait(session.id);
+    const answered = await recorded();
+    assert.equal(answered.generation_number, Number(before.generation_number) + 1);
+    assert.equal(answered.generation_state, "idle");
+    assert.equal(answered.coachRuns, before.coachRuns + 1);
+    assert.ok(answered.messages.some((row) => row.payload.role === "assistant"));
+    assert.equal(admission.isBusy("studio", session.id), false);
+
+    caps.monthlyCoachRuns = answered.coachRuns;
+    const exhausted = await post();
+    assert.equal(exhausted.statusCode, 409, exhausted.body);
+    assert.deepEqual(exhausted.json(), { detail: "instance limit reached: studio and builder runs" });
+    assert.deepEqual(await recorded(), answered);
+    assert.equal(admission.isBusy("studio", session.id), false);
+    caps.monthlyCoachRuns = null;
+
+    await updateStudioSession(db, session.id, { generation_state: "generating" }, new Date());
+    const busy = await post();
+    assert.equal(busy.statusCode, 409, busy.body);
+    assert.deepEqual(busy.json(), { detail: "studio session is already generating" });
+    assert.equal(admission.isBusy("studio", session.id), false);
+  } finally {
     generationLive.streamCompletion = previousStream;
     await app?.close();
     await database?.close();

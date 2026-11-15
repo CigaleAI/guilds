@@ -4,6 +4,7 @@ import { addAgent } from "../../src/agents/service.js";
 import { systemActor, OPERATOR_ACTOR } from "../helpers/agents.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { buildApp } from "../../src/app.js";
+import { AdmissionCoordinator } from "../../src/admission/coordinator.js";
 import { BuilderService } from "../../src/builder/index.js";
 import { CapabilityService } from "../../src/capabilities/index.js";
 import { generationLive } from "../../src/conversation/runner.js";
@@ -25,6 +26,8 @@ import {
   uniqueDbName,
 } from "../helpers/postgres.js";
 import { getBuilderSession, markBuilderSessionCancelling, updateBuilderSession } from "../../src/db/builder.js";
+import { listConversationMessages } from "../../src/db/conversations.js";
+import type { Queryable } from "../../src/db/pg.js";
 import { getGuild, listGuilds } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
@@ -54,11 +57,13 @@ const CONFIG = agentConfig({
 });
 
 const dbName = uniqueDbName("agent_platform_builder");
+const admissionDbName = uniqueDbName("agent_platform_builder_admission");
 const originalStream = generationLive.streamCompletion;
 
 after(async () => {
   generationLive.streamCompletion = originalStream;
   await dropIsolatedDatabase(dbName);
+  await dropIsolatedDatabase(admissionDbName);
 });
 
 test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => {
@@ -523,6 +528,100 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     });
     assert.equal(search.statusCode, 200);
     assert.ok((search.json().hits as unknown[]).length >= 1);
+  } finally {
+    await app.close();
+    await database.close();
+  }
+});
+
+/** The Studio and Builder runs the organisation has claimed this month. */
+async function monthlyCoachRuns(db: Queryable, orgId: string): Promise<number> {
+  const result = await db.query<{ studio_builder_runs: number }>(
+    "SELECT studio_builder_runs FROM org_monthly_usage WHERE org_id = $1",
+    [orgId],
+  );
+  return result.rows[0]?.studio_builder_runs ?? 0;
+}
+
+test("a builder post the admission refuses answers 409 and records nothing; a turn that fails to record gives its slot back", { timeout: 60_000 }, async () => {
+  const database = await connect(await createIsolatedDatabase(admissionDbName));
+  const notes = new NotesStore(tempDir("guilds-builder-admission-"), templatesRoot());
+  await notes.ensureSystemPrompt();
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
+  const artifacts = artifactStore(database.pool, templatesRoot());
+  const scripts = agentScripts(db);
+  const schedules = agentSchedules(db);
+  const caps: { maxConcurrentRuns: number; monthlyCoachRuns: number | null } = {
+    maxConcurrentRuns: 1,
+    monthlyCoachRuns: null,
+  };
+  const policy = limitedPolicy(caps);
+  const capabilities = new CapabilityService(db, policy);
+  const apply = recipeApply({ db, artifacts, notes, scripts, schedules, policy, registry: null });
+  const admission = new AdmissionCoordinator();
+  const builder = new BuilderService({ db, capabilities, apply, policy, admission });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, capabilities, apply, builder });
+  generationLive.streamCompletion = async function* stream() {
+    yield ["done", completionReply("Admitted and answered.")];
+  };
+  try {
+    const created = await app.inject({ method: "POST", url: "/api/builder/sessions", headers: AUTH, payload: { model: TEST_MODEL } });
+    assert.equal(created.statusCode, 200, created.body);
+    const session = created.json() as { id: string };
+    const post = () =>
+      app.inject({
+        method: "POST",
+        url: `/api/builder/sessions/${session.id}/messages`,
+        headers: { ...AUTH, "content-type": "application/json" },
+        payload: { content: "Watch LinkedIn and write new interactors into Notion." },
+      });
+    const recorded = async () => {
+      const row = await getBuilderSession(db, session.id);
+      return {
+        messages: await listConversationMessages(db, "builder", session.id),
+        generation_number: row?.generation_number,
+        generation_state: row?.generation_state,
+        errors: row?.errors,
+        coachRuns: await monthlyCoachRuns(db, "org_home"),
+      };
+    };
+
+    await admission.acquire("agent", "run_blocking", "org_home");
+    const before = await recorded();
+    const events = builder.subscribe(session.id);
+    const refused = await post();
+    assert.equal(refused.statusCode, 409, refused.body);
+    assert.deepEqual(refused.json(), { detail: "plan limit reached: concurrent generations" });
+    assert.deepEqual(await recorded(), before);
+    assert.equal(events.empty(), true);
+    assert.equal(admission.isBusy("builder", session.id), false);
+    builder.unsubscribe(session.id, events);
+
+    admission.release("agent", "run_blocking");
+    const admitted = await post();
+    assert.equal(admitted.statusCode, 200, admitted.body);
+    await builder.runner.wait(session.id);
+    const answered = await recorded();
+    assert.equal(answered.generation_number, Number(before.generation_number) + 1);
+    assert.equal(answered.generation_state, "idle");
+    assert.equal(answered.coachRuns, before.coachRuns + 1);
+    assert.ok(answered.messages.some((row) => row.payload.role === "assistant"));
+    assert.equal(admission.isBusy("builder", session.id), false);
+
+    caps.monthlyCoachRuns = answered.coachRuns;
+    const exhausted = await post();
+    assert.equal(exhausted.statusCode, 409, exhausted.body);
+    assert.deepEqual(exhausted.json(), { detail: "instance limit reached: studio and builder runs" });
+    assert.deepEqual(await recorded(), answered);
+    assert.equal(admission.isBusy("builder", session.id), false);
+    caps.monthlyCoachRuns = null;
+
+    await updateBuilderSession(db, session.id, { generation_state: "generating" }, new Date());
+    const busy = await post();
+    assert.equal(busy.statusCode, 409, busy.body);
+    assert.deepEqual(busy.json(), { detail: "builder session is already generating" });
+    assert.equal(admission.isBusy("builder", session.id), false);
   } finally {
     await app.close();
     await database.close();

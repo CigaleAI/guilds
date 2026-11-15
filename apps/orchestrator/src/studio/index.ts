@@ -334,6 +334,11 @@ export class StudioService {
     });
   }
 
+  /**
+   * Records the operator's message as a turn and starts the coach's generation of it. The session's
+   * generation slot is taken first: a refused slot is a ConversationConflictError and records
+   * nothing, and a turn that fails to record or start gives the slot back.
+   */
   async postMessage(
     session: StudioSessionRow,
     user: UserRow,
@@ -354,8 +359,15 @@ export class StudioService {
     };
     // Resolve the pin before taking the lock: it reads guild data only.
     const focus = await this.resolvePin(operator, focusInput ?? null);
-    const turn = await this.recordTurn(session, content, focus);
-    await this.startGeneration(turn, operator);
+    await this.runner.admit(session.id, session.org_id);
+    let turn: StudioTurn;
+    try {
+      turn = await this.recordTurn(session, content, focus);
+      await this.startGeneration(turn, operator);
+    } catch (error) {
+      this.runner.release(session.id);
+      throw error;
+    }
     return viewSession(turn.session);
   }
 
@@ -431,7 +443,10 @@ export class StudioService {
     });
   }
 
-  /** Starts the coach's generation of a recorded turn under the organisation's coach limits now, its tools reading as `operator`. */
+  /**
+   * Starts the coach's generation of a recorded turn in the session's admitted slot, under the
+   * organisation's coach limits now, its tools reading as `operator`.
+   */
   private async startGeneration(turn: StudioTurn, operator: StudioOperator): Promise<void> {
     const drafts = await listStudioDraftHeads(this.deps.db, turn.session.id);
     const generationContext = composeGenerationContext(

@@ -92,7 +92,15 @@ export class StudioRunner {
     await this.inner.wait(sessionId);
   }
 
-  /** Starts the generation as the operator `toolCall` names, its tools reading through `toolDeps`. */
+  async admit(sessionId: string, orgId: string): Promise<void> {
+    await this.inner.admit(sessionId, orgId);
+  }
+
+  release(sessionId: string): void {
+    this.inner.release(sessionId);
+  }
+
+  /** Starts the generation of an admitted session as the operator `toolCall` names, its tools reading through `toolDeps`. */
   start(toolDeps: StudioToolDeps, started: StudioGeneration, toolCall: Omit<StudioToolCall, "generation">): void {
     const config = started.session.config_snapshot;
     this.inner.start({

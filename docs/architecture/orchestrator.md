@@ -321,7 +321,12 @@ dispatch, and in the schedule's `next_run_at`, never in a job table.
 
 Studio and Builder take an **organisation** admission slot, not the
 agent lock (`AdmissionCoordinator` in `admission/coordinator.ts`).
-They do not make a target agent busy.
+They do not make a target agent busy. A posted message takes the
+session's slot (`ConversationRunner.admit`) before the turn is
+recorded; a refused slot answers the post with HTTP **409** and the
+admission's message, and records nothing. A turn that fails to record
+gives the slot back, and the generation of a recorded turn gives it
+back when it ends.
 
 Group chat **coalesces**. Several unseen messages become **one** run
 with a snapshot through the current `chat_seq`. Schedules do not
@@ -423,7 +428,9 @@ tree.
 Admission is per organisation. Ordinary runs, Studio, and Builder
 share one slot count under the organisation policy's
 `maxConcurrentRuns` and the instance ceiling
-`MAX_CONCURRENT_GENERATIONS` (0 is no ceiling).
+`MAX_CONCURRENT_GENERATIONS` (0 is no ceiling). A Studio or Builder
+session holds its slot from the post of a message to the end of the
+generation it starts ([Work queuing](#work-queuing)).
 
 ## Events
 
@@ -451,7 +458,7 @@ compile.
 | `assistant.delta` | run, Studio, Builder | ephemeral | Text being written |
 | `assistant.reasoning.delta` | run, Studio, Builder | ephemeral | Reasoning being written |
 | `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines, session_id?}`: a running `code_task`'s redacted progress lines with its session, or a running `browse` call's redacted step line |
-| `session.error` | Studio, Builder | durable | A coach session error |
+| `session.error` | Studio, Builder | durable | An error of a coach session's running generation; a post the admission refuses publishes none |
 | `draft.changed` | Studio | durable | A Task draft changed |
 | `recipe.changed` | Builder | durable | The draft recipe changed |
 | `group.message.committed` | guild | durable | A group message committed |

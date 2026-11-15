@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A message posted to a Studio or Builder coach while the
+box or the organisation is at its generation limit is refused with
+409 and the limit's message
+(`POST /api/studio/sessions/:id/messages`,
+`POST /api/builder/sessions/:id/messages`). Nothing of it is recorded:
+no message, no coach run of the month, no entry in the session's
+`errors`, no `session.error`. The operator sends it again when a
+generation ends.
+
 **Rebuild.** In Studio's **Tools**, each native tool's name carries an
 info icon that says what the tool does in one plain sentence, on
 hover, keyboard focus, or a click or tap. Scripts and connection

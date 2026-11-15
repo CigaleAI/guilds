@@ -92,6 +92,20 @@ function sessionState(session: BuilderSessionRow): BuilderSessionState {
   };
 }
 
+/**
+ * An operator's turn as it is recorded under the session's lock: the session as it now generates,
+ * the generation's number, the system message it runs under, the recipe and the body version the
+ * generation starts from, and the stored message.
+ */
+type BuilderTurn = {
+  session: BuilderSessionRow;
+  generation: number;
+  systemContent: string;
+  recipe: RecipeRow["body"];
+  expectedBodyVersion: RecipeRow["body_version"];
+  userMessage: ConversationMessageRow;
+};
+
 export type BuilderServiceDeps = {
   db: Queryable;
   capabilities: CapabilityService;
@@ -283,6 +297,11 @@ export class BuilderService {
     };
   }
 
+  /**
+   * Records the operator's message as a turn and starts the coach's generation of it. The session's
+   * generation slot is taken first: a refused slot is a ConversationConflictError and records
+   * nothing, and a turn that fails to record or start gives the slot back.
+   */
   async postMessage(
     session: BuilderSessionRow,
     user: UserRow,
@@ -294,7 +313,25 @@ export class BuilderService {
     if (session.status !== "active") {
       throw new ConversationConflictError("session cannot generate");
     }
-    const started = await withTransaction(this.deps.db, async (client) => {
+    await this.runner.admit(session.id, session.org_id);
+    let turn: BuilderTurn;
+    try {
+      turn = await this.recordTurn(session, content);
+      await this.startGeneration(turn, user);
+    } catch (error) {
+      this.runner.release(session.id);
+      throw error;
+    }
+    return this.loadSessionView(turn.session);
+  }
+
+  /**
+   * Records the operator's turn on an idle session under its lock: claims a coach run, refreshes the
+   * system message from the recipe, stores the message, marks the session generating, and announces
+   * the message.
+   */
+  private async recordTurn(session: BuilderSessionRow, content: string): Promise<BuilderTurn> {
+    const turn = await withTransaction(this.deps.db, async (client): Promise<BuilderTurn> => {
       const locked = await lockBuilderSession(client, session.id);
       if (!locked) {
         throw new ConversationError(404, "builder session not found");
@@ -308,7 +345,6 @@ export class BuilderService {
       if (!recipe) {
         throw new ConversationError(404, "recipe not found");
       }
-      const expectedBodyVersion = recipe.body_version;
       const system = composeBuilderSystemMessage(locked.config_snapshot, recipe, this.deps.guidelinesPath);
       await updateConversationMessage(client, "builder", {
         session_id: locked.id,
@@ -344,27 +380,26 @@ export class BuilderService {
       return {
         session: updated ?? locked,
         generation,
-        system,
+        systemContent: system.content,
         recipe: recipe.body,
-        expectedBodyVersion,
+        expectedBodyVersion: recipe.body_version,
         userMessage,
       };
     });
-    await this.runner.publish(started.session.id, "message.committed", {
-      message: started.userMessage,
-    });
-    const limits = (await this.policy.standing(started.session.org_id)).limits.coach
-      .builder;
-    const toolContext = this.toolContext(started.session);
+    await this.runner.publish(turn.session.id, "message.committed", { message: turn.userMessage });
+    return turn;
+  }
+
+  /** Starts the coach's generation of a recorded turn in the session's admitted slot, under the organisation's coach limits now. */
+  private async startGeneration(turn: BuilderTurn, user: UserRow): Promise<void> {
+    const limits = (await this.policy.standing(turn.session.org_id)).limits.coach.builder;
+    const toolContext = this.toolContext(turn.session);
     this.runner.start({
-      session: started.session,
+      session: turn.session,
       user,
-      generation: started.generation,
-      generationContext: composeBuilderGenerationContext(
-        started.recipe,
-        started.expectedBodyVersion,
-      ),
-      systemContent: started.system.content,
+      generation: turn.generation,
+      generationContext: composeBuilderGenerationContext(turn.recipe, turn.expectedBodyVersion),
+      systemContent: turn.systemContent,
       tools: builderConversationTools(),
       toolContext: () => toolContext,
       maxTokens: limits.max_tokens,
@@ -372,7 +407,6 @@ export class BuilderService {
       maxToolCalls: limits.max_tool_calls,
       maxInput: limits.max_input_tokens,
     });
-    return this.loadSessionView(started.session);
   }
 
   /** Stops the generation running on the session; a session no generation runs on is returned as it is. */

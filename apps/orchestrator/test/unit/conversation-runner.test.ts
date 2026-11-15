@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import { AdmissionCoordinator } from "../../src/admission/coordinator.js";
-import { ConversationError } from "../../src/conversation/errors.js";
+import { ConversationConflictError, ConversationError } from "../../src/conversation/errors.js";
 import {
   ConversationRunner,
   callConversationTool,
@@ -90,6 +90,7 @@ async function eventsUntilFinished(
   turn: ConversationGeneration<ProbeContext>,
 ): Promise<Array<[string, Record<string, unknown>]>> {
   const queue = runner.subscribe(turn.session.id);
+  await runner.admit(turn.session.id, turn.session.org_id);
   runner.start(turn);
   const events: Array<[string, Record<string, unknown>]> = [];
   while (events.at(-1)?.[0] !== "generation.finished") {
@@ -119,6 +120,7 @@ async function publishedEvents(
   turn: ConversationGeneration<ProbeContext>,
 ): Promise<Array<[string, Record<string, unknown>]>> {
   const queue = runner.subscribe(turn.session.id);
+  await runner.admit(turn.session.id, turn.session.org_id);
   runner.start(turn);
   await runner.wait(turn.session.id);
   const events: Array<[string, Record<string, unknown>]> = [];
@@ -233,22 +235,64 @@ test("a completion cancelled while the model answers ends the generation without
   );
 });
 
-test("admission_refusal_leaves_the_session_idle_and_publishes_finished", async () => {
+test("admit_at_the_box_cap_is_a_conflict_with_the_admission_message_and_takes_no_slot", async () => {
   const { db, queries } = emptyDatabase();
   const admission = new AdmissionCoordinator(1);
   await admission.acquire("agent", "run-1", "org-1");
   const runner = new ConversationRunner({ db, kind: "studio", admission, stubHint: "hint" });
-  const events = await publishedEvents(runner, generation());
-  assert.deepEqual(
-    events.map(([event]) => event),
-    ["generation.started", "session.error", "generation.finished"],
-  );
-  assert.match(String(events[1]?.[1].detail), /generation limit/);
-  const reset = queries.filter(
-    ({ text, params }) => text.startsWith("UPDATE studio_sessions") && params.includes("idle"),
-  );
-  assert.equal(reset.length, 1);
+  const queue = runner.subscribe("session-1");
+  await assert.rejects(runner.admit("session-1", "org-1"), (error: unknown) => {
+    assert.ok(error instanceof ConversationConflictError);
+    assert.equal(error.status, 409);
+    assert.equal(error.message, "the server is at its generation limit; try again shortly");
+    return true;
+  });
+  assert.equal(admission.isBusy("studio", "session-1"), false);
   assert.equal(admission.isBusy("agent", "run-1"), true);
+  assert.equal(queue.empty(), true);
+  assert.deepEqual(queries, []);
+});
+
+test("admit_at_the_organisation_cap_is_a_conflict_with_the_plan_limit_message", async () => {
+  const { db } = emptyDatabase();
+  const admission = new AdmissionCoordinator();
+  await admission.acquire("builder", "session-0", "org-1");
+  const capped: OrgPolicy = {
+    standing: async () => ({ limits: { ...UNLIMITED, maxConcurrentRuns: 1 }, blocked: null }),
+  };
+  const runner = new ConversationRunner({ db, kind: "studio", admission, policy: capped, stubHint: "hint" });
+  await assert.rejects(runner.admit("session-1", "org-1"), {
+    name: "ConversationConflictError",
+    message: "plan limit reached: concurrent generations",
+  });
+  assert.equal(admission.isBusy("studio", "session-1"), false);
+  await runner.admit("session-1", "org-2");
+  assert.equal(admission.isBusy("studio", "session-1"), true);
+});
+
+test("admit_of_a_session_that_holds_its_slot_is_a_conflict", async () => {
+  const runner = new ConversationRunner({
+    db: emptyDatabase().db,
+    kind: "builder",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+  });
+  await runner.admit("session-1", "org-1");
+  await assert.rejects(runner.admit("session-1", "org-1"), {
+    name: "ConversationConflictError",
+    message: "builder session is already generating",
+  });
+  runner.release("session-1");
+  await runner.admit("session-1", "org-1");
+});
+
+test("a_started_generation_gives_its_slot_back_when_it_ends", async () => {
+  const { db } = emptyDatabase();
+  const admission = new AdmissionCoordinator();
+  const runner = new ConversationRunner({ db, kind: "studio", admission, stubHint: "hint" });
+  const events = await publishedEvents(runner, generation());
+  assert.equal(events.at(-1)?.[0], "generation.finished");
+  assert.equal(admission.isBusy("studio", "session-1"), false);
 });
 
 test("a_throw_in_the_background_task_is_recorded_not_crashed", { timeout: 5_000 }, async () => {

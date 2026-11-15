@@ -105,6 +105,7 @@ export type ConversationRunnerDeps = {
   db: Queryable;
   /** Whose conversation it is, which names its tables and its admission. */
   kind: ConversationKind;
+  /** The box's generation slots, one of which each generation runs in. */
   admission: AdmissionCoordinator;
   /** What a model provider is called with; nothing resolves when absent. */
   credentials?: ModelCredentialsProvider;
@@ -182,6 +183,12 @@ export type ConversationProjection = {
   systemContent?: string;
 };
 
+/**
+ * A coach conversation's generations and their streams. A caller takes the session's slot with
+ * `admit` before it records the operator's turn, and gives it back with `release` when the turn
+ * fails to record; `start` runs the generation in that slot, and the runner gives it back when the
+ * generation ends.
+ */
 export class ConversationRunner {
   private subs = new Map<string, Set<EventQueue<CoachEvent>>>();
   private cancels = new Map<string, CancelEvent>();
@@ -227,7 +234,34 @@ export class ConversationRunner {
     await this.tasks.get(sessionId);
   }
 
-  /** Runs the generation in the background; whatever it throws ends it on the session, never in the process. */
+  /**
+   * Takes the session's generation slot under the box's cap and its organisation's
+   * `maxConcurrentRuns`. A refused slot is a ConversationConflictError with the admission's message.
+   */
+  async admit(sessionId: string, orgId: string): Promise<void> {
+    try {
+      await this.deps.admission.acquire(this.deps.kind, sessionId, orgId, await this.maxConcurrent(orgId));
+    } catch (error) {
+      if (error instanceof AdmissionConflictError) {
+        throw new ConversationConflictError(error.message);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Gives back the session's generation slot. A caller gives back the slot of a turn it admitted
+   * and did not start; a started generation gives back its own as it ends.
+   */
+  release(sessionId: string): void {
+    this.deps.admission.release(this.deps.kind, sessionId);
+  }
+
+  /**
+   * Runs the generation of an admitted session in the background, in the slot `admit` took, and
+   * gives the slot back when the generation ends; whatever it throws ends it on the session, never
+   * in the process.
+   */
   start<C>(args: ConversationGeneration<C>): void {
     const sessionId = args.session.id;
     const task = this.run(args)
@@ -249,18 +283,23 @@ export class ConversationRunner {
     await this.endGeneration(session.id, generation);
   }
 
+  /**
+   * Announces the generation, runs its steps, and returns the session to idle. The session's slot
+   * is given back as the steps end, however they end, before the session is returned to idle.
+   */
   private async run<C>(turn: ConversationGeneration<C>): Promise<GenerationEnd> {
     const sessionId = turn.session.id;
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
-    await this.publish(sessionId, "generation.started", {
-      session_id: sessionId,
-      generation: turn.generation,
-    });
     try {
-      await this.generateAdmitted(turn, cancel);
+      await this.publish(sessionId, "generation.started", {
+        session_id: sessionId,
+        generation: turn.generation,
+      });
+      await this.takeSteps(turn, cancel);
     } finally {
       this.cancels.delete(sessionId);
+      this.release(sessionId);
     }
     await this.endGeneration(sessionId, turn.generation);
     return "ended";
@@ -288,34 +327,15 @@ export class ConversationRunner {
     }
   }
 
-  /**
-   * Takes the session's admission slot, runs the generation's steps in it, and gives the slot
-   * back. A refused slot is recorded as the session's error, and no step runs.
-   */
-  private async generateAdmitted<C>(turn: ConversationGeneration<C>, cancel: CancelEvent): Promise<void> {
-    const sessionId = turn.session.id;
-    const orgId = turn.session.org_id;
-    const kind = this.deps.kind;
-    try {
-      await this.deps.admission.acquire(kind, sessionId, orgId, await this.maxConcurrent(orgId));
-    } catch (error) {
-      if (error instanceof AdmissionConflictError) {
-        await this.fail(sessionId, error.message);
-        return;
-      }
-      throw error;
+  /** Runs the generation's steps until one stops it; `maxSteps` steps that none stops record the step limit as the session's error. */
+  private async takeSteps<C>(turn: ConversationGeneration<C>, cancel: CancelEvent): Promise<void> {
+    const progress: GenerationProgress = { toolCalls: 0, stubbed: [] };
+    let step = 0;
+    while (step < turn.maxSteps && (await this.takeStep(turn, cancel, progress)) === "next") {
+      step += 1;
     }
-    try {
-      const progress: GenerationProgress = { toolCalls: 0, stubbed: [] };
-      let step = 0;
-      while (step < turn.maxSteps && (await this.takeStep(turn, cancel, progress)) === "next") {
-        step += 1;
-      }
-      if (step >= turn.maxSteps) {
-        await this.fail(sessionId, "generation step limit reached");
-      }
-    } finally {
-      this.deps.admission.release(kind, sessionId);
+    if (step >= turn.maxSteps) {
+      await this.fail(turn.session.id, "generation step limit reached");
     }
   }
 

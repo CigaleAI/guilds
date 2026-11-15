@@ -702,20 +702,28 @@ The coach loop is the shared conversation runner
 The run limits come from the organisation policy; core's defaults are
 `COACH_RUN_LIMITS` in `apps/orchestrator/src/policy/index.ts`. The
 step cap and the tools' caps are in
-`apps/orchestrator/src/studio/constants.ts`. A generation past the
-month's `monthlyCoachRuns` is refused with 409.
+`apps/orchestrator/src/studio/constants.ts`.
+
+Posting a message takes the session's organisation admission slot
+before the turn is recorded, and the generation holds it until it
+ends, however it ends. Posting while the coach generates is 409
+`studio session is already generating`. At the box's generation cap
+it is 409 `the server is at its generation limit; try again shortly`,
+and at the organisation's `maxConcurrentRuns` 409 `plan limit
+reached: concurrent generations`. A month past `monthlyCoachRuns` is
+409. A refused post records nothing (no message, no coach run of the
+month, no entry in the session's `errors`, no stream event) and holds
+no slot.
 
 Whatever ends a generation, the session returns to `idle` with its
 `generation_token` and `generation_started_at` cleared, and the stream
 ends with `generation.finished`. A generation the process stopped
 during ends this way when the orchestrator starts again, after its
 unanswered tool calls are answered `ERROR: execution interrupted`. A
-generation the admission refuses, because the box or the organisation
-is at its generation limit, runs no step. A failure the runner does
-not expect, such as a database error or an organisation the policy
-blocks after the generation started, ends the generation at that step
-and leaves the process running. Either is added to the session's
-`errors` and published as `session.error` before
+failure the runner does not expect, such as a database error or an
+organisation the policy blocks after the generation started, ends the
+generation at that step and leaves the process running. It is added
+to the session's `errors` and published as `session.error` before
 `generation.finished`. When the database refuses that record too, the
 failure is logged and the stream still ends with
 `generation.finished`.

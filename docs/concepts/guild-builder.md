@@ -423,17 +423,20 @@ them: a Builder session is `active`, or `blocked` at the input limit.
 
 The coach runs on the conversation runner Prompt Studio shares
 ([Coach loop and usage](prompt-studio.md#coach-loop-and-usage)).
+Posting a message takes the session's organisation admission slot
+before the turn is recorded, and the generation holds it until it
+ends, however it ends. A slot the admission refuses refuses the post
+and records nothing (see [HTTP](#http)).
+
 Whatever ends a generation, the session returns to `idle` with its
 `generation_token` and `generation_started_at` cleared, and the stream
 ends with `generation.finished`. A generation the process stopped
 during ends this way when the orchestrator starts again, after its
 unanswered tool calls are answered `ERROR: execution interrupted`. A
-generation the admission refuses, because the box or the organisation
-is at its generation limit, runs no step. A failure the runner does
-not expect, such as a database error or an organisation the policy
-blocks after the generation started, ends the generation at that step
-and leaves the process running. Either is added to the session's
-`errors` and published as `session.error` before
+failure the runner does not expect, such as a database error or an
+organisation the policy blocks after the generation started, ends the
+generation at that step and leaves the process running. It is added
+to the session's `errors` and published as `session.error` before
 `generation.finished`. When the database refuses that record too, the
 failure is logged and the stream still ends with
 `generation.finished`.
@@ -476,9 +479,15 @@ GET    /api/builder/servers/:server_ref
   string and `temperature` a number; a message's `content` is a
   string, and a recipe write takes a number `expected_body_version`.
   Another type is 422 naming the field.
-- Posting an empty message is 422. Posting while the coach generates,
-  or to a session that is not active, is 409. A month past
-  `monthlyCoachRuns` is 409.
+- Posting an empty message is 422. Posting to a session that is not
+  active is 409. Posting while the coach generates is 409 `builder
+  session is already generating`. At the box's generation cap it is
+  409 `the server is at its generation limit; try again shortly`, and
+  at the organisation's `maxConcurrentRuns` 409 `plan limit reached:
+  concurrent generations`. A month past `monthlyCoachRuns` is 409. A
+  refused post records nothing (no message, no coach run of the month,
+  no entry in the session's `errors`, no stream event) and holds no
+  slot.
 - `review`, `access`, `validate`, and `publish` behave like the recipe
   routes of the same names (see [Recipes](recipes.md#recipe-http)).
   `publish` is 422 with the blocking errors.
