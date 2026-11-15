@@ -302,7 +302,7 @@ export type StudioEvents = {
   "message.committed": StudioMessageCommit;
   "draft.changed": unknown;
   "generation.finished": unknown;
-  "session.error": unknown;
+  "session.error": SessionFailure;
 };
 
 export const studioEventGuards: PayloadGuards<StudioEvents> = {
@@ -312,7 +312,7 @@ export const studioEventGuards: PayloadGuards<StudioEvents> = {
   "message.committed": isStudioMessageCommit,
   "draft.changed": isAnyPayload,
   "generation.finished": isAnyPayload,
-  "session.error": isAnyPayload,
+  "session.error": isSessionFailure,
 };
 
 /** What each event of a Builder session's stream carries. */

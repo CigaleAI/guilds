@@ -68,16 +68,24 @@ class FakeEventSource {
   close(): void {}
 }
 
-/** What a test of the run stream holds: the query client, the stream, and what the hook returned last. */
-type MountedRunStream = {
+/** What a test of a stream holds: the query client, the stream, and what the hook returned last. */
+type MountedStream<State> = {
   client: QueryClient;
   source: FakeEventSource;
-  state: () => RunStreamState;
+  state: () => State;
   settle: (change: () => unknown) => Promise<void>;
 };
 
-/** Mounts `useRunStream` for run `r_1` of agent `a_1` with `run` cached, runs `check`, and unmounts it. */
-async function withRunStream(check: (mounted: MountedRunStream) => Promise<void>): Promise<void> {
+/**
+ * Mounts the hook `prepare` returns, once it has seeded the query client, checks that it opens
+ * the stream at `url`, runs `check`, and unmounts it. `prepare` runs once the browser globals
+ * are set, so it is where the hook's modules are imported.
+ */
+async function withStream<State>(
+  url: string,
+  prepare: (client: QueryClient) => Promise<() => State>,
+  check: (mounted: MountedStream<State>) => Promise<void>,
+): Promise<void> {
   const window = new Window({ url: "http://localhost/" });
   const globals = {
     window,
@@ -98,18 +106,15 @@ async function withRunStream(check: (mounted: MountedRunStream) => Promise<void>
     const { act, createElement, useEffect } = await import("react");
     const { createRoot } = await import("react-dom/client");
     const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
-    const { runKeys } = await import("./queries/runs");
-    const { useRunStream } = await import("./streams");
 
     const client = new QueryClient({ defaultOptions: { queries: { enabled: false } } });
     queries = client;
-    client.setQueryData(runKeys.run(run.id), run);
-    client.setQueryData(runKeys.agentRuns(run.agent_id), [run]);
-    let latest: RunStreamState = { live: null, progress: new Map() };
-    function RunStream() {
-      const state = useRunStream(run.agent_id, run.id);
+    const useHook = await prepare(client);
+    let latest: { state: State } | null = null;
+    function Stream() {
+      const state = useHook();
       useEffect(() => {
-        latest = state;
+        latest = { state };
       });
       return null;
     }
@@ -122,12 +127,16 @@ async function withRunStream(check: (mounted: MountedRunStream) => Promise<void>
       });
     FakeEventSource.opened = [];
     await settle(() =>
-      mounted.render(createElement(QueryClientProvider, { client }, createElement(RunStream))),
+      mounted.render(createElement(QueryClientProvider, { client }, createElement(Stream))),
     );
     const source = FakeEventSource.opened.at(-1);
-    assert.ok(source, "the run's stream is opened");
-    assert.equal(source.url, "/api/runs/r_1/stream");
-    await check({ client, source, state: () => latest, settle });
+    assert.ok(source, "the stream is opened");
+    assert.equal(source.url, url);
+    const state = () => {
+      assert.ok(latest, "the hook has rendered");
+      return latest.state;
+    };
+    await check({ client, source, state, settle });
     // Unmounted inside act, React has no work left that would outlive the window.
     await settle(() => mounted.unmount());
     root = null;
@@ -139,6 +148,23 @@ async function withRunStream(check: (mounted: MountedRunStream) => Promise<void>
     for (const name of Object.keys(globals)) Reflect.deleteProperty(globalThis, name);
     await window.happyDOM.close();
   }
+}
+
+/** Mounts `useRunStream` for run `r_1` of agent `a_1` with `run` cached, runs `check`, and unmounts it. */
+function withRunStream(
+  check: (mounted: MountedStream<RunStreamState>) => Promise<void>,
+): Promise<void> {
+  return withStream(
+    "/api/runs/r_1/stream",
+    async (client) => {
+      const { runKeys } = await import("./queries/runs");
+      const { useRunStream } = await import("./streams");
+      client.setQueryData(runKeys.run(run.id), run);
+      client.setQueryData(runKeys.agentRuns(run.agent_id), [run]);
+      return () => useRunStream(run.agent_id, run.id);
+    },
+    check,
+  );
 }
 
 test("finished_clears_generating_on_the_cached_run", async () => {
@@ -185,4 +211,19 @@ test("a_reconnect_drops_the_streamed_turn_and_progress", async () => {
     assert.equal(state().live, null);
     assert.equal(state().progress.size, 0);
   });
+});
+
+test("a_studio_session_error_hands_its_detail_to_on_error", async () => {
+  const details: string[] = [];
+  await withStream(
+    "/api/studio/sessions/s_1/stream",
+    async () => {
+      const { useStudioStream } = await import("./streams");
+      return () => useStudioStream("s_1", (detail) => details.push(detail));
+    },
+    async ({ source, settle }) => {
+      await settle(() => source.send("session.error", '{"detail": "input token limit reached"}'));
+      assert.deepEqual(details, ["input token limit reached"]);
+    },
+  );
 });

@@ -287,8 +287,12 @@ const studioEvents = Object.keys(studioEventGuards);
 /**
  * Follows a Studio session: the coach's reply as it is written, committed rows into the cached
  * conversation, and a refresh of drafts and state when the coach finishes or proposes a draft.
+ * Why the coach stopped reaches `onError`.
  */
-export function useStudioStream(sessionId: string): LiveTurn | null {
+export function useStudioStream(
+  sessionId: string,
+  onError: (detail: string) => void,
+): LiveTurn | null {
   const client = useQueryClient();
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [tracked, setTracked] = useState(sessionId);
@@ -322,7 +326,8 @@ export function useStudioStream(sessionId: string): LiveTurn | null {
       );
       refresh();
     },
-    "session.error": () => {
+    "session.error": (failure) => {
+      onError(failure.detail);
       setLive(null);
       refresh();
     },
@@ -341,6 +346,7 @@ const builderEvents = Object.keys(builderEventGuards);
 /**
  * Follows a Builder session: the coach's reply as it is written, committed rows into the cached
  * conversation, and the session and its recipe re-read when the coach writes the draft or stops.
+ * Why the coach stopped reaches `onError`.
  */
 export function useBuilderStream(
   sessionId: string,

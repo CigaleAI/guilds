@@ -32,6 +32,9 @@ export type MentionCandidate = {
 
 type MentionQuery = { start: number; end: number; text: string };
 
+/** How a sent message ended: the app took it, or refused it and the operator still has it. */
+export type SendOutcome = "delivered" | "failed";
+
 /** The `@partial` right before the caret, if the caret is completing a tag. */
 function mentionQueryAt(text: string, caret: number): MentionQuery | null {
   const match = /(?:^|[^A-Za-z0-9-])@([a-z0-9-]{0,62})$/.exec(text.slice(0, caret));
@@ -44,8 +47,12 @@ export type ComposerProps = Omit<ComponentProps<"form">, "onSubmit" | "children"
   /** Accessible name of the message box, such as "Message managooor". */
   label: string;
   placeholder: string;
-  /** Called with the trimmed message, and any attached image files, on Enter or Send. */
-  onSend: (message: string, files?: File[]) => void;
+  /**
+   * Called with the trimmed message, and any attached image files, on Enter or Send. The box
+   * empties at once; a `failed` outcome puts the message and its files back if the operator has
+   * not typed in the box since, so they can send it again.
+   */
+  onSend: (message: string, files?: File[]) => Promise<SendOutcome>;
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
@@ -116,6 +123,8 @@ export function Composer({
 }: ComposerProps) {
   const [inner, setInner] = useState(defaultValue);
   const text = value ?? inner;
+  // What the box holds after the last edit, read once a send's outcome arrives.
+  const held = useRef(text);
   const box = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingFile[]>([]);
@@ -170,6 +179,7 @@ export function Composer({
   }, [text]);
 
   function change(next: string) {
+    held.current = next;
     if (value === undefined) setInner(next);
     onValueChange?.(next);
   }
@@ -200,15 +210,19 @@ export function Composer({
     });
   }
 
-  function send() {
+  async function send() {
     if (!canSend) return;
+    const message = text.trim();
     const files = pending.map((item) => item.file);
-    onSend(text.trim(), files.length ? files : undefined);
     change("");
     setPending((current) => {
       for (const item of current) URL.revokeObjectURL(item.url);
       return [];
     });
+    const outcome = await onSend(message, files.length ? files : undefined);
+    if (outcome === "delivered" || held.current !== "") return;
+    change(message);
+    addFiles(files);
   }
 
   function onPick(event: ChangeEvent<HTMLInputElement>) {
@@ -314,7 +328,7 @@ export function Composer({
     }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      send();
+      void send();
     }
   }
 
@@ -398,7 +412,7 @@ export function Composer({
         className={cn(frame, "relative flex items-end gap-2.5 rounded-xl py-2 pr-2 pl-5", className)}
         onSubmit={(event) => {
           event.preventDefault();
-          send();
+          void send();
         }}
         {...props}
       >
@@ -430,7 +444,7 @@ export function Composer({
       )}
       onSubmit={(event) => {
         event.preventDefault();
-        send();
+        void send();
       }}
       {...props}
     >

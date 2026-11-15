@@ -3,13 +3,12 @@ import { useCancelBuilder, usePostBuilderMessage } from "../../api/queries/build
 import type { LiveTurn } from "../../api/liveTurn";
 import type { StudioMessage } from "../../api/types/studio";
 import type { BuilderSession } from "../../api/types/builder";
-import { Composer, Banner, toast } from "@guildsrun/ui";
+import { Composer, Banner, toast, type SendOutcome } from "@guildsrun/ui";
 import type { FlowSegment } from "../agent/runs/runFlowModel";
 import { CoachLog, type CoachRow } from "../coach/CoachLog";
 import { answered } from "../coach/coachRows";
 import { ConnectCard, QuestionCard } from "./BuilderWidgets";
 import { pendingQuestions, widgetOf } from "./widgets";
-import type { ReplyOutcome } from "./types";
 
 const coach = { name: "coach", tone: "signal" as const };
 
@@ -46,12 +45,14 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
 
   const refused = (error: Error) =>
     toast({ kind: "error", title: "Couldn't message the coach", description: error.message });
-  const send = (content: string) => post.mutate(content, { onError: refused });
-  /** A card's reply: the coach has it once the post succeeds; a refused post shows its error. */
-  const reply = (content: string): Promise<ReplyOutcome> =>
+  /**
+   * A message or a card's reply: the coach has it once the post succeeds; a refused post shows
+   * its error.
+   */
+  const send = (content: string): Promise<SendOutcome> =>
     post.mutateAsync(content).then(
-      (): ReplyOutcome => "delivered",
-      (error: Error): ReplyOutcome => {
+      (): SendOutcome => "delivered",
+      (error: Error): SendOutcome => {
         refused(error);
         return "failed";
       },
@@ -63,7 +64,7 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
         const widget = widgetOf(call.result);
         if (!widget || !call.result) return [];
         const key = `${widget.widget}-${call.result.seq}`;
-        const props = { answered: answered(rows, call.result.seq), live: idle, onReply: reply };
+        const props = { answered: answered(rows, call.result.seq), live: idle, onReply: send };
         return [
           widget.widget === "connect" ? (
             <ConnectCard key={key} {...props} widget={widget} />
@@ -100,7 +101,7 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
               answered={false}
               live={idle}
               onReply={(message) =>
-                reply(message).then((outcome) => {
+                send(message).then((outcome) => {
                   if (outcome === "delivered") {
                     setAnsweredHere(
                       (current) =>

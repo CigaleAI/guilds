@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { Window } from "happy-dom";
 import type { QuestionWidget } from "../../api/types/builder";
-import type { ReplyOutcome } from "./types";
+import type { SendOutcome } from "@guildsrun/ui";
 
 const widget: QuestionWidget = {
   widget: "question",
@@ -40,7 +40,7 @@ after(async () => {
 });
 
 /** Renders a question card, picks its option, sends it, and waits for the reply's outcome. */
-async function sendAnswers(outcome: ReplyOutcome) {
+async function sendAnswers(outcome: SendOutcome) {
   // React DOM tells browser from server when it loads, so it loads once the globals are set.
   const React = await import("react");
   const { act, createElement } = React;

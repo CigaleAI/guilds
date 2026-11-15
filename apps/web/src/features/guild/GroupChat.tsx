@@ -38,6 +38,7 @@ import {
   Icon,
   cn,
   personTone,
+  type SendOutcome,
 } from "@guildsrun/ui";
 import type { MentionCandidate } from "@guildsrun/ui";
 import { GroupQueue, useWaitsFor } from "./GroupQueue";
@@ -411,7 +412,7 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
 
   const waitsFor = useWaitsFor(agents, state);
   /** Holds the message back while an agent it targets is in a group run; sends it otherwise. */
-  const send = (content: string) => {
+  const send = (content: string): Promise<SendOutcome> => {
     const target = replyTarget;
     setReplyState(null);
     const replyAgent =
@@ -424,14 +425,14 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
         content,
         target ? { seq: target.seq, ...(replyAgent ? { agentName: replyAgent } : {}) } : undefined,
       );
-      return;
+      return Promise.resolve("delivered");
     }
     atBottom.current = true;
-    post.mutate(
-      { content, ...(target ? { reply_to_seq: target.seq } : {}) },
-      {
-        onError: (error) =>
-          toast({ kind: "error", title: "Couldn't post to the guild", description: error.message }),
+    return post.mutateAsync({ content, ...(target ? { reply_to_seq: target.seq } : {}) }).then(
+      (): SendOutcome => "delivered",
+      (error: Error): SendOutcome => {
+        toast({ kind: "error", title: "Couldn't post to the guild", description: error.message });
+        return "failed";
       },
     );
   };

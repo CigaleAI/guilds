@@ -8,7 +8,7 @@ import {
 } from "../../api/queries/studio";
 import type { LiveTurn } from "../../api/liveTurn";
 import type { StudioMessage, StudioSession } from "../../api/types/studio";
-import { Button, Checkbox, Composer, Banner, toast, Icon } from "@guildsrun/ui";
+import { Button, Checkbox, Composer, Banner, toast, Icon, type SendOutcome } from "@guildsrun/ui";
 import type { FlowSegment } from "../agent/runs/runFlowModel";
 import { CoachLog, type CoachRow } from "../coach/CoachLog";
 import { answered } from "../coach/coachRows";
@@ -45,32 +45,30 @@ export function StudioChat({ session, messages, live, pin, onUnpin }: StudioChat
   const generating =
     session.generation_state !== "idle" || post.isPending || askElsewhere.isPending;
 
-  const failed = (error: Error) =>
+  const failed = (error: Error): SendOutcome => {
     toast({ kind: "error", title: "Couldn't message the coach", description: error.message });
+    return "failed";
+  };
 
-  const send = (content: string) => {
+  const send = (content: string): Promise<SendOutcome> => {
     if (pin && fresh) {
-      askElsewhere.mutate(
-        { content, focus: pin.focus },
-        {
-          onSuccess: (child) => {
-            onUnpin();
-            setFresh(false);
-            void navigate({
-              to: "/studio/$sessionId",
-              params: { sessionId: child.id },
-              search,
-            });
-          },
-          onError: failed,
-        },
-      );
-      return;
+      return askElsewhere.mutateAsync({ content, focus: pin.focus }).then((child): SendOutcome => {
+        onUnpin();
+        setFresh(false);
+        void navigate({
+          to: "/studio/$sessionId",
+          params: { sessionId: child.id },
+          search,
+        });
+        return "delivered";
+      }, failed);
     }
-    post.mutate(
-      { content, ...(pin ? { focus: pin.focus } : {}) },
-      { onSuccess: onUnpin, onError: failed },
-    );
+    return post
+      .mutateAsync({ content, ...(pin ? { focus: pin.focus } : {}) })
+      .then((): SendOutcome => {
+        onUnpin();
+        return "delivered";
+      }, failed);
   };
 
   const metadataAt = (seq: number) =>

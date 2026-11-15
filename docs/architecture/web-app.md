@@ -216,6 +216,10 @@ generating waits in a queue in the tab (`features/guild/messageQueue.ts`)
 and posts when they finish. The queue lives in memory and is lost on
 reload.
 
+A message the server refuses goes back into the composer, with its
+images, unless the operator has typed in it since, and a toast says
+why.
+
 `src/api/clientLog.ts` reports uncaught errors, unhandled rejections,
 React render errors, and API calls that fail with a 5xx or on the
 network to `POST /api/client-errors`, deduplicated for 30 s and capped

@@ -389,9 +389,10 @@ organisation, guild, or agent scope, or in collections.
 
 The workspace follows the session's stream: `generation.started`,
 `assistant.delta`, `assistant.reasoning.delta`, `message.committed`,
-`recipe.changed`, `generation.finished`, `session.error`. The stream
-sends a keepalive every 15 s. While the coach works, the workspace
-also re-reads the session and its messages every 2.5 s.
+`recipe.changed`, `generation.finished`, `session.error`. It shows a
+`session.error`'s detail as a toast. The stream sends a keepalive
+every 15 s. While the coach works, the workspace also re-reads the
+session and its messages every 2.5 s.
 
 ### Storage
 

@@ -1,7 +1,16 @@
 import { Check, Link2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useIdentity } from "../../app/identity";
-import { Button, Select, StatusBadge, TextField, cn, Icon, Tag } from "@guildsrun/ui";
+import {
+  Button,
+  Select,
+  StatusBadge,
+  TextField,
+  cn,
+  Icon,
+  Tag,
+  type SendOutcome,
+} from "@guildsrun/ui";
 import type {
   ConnectScope,
   ConnectServer,
@@ -21,7 +30,7 @@ import {
   widgetRows,
   type Answer,
 } from "./widgets";
-import type { ReplyOutcome, WidgetRow, WidgetState } from "./types";
+import type { WidgetRow, WidgetState } from "./types";
 
 const scopeLabel: Record<ConnectScope, string> = {
   org: "Organisation · connect now",
@@ -71,7 +80,7 @@ type WidgetProps = {
   /** False while the coach is writing; the reply waits for it. */
   live: boolean;
   /** Sends the operator's reply to the coach; resolves with how the post ended. */
-  onReply: (message: string) => Promise<ReplyOutcome>;
+  onReply: (message: string) => Promise<SendOutcome>;
 };
 
 type ConnectCardProps = WidgetProps & { widget: ConnectWidget };

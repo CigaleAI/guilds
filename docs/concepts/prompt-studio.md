@@ -939,7 +939,8 @@ version, the run and its `memory_write` call id.
 
 SSE events: `generation.started`, `assistant.delta`,
 `assistant.reasoning.delta`, `message.committed`, `draft.changed`,
-`generation.finished`, `session.error`. While the coach works, the web
+`generation.finished`, `session.error`. The view shows a
+`session.error`'s detail as a toast. While the coach works, the web
 app also re-reads the session and its messages every 2.5 s
 ([Web app](../architecture/web-app.md#state-and-events)).
 

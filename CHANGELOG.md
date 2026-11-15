@@ -8,6 +8,10 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Studio shows why the coach stopped as a toast, as Builder
+does. In every chat, a message the server refuses goes back into the
+composer with its images, unless the operator has typed in it since.
+
 **Rebuild.** A message posted to a Studio or Builder coach while the
 box or the organisation is at its generation limit is refused with
 409 and the limit's message

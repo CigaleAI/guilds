@@ -89,7 +89,9 @@ function Workspace({ sessionId }: WorkspaceProps) {
     followTarget(next);
   };
 
-  const streamText = useStudioStream(sessionId);
+  const streamText = useStudioStream(sessionId, (detail) =>
+    toast({ kind: "error", title: "The coach stopped", description: detail }),
+  );
 
   if (session.isError) {
     return (

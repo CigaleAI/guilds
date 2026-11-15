@@ -21,7 +21,16 @@ import type { Run } from "../../../api/types/runs";
 import type { Schedule } from "../../../api/types/schedules";
 import { messageTime } from "../../../app/format";
 import { useMediaQuery, wideScreen } from "../../../app/media";
-import { Button, Composer, Banner, EmptyState, SkeletonRows, toast, Row } from "@guildsrun/ui";
+import {
+  Button,
+  Composer,
+  Banner,
+  EmptyState,
+  SkeletonRows,
+  toast,
+  Row,
+  type SendOutcome,
+} from "@guildsrun/ui";
 import { ChangesPanel } from "./ChangesPanel";
 import type { RevealStep } from "./FlowView";
 import { HistoryDrawer } from "./HistoryDrawer";
@@ -200,7 +209,7 @@ type SessionComposerProps = {
   wide: boolean;
   /** A message is on its way: the session is starting, or the message is being sent. */
   sending: boolean;
-  onSend: (content: string, files?: File[]) => void;
+  onSend: (content: string, files?: File[]) => Promise<SendOutcome>;
   onCancel: () => void;
 };
 
@@ -305,25 +314,26 @@ export function AgentChat() {
     runId,
   ]);
 
-  const failed = (title: string) => (error: Error) =>
-    toast({ kind: "error", title, description: error.message });
+  const failed =
+    (title: string) =>
+    (error: Error): SendOutcome => {
+      toast({ kind: "error", title, description: error.message });
+      return "failed";
+    };
 
-  const onSend = (content: string, files?: File[]) => {
+  const onSend = (content: string, files?: File[]): Promise<SendOutcome> => {
     atBottom.current = true;
     if (!run.data) {
-      start.mutate(
-        { message: content, ...(files?.length ? { files } : {}) },
-        {
-          onSuccess: (created) => selectRun(created.id),
-          onError: failed("Couldn't start the session"),
-        },
-      );
-      return;
+      return start
+        .mutateAsync({ message: content, ...(files?.length ? { files } : {}) })
+        .then((created): SendOutcome => {
+          selectRun(created.id);
+          return "delivered";
+        }, failed("Couldn't start the session"));
     }
-    send.mutate(
-      { runId: run.data.id, content, ...(files?.length ? { files } : {}) },
-      { onError: failed("Couldn't send the message") },
-    );
+    return send
+      .mutateAsync({ runId: run.data.id, content, ...(files?.length ? { files } : {}) })
+      .then((): SendOutcome => "delivered", failed("Couldn't send the message"));
   };
 
   if (!agent.data) return null;

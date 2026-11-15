@@ -1,12 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { TooltipProvider } from "../overlays/Tooltip";
-import { Composer } from "./Composer";
+import { Composer, type SendOutcome } from "./Composer";
 
 const meta: Meta<typeof Composer> = { title: "Components/Controls/Composer", component: Composer };
 export default meta;
 
 type Story = StoryObj<typeof Composer>;
+
+const deliver = () => Promise.resolve<SendOutcome>("delivered");
 
 function AgentChat({ generating: initial }: { generating: boolean }) {
   const [generating, setGenerating] = useState(initial);
@@ -16,7 +18,10 @@ function AgentChat({ generating: initial }: { generating: boolean }) {
       placeholder="Send a message to managooor…"
       generating={generating}
       onCancel={() => setGenerating(false)}
-      onSend={() => setGenerating(true)}
+      onSend={() => {
+        setGenerating(true);
+        return deliver();
+      }}
     />
   );
 }
@@ -37,7 +42,7 @@ export const Narrow: Story = {
         tone="paper"
         label="Message managooor"
         placeholder="Send a message to managooor…"
-        onSend={() => {}}
+        onSend={deliver}
       />
       <Composer
         tone="paper"
@@ -45,7 +50,7 @@ export const Narrow: Story = {
         placeholder="Send a message to managooor…"
         generating
         onCancel={() => {}}
-        onSend={() => {}}
+        onSend={deliver}
       />
     </div>
   ),
@@ -60,7 +65,7 @@ export const WithText: Story = {
         defaultValue={
           "Every 24h, do a retrospective of the day.\nAsk researchoor to check the status of previous closed and exited calls,\nsee how your decisions held up, and fold the learnings into the fund thesis."
         }
-        onSend={() => {}}
+        onSend={deliver}
       />
     </div>
   ),
@@ -74,7 +79,7 @@ export const StudioCoach: Story = {
         label="Ask the coach"
         placeholder="Ask the coach about this guild, an agent, or the pinned item…"
         footnote="Selected evidence is sent to the resolved model provider and may contain pasted sensitive text."
-        onSend={() => {}}
+        onSend={deliver}
       />
     </div>
   ),
@@ -87,14 +92,14 @@ export const GroupChat: Story = {
         variant="inline"
         label="Message the guild"
         placeholder="Message the guild — type @ to mention an agent"
-        onSend={() => {}}
+        onSend={deliver}
       />
       <Composer
         variant="inline"
         label="Message the guild"
         placeholder="Message the guild — type @ to mention an agent"
         defaultValue="@managooor hold every BUY until WALLET_KEY is set."
-        onSend={() => {}}
+        onSend={deliver}
       />
       <div className="rounded-xl bg-surface p-6">
         <Composer
@@ -102,7 +107,7 @@ export const GroupChat: Story = {
           tone="paper"
           label="Ask the planner"
           placeholder="Ask the planner to…"
-          onSend={() => {}}
+          onSend={deliver}
         />
       </div>
     </div>
@@ -117,13 +122,13 @@ export const Attachments: Story = {
           label="Message managooor"
           placeholder="Send a message to managooor…"
           acceptAttachments
-          onSend={() => {}}
+          onSend={deliver}
         />
         <Composer
           label="Message qwen"
           placeholder="Send a message to qwen…"
           attachmentsUnavailable="Qwen3.8 does not accept images"
-          onSend={() => {}}
+          onSend={deliver}
         />
       </div>
     </TooltipProvider>
@@ -137,7 +142,7 @@ export const Disabled: Story = {
         disabled
         label="Message managooor"
         placeholder="This run has ended. Start a new run to continue."
-        onSend={() => {}}
+        onSend={deliver}
       />
     </div>
   ),
@@ -151,7 +156,7 @@ export const Mentions: Story = {
         variant="inline"
         label="Message Degen-capital"
         placeholder="Message the guild — type @ to mention an agent"
-        onSend={() => {}}
+        onSend={deliver}
         mentions={[
           { name: "skyzo", tone: "signal" },
           { name: "researchoor", tone: "moss" },
