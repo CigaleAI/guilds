@@ -32,6 +32,13 @@ export function repositoryCredential(
   return login ? { kind: "github", connectionId: login.id } : { kind: "none" };
 }
 
+/** The choice a credential shows as in the credential select: its login's id, `ACCESS_TOKEN`, or `NO_CREDENTIAL`. */
+export function credentialChoice(credential: RepositoryCredential): string {
+  if (credential.kind === "github") return credential.connectionId;
+  if (credential.kind === "access_token") return ACCESS_TOKEN;
+  return NO_CREDENTIAL;
+}
+
 /** Whether a credential has what it needs: a secret and a username for an access token. */
 export function isCredentialComplete(
   credential: RepositoryCredential,

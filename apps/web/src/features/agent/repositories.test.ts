@@ -5,6 +5,7 @@ import type { Secret } from "../../api/types/secrets";
 import {
   ACCESS_TOKEN,
   accessTokenSecrets,
+  credentialChoice,
   credentialRequest,
   isCredentialComplete,
   isGithubUrl,
@@ -58,6 +59,12 @@ test("an access token is complete with a secret and a username; another credenti
   assert.equal(isCredentialComplete(token, "sec_1", "  "), false);
   assert.equal(isCredentialComplete({ kind: "none" }, "", ""), true);
   assert.equal(isCredentialComplete({ kind: "github", connectionId: "conn_org" }, "", ""), true);
+});
+
+test("a credential shows as its login's id, the access-token choice, or the no-credential choice", () => {
+  assert.equal(credentialChoice({ kind: "github", connectionId: "conn_org" }), "conn_org");
+  assert.equal(credentialChoice({ kind: "access_token" }), ACCESS_TOKEN);
+  assert.equal(credentialChoice({ kind: "none" }), NO_CREDENTIAL);
 });
 
 test("a credential adds its login, or its secret and trimmed username, to the request", () => {

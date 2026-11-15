@@ -14,6 +14,7 @@ import { repositoryNameError } from "../../app/names";
 import {
   ACCESS_TOKEN,
   accessTokenSecrets,
+  credentialChoice,
   credentialRequest,
   isCredentialComplete,
   isGithubUrl,
@@ -262,12 +263,6 @@ type CredentialSelectProps = {
 
 /** What a repository is cloned with: a GitHub login for a GitHub URL, an access token, or nothing for a public one. */
 function CredentialSelect({ logins, credential, onCredentialChange }: CredentialSelectProps) {
-  const value =
-    credential.kind === "github"
-      ? credential.connectionId
-      : credential.kind === "access_token"
-        ? ACCESS_TOKEN
-        : NO_CREDENTIAL;
   const hints: Record<RepositoryCredential["kind"], string> = {
     github: "Its coding agents get a GitHub token for this repository at each run.",
     access_token: "A token the git host issued, kept as a secret of the organisation.",
@@ -277,7 +272,7 @@ function CredentialSelect({ logins, credential, onCredentialChange }: Credential
     <Select
       tone="paper"
       label="Credential"
-      value={value}
+      value={credentialChoice(credential)}
       onValueChange={onCredentialChange}
       options={[
         ...logins.map((item) => ({ value: item.id, label: `GitHub · ${item.account_hint}` })),
