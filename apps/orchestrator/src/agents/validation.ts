@@ -1,10 +1,20 @@
 import { normalizeAvatarColor, normalizeAvatarShape } from "../avatars/index.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
-import { HARNESS_MODEL_RE, harnessOffMessage, isHarness, isHarnessOff } from "../coding/harnesses.js";
+import {
+  areSubscriptionAgentsOn,
+  HARNESS_MODEL_RE,
+  harnessOffMessage,
+  isHarness,
+  isHarnessOff,
+  isSubscriptionHarness,
+  SUBSCRIPTION_AGENTS_OFF_MESSAGE,
+  subscriptionHarnessMessage,
+} from "../coding/harnesses.js";
 import { SECRET_NAME } from "../credentials/validate.js";
 import {
   EFFORTS,
   HARNESSES,
+  modelSourceOf,
   type AgentConfig,
   type Effort,
   type Harness,
@@ -18,6 +28,7 @@ import {
   BROWSER_LANGUAGES,
   CODING_AGENT_CONFIG_DEFAULTS,
   CONFIG_KEYS,
+  MODEL_LOOP_SETTINGS,
   SECRET_ALIASES_MAX,
   type AgentConfigDefaults,
 } from "./config.js";
@@ -117,10 +128,16 @@ function rejectUnknownOrMissingConfigKeys(filled: JsonObject): void {
   throw new AgentValidationError(parts.join("; "));
 }
 
-/** A stored model id: `{provider}/{model}` with a provider core speaks to; the catalog is not consulted. */
-function requireModelId(value: unknown): string {
+/**
+ * A stored model id: `{provider}/{model}` with a provider core speaks to, or null for a
+ * subscription agent; the catalog is not consulted.
+ */
+function requireModelId(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
   if (typeof value !== "string" || !value.trim()) {
-    throw new AgentValidationError("model must be a non-empty string");
+    throw new AgentValidationError("model must be a non-empty string, or null for a subscription agent");
   }
   const model = value.trim();
   if (!parseModelId(model)) {
@@ -187,9 +204,39 @@ function requireHarness(value: unknown): Harness | null {
   return value;
 }
 
-function rejectHarnessWithoutCoding(harness: Harness | null, coding: boolean): void {
-  if (harness !== null && !coding) {
-    throw new AgentValidationError("harness is only for coding agents");
+/**
+ * An agent has one model source: a model on a key, or, without a model, a subscription on its
+ * harness. A coding agent has both its lead model and its harness; any other agent with a harness
+ * is a subscription agent, on a harness that runs one.
+ */
+function rejectUnsoundModelSource(model: string | null, coding: boolean, harness: Harness | null): void {
+  if (model !== null) {
+    if (harness !== null && !coding) {
+      throw new AgentValidationError("harness is for a coding agent, or a subscription agent, which has no model");
+    }
+    return;
+  }
+  if (coding) {
+    throw new AgentValidationError("a coding agent needs a model: the lead model it runs on a key");
+  }
+  if (harness === null) {
+    throw new AgentValidationError("an agent without a model is a subscription agent: it needs a harness");
+  }
+  if (!isSubscriptionHarness(harness)) {
+    throw new AgentValidationError(subscriptionHarnessMessage(harness));
+  }
+}
+
+/** Refuses a model-loop setting a subscription agent's config gives a value other than its default. */
+function rejectModelLoopSettings(config: AgentConfig): void {
+  if (modelSourceOf(config).kind === "key") {
+    return;
+  }
+  const set = MODEL_LOOP_SETTINGS.filter((key) => config[key] !== AGENT_CONFIG_DEFAULTS[key]);
+  if (set.length > 0) {
+    throw new AgentValidationError(
+      `a subscription agent takes no ${set.join(", ")}: they set the model loop, which its harness replaces`,
+    );
   }
 }
 
@@ -297,8 +344,24 @@ function assertHarnessPickable(harness: Harness, previous?: AgentConfig): void {
   }
 }
 
-function rejectCodingOnlyModelWithoutCoding(model: string, coding: boolean): void {
-  if (isCodingOnlyModel(model) && !coding) {
+/**
+ * A subscription agent needs the box to offer subscription agents, and a harness the box does not
+ * turn off: every create and every switch to a subscription is refused without them. An agent
+ * already on a subscription keeps it, and its harness, while the box turns either off.
+ */
+export function assertSubscriptionAgent(config: AgentConfig, previous?: AgentConfig): void {
+  if (modelSourceOf(config).kind === "key" || config.harness === null) {
+    return;
+  }
+  const wasSubscription = previous !== undefined && modelSourceOf(previous).kind === "subscription";
+  if (!areSubscriptionAgentsOn() && !wasSubscription) {
+    throw new AgentValidationError(SUBSCRIPTION_AGENTS_OFF_MESSAGE);
+  }
+  assertHarnessPickable(config.harness, previous);
+}
+
+function rejectCodingOnlyModelWithoutCoding(model: string | null, coding: boolean): void {
+  if (model !== null && isCodingOnlyModel(model) && !coding) {
     throw new AgentValidationError("coding API models are only for coding agents");
   }
 }
@@ -316,8 +379,9 @@ function configPayload(payload: unknown): JsonObject {
 
 /**
  * An agent's config from a payload's settings: every key the payload leaves out takes its value
- * in `defaults`, then each value is checked. A payload without a model, with a key that is not a
- * setting, or with a value a setting does not take is refused with `AgentValidationError`.
+ * in `defaults`, then each value is checked. A payload without a model key, with a key that is
+ * not a setting, with a value a setting does not take, or with a model source that does not hold
+ * is refused with `AgentValidationError`.
  */
 function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): AgentConfig {
   const filled: JsonObject = { ...defaults, ...settings };
@@ -329,9 +393,9 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
   rejectBrowserOptimizedWithoutBrowser(browserOptimized, browser);
   rejectCodingOnlyModelWithoutCoding(model, coding);
   const harness = requireHarness(filled.harness);
-  rejectHarnessWithoutCoding(harness, coding);
+  rejectUnsoundModelSource(model, coding, harness);
   const harnessModel = requireHarnessModel(filled.harness_model, harness);
-  return {
+  const config: AgentConfig = {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),
     max_tokens: requirePositiveInteger(filled.max_tokens, "max_tokens"),
@@ -358,6 +422,8 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     memory: requireBooleanField(filled.memory, "memory"),
     thinking_level: validateThinkingLevel(filled.thinking_level),
   };
+  rejectModelLoopSettings(config);
+  return config;
 }
 
 /**

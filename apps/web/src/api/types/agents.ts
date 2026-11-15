@@ -6,6 +6,12 @@
 import type { AgentAccess } from "./access";
 import type { SecretRef } from "./secrets";
 
+/**
+ * Where an agent's turns run: a model on one of the organisation's keys, or its harness on the
+ * operator's own subscription. The server states it; a subscription agent stores no model.
+ */
+export type ModelSource = "key" | "subscription";
+
 export type Agent = {
   id: string;
   guild_id: string;
@@ -18,6 +24,7 @@ export type Agent = {
   browser: boolean;
   /** Code work through a harness, with Node.js, build tools and git on its machine. */
   coding: boolean;
+  model_source: ModelSource;
   /** The organisation's machine it runs on. */
   machine_id: string;
   machine: MachineRef;
@@ -44,6 +51,7 @@ export type MachineAgent = {
   guild_name: string;
   browser: boolean;
   coding: boolean;
+  model_source: ModelSource;
 };
 
 /** `GET /api/orgs/:id/machines`: one of the organisation's machines, its agents, and what they use. */
@@ -79,7 +87,7 @@ export type MachineInput = {
 /** The fields to change on one machine. */
 export type MachineUpdate = { machineId: string; input: Partial<MachineInput> };
 
-/** The coding CLI a coding agent delegates code work to through `code_task`. */
+/** The coding CLI a coding agent delegates code work to through `code_task`, and a subscription agent runs every turn on. */
 export type Harness = "claude-code" | "codex" | "cursor" | "antigravity";
 
 /** The reasoning efforts a harness can run a model at, lowest first. */
@@ -103,13 +111,19 @@ export type HarnessCatalog = {
   label: string;
   /** False when the box turns the harness off: offered only to an agent already on it. */
   enabled: boolean;
+  /** Whether a subscription agent may run on the harness. */
+  subscription: boolean;
   models: HarnessCatalogModel[];
   /** The efforts for the subscription's default model or a custom one; empty when the model name carries it. */
   unlisted_efforts: HarnessEffort[];
 };
 
+/** `GET /api/harnesses`: every harness's catalog, and whether the box offers subscription agents. */
+export type HarnessOffer = { harnesses: HarnessCatalog[]; subscription_agents: boolean };
+
 export type AgentConfig = {
-  model: string;
+  /** The `{provider}/{model}` the agent runs on, on a key; null for a subscription agent. */
+  model: string | null;
   temperature: number;
   max_tokens: number;
   max_steps: number;
@@ -133,7 +147,7 @@ export type AgentConfig = {
   /** The `{provider}/{model}` the agent-optimized browser plans and reads with; null unless `browser_optimized`. */
   browser_model: string | null;
   coding: boolean;
-  /** The harness a coding agent runs; null when coding is off. */
+  /** The harness a coding agent delegates to, or a subscription agent runs on; null for any other agent. */
   harness: Harness | null;
   /** The model the harness runs; null leaves it to the harness's subscription. */
   harness_model: string | null;

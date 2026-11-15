@@ -276,10 +276,10 @@ export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
   const base =
     config ??
     withCoding(
-      configFormOf({
-        ...defaultAgentConfig,
-        model: preselectedModel(models.data, { coding: true }),
-      }),
+      configFormOf(
+        { ...defaultAgentConfig, model: preselectedModel(models.data, { coding: true }) },
+        "key",
+      ),
       true,
       models.data,
     );

@@ -5,6 +5,7 @@ import type {
   RecipeRole,
   RecipeSchedule,
 } from "../db/schema/index.js";
+import { AGENT_CONFIG_DEFAULTS, MODEL_LOOP_SETTINGS } from "../agents/config.js";
 import { isValidSecretAliases } from "../agents/validation.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
@@ -66,6 +67,24 @@ export function roleCodes(role: RecipeRole): boolean {
   return role.config.coding === true;
 }
 
+/**
+ * Whether a role's agent holds a harness, which it takes at apply: a coding role, or a
+ * subscription role. Each counts against the coding agents cap, as `countsAsCodingAgent` reads an agent.
+ */
+export function roleTakesHarness(role: RecipeRole): boolean {
+  return roleCodes(role) || roleRunsOnSubscription(role);
+}
+
+/** Whether a role's agent runs on a subscription: it names a harness, no model, and does not code. */
+export function roleRunsOnSubscription(role: RecipeRole): boolean {
+  return !roleCodes(role) && harnessOf(role.config) !== null && recommendedModelOf(role.config) === null;
+}
+
+/** The harness a subscription role's agent runs every turn on; null for any other role. */
+export function subscriptionHarnessOf(role: RecipeRole): Harness | null {
+  return roleRunsOnSubscription(role) ? harnessOf(role.config) : null;
+}
+
 /** The harness the recipe names, while the role applies with it; else null. */
 function keptRecipeHarness(roleConfig: RecipeRole["config"], applied: Harness | null): Harness | null {
   return applied !== null && applied === harnessOf(roleConfig) ? applied : null;
@@ -89,21 +108,37 @@ function appliedHarnessEffort(roleConfig: RecipeRole["config"], applied: Harness
 /** The model and harness the operator chose for a role; the recipe's where one is absent. */
 export type RoleChoice = { model?: string | undefined; harness?: Harness | undefined };
 
+/** The model-loop settings a subscription role sets to something other than its default. */
+export function subscriptionLoopSettings(role: RecipeRole): string[] {
+  if (!roleRunsOnSubscription(role)) {
+    return [];
+  }
+  return MODEL_LOOP_SETTINGS.filter((key) => key in role.config && role.config[key] !== AGENT_CONFIG_DEFAULTS[key]);
+}
+
+/** A role's config without the model-loop settings of a subscription role, which apply leaves out. */
+function withoutSubscriptionLoopSettings(role: RecipeRole): RecipeRole["config"] {
+  const left = new Set(subscriptionLoopSettings(role));
+  return Object.fromEntries(Object.entries(role.config).filter(([key]) => !left.has(key)));
+}
+
 /**
  * The agent config a role applies as: the role's, with the model and harness the operator chose
- * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
- * harness, and the recipe's harness model and effort only with the recipe's harness, and secret
+ * (else the recipe's), and the browser and coding flags settled. A subscription role has no model
+ * and leaves out the model-loop settings it sets. Only a coding role and a subscription role keep
+ * a harness, and the recipe's harness model and effort only with the recipe's harness, and secret
  * aliases that do not validate are left out. The agent browses with the step-by-step browser
  * tools. Every other setting the role leaves out takes its
  * default when `validateAgentConfig` reads the config. The machine the agent goes on is the apply's.
  */
 export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}): RecipeRole["config"] {
-  const roleConfig = { ...role.config };
+  const roleConfig = withoutSubscriptionLoopSettings(role);
   const coding = roleCodes(role);
-  const applied = coding ? (choice.harness ?? harnessOf(roleConfig)) : null;
+  const subscription = roleRunsOnSubscription(role);
+  const applied = roleTakesHarness(role) ? (choice.harness ?? harnessOf(roleConfig)) : null;
   return {
     ...roleConfig,
-    model: choice.model ?? recommendedModelOf(roleConfig) ?? "",
+    model: subscription ? null : (choice.model ?? recommendedModelOf(roleConfig) ?? ""),
     browser: roleBrowses(role),
     browser_optimized: false,
     browser_model: null,

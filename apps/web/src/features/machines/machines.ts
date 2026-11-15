@@ -1,5 +1,5 @@
 import type { OrgRole } from "../../api/types/org";
-import type { Machine, MachineBox, MachineInput } from "../../api/types/agents";
+import type { Machine, MachineBox, MachineInput, ModelSource } from "../../api/types/agents";
 import type { AgentToPlace } from "./types";
 
 /**
@@ -47,8 +47,8 @@ export const agentMinimums = {
  */
 export const overcommit = { cpu: 5, memory: 3 } as const;
 
-/** What an agent has on that sets its minimum. */
-export type AgentNeeds = { browser: boolean; coding: boolean };
+/** What an agent has on that sets its minimum; a subscription agent's harness needs what Coding does. */
+export type AgentNeeds = { browser: boolean; coding: boolean; model_source: ModelSource };
 
 /** The server's rule for a machine's name. */
 export const machineNamePattern = /^[a-z][a-z0-9-]{0,62}$/;
@@ -75,7 +75,7 @@ export function agentMinimum(needs: AgentNeeds): MachineSize {
   const parts: MachineSize[] = [
     agentMinimums.base,
     ...(needs.browser ? [agentMinimums.browser] : []),
-    ...(needs.coding ? [agentMinimums.coding] : []),
+    ...(needs.coding || needs.model_source === "subscription" ? [agentMinimums.coding] : []),
   ];
   return {
     cpu: Math.max(...parts.map((part) => part.cpu)),
@@ -85,10 +85,11 @@ export function agentMinimum(needs: AgentNeeds): MachineSize {
 
 /** The smallest machine every one of these agents runs on. */
 export function agentsMinimum(agents: readonly AgentNeeds[]): MachineSize {
-  return agentMinimum({
-    browser: agents.some((agent) => agent.browser),
-    coding: agents.some((agent) => agent.coding),
-  });
+  const minimums = [agentMinimums.base, ...agents.map(agentMinimum)];
+  return {
+    cpu: Math.max(...minimums.map((part) => part.cpu)),
+    memory_mib: Math.max(...minimums.map((part) => part.memory_mib)),
+  };
 }
 
 /** Whether a machine of this size meets a minimum, CPUs and memory both. */
@@ -122,7 +123,7 @@ export function machineSizeLabel(machine: MachineSize): string {
 export const sizingNote =
   `Each agent counts its minimum: ${machineSizeLabel(agentMinimums.base)}, ` +
   `${machineSizeLabel(agentMinimums.browser)} with a browser, ` +
-  `${machineSizeLabel(agentMinimums.coding)} with coding. A machine takes up to ` +
+  `${machineSizeLabel(agentMinimums.coding)} with coding or on a subscription. A machine takes up to ` +
   `${overcommit.cpu}× its CPUs and ${overcommit.memory}× its memory in minimums before it warns, ` +
   `since few agents work at once.`;
 

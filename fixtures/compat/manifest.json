@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "3f204b31528496c6bf01ea5e456dd6a6613c6c3b402666623b8669c1c7a92c84"
+      "sha256": "b877de783001fce9b1a25958302ce140e422bd12df19c9a32d5e473b1364cda4"
     },
     {
       "path": "ids/shape.json",

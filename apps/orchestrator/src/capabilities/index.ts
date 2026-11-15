@@ -10,7 +10,7 @@ import {
   type ServerTool,
 } from "../connectors/servers.js";
 import { oauthSetupState, type OauthSetupState } from "../oauth/index.js";
-import { OPEN_POLICY, remaining, type OrgLimits, type OrgPolicy } from "../policy/index.js";
+import { countOrgCodingAgents, OPEN_POLICY, remaining, type OrgLimits, type OrgPolicy } from "../policy/index.js";
 import { usageFields, type UsageTotals } from "../usage/index.js";
 import {
   ALWAYS_OFFERED_TOOLS,
@@ -19,7 +19,7 @@ import {
   NATIVE_CAPABILITY_GROUPS,
 } from "./native.js";
 import { listMcpConnections, listMcpTools, type ScopedMcpConnectionRow } from "../db/mcp.js";
-import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
+import { countOrgAgents, countOrgBrowserAgents } from "../db/orgs.js";
 import { getOrgMonthlyUsage, utcMonth } from "../db/usage.js";
 import type { Queryable } from "../db/pg.js";
 

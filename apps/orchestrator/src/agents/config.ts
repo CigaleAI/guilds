@@ -127,6 +127,15 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
   thinking_level: DEFAULT_THINKING_LEVEL,
 };
 
+/** The settings that shape the orchestrator's own model loop, which a subscription agent does not run. */
+export const MODEL_LOOP_SETTINGS = [
+  "temperature",
+  "thinking_level",
+  "max_tokens",
+  "max_input_tokens",
+  "keep_tool_result_generations",
+] as const satisfies ReadonlyArray<keyof AgentConfigDefaults>;
+
 /** The defaults of a new agent created with `coding` on: the coding budgets for its step and tool-call limits. */
 export const CODING_AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
   ...AGENT_CONFIG_DEFAULTS,

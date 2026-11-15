@@ -7,7 +7,7 @@ import { useIdentity } from "../../app/identity";
 import { Banner, DialogBody, DialogHeader, Stepper } from "@guildsrun/ui";
 import { chosenMachine } from "../machines/machines";
 import { preselectedModel } from "../models/models";
-import { MachineGroup, ModelStep, StepFooter, useSeededDisk } from "./AgentSteps";
+import { MachineGroup, ModelStep, StepFooter, SubscriptionStep, useSeededDisk } from "./AgentSteps";
 import { identityComplete, IdentityFields, useIdentityDraft } from "./IdentityFields";
 import {
   configErrors,
@@ -16,7 +16,7 @@ import {
   defaultAgentConfig,
   type ConfigForm,
 } from "./settings/configForm";
-import { sectionErrors, sectionHasErrors } from "./settings/sections";
+import { modelStepComplete, sectionErrors, sectionHasErrors } from "./settings/sections";
 import { Group } from "./settings/Group";
 
 type CreateAgentGuild = { id: string; name: string };
@@ -29,9 +29,9 @@ type StandardAgentFormProps = {
 };
 
 /**
- * A new agent without coding, step by step: its identity; the model that runs it, with its
- * capabilities and run limits; and the machine it goes on, with its disk cap. Its focus seeds its
- * Task.
+ * A new agent without coding, step by step: its identity; its model source, a model on a key or a
+ * subscription on a harness, with its capabilities and run limits; and the machine it goes on,
+ * with its disk cap. Its focus seeds its Task.
  */
 export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
   const navigate = useNavigate();
@@ -45,17 +45,17 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
   const disk = useSeededDisk();
   const base =
     config ??
-    configFormOf({
-      ...defaultAgentConfig,
-      model: preselectedModel(models.data, { coding: false }),
-    });
+    configFormOf(
+      { ...defaultAgentConfig, model: preselectedModel(models.data, { coding: false }) },
+      "key",
+    );
   const machine = chosenMachine(machines.data, base.machine_id);
   const form = disk.seed(base, machine);
   const errors = configErrors(form, { models: models.data, machines: machines.data });
   const noProvider = hasConnectedProvider(models.data) === false;
   const ready = [
     identityComplete(identity.draft),
-    !noProvider && !sectionHasErrors(sectionErrors.model, errors),
+    modelStepComplete(form, errors, noProvider),
     Boolean(machines.data) && !sectionHasErrors(sectionErrors.machine, errors),
   ][step];
 
@@ -94,7 +94,16 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
             <IdentityFields draft={identity.draft} onChange={identity.setDraft} />
           </Group>
         ) : null}
-        {step === 1 ? (
+        {step === 1 && form.model_source === "subscription" ? (
+          <SubscriptionStep
+            form={form}
+            setConfig={setConfig}
+            errors={errors}
+            machine={machine}
+            models={models.data}
+          />
+        ) : null}
+        {step === 1 && form.model_source === "key" ? (
           <ModelStep
             form={form}
             setConfig={setConfig}

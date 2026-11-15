@@ -35,6 +35,34 @@ longer uses a git credential helper an agent configures for an HTTPS
 host. `shell` sets `GH_TOKEN` only in a repository with a GitHub
 login. Rebuild the orchestrator and the runtime image together.
 
+**Rebuild.** An agent can be a subscription agent: no model, and a
+harness, Claude Code or Codex, on the operator's own subscription as
+its model source. The box offers them only with
+`SUBSCRIPTION_AGENTS=1`, unset by default. A subscription agent is
+created and saved through the agent routes with `model: null` and its
+`harness`, `harness_model`, and `harness_effort`, and refused while
+the setting is off, on Cursor or Antigravity, or with a model-loop
+setting off its default. Its runs do not start yet: each fails at
+start with `subscription.not_runnable`. An agent's view and its
+guild's list carry `model_source` (`key` or `subscription`), derived
+from its `model`. `GET /api/harnesses` adds
+`subscription_agents` and, per harness, `subscription`. A
+subscription agent needs a machine of the coding minimum whose image
+carries its harness; the machine listing names each agent's
+`model_source`, and the apply preview refuses a machine without a
+subscription role's harness with `machine.harness`. A subscription
+agent counts against an organisation's `maxCodingAgents`, as a coding
+agent does. A recipe role with a harness, no model, and no `coding` is
+a subscription role: capture writes one for a subscription agent, the
+apply preview asks it for a harness and no model (`harnesses` entries
+carry `subscription`), and validation reports `subscription.off`,
+`subscription.harness`, and `subscription.setting`.
+In the operator app, while the box offers subscription agents, the
+create dialog's Model step and an agent's Settings choose the **Model
+source**: a model on a key, or a subscription on Claude Code or Codex.
+A subscription agent's Settings show its **Harness** section with its
+credential and readiness in place of **Model**.
+
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit
 selection mode** turns off, clearing the column and the selection. In

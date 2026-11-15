@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MachineAgent, MachineBox, MachineWithAgents } from "../../src/machines/index.js";
 import { machineFindings } from "../../src/recipes/plan.js";
-import type { RecipeDocument } from "../../src/db/schema/index.js";
+import type { Harness, RecipeDocument } from "../../src/db/schema/index.js";
 import { cryptoThreeRoleRecipe } from "../helpers/recipe-docs.js";
 
-function machineWith(box: MachineBox, agents: number): MachineWithAgents {
+function machineWith(box: MachineBox, agents: number, harnesses: Harness[] | null = null): MachineWithAgents {
   return {
     id: "mach_1",
     org_id: "org_1",
@@ -15,7 +15,7 @@ function machineWith(box: MachineBox, agents: number): MachineWithAgents {
     memory_mib: box === "custom" ? 3072 : null,
     max_workspace_mib: 10240,
     workspace_mib: null,
-    harnesses: null,
+    harnesses,
     agents: Array.from(
       { length: agents },
       (_, slot): MachineAgent => ({
@@ -26,6 +26,8 @@ function machineWith(box: MachineBox, agents: number): MachineWithAgents {
         slot,
         browser: false,
         coding: false,
+        model: "deepinfra/zai-org/GLM-5.3-Flash",
+        harness: null,
         max_workspace_mib: 10240,
       }),
     ),
@@ -44,6 +46,32 @@ function recipeCoding(...roles: string[]): RecipeDocument {
 }
 
 const ROOMY = { maxAgents: 32, private: false };
+
+/** The three-role recipe with the roles named on a subscription to `harness`. */
+function recipeOnSubscription(harness: Harness, ...roles: string[]): RecipeDocument {
+  const recipe = cryptoThreeRoleRecipe();
+  for (const role of recipe.roles) {
+    if (roles.includes(role.role)) {
+      const { model: _model, ...config } = role.config;
+      role.config = { ...config, harness };
+    }
+  }
+  return recipe;
+}
+
+test("a subscription role needs a coding machine whose image carries its harness", () => {
+  assert.deepEqual(
+    machineFindings(recipeOnSubscription("codex", "researcher"), machineWith("standard", 0), ROOMY).map((finding) => finding.code),
+    ["machine.size"],
+  );
+  assert.deepEqual(machineFindings(recipeOnSubscription("codex", "researcher"), machineWith("code", 0, null), ROOMY), []);
+  assert.deepEqual(machineFindings(recipeOnSubscription("codex", "researcher"), machineWith("code", 0, ["codex"]), ROOMY), []);
+  const missing = machineFindings(recipeOnSubscription("claude-code", "researcher"), machineWith("code", 0, ["codex"]), ROOMY);
+  assert.deepEqual(
+    missing.map((finding) => [finding.code, finding.severity, finding.path, finding.message]),
+    [["machine.harness", "error", "machine_id", "researcher runs on Claude Code, which shared's image does not carry"]],
+  );
+});
 
 test("a role whose minimum the machine is below is refused once per role, naming both sizes", () => {
   const findings = machineFindings(recipeCoding("researcher", "fund"), machineWith("standard", 0), ROOMY);

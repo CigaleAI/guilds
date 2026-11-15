@@ -7,8 +7,9 @@ import {
   harnessEffortOf,
   harnessEffortsFor,
   harnessLaunch,
+  harnessOffer,
 } from "../../src/coding/harness-models.js";
-import { HARNESS_MODEL_RE } from "../../src/coding/harnesses.js";
+import { HARNESS_MODEL_RE, installSubscriptionAgents } from "../../src/coding/harnesses.js";
 import { HARNESSES, EFFORTS } from "../../src/db/schema/index.js";
 
 test("every listed model id, and every CLI name it starts under, is a model name the driver passes", () => {
@@ -93,6 +94,11 @@ test("the catalogue lists every harness's models without the CLI names they star
   );
   const cursor = catalog.find((item) => item.harness === "cursor")!;
   assert.equal(cursor.label, "Cursor");
+  assert.deepEqual(
+    catalog.filter((item) => item.subscription).map((item) => item.harness),
+    ["claude-code", "codex"],
+    "a subscription agent runs on Claude Code or Codex",
+  );
   assert.deepEqual(cursor.unlisted_efforts, []);
   assert.ok(cursor.models.every((entry) => !("ids" in entry)));
   assert.deepEqual(cursor.models.find((entry) => entry.id === "grok-4.7"), {
@@ -101,4 +107,16 @@ test("the catalogue lists every harness's models without the CLI names they star
     efforts: ["low", "medium", "high", "xhigh"],
     default_effort: "medium",
   });
+});
+
+test("the harness offer says whether the box offers subscription agents", () => {
+  try {
+    installSubscriptionAgents(true);
+    assert.equal(harnessOffer().subscription_agents, true);
+    installSubscriptionAgents(false);
+    assert.equal(harnessOffer().subscription_agents, false);
+    assert.deepEqual(harnessOffer().harnesses, harnessCatalog());
+  } finally {
+    installSubscriptionAgents(false);
+  }
 });

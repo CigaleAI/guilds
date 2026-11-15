@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { modelSourceOf } from "../../src/db/schema/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   INTERRUPTED_CONTENT,
@@ -121,6 +122,15 @@ test("configSnapshot offers each connection tool's schema and keeps the connecti
   }, "schedule");
   assert.equal(snapshot.tools.includes(schema), true);
   assert.deepEqual(snapshot.mcp[0]?.tools, [{ name: "ok", remote_name: "r" }]);
+});
+
+test("configSnapshot keeps the model that states the run's model source, and stores no source apart", () => {
+  const access = { tools: [], secrets: [], mcp: [] };
+  assert.equal(modelSourceOf(configSnapshot(AGENT_CONFIG, access, "schedule")).kind, "key");
+  const subscription = configSnapshot({ ...AGENT_CONFIG, model: null, harness: "codex" }, access, "schedule");
+  assert.equal(subscription.model, null);
+  assert.equal(modelSourceOf(subscription).kind, "subscription");
+  assert.equal("model_source" in subscription, false);
 });
 
 test("mcpRedactions skips missing connections and decrypt failures", async () => {

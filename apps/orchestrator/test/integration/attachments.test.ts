@@ -147,6 +147,19 @@ test("operators upload images, attach them to a run, and cannot read another org
     });
     assert.equal(blocked.statusCode, 422);
 
+    await db.query(
+      `UPDATE agents SET config = config || '{"model": null, "harness": "codex"}'::jsonb WHERE id = $1`,
+      [String(refused.json().id)],
+    );
+    const unmodelled = await app.inject({
+      method: "POST",
+      url: `/api/agents/${String(refused.json().id)}/runs`,
+      headers: { ...OWNER, "content-type": "application/json" },
+      payload: { message: "see this", attachment_ids: [row.id] },
+    });
+    assert.equal(unmodelled.statusCode, 422, unmodelled.body);
+    assert.match(unmodelled.json().detail, /a subscription agent takes no attachments/);
+
     const created = await app.inject({
       method: "POST",
       url: `/api/agents/${agentId}/runs`,

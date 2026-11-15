@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { blockingApplySteps, browserLoginAgentIds, checklistFromPlan, deferLaunchSteps, skipApplyChecklistStep } from "../../src/recipes/checklist.js";
+import { installSubscriptionAgents } from "../../src/coding/harnesses.js";
 import { parseRecipe } from "../../src/recipes/parse.js";
-import { configFromRecipeRole, prepareRecipeForApply } from "../../src/recipes/prepare.js";
+import {
+  configFromRecipeRole,
+  prepareRecipeForApply,
+  roleRunsOnSubscription,
+  roleTakesHarness,
+  subscriptionLoopSettings,
+} from "../../src/recipes/prepare.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import {
   DEFAULT_MAX_STEPS,
@@ -154,6 +161,31 @@ test("apply carries the coding flag and turns a missing one off", () => {
   assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, false);
 });
 
+test("a subscription role applies with no model, its harness, and none of the model loop's settings", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  role.config = { harness: "codex", harness_model: "gpt-6-luna", temperature: 0.2, max_tokens: 8192, max_steps: 5 };
+  assert.equal(roleRunsOnSubscription(role), true);
+  assert.equal(roleTakesHarness(role), true);
+  assert.deepEqual(subscriptionLoopSettings(role), ["temperature"]);
+  const config = configFromRecipeRole(role, { model: "deepinfra/zai-org/GLM-5.3-Flash" });
+  assert.equal(config.model, null, "a chosen model does not apply to a subscription role");
+  assert.equal(config.coding, false);
+  assert.equal(config.harness, "codex");
+  assert.equal(config.harness_model, "gpt-6-luna");
+  assert.equal("temperature" in config, false);
+  assert.equal(config.max_steps, 5);
+  assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness, "claude-code");
+  role.config = { model: "deepinfra/zai-org/GLM-5.3-Flash", harness: "codex" };
+  assert.equal(roleRunsOnSubscription(role), false, "a role with a model is on a key");
+  assert.equal(roleTakesHarness(role), false);
+  assert.deepEqual(subscriptionLoopSettings(role), []);
+  role.config = { coding: true, harness: "codex" };
+  assert.equal(roleRunsOnSubscription(role), false, "a coding role is on a key");
+  role.config = { harness: "opencode" };
+  assert.equal(roleRunsOnSubscription(role), false, "an unknown harness is no subscription");
+});
+
 test("apply gives a coding role the harness chosen, else the recipe's, and no other role one", () => {
   const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
   const role = recipe.roles[0]!;
@@ -162,7 +194,7 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
   assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, "cursor");
   role.config = { coding: true };
   assert.equal(configFromRecipeRole(role).harness, null);
-  role.config = { coding: false, harness: "codex" };
+  role.config = { model: "deepinfra/zai-org/GLM-5.3-Flash", coding: false, harness: "codex" };
   assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, null);
   role.config = { coding: true, harness: "claude-code", harness_model: "opus" };
   assert.equal(configFromRecipeRole(role).harness_model, "opus");
@@ -204,8 +236,60 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
   assert.match(credential[0]!.message, /grant the secret CLAUDE_CODE_OAUTH_TOKEN/);
   assert.match(findings({ coding: true })[0]!.message, /apply asks for its harness/);
   assert.deepEqual(findings({ coding: true, harness: "pi" }).map((item) => item.code), ["harness.unknown", "harness.credential"]);
-  assert.deepEqual(findings({ coding: false, harness: "codex" }).map((item) => item.code), ["harness.coding"]);
+  assert.deepEqual(findings({ model: TEST_MODEL, coding: false, harness: "codex" }).map((item) => item.code), ["harness.coding"]);
+  assert.deepEqual(findings({ coding: false, harness: "codex" }).map((item) => item.code), ["harness.credential"], "a subscription role's harness");
   assert.ok(findings({ coding: true, harness: "codex" }).every((item) => item.severity === "warning"));
+});
+
+test("a subscription role is refused while the box turns them off, warned on Cursor or a model-loop setting", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  const ctx = {
+    publishedServers: new Set<string>(),
+    remainingAgents: 20,
+    remainingBrowserAgents: 5,
+    remainingCodingAgents: 5,
+    groupLimit: 20,
+  };
+  const findings = (config: RecipeRole["config"]) => {
+    role.config = config;
+    return validateRecipe(recipe, ctx)
+      .filter((item) => item.code.startsWith("subscription."))
+      .map((item) => [item.code, item.severity, item.path, item.message]);
+  };
+  try {
+    installSubscriptionAgents(false);
+    assert.deepEqual(findings({ harness: "codex" }), [
+      ["subscription.off", "error", `roles.${role.role}.config.harness`, "subscription agents are turned off on this box: give the role a model on a key"],
+    ]);
+    installSubscriptionAgents(true);
+    assert.deepEqual(findings({ harness: "codex" }), []);
+    assert.deepEqual(findings({ harness: "cursor" }), [
+      [
+        "subscription.harness",
+        "warning",
+        `roles.${role.role}.config.harness`,
+        "Cursor cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model; apply asks for another",
+      ],
+    ]);
+    assert.deepEqual(findings({ harness: "codex", temperature: 1, thinking_level: "high" }), [
+      [
+        "subscription.setting",
+        "warning",
+        `roles.${role.role}.config.thinking_level`,
+        "config.thinking_level sets the model loop, which a subscription role's harness replaces; apply leaves it out",
+      ],
+    ]);
+    assert.deepEqual(findings({ model: TEST_MODEL, harness: "cursor", thinking_level: "high" }), [], "a role on a key is no subscription");
+    const capacity = (config: RecipeRole["config"]) => {
+      role.config = config;
+      return validateRecipe(recipe, { ...ctx, remainingCodingAgents: 0 }).filter((item) => item.code === "capacity.coding");
+    };
+    assert.equal(capacity({ harness: "codex" }).length, 1, "a subscription role takes a coding agent");
+    assert.equal(capacity({ model: TEST_MODEL }).length, 0);
+  } finally {
+    installSubscriptionAgents(false);
+  }
 });
 
 test("a recipe's harness model that apply cannot use is a warning", () => {

@@ -1,10 +1,25 @@
 import { TextField } from "@guildsrun/ui";
 import { limitFields, type FieldsProps } from "./configForm";
 
+/** The limits a subscription agent has: its harness replaces the model loop the others bound. */
+const subscriptionLimitKeys: ReadonlySet<string> = new Set([
+  "max_steps",
+  "max_tool_calls",
+  "max_wake_ups",
+]);
+
+/**
+ * The run limits and the tool-result turns; a subscription agent shows only the limits its harness
+ * keeps, without the model loop's output and input tokens and tool-result turns.
+ */
 export function LimitFields({ form, onChange, errors }: FieldsProps) {
+  const subscription = form.model_source === "subscription";
+  const fields = subscription
+    ? limitFields.filter((field) => subscriptionLimitKeys.has(field.key))
+    : limitFields;
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      {limitFields.map((field) => (
+      {fields.map((field) => (
         <TextField
           key={field.key}
           tone="surface"
@@ -18,21 +33,30 @@ export function LimitFields({ form, onChange, errors }: FieldsProps) {
           {...(errors[field.key] ? { error: errors[field.key] } : {})}
         />
       ))}
-      <TextField
-        tone="surface"
-        label="Keep tool results"
-        type="number"
-        min={1}
-        step={1}
-        placeholder="Guild's"
-        hint="How many user turns, including the current one, keep full tool output in the model prompt. Older large results are stubbed; the stored transcript is unchanged. Empty takes the guild's, set in the guild's Settings. Only a guild admin can set or change it."
-        value={form.keep_tool_result_generations}
-        onChange={(event) => onChange({ keep_tool_result_generations: event.currentTarget.value })}
-        {...(errors.keep_tool_result_generations
-          ? { error: errors.keep_tool_result_generations }
-          : {})}
-      />
+      {subscription ? null : (
+        <KeepToolResultsField form={form} onChange={onChange} errors={errors} />
+      )}
     </div>
+  );
+}
+
+/** How many user turns keep full tool output in the model prompt. */
+function KeepToolResultsField({ form, onChange, errors }: FieldsProps) {
+  return (
+    <TextField
+      tone="surface"
+      label="Keep tool results"
+      type="number"
+      min={1}
+      step={1}
+      placeholder="Guild's"
+      hint="How many user turns, including the current one, keep full tool output in the model prompt. Older large results are stubbed; the stored transcript is unchanged. Empty takes the guild's, set in the guild's Settings. Only a guild admin can set or change it."
+      value={form.keep_tool_result_generations}
+      onChange={(event) => onChange({ keep_tool_result_generations: event.currentTarget.value })}
+      {...(errors.keep_tool_result_generations
+        ? { error: errors.keep_tool_result_generations }
+        : {})}
+    />
   );
 }
 

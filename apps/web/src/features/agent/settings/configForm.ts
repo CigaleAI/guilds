@@ -4,6 +4,7 @@ import type {
   HarnessCatalog,
   HarnessEffort,
   Machine,
+  ModelSource,
   ThinkingLevel,
 } from "../../../api/types/agents";
 import type { OrgModels } from "../../../api/types/models";
@@ -65,6 +66,9 @@ type LimitKey = (typeof limitFields)[number]["key"];
 
 /** A model config and the agent's machine as a form edits them: numbers stay text while typed. */
 export type ConfigForm = {
+  /** A model on a key, or a subscription on the harness; a subscription sends no model. */
+  model_source: ModelSource;
+  /** The model on a key; empty until one is chosen, and kept while the form is on a subscription. */
   model: string;
   thinking: ThinkingLevel;
   temperature: string;
@@ -77,7 +81,7 @@ export type ConfigForm = {
   /** The model the agent-optimized browser plans and reads with; empty until one is picked. */
   browser_model: string;
   coding: boolean;
-  /** The coding agent's harness; empty until one is picked. */
+  /** The harness of a coding or subscription agent; empty until one is picked. */
   harness: Harness | "";
   /** The model the harness runs; empty for its subscription's default. */
   harness_model: string;
@@ -115,10 +119,11 @@ export type ConfigErrorContext = {
   machines?: Machine[] | undefined;
 };
 
-/** A stored config in the form, on the machine named; empty leaves the machine to pick. */
-export function configFormOf(config: AgentConfig, machineId = ""): ConfigForm {
+/** A stored config on its model source in the form, on the machine named; empty leaves the machine to pick. */
+export function configFormOf(config: AgentConfig, source: ModelSource, machineId = ""): ConfigForm {
   return {
-    model: config.model,
+    model_source: source,
+    model: config.model ?? "",
     thinking: config.thinking_level,
     temperature: String(config.temperature),
     machine_id: machineId,
@@ -171,18 +176,27 @@ function budgetErrors(form: ConfigForm): ConfigErrors {
   return errors;
 }
 
-/** What is wrong with a coding agent's harness and its model; nothing for an agent that does not code. */
+/** Whether the form's agent has a harness: a coding agent delegates to it, a subscription agent runs on it. */
+export function takesHarness(form: Pick<ConfigForm, "coding" | "model_source">): boolean {
+  return form.coding || form.model_source === "subscription";
+}
+
+/** What is wrong with the harness and its model of a coding or subscription agent; nothing for any other. */
 function harnessErrors(form: ConfigForm): ConfigErrors {
   const errors: ConfigErrors = {};
-  if (form.coding && !form.harness) errors.harness = "Pick a harness.";
-  if (form.coding && !harnessModelPattern.test(form.harness_model.trim()))
+  if (takesHarness(form) && !form.harness) errors.harness = "Pick a harness.";
+  if (takesHarness(form) && !harnessModelPattern.test(form.harness_model.trim()))
     errors.harness_model =
       "Up to 120 letters, digits, and . _ : / = , [ ] -, starting with a letter or digit.";
   return errors;
 }
 
-/** What is wrong with the agent's model: none chosen, a coding plan's without Coding, or its provider not connected. */
+/**
+ * What is wrong with the agent's model on a key: none chosen, a coding plan's without Coding, or its
+ * provider not connected. A subscription sends no model.
+ */
 function modelError(form: ConfigForm, models: OrgModels | undefined): string | undefined {
+  if (form.model_source === "subscription") return undefined;
   if (!form.model) return "Choose a model.";
   if (isCodingOnlyModel(form.model, models) && !form.coding) {
     return "Turn Coding on to use this model.";
@@ -232,13 +246,51 @@ function browserModelOf(form: ConfigForm): string | null {
 
 /** The harness model to send: only with a harness, and null for its subscription's default. */
 function harnessModelOf(form: ConfigForm): string | null {
-  return form.coding && form.harness ? form.harness_model.trim() || null : null;
+  return takesHarness(form) && form.harness ? form.harness_model.trim() || null : null;
 }
 
 /** The harness effort to send: only with a harness, and null for the harness's default. */
 function harnessEffortOf(form: ConfigForm): HarnessEffort | null {
-  return form.coding && form.harness ? form.harness_effort || null : null;
+  return takesHarness(form) && form.harness ? form.harness_effort || null : null;
 }
+
+/**
+ * The form on another model source. A subscription keeps the harness picked only when that
+ * harness runs a subscription agent; a model on a key, without Coding, has no harness. The model
+ * stays in the form for a switch back.
+ */
+export function withModelSource(
+  form: ConfigForm,
+  source: ModelSource,
+  catalog: readonly HarnessCatalog[] | undefined,
+): ConfigForm {
+  const kept =
+    source === "subscription" &&
+    form.harness !== "" &&
+    catalogFor(catalog, form.harness)?.subscription === true;
+  return {
+    ...form,
+    model_source: source,
+    ...(kept ? {} : { harness: "" as const, harness_model: "", harness_effort: "" as const }),
+  };
+}
+
+/**
+ * Whether the form offers the choice of model source: while the box offers subscription agents,
+ * and for an agent already on one, which can move to a key.
+ */
+export function offersModelSource(subscriptionAgentsOn: boolean | undefined, source: ModelSource): boolean {
+  return subscriptionAgentsOn === true || source === "subscription";
+}
+
+/** The model-loop settings a subscription sends: their defaults, since its harness replaces the loop. */
+const subscriptionLoopSettings = {
+  temperature: defaultAgentConfig.temperature,
+  thinking_level: defaultAgentConfig.thinking_level,
+  max_tokens: defaultAgentConfig.max_tokens,
+  max_input_tokens: defaultAgentConfig.max_input_tokens,
+  keep_tool_result_generations: defaultAgentConfig.keep_tool_result_generations,
+} as const satisfies Partial<AgentConfig>;
 
 /**
  * The form with another harness model: an effort the new model does not run at goes back to the
@@ -259,12 +311,14 @@ export function withHarnessModel(
 
 /**
  * The config to send, without the machine; a model that does not reason gets thinking off, only
- * a coding agent carries a harness and its model, and only an agent with the browser carries the
- * agent-optimized browser and its model.
+ * a coding or subscription agent carries a harness and its model, and only an agent with the
+ * browser carries the agent-optimized browser and its model. A subscription sends no model and
+ * the model loop's settings at their defaults.
  */
 export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
+  const subscription = form.model_source === "subscription";
   return {
-    model: form.model,
+    model: subscription ? null : form.model,
     temperature: Number(form.temperature),
     thinking_level: modelLimits(models, form.model).thinkingOff ? "none" : form.thinking,
     browser: form.browser,
@@ -272,7 +326,7 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     browser_optimized: browserOptimizedOf(form),
     browser_model: browserModelOf(form),
     coding: form.coding,
-    harness: form.coding && form.harness ? form.harness : null,
+    harness: takesHarness(form) && form.harness ? form.harness : null,
     harness_model: harnessModelOf(form),
     harness_effort: harnessEffortOf(form),
     secret_aliases: form.secret_aliases,
@@ -288,6 +342,7 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
       : null,
     max_scripts: Number(form.max_scripts),
     max_workspace_mib: Number(form.max_workspace_mib),
+    ...(subscription ? subscriptionLoopSettings : {}),
   };
 }
 

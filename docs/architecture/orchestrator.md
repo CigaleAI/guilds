@@ -61,6 +61,8 @@ variable, and boot stops.
 - `TOOL_RESULT_MAX_BYTES` (default 65536)
 - `HARNESSES_OFF` (coding harnesses this box does not offer,
   separated by commas or spaces; an unknown name stops boot)
+- `SUBSCRIPTION_AGENTS` (`1` offers subscription agents; unset by
+  default)
 - `HOST` (default `0.0.0.0`)
 - `PORT` (default 8080)
 
@@ -176,8 +178,8 @@ sequenceDiagram
 
 `createServer` runs these steps in order:
 
-1. install the extensions' connectors and integrations, and the
-   `HARNESSES_OFF` list
+1. install the extensions' connectors and integrations, the
+   `HARNESSES_OFF` list, and the `SUBSCRIPTION_AGENTS` setting
 2. connect to PostgreSQL: core's migrations, then each extension's;
    then seed the system catalog, then each extension's seed, then
    the operator and its organisation on a box that still has no user;
@@ -926,7 +928,10 @@ invoke reviewed helpers inside the agent container
 `guilds-browser`, the code tools through `guilds-code`, `code_task`
 through `guilds-harness`).
 
-Browser tools are offered when the run snapshot has
+A generation whose snapshot has no `model`, a subscription agent's,
+fails with `subscription.not_runnable` before anything else
+(`generation/generate.ts`); the model loop only ever reads a snapshot
+with a model. Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
 `coding: true`. A coding generation runs its start checks in order:
 no `harness` in the snapshot fails with `harness.missing` and

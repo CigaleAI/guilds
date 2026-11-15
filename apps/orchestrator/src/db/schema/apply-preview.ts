@@ -23,8 +23,11 @@ export type NameDecision = { role: string; name: string };
 /** A role's model on the preview: what the recipe recommends, and what apply will create it with. */
 export type RoleModel = { role: string; recommended: string | null; model: string | null };
 
-/** A coding role's harness on the preview: what the recipe names, and what apply will create it with. */
-export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null };
+/**
+ * A coding or subscription role's harness on the preview: what the recipe names, what apply will
+ * create it with, and whether the role runs on a subscription, which only some harnesses run.
+ */
+export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null; subscription: boolean };
 
 /**
  * What apply will do with one recipe collection: create it, reuse the live

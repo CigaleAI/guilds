@@ -4,7 +4,10 @@ import { assertCanPlaceAgents, type OrgPolicy } from "../policy/index.js";
 import { assertCanPlaceOn } from "./access.js";
 import {
   agentMinimum,
+  agentNeedsOf,
   belowMinimumMessage,
+  carriesHarness,
+  harnessMissingMessage,
   lowestFreeSlot,
   MachineError,
   machineFromRow,
@@ -25,12 +28,16 @@ function needsLabel(needs: AgentNeeds): string {
   if (needs.coding) {
     return "a coding agent";
   }
+  if (needs.harness !== null) {
+    return "a subscription agent";
+  }
   return needs.browser ? "a browser agent" : "an agent";
 }
 
 /**
  * The machine an agent goes on, locked with the organisation's other machines: the one named, or
- * the organisation's only machine when none is. Refuses a machine below the agent's minimum.
+ * the organisation's only machine when none is. Refuses a machine below the agent's minimum, and
+ * one whose image lacks the harness its turns run on.
  */
 export async function placementMachine(
   db: Queryable,
@@ -59,6 +66,12 @@ export async function placementMachine(
     throw new MachineError(
       422,
       `${belowMinimumMessage(needsLabel(needs), needs, machine)}. Pick a larger machine, or resize ${machine.name} under Settings, Machines`,
+    );
+  }
+  if (needs.harness !== null && !carriesHarness(machine, needs.harness)) {
+    throw new MachineError(
+      422,
+      `${harnessMissingMessage(needsLabel(needs), needs.harness, machine)}. Pick another machine, or build the runtime image with it`,
     );
   }
   return machine;
@@ -97,10 +110,7 @@ export async function moveAgent(
     if (from.machineId === machineId) {
       return { from, to: from };
     }
-    const needs = options.needs ?? {
-      browser: agent.config.browser === true,
-      coding: agent.config.coding === true,
-    };
+    const needs = options.needs ?? agentNeedsOf(agent.config);
     const machine = await placementMachine(client, agent.org_id, machineId, needs);
     const slot = await freeSlot(client, machine, options.maxAgentsPerMachine ?? undefined);
     await setAgentMachine(client, agentId, machine.id, slot);

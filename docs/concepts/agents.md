@@ -1,8 +1,8 @@
 # Agents
 
 An agent is one worker in a [guild](guilds.md). It has a name, a
-short focus that says what it is for, a model it thinks with, and a
-few switches that decide what it can do. It works in
+short focus that says what it is for, a model source it thinks with,
+and a few switches that decide what it can do. It works in
 [runs](runs.md): a chat with an operator, a wake-up from the
 [group chat](group-chat.md), or a [routine](routines.md).
 
@@ -19,13 +19,17 @@ writer, a reviewer, a coder. You change an agent when it should think
 with another model, take longer runs, or gain a capability such as
 its own browser.
 
-There are two kinds of agent:
+There are three kinds of agent:
 
 - an **agent** talks, researches, and works with tools and connectors
   on one of the organisation's models;
 - a **coding agent** also leads code work in the guild's
   repositories, delegated to a coding harness. See
-  [Coding agents](coding/index.md).
+  [Coding agents](coding/index.md);
+- a **subscription agent** has no model: its harness, Claude Code or
+  Codex, on the operator's own subscription, is its model source. Its
+  runs do not start yet: each fails at start
+  ([Model source](#model-source)).
 
 ## How it works
 
@@ -49,15 +53,33 @@ There are two kinds of agent:
 - **Avatar**: a mascot and an identity colour. They only change how
   the agent looks in the app. The agent never sees them.
 
-### Model
+### Model source
 
-The agent thinks with one model, written as `provider/model`. The
-provider must be connected for the organisation under **Settings**,
-**Model keys** ([Model keys](model-keys.md)). No model is assumed: a
-new agent starts on the organisation's default model when it has
-one, otherwise the operator picks one.
+An agent has one model source: a **model on a key** or a
+**subscription**. Nothing stores the choice apart: an agent with a
+`model` is on a key, and an agent with no `model` and a `harness` is
+on a subscription. A coding agent is always on a key: its lead model
+runs on a key, and its harness takes the code work it delegates.
 
-Next to the model sit three options:
+On a key, the agent thinks with one model, written as
+`provider/model`. The provider must be connected for the organisation
+under **Settings**, **Model keys** ([Model keys](model-keys.md)). No
+model is assumed: a new agent starts on the organisation's default
+model when it has one, otherwise the operator picks one.
+
+On a subscription, the agent names a harness, its model, and its
+effort ([Harnesses](coding/harnesses.md#subscription-agents)), and
+the harness runs on the operator's own subscription. Only Claude Code
+and Codex run one, and the box offers subscription agents only with
+`SUBSCRIPTION_AGENTS=1` ([Configure](../operations/configure.md)).
+The settings of the orchestrator's model loop do not apply to it:
+temperature, thinking level, max output tokens, max input tokens, and
+keep tool results stay at their defaults. A subscription agent has no
+repositories and no code tools, and takes no attachments. Its runs
+do not start yet: each fails at start with `subscription.not_runnable`
+([Runs](runs.md#generation)).
+
+Next to a model on a key sit three options:
 
 - **Thinking level**: none, low, medium, or high. It is greyed out for
   a model that does not think.
@@ -166,10 +188,16 @@ is disabled once the guild is full. Each agent row shows:
 1. **Identity**: the name (it can change later in Settings), an
    optional focus, and an avatar picker: a mascot set, a random
    variant, and one of six identity colours.
-2. **Model**: the model, from the organisation's chosen models grouped
-   by provider, preselected with its default when it has one. With no
-   provider connected, the step shows a guide to **Model keys** in its
-   place. Then the thinking level and the temperature, each switched
+2. **Model**: while the box offers subscription agents, it starts with
+   **Model source**: **Model on a key** or **Subscription**, with a
+   line saying a subscription agent's runs fail at start. On a key, the
+   model, from the organisation's chosen models grouped by provider,
+   preselected with its default when it has one. With no provider
+   connected, the step shows a guide to **Model keys** in its place.
+   On a subscription, the step is titled **Harness** and holds the
+   harness, Claude Code or Codex, its model and effort, the
+   capabilities, and the run limits a harness keeps; no provider is
+   needed. Then the thinking level and the temperature, each switched
    off only for a model that does not take it. Then **Agent
    capabilities**, three buttons: Browser, scripting, and Memory.
    Scripting and Memory start on; Browser starts off. The browser
@@ -244,15 +272,22 @@ keeps it as `?section=` (`identity`, `model`, `machine`, `harness`,
 or `repositories`), so a link can open Settings on one section.
 Without one, Settings opens on Identity. A section the agent's kind
 lacks opens where its content lives: `harness` or `repositories`
-opens Model on an agent without Coding.
+opens Model on an agent on a key without Coding, and `model` or
+`repositories` opens Harness on a subscription agent.
 
 An agent has **Identity**, **Model**, and **Machine**. A coding agent
 has **Identity**, **Machine**, **Harness**, **Lead model**, and
-**Repositories**. The sections follow the form's Coding button, so
-turning Coding on changes them before the save. A step whose fields
+**Repositories**. A subscription agent has **Identity**, **Harness**,
+and **Machine** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
+The sections follow the form's Coding button and its **Model source**,
+so turning Coding on or picking another source changes them before
+the save. **Model source** shows at the top of an agent's Model, and
+of a subscription agent's Harness, while the box offers subscription
+agents or the agent is on one. A step whose fields
 have an error, or that holds a coding-readiness problem to fix,
 carries a warning in place of its number. A coding agent that is not
-ready opens on a banner that lists what is missing. One **Save** and
+ready opens on a banner that lists what is missing; so does a
+subscription agent whose harness is not ready. One **Save** and
 one **Discard** at the bottom cover every section. Enter in a field
 saves.
 
@@ -288,9 +323,10 @@ saves.
 | Focus | at most 150 characters |
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
-| Coding agent | needs a harness |
+| Coding agent | needs a harness, and a model on a key |
+| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; its runs fail at start |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
-| Model | its provider must be connected for the organisation |
+| Model | its provider must be connected for the organisation; null only for a subscription agent |
 | Kimi Code models | only on a coding agent |
 | Coding | cannot be switched off on a coding agent |
 | Rename | refused while the agent generates, or while its guild is being deleted |
@@ -303,13 +339,14 @@ saves.
 
 Agent configuration is a JSON object of twenty-two keys. A missing key
 takes its default, then the check runs. `model` has no default, so a
-configuration without it is 422 `missing keys: model`. Unknown keys
+configuration without it is 422 `missing keys: model`; a subscription
+agent sends `model: null`. Unknown keys
 are rejected. The tier, CPU, and memory belong to the machine, not to
 the agent.
 
 | Key | Type | Default | Explained in |
 | --- | --- | --- | --- |
-| `model` | `provider/model` | none, must be chosen | [Model](#model-id-and-options) |
+| `model` | `provider/model`, or null for a subscription agent | none, must be given | [Model](#model-id-and-options) |
 | `temperature` | number | `1` | [Model](#model-id-and-options) |
 | `thinking_level` | `none`, `low`, `medium`, `high` | `none` | [Model](#model-id-and-options) |
 | `max_tokens` | positive integer | `8192` | [Runs](runs.md) |
@@ -325,7 +362,7 @@ the agent.
 | `browser_optimized` | boolean; needs `browser` | `false` | [Browser](browser.md#config-keys) |
 | `browser_model` | `provider/model` that is not for coding agents only, while `browser_optimized` is on; else null | `null` | [Browser](browser.md#config-keys) |
 | `coding` | boolean | `false` | [Coding agents](coding/index.md) |
-| `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null | `null` | [Harnesses](coding/harnesses.md) |
+| `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null; `claude-code` or `codex` without a model | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_effort` | effort or null; needs a harness | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
 | `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
@@ -336,6 +373,22 @@ An agent created with `coding` on and no `max_steps` or
 `max_tool_calls` starts with 200 of each instead of the defaults. An
 agent with `coding` on and no `harness` is 422 `coding agents need a
 harness: claude-code, codex, cursor, antigravity`.
+
+The model source is checked on every create and update, each a 422:
+
+| Configuration | Refusal |
+| --- | --- |
+| `model` blank or not a string | `model must be a non-empty string, or null for a subscription agent` |
+| a `model` and a `harness`, `coding` off | `harness is for a coding agent, or a subscription agent, which has no model` |
+| no `model`, `coding` on | `a coding agent needs a model: the lead model it runs on a key` |
+| no `model`, no `harness` | `an agent without a model is a subscription agent: it needs a harness` |
+| no `model`, `harness` `cursor` or `antigravity` | `<Harness> cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model` |
+| no `model`, and `temperature`, `thinking_level`, `max_tokens`, `max_input_tokens`, or `keep_tool_result_generations` off its default | `a subscription agent takes no <keys>: they set the model loop, which its harness replaces` |
+| no `model` on create or on a switch to it, without `SUBSCRIPTION_AGENTS=1` | `subscription agents are turned off on this box: give the agent a model on a key` |
+
+An agent already on a subscription keeps it while the box turns
+subscription agents off. A switch from a subscription to a model on
+a key, and back, is one update of `model` and `harness`.
 
 Validation errors are 422 with the message, for example
 `name must match ^[a-z][a-z0-9-]{0,62}$`, `max_steps must be a
@@ -433,9 +486,9 @@ prompt, and it is not part of the recipient Choice.
 
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
-| `GET /api/guilds/:id/agents` | lists the guild's agents with their busy state | 200 | |
+| `GET /api/guilds/:id/agents` | lists the guild's agents with their busy state and `model_source` (`key` or `subscription`) | 200 | |
 | `POST /api/guilds/:id/agents` | creates an agent from `name`, `config`, and optional `focus`, `wake_triggers`, `avatar_shape`, `avatar_color`, `machine_id` | 201 | 422 validation or model not connected; 403 a `keep_tool_result_generations` of its own from someone not a guild admin; 409 guild being deleted, `this guild is limited to N agents`, name taken, or an operator of that name; a placement refusal; an extension's policy limit |
-| `GET /api/agents/:id` | the agent | 200 | 404 |
+| `GET /api/agents/:id` | the agent, with `model_source` | 200 | 404 |
 | `PUT /api/agents/:id/config` | saves `config` plus optional `name`, `avatar_shape`, `avatar_color`, `focus`, `wake_triggers`, `machine_id` | 200 | 422 validation; 403 a `keep_tool_result_generations` change from someone not a guild admin; 409 rename while generating or while the guild is being deleted, name taken; a placement refusal; an extension's policy limit |
 | `PUT /api/agents/:id/machine` | moves the agent to `machine_id` ([Machines](machines.md#move-rules)) | 200 | a placement refusal |
 | `DELETE /api/agents/:id` | deletes the agent | 204 | 409 generating; 404 |
@@ -451,7 +504,8 @@ rules.
 `machine <name> is full`) and a machine below what the agent needs
 (`<what> needs a machine with at least <size>; <machine> has <size>`).
 The organisation policy of an extension may cap agents, browser
-agents, and coding agents per organisation; core sets no cap. A
+agents, and coding agents per organisation, a subscription agent
+counting as a coding agent; core sets no cap. A
 policy refusal is 409 `<source> limit reached: <cap>`.
 
 ### Create

@@ -30,14 +30,12 @@ const MACHINE_KEYS = [
 export type MachineQueryRow = Pick<Machine, (typeof MACHINE_KEYS)[number]>;
 
 /** An agent on a machine, as the machine listing reads it from the agent and its config. */
-export type MachineAgentQueryRow = {
+export type MachineAgentQueryRow = HostedAgentConfig & {
   id: string;
   name: string;
   guild_id: string;
   guild_name: string;
   slot: number;
-  browser: boolean;
-  coding: boolean;
   max_workspace_mib: AgentConfig["max_workspace_mib"];
 };
 
@@ -53,8 +51,8 @@ export type MachineSpec = Pick<Machine, "name" | "box" | "memory_mib" | "max_wor
 /** A machine, by its organisation and its id. */
 export type MachineKey = Pick<Machine, "org_id" | "id">;
 
-/** What an agent on a machine has on, as its config says. */
-export type HostedNeeds = { browser: boolean; coding: boolean };
+/** The settings of an agent on a machine that say what it needs of the machine. */
+export type HostedAgentConfig = Pick<AgentConfig, "browser" | "coding" | "model" | "harness">;
 
 const AGENT_PLACEMENT_KEYS = ["org_id", "config", "machine_id", "machine_slot"] as const;
 
@@ -74,6 +72,7 @@ const MACHINES_WITH_AGENTS = `
                                'slot', a.machine_slot,
                                'browser', COALESCE((a.config->>'browser')::boolean, FALSE),
                                'coding', COALESCE((a.config->>'coding')::boolean, FALSE),
+                               'model', a.config->'model', 'harness', a.config->'harness',
                                'max_workspace_mib', a.config->'max_workspace_mib')
                              ORDER BY a.machine_slot),
                    '[]'::jsonb)
@@ -134,11 +133,12 @@ export async function listMachineSlots(db: Queryable, machineId: string): Promis
   return result.rows.map((row) => row.machine_slot);
 }
 
-/** What each agent on a machine has on. */
-export async function listHostedNeeds(db: Queryable, machineId: string): Promise<HostedNeeds[]> {
-  const result = await db.query<HostedNeeds>(
+/** The settings of each agent on a machine that say what it needs of the machine. */
+export async function listHostedAgentConfigs(db: Queryable, machineId: string): Promise<HostedAgentConfig[]> {
+  const result = await db.query<HostedAgentConfig>(
     `SELECT COALESCE((config->>'browser')::boolean, FALSE) AS browser,
-            COALESCE((config->>'coding')::boolean, FALSE) AS coding
+            COALESCE((config->>'coding')::boolean, FALSE) AS coding,
+            config->'model' AS model, config->'harness' AS harness
        FROM agents WHERE machine_id = $1`,
     [machineId],
   );
