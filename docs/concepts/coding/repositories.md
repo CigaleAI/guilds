@@ -130,13 +130,19 @@ The guild's **Settings** tab has two parts for coding:
   clones into `repos/<name>` in its home, at its next run, under the
   line "Other git repositories, added by URL." Each row
   shows the name, URL, and default branch, a tag, "anonymous",
-  "GitHub · `<account>`", or "`<account>` disconnected", and a remove
-  button. With none, "No extra repositories yet." Under them, an add
-  form: **Name**, **URL**, and **Default branch** (optional). For a
-  `github.com` URL a **GitHub login** select appears, offering each
-  connected login and "None: clone anonymously", the first connected
-  login unless the operator picks none. **Add repository** adds it at
-  once, with a toast "`<name>` added".
+  "GitHub · `<account>`", "`<account>` disconnected", or
+  "Token · `<secret>`", and a remove button. With none, "No extra
+  repositories yet." Under them, an add form: **Name**, **URL**
+  (placeholder `https://git.example.com/owner/shop.git`), and
+  **Default branch** (optional), then **Credential**. It offers each
+  connected GitHub login, for a `github.com` URL only, **Access
+  token**, and "None: clone anonymously". A `github.com` URL starts on
+  the first connected login, any other URL on none. **Access token**
+  adds **Secret**, a select of the organisation's secrets the operator
+  manages, and **Username** (placeholder `oauth2`). With no such
+  secret, its hint reads "Add the token under Secrets first: only a
+  secret you manage can be used." **Add repository** waits for both,
+  then adds the repository at once, with a toast "`<name>` added".
 
 Any operator who sees the guild may add and remove repositories. They
 are not part of the Settings **Save**.

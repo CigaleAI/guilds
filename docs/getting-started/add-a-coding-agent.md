@@ -50,8 +50,8 @@ steps.
    - **URL**: the address of your repository, such as
      `https://github.com/you/demo`
 
-   A **GitHub login** select appears for a GitHub address. Leave it
-   on **None: clone anonymously**. Click **Add repository**. You
+   Set **Credential** to **None: clone anonymously**. Click **Add
+   repository**. You
    should see `demo` in the list, tagged **anonymous**. Click
    **Create agent**.
 

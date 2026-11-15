@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** The guild's add-repository form takes a URL on any HTTPS
+host and a **Credential**: a GitHub login, offered for a `github.com`
+URL only, an **Access token** (a secret the operator manages and its
+**Username**), or none. A repository with an access token shows
+"Token · `<secret>`".
+
 **Rebuild.** A guild repository can live on any HTTPS git host, such
 as GitLab, Bitbucket, Gitea or Azure DevOps, and be cloned, checked
 out and pushed with an access token. The token is kept as a secret of
