@@ -173,6 +173,21 @@ test("a path is unavailable when a folder on the way up has a blank name", async
   assert.equal(await pathOf(login, "reports"), DRIVE_PATH_UNAVAILABLE);
 });
 
+test("a path is unavailable when the connection drops while a parent's answer is read", async () => {
+  const client: FetchFn = async (url) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith("/files/parent")) {
+      return new Response(
+        new ReadableStream({
+          start: (controller) => controller.error(new TypeError("terminated")),
+        }),
+      );
+    }
+    return Response.json({ id: "child", name: "Child", parents: ["parent"] });
+  };
+  assert.equal(await pathOf({ accessToken: "tok", client }, "child"), DRIVE_PATH_UNAVAILABLE);
+});
+
 test("a failure in reading Drive's answer is not taken for an unreadable path", async () => {
   const client: FetchFn = async () =>
     ({

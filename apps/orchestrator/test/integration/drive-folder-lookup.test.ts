@@ -38,7 +38,8 @@ type FakeFolder = { name: string; parents?: string[] };
 
 /**
  * A synthetic Drive: My Drive holds Projects, which holds Reports and Archive, each holding one file.
- * Every request it gets is kept in `requests`; a request for a file in `unreachable` fails before Drive answers.
+ * Every request it gets is kept in `requests`; a request for a file in `unreachable` fails before Drive answers,
+ * and one for a file in `dropped` loses its connection while the answer is read.
  */
 function syntheticDrive() {
   const folders: Record<string, FakeFolder> = {
@@ -51,6 +52,7 @@ function syntheticDrive() {
   };
   const requests: { method: string; url: string }[] = [];
   const unreachable = new Set<string>();
+  const dropped = new Set<string>();
   let failing = false;
   const answer = mockFetch((url, init): MockResult => {
     requests.push({ method: init?.method ?? "GET", url });
@@ -73,9 +75,14 @@ function syntheticDrive() {
   });
   const client: FetchFn = async (url, init) => {
     const path = new URL(url).pathname;
-    if (unreachable.has(decodeURIComponent(path.slice(path.lastIndexOf("/") + 1)))) {
+    const id = decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
+    if (unreachable.has(id)) {
       requests.push({ method: init?.method ?? "GET", url });
       throw new TypeError("fetch failed");
+    }
+    if (dropped.has(id)) {
+      requests.push({ method: init?.method ?? "GET", url });
+      return new Response(new ReadableStream({ start: (controller) => controller.error(new TypeError("terminated")) }));
     }
     return answer(url, init);
   };
@@ -83,6 +90,7 @@ function syntheticDrive() {
     client,
     folders,
     unreachable,
+    dropped,
     requests,
     fail: () => {
       failing = true;
@@ -166,6 +174,11 @@ test("a Drive login looks up its saved folder's path through its own login, and 
     assert.equal(ancestorUnreachable.statusCode, 200, ancestorUnreachable.body);
     assert.deepEqual(ancestorUnreachable.json().options, [{ value: REPORTS, label: "Reports", detail: DRIVE_PATH_UNAVAILABLE }]);
     drive.unreachable.clear();
+    drive.dropped.add("projects");
+    const ancestorDropped = await lookup(REPORTS);
+    assert.equal(ancestorDropped.statusCode, 200, ancestorDropped.body);
+    assert.deepEqual(ancestorDropped.json().options, [{ value: REPORTS, label: "Reports", detail: DRIVE_PATH_UNAVAILABLE }]);
+    drive.dropped.clear();
     drive.folders.projects = { name: "  ", parents: ["my_root"] };
     const ancestorUnnamed = await lookup(REPORTS);
     assert.equal(ancestorUnnamed.statusCode, 200, ancestorUnnamed.body);

@@ -18,7 +18,7 @@ const MAX_PATH_DEPTH = 32;
 /** A folder with its path: the names from its Drive's root down to it, joined by " / ", or `DRIVE_PATH_UNAVAILABLE`. */
 export type LocatedDriveFolder = DriveFolder & { path: string };
 
-/** A Drive request that failed before Drive answered it: the network, the proxy, or the timeout. */
+/** A Drive request whose answer did not arrive in full: the network, the proxy, or the timeout failed it. */
 class DriveUnreachableError extends Error {
   constructor(options: ErrorOptions) {
     super("Drive could not be reached", options);
@@ -26,17 +26,31 @@ class DriveUnreachableError extends Error {
   }
 }
 
-/** `login`, with each request that fails before Drive answers it failing as a `DriveUnreachableError`. */
+/** The text of `response`'s body, failing as a `DriveUnreachableError` when the connection drops while it is read. */
+async function receivedBodyText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new DriveUnreachableError({ cause: error });
+    }
+    throw error;
+  }
+}
+
+/** `login`, with each request whose answer fails to arrive in full failing as a `DriveUnreachableError`. */
 function unreachableAsError(login: DriveLogin): DriveLogin {
   const fetchDrive = driveFetch(login);
   return {
     ...login,
     client: async (url, init) => {
+      let response: Response;
       try {
-        return await fetchDrive(url, init);
+        response = await fetchDrive(url, init);
       } catch (error) {
         throw new DriveUnreachableError({ cause: error });
       }
+      return new Response(await receivedBodyText(response), { status: response.status, headers: response.headers });
     },
   };
 }
