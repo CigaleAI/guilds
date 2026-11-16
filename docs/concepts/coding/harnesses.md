@@ -495,30 +495,42 @@ pinned to the CLI version the image installs.
 | Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, then `--effort <effort>`, then `--max-turns <n>`, before `--resume` | `--resume <session id>` | stdin |
 | Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>`, then `-c model_reasoning_effort="<effort>"`, after the managed flags and before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) |
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
-| Antigravity | `agy --output-format stream-json --dangerously-skip-permissions --disable-slash-commands --add-dir <run folder> -p "Read your task in <prompt file> and follow it."` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | the prompt file, named in `-p`; `--add-dir` lets the CLI's tools reach it outside the repository |
+| Antigravity | `agy --output-format stream-json --input-format stream-json --dangerously-skip-permissions --disable-slash-commands` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | stdin, one stream-json message: `{"event": "user", "message": {"content": "<prompt>"}}` |
 
-A request with a `system_prompt` writes it to
-`<run folder>/<call id>.system.md`, with mode 0600 beside the prompt
-file, and `result` removes both with the call's state. Claude Code
-starts with `--system-prompt-file <file>`, after `--settings` and
-before the model; Codex with `-c model_instructions_file="<file>"`,
-after the managed flags and before the model. Either way that text
-replaces the CLI's own system prompt, Codex's base instructions
-included. Cursor and Antigravity refuse a system prompt (`<harness>
-takes no system prompt`) before the call starts.
+A request with a `system_prompt` writes it with mode 0600, and
+`result` removes it with the call's state, the prompt file too:
+
+| Harness | The file | How the CLI reads it |
+| --- | --- | --- |
+| Claude Code | `<run folder>/<call id>.system.md` | `--system-prompt-file <file>`, after `--settings` and before the model; it replaces the CLI's own system prompt |
+| Codex | `<run folder>/<call id>.system.md` | `-c model_instructions_file="<file>"`, after the managed flags and before the model; it replaces Codex's base instructions |
+| Cursor | `~/.cursor/rules/guilds.mdc`, the text after a front matter of `description` and `alwaysApply: true` | a user rule that applies wherever the CLI runs, on top of Cursor's own system prompt |
+| Antigravity | `~/.gemini/GEMINI.md` | a global rule, on top of Antigravity's own system prompt |
+
+Cursor's and Antigravity's files sit where each CLI reads its own
+rules in the home, outside every repository's working tree, so no
+repository's `git status` shows them. The removal before each call,
+listed below, clears that place first, and clears it again when a call
+ended without `result`. Antigravity caps one rules file at
+24,000 bytes and cuts a longer one at a line.
 
 A request with an `mcp_url` and its `mcp_token` gives the CLI one
 HTTP MCP server, `guilds`, at that URL, with the token as its
-`Authorization: Bearer` header, and no other. `start` writes
-`<run folder>/<call id>.mcp.json` with mode 0600 beside the prompt
-files, and `result` removes it with them:
+`Authorization: Bearer` header, and no other. `start` writes a file
+with mode 0600, and `result` removes it with the call's state:
 
-| Harness | The file holds | Command line, after the system prompt |
+| Harness | The file, and what it holds | Command line, after the system prompt |
 | --- | --- | --- |
-| Claude Code | `mcpServers.guilds`: the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
-| Codex | the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
+| Claude Code | `<run folder>/<call id>.mcp.json`: `mcpServers.guilds`, the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
+| Codex | `<run folder>/<call id>.mcp.json`: the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
+| Cursor | `~/.cursor/mcp.json`: `mcpServers.guilds`, its `url` and the header | none: the CLI reads its user configuration, which needs no approval |
+| Antigravity | `~/.gemini/config/mcp_config.json`: `mcpServers.guilds`, its `serverUrl` and the header | none: the CLI reads its MCP configuration |
 
-Claude Code reads the token from the file. Codex reads it from
+Cursor and Antigravity read an MCP configuration only in the home,
+never from a path a call names, so theirs sits there for the call; the
+removal before each call clears what any earlier call or the agent left
+there. Claude Code, Cursor, and Antigravity read the token from the
+file. Codex reads it from
 `GUILDS_MCP_TOKEN`, which the supervisor sets from the file in the
 CLI's own environment alone, never its own or `guilds-harness`'s, and
 which Codex leaves out of the commands its model runs. Codex's
@@ -526,10 +538,10 @@ configuration in the home holds no server: the overrides last one
 call. The URL must be an `http` or `https` URL with no query, the
 token 43 to 128 URL-safe base64 characters, and each comes with the
 other (`mcp_url is invalid`, `mcp_token is invalid`, `mcp_url and
-mcp_token go together` otherwise). Cursor and Antigravity refuse one
-(`<harness> takes no MCP server`) before the call starts. The
-orchestrator sends such a request through a request file, never on
-the command line, and the token is on no command line.
+mcp_token go together` otherwise). The orchestrator sends such a
+request through a request file, never on the command line, and the
+token is on no command line and in no environment the CLI's commands
+inherit.
 
 A request with a `max_turns`, a count of 1 or more, starts Claude Code
 with `--max-turns <n>`, which ends its turn after that many model
@@ -546,9 +558,9 @@ or an effort, no flag is passed for it. `guilds-harness` checks the
 model against the same rule as the configuration (`model is invalid`
 otherwise), the effort against the efforts (`effort is invalid`), and
 refuses an effort for Cursor (`cursor takes its effort in the model
-name`), before the call starts. The Cursor and Antigravity CLIs read no
-prompt on stdin, so their command line names the prompt file in the
-agent's home; the prompt itself never appears on a command line.
+name`), before the call starts. The Cursor CLI reads no prompt on
+stdin, so its command line names the prompt file in the agent's home;
+the prompt itself never appears on a command line.
 
 Driver environment:
 
@@ -593,8 +605,8 @@ it:
 | --- | --- |
 | Claude Code | `~/.claude/` `settings.json`, `settings.local.json`, `CLAUDE.md`, `CLAUDE.local.md`, `rules/`, `hooks/`, `plugins/`, `skills/`, `commands/`, `agents/`, `output-styles/`, and each project's `memory/` under `projects/` |
 | Codex | `~/.codex/` `AGENTS.md`, `AGENTS.override.md`, `skills/`, `prompts/`, `rules/`, `memories/` and its `memories_*.sqlite` databases, `hooks.json` |
-| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/` |
-| Antigravity | `~/.gemini/` `GEMINI.md`, `AGENTS.md`, and under `config/`: `hooks.json`, `mcp_config.json`, `skills/`, `skills.json`, `plugins/`, `plugins.json`, `workflows/`, `workflows.json`, `global_workflows/`, `sidecars/` |
+| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
+| Antigravity | `~/.gemini/` `GEMINI.md`, `AGENTS.md`, and under `config/`: `GEMINI.md`, `AGENTS.md`, `rules/`, `hooks.json`, `mcp_config.json`, `skills/`, `skills.json`, `plugins/`, `plugins.json`, `workflows/`, `workflows.json`, `global_workflows/`, `sidecars/` |
 
 A path whose link resolves outside the home is left alone. The logins
 and account state (`~/.claude.json`, `~/.claude/.credentials.json`,

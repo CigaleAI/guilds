@@ -177,10 +177,10 @@ export type HarnessMcpAccess = { url: string; token: string };
 
 /**
  * What a harness CLI is started with: the harness, the prompt it reads on stdin or from its file,
- * the repository it runs in (null for the agent's home), the system prompt that replaces its own,
- * the orchestrator's MCP server it is given (null for none), the session it resumes, the model and
- * effort the agent sets for it, each null to leave it to the harness, and the most model calls its
- * turn may make, null for no limit.
+ * the repository it runs in (null for the agent's home), the system prompt it runs on, in place of
+ * its own or as rules beside it, the orchestrator's MCP server it is given (null for none), the
+ * session it resumes, the model and effort the agent sets for it, each null to leave it to the
+ * harness, and the most model calls its turn may make, null for no limit.
  */
 export type HarnessStart = {
   harness: Harness;

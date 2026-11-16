@@ -11,13 +11,14 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
   forks a supervisor in its own session and returns at once. The supervisor starts
   the CLI in its own process group in the repository directory, or in the home when the
   request names no repository, writes the CLI's raw events to the log, waits for it, and
-  records its exit code. A request with a `system_prompt` starts a CLI that takes one with
-  that system prompt in place of its own; any other CLI refuses it. A request with an
-  `mcp_url` and its `mcp_token` starts a CLI that takes an MCP server with that one server, the
-  token sent as its bearer; any other CLI refuses it. The token reaches the CLI through a
-  private file: Claude Code reads it there, and the supervisor sets it in Codex's own
-  environment alone. A request with a `max_turns` starts a CLI that takes a limit on its model
-  calls with that limit; any other CLI refuses it.
+  records its exit code. A request with a `system_prompt` starts the CLI with that system
+  prompt: Claude Code and Codex in place of their own, Cursor and Antigravity as a rules file in
+  the home that they read beside their own. A request with an `mcp_url` and its `mcp_token`
+  starts the CLI with that one MCP server, the token sent as its bearer. The token reaches the
+  CLI through a private file: Claude Code reads it there, Cursor and Antigravity read it from
+  their MCP configuration in the home, and the supervisor sets it in Codex's own environment
+  alone. A request with a `max_turns` starts a CLI that takes a limit on its model calls with
+  that limit; any other CLI refuses it.
 - `poll`: the raw events after a byte offset into the log, their normalised progress lines,
   the new offset, the session id once the harness has reported one, and whether the CLI has
   exited.
@@ -36,6 +37,10 @@ A call's state lives in /run/guilds/<agent id>/harness/: `<call id>.json` (what 
 `<call id>.session` (the session id once seen), `<call id>.stderr`. The raw event log is
 `.runs/<run id>/<call id>.harness.jsonl` in the agent's home, beside the call's private files,
 `<call id>.prompt.md`, `<call id>.system.md` and `<call id>.mcp.json`, which go with its state.
+Cursor's and Antigravity's system prompt and MCP configuration are where each CLI reads its own,
+in the home and outside every repository: `.cursor/rules/guilds.mdc` and `.cursor/mcp.json`,
+`.gemini/GEMINI.md` and `.gemini/config/mcp_config.json`. They go with the call's state too, and
+every call's reset removes whatever is left there.
 """
 from __future__ import annotations
 
@@ -206,17 +211,34 @@ class Driver:
         """The arguments that set the model's effort."""
         raise ToolError(f"{self.name} takes its effort in the model name")
 
+    def prompt_text(self, prompt: str) -> str:
+        """What the call's prompt file holds: the prompt as the CLI reads it."""
+        return prompt
+
+    def system_prompt_file(self, run_id: str, call_id: str) -> Path:
+        """Where the call's system prompt file goes: a private file in the run folder, which the
+        command line names."""
+        return RUNS / run_id / f"{call_id}.system.md"
+
+    def system_prompt_text(self, system_prompt: str) -> str:
+        """What the call's system prompt file holds."""
+        return system_prompt
+
     def system_prompt_args(self, path: Path) -> list[str]:
-        """The arguments that replace the CLI's system prompt with the file at `path`."""
-        raise ToolError(f"{self.name} takes no system prompt")
+        """The arguments that give the CLI the system prompt of the file at `path`."""
+        raise NotImplementedError
+
+    def mcp_config_file(self, run_id: str, call_id: str) -> Path:
+        """Where the call's MCP configuration file goes: a private file in the run folder."""
+        return RUNS / run_id / f"{call_id}.mcp.json"
 
     def mcp_config(self, server: McpServer) -> dict[str, Any]:
         """The MCP configuration file's content that gives the CLI `server`, and no other."""
-        raise ToolError(f"{self.name} takes no MCP server")
+        raise NotImplementedError
 
     def mcp_config_args(self, path: Path) -> list[str]:
         """The arguments that give the CLI the MCP servers of the configuration file at `path`."""
-        raise ToolError(f"{self.name} takes no MCP server")
+        raise NotImplementedError
 
     def mcp_env(self, path: Path) -> dict[str, str]:
         """The variables the CLI alone is started with for the MCP configuration file at `path`;
@@ -571,7 +593,8 @@ class Cursor(Driver):
     # The Cursor CLI takes no prompt on stdin: its argument names the prompt file.
     prompt_on_stdin = False
     # It has no switch to ignore the configuration in the home; a repository's own `.cursor/`,
-    # hooks included, still loads.
+    # hooks included, still loads. Besides its own folder, it reads the rules of every folder
+    # from the one it runs in up to the root: the home's and `repos/`'s too.
     local_state = (
         ".cursor/hooks.json",
         ".cursor/hooks",
@@ -581,7 +604,19 @@ class Cursor(Driver):
         ".cursor/commands",
         ".cursor/agents",
         ".cursor/plugins",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CLAUDE.local.md",
+        "repos/.cursor/rules",
+        "repos/AGENTS.md",
+        "repos/CLAUDE.md",
+        "repos/CLAUDE.local.md",
     )
+    # Where it reads a user rule and a user MCP server, which apply wherever it runs: the call's
+    # system prompt as a rule that always applies, and the call's MCP server, which a user
+    # configuration gives without the approval a repository's own `.cursor/mcp.json` needs.
+    rules_file = Path(".cursor/rules/guilds.mdc")
+    mcp_file = Path(".cursor/mcp.json")
 
     def command(self, session_id: str, files: TurnFiles, launch: Launch) -> list[str]:
         argv = [self.binary, "-p", "--force", "--trust", "--output-format", "stream-json"]
@@ -590,6 +625,27 @@ class Cursor(Driver):
             argv.append(f"--resume={session_id}")
         argv.append(f"Read your task in {files.prompt} and follow it.")
         return argv
+
+    def system_prompt_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.rules_file
+
+    def system_prompt_text(self, system_prompt: str) -> str:
+        return f"---\ndescription: The guild's instructions for this turn\nalwaysApply: true\n---\n\n{system_prompt}"
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        # The CLI reads the rule where it lies, on top of its own system prompt.
+        return []
+
+    def mcp_config_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.mcp_file
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        # The reset removed any other server of the home's configuration first.
+        headers = {"Authorization": f"Bearer {server.token}"}
+        return {"mcpServers": {MCP_SERVER: {"url": server.url, "headers": headers}}}
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        return []
 
     def credential(self, env: dict[str, str]) -> str | None:
         if env.get("CURSOR_API_KEY"):
@@ -661,8 +717,10 @@ def _payload(event: dict[str, Any]) -> dict[str, Any]:
 class Antigravity(Driver):
     name = "antigravity"
     binary = "agy"
-    # Its `-p` takes the prompt itself; the prompt names the prompt file instead.
-    prompt_on_stdin = False
+    # The prompt is one stream-json user message on stdin, which keeps it off the command line
+    # and needs no workspace beside the repository: a directory added to the workspace becomes
+    # the one its commands run in.
+    prompt_on_stdin = True
     # Each would move it off the Google sign-in: a Gemini API key, Cloud credentials, or another endpoint.
     removed_env = (
         "GEMINI_API_KEY",
@@ -689,6 +747,9 @@ class Antigravity(Driver):
     local_state = (
         ".gemini/GEMINI.md",
         ".gemini/AGENTS.md",
+        ".gemini/config/GEMINI.md",
+        ".gemini/config/AGENTS.md",
+        ".gemini/config/rules",
         ".gemini/config/hooks.json",
         ".gemini/config/mcp_config.json",
         ".gemini/config/skills",
@@ -708,22 +769,46 @@ class Antigravity(Driver):
         path.write_text(json.dumps(self.settings), encoding="utf-8")
         return removed
 
+    # Where it reads its global rules and its MCP servers, which apply wherever it runs: the call's
+    # system prompt as a global rule, and the call's MCP server.
+    rules_file = Path(".gemini/GEMINI.md")
+    mcp_file = Path(".gemini/config/mcp_config.json")
+
     def command(self, session_id: str, files: TurnFiles, launch: Launch) -> list[str]:
         argv = [
             self.binary,
             "--output-format",
             "stream-json",
+            "--input-format",
+            "stream-json",
             "--dangerously-skip-permissions",
             "--disable-slash-commands",
-            # The prompt file sits outside the repository, the workspace the CLI's tools reach.
-            "--add-dir",
-            str(files.prompt.parent),
         ]
         argv += self.model_args(launch)
         if session_id:
             argv += ["--conversation", session_id]
-        argv += ["-p", f"Read your task in {files.prompt} and follow it."]
         return argv
+
+    def prompt_text(self, prompt: str) -> str:
+        return json.dumps({"event": "user", "message": {"content": prompt}}, ensure_ascii=False) + "\n"
+
+    def system_prompt_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.rules_file
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        # The CLI reads the rule where it lies, on top of its own system prompt.
+        return []
+
+    def mcp_config_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.mcp_file
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        # The reset removed any other server of the home's configuration first.
+        headers = {"Authorization": f"Bearer {server.token}"}
+        return {"mcpServers": {MCP_SERVER: {"serverUrl": server.url, "headers": headers}}}
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        return []
 
     def effort_args(self, effort: str) -> list[str]:
         return ["--effort", effort]
@@ -732,7 +817,8 @@ class Antigravity(Driver):
         return "login" if (HOME / ANTIGRAVITY_TOKEN).is_file() else None
 
     def session(self, event: dict[str, Any]) -> str:
-        value = _payload(event).get("conversation_id")
+        # `init` carries the conversation beside its payload; every step update, inside its own.
+        value = event.get("conversation_id") or _payload(event).get("conversation_id")
         return value if isinstance(value, str) else ""
 
     def progress(self, event: dict[str, Any]) -> list[str]:
@@ -1034,7 +1120,9 @@ def _claim_call(call_id: str) -> dict[str, Path]:
 
 
 def _write_private(path: Path, text: str) -> None:
-    """Writes one of a call's private files, readable by its owner alone."""
+    """Writes one of a call's private files, readable by its owner alone, in a folder made for it
+    when it is missing."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(text)
@@ -1071,25 +1159,22 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     mcp = _mcp_server(spec)
     files = TurnFiles(
         RUNS / run_id / f"{call_id}.prompt.md",
-        RUNS / run_id / f"{call_id}.system.md" if system_prompt else None,
-        RUNS / run_id / f"{call_id}.mcp.json" if mcp else None,
+        driver.system_prompt_file(run_id, call_id) if system_prompt else None,
+        driver.mcp_config_file(run_id, call_id) if mcp else None,
     )
-    # Refuses an effort, a turn limit, a system prompt or an MCP server the harness cannot take
-    # before anything is claimed or reset.
+    # Refuses an effort or a turn limit the harness cannot take before anything is claimed or reset.
     driver.model_args(launch)
-    if files.system:
-        driver.system_prompt_args(files.system)
-    mcp_config = driver.mcp_config(mcp) if mcp else None
     if shutil.which(driver.binary) is None:
         raise ToolError(f"{driver.binary} is not installed in this image")
     paths = _claim_call(call_id)
+    # The reset comes first: it removes what an earlier call left where this one writes.
     reset = driver.reset()
     run_dir = _run_dir(run_id)
-    _write_private(files.prompt, prompt)
+    _write_private(files.prompt, driver.prompt_text(prompt))
     if files.system:
-        _write_private(files.system, system_prompt)
-    if files.mcp:
-        _write_private(files.mcp, json.dumps(mcp_config))
+        _write_private(files.system, driver.system_prompt_text(system_prompt))
+    if files.mcp and mcp:
+        _write_private(files.mcp, json.dumps(driver.mcp_config(mcp)))
     state = {
         "call_id": call_id,
         "run_id": run_id,
