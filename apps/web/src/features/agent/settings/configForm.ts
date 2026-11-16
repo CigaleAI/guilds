@@ -11,7 +11,7 @@ import type { OrgModels } from "../../../api/types/models";
 import { isCodingOnlyModel } from "../../../api/types/models";
 import { chosenMachine } from "../../machines/machines";
 import { modelLimits, modelProviderConnected, providerLabel } from "../../models/models";
-import { catalogFor, harnessEffortsFor, isHarness } from "../harness";
+import { catalogFor, harnessEffortsFor, isHarness, missingRepositoryText, needsRepository } from "../harness";
 
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
 export const defaultAgentConfig: AgentConfig = {
@@ -145,6 +145,8 @@ export type ConfigErrorContext = {
   models?: OrgModels | undefined;
   /** The organisation's machines; machine checks wait until they load. */
   machines?: Machine[] | undefined;
+  /** The harness catalogue; the repository a harness needs is checked once it loads. */
+  harnesses?: readonly HarnessCatalog[] | undefined;
 };
 
 /** A stored config on its model source in the form, on the machine named; empty leaves the machine to pick. */
@@ -211,10 +213,24 @@ export function takesHarness(form: Pick<ConfigForm, "coding" | "model_source">):
   return form.coding || form.model_source === "subscription";
 }
 
-/** What is wrong with the harness and its model of a coding or subscription agent; nothing for any other. */
-function harnessErrors(form: ConfigForm): ConfigErrors {
+/** Whether the form's subscription agent is on a harness that needs a repository, and picks none. */
+export function missesRepository(form: ConfigForm, catalog: readonly HarnessCatalog[] | undefined): boolean {
+  return (
+    form.model_source === "subscription" &&
+    form.harness !== "" &&
+    needsRepository(catalog, form.harness) &&
+    !form.repositories.length
+  );
+}
+
+/**
+ * What is wrong with the harness and its model of a coding or subscription agent, a subscription
+ * agent's harness that needs a repository it does not pick included; nothing for any other.
+ */
+function harnessErrors(form: ConfigForm, catalog: readonly HarnessCatalog[] | undefined): ConfigErrors {
   const errors: ConfigErrors = {};
   if (takesHarness(form) && !form.harness) errors.harness = "Pick a harness.";
+  if (form.harness && missesRepository(form, catalog)) errors.harness = missingRepositoryText([form.harness]);
   if (takesHarness(form) && !harnessModelPattern.test(form.harness_model.trim()))
     errors.harness_model =
       "Up to 120 letters, digits, and . _ : / = , [ ] -, starting with a letter or digit.";
@@ -241,7 +257,7 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
   const errors: ConfigErrors = budgetErrors(form);
   if (!form.temperature.trim() || !Number.isFinite(Number(form.temperature)))
     errors.temperature = "A number.";
-  Object.assign(errors, harnessErrors(form));
+  Object.assign(errors, harnessErrors(form, context.harnesses));
   if (context.machines && !chosenMachine(context.machines, form.machine_id)) {
     errors.machine = "Choose a machine.";
   }
@@ -285,9 +301,9 @@ function harnessEffortOf(form: ConfigForm): HarnessEffort | null {
 }
 
 /**
- * The form on another model source. A subscription keeps the harness picked only when that
- * harness runs a subscription agent; a model on a key, without Coding, has no harness. The model
- * stays in the form for a switch back.
+ * The form on another model source. A subscription keeps the harness picked unless that harness
+ * needs a repository the form does not pick; a model on a key, without Coding, has no harness.
+ * The model stays in the form for a switch back.
  */
 export function withModelSource(
   form: ConfigForm,
@@ -297,7 +313,7 @@ export function withModelSource(
   const kept =
     source === "subscription" &&
     form.harness !== "" &&
-    catalogFor(catalog, form.harness)?.subscription === true;
+    !missesRepository({ ...form, model_source: source }, catalog);
   return {
     ...form,
     model_source: source,

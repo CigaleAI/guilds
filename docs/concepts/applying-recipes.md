@@ -138,7 +138,8 @@ it shows:
 - the plan, as on the recipe's page, with only the sections that have
   entries. Each agent's card adds its **Agent name**, its **Model**,
   and for a coding agent its **Harness**. A subscription agent's card
-  has a **Harness** among Claude Code and Codex, and no **Model**. The
+  has a **Harness**, Cursor and Antigravity only for a role that lists
+  a repository, and no **Model**. The
   model list is the organisation's chosen models, with a hint naming
   the recipe's recommendation. The agent's **Coding** or
   **Subscription** chip names the harness picked. A taken name says *An agent already has this name. Rename

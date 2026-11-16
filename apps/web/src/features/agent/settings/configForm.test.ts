@@ -11,6 +11,7 @@ import {
   withCoding,
   withHarnessModel,
   limitFieldsFor,
+  missesRepository,
 } from "./configForm";
 
 test("switching coding on moves default limits to the coding budgets and back", () => {
@@ -355,7 +356,7 @@ const CODEX_CATALOG: HarnessCatalog[] = [
     harness: "codex",
     label: "Codex",
     enabled: true,
-    subscription: true,
+    needs_repository: false,
     models: [
       { id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" },
       {
@@ -436,8 +437,8 @@ test("a coding agent's repositories reach the form and back; only a coding agent
 });
 
 const SUBSCRIPTION_CATALOG: HarnessCatalog[] = [
-  { harness: "codex", label: "Codex", enabled: true, subscription: true, models: [], unlisted_efforts: [] },
-  { harness: "cursor", label: "Cursor", enabled: true, subscription: false, models: [], unlisted_efforts: [] },
+  { harness: "codex", label: "Codex", enabled: true, needs_repository: false, models: [], unlisted_efforts: [] },
+  { harness: "cursor", label: "Cursor", enabled: true, needs_repository: true, models: [], unlisted_efforts: [] },
 ];
 
 test("a stored subscription agent opens on its harness with no model", () => {
@@ -491,9 +492,28 @@ test("switching the model source keeps a harness only for a subscription that ru
   assert.equal(onCodex.model_source, "subscription");
   assert.equal(onCodex.harness, "codex");
   assert.equal(onCodex.model, "openai/gpt-5", "the model stays for a switch back");
-  assert.equal(withModelSource({ ...keyed, harness: "cursor" }, "subscription", SUBSCRIPTION_CATALOG).harness, "");
+  assert.equal(withModelSource({ ...keyed, harness: "cursor" }, "subscription", SUBSCRIPTION_CATALOG).harness, "", "Cursor needs a repository it does not pick");
+  assert.equal(
+    withModelSource({ ...keyed, harness: "cursor", repositories: ["app"] }, "subscription", SUBSCRIPTION_CATALOG).harness,
+    "cursor",
+    "with one it keeps Cursor",
+  );
   const back = withModelSource({ ...onCodex, harness_model: "gpt-6-luna" }, "key", SUBSCRIPTION_CATALOG);
   assert.equal(back.model_source, "key");
   assert.equal(back.harness, "");
   assert.equal(back.harness_model, "");
+});
+
+test("a subscription agent on a harness that needs a repository is an error until it picks one", () => {
+  const form = { ...configFormOf({ ...defaultAgentConfig, model: null, harness: "cursor" }, "subscription") };
+  const context = { harnesses: SUBSCRIPTION_CATALOG };
+  assert.equal(
+    configErrors(form, context).harness,
+    "Cursor keeps its own system prompt, so it runs a subscription agent only with a repository.",
+  );
+  assert.equal(missesRepository(form, SUBSCRIPTION_CATALOG), true);
+  assert.equal(configErrors({ ...form, repositories: ["app"] }, context).harness, undefined);
+  assert.equal(configErrors({ ...form, harness: "codex" }, context).harness, undefined, "Codex needs none");
+  assert.equal(configErrors(form).harness, undefined, "the server checks it before the catalogue loads");
+  assert.equal(configErrors({ ...form, model_source: "key", model: "openai/gpt-5", coding: true }, context).harness, undefined, "a coding agent's harness is no subscription");
 });

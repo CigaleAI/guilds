@@ -1,6 +1,7 @@
 import { harnessLabel, isHarness } from "../../agent/harness";
 import type { Harness, ModelSource } from "../../../api/types/agents";
 import type { RecipeFinding } from "../../../api/types/recipes";
+import { isStringList } from "../../../api/wire";
 import {
   asArray,
   asObject,
@@ -41,6 +42,8 @@ export type PlanAgent = {
   model_source: ModelSource;
   /** The harness a coding or subscription agent runs; null for any other, or while none is named yet. */
   harness: Harness | null;
+  /** The repositories the role lists in its config, by name; none when it lists none. */
+  repositories: string[];
   browserInstructions: string;
   task: string;
   taskAuthor: AuthorDraft | null;
@@ -110,6 +113,12 @@ function roleHarness(role: RoleDraft): Harness | null {
   return takesHarness && isHarness(config.harness) ? config.harness : null;
 }
 
+/** The repositories a role lists in its config, by name; none when it lists none, or not as a list of names. */
+function roleRepositories(role: RoleDraft): string[] {
+  const listed = asObject(role.config).repositories;
+  return isStringList(listed) ? listed : [];
+}
+
 export function planAgent(
   role: RoleDraft,
   doc: RecipeDraft,
@@ -129,6 +138,7 @@ export function planAgent(
     coding: config.coding === true,
     model_source: roleModelSource(role),
     harness: roleHarness(role),
+    repositories: roleRepositories(role),
     browserInstructions: browser.instructions || "",
     task: taskBody(role),
     taskAuthor: taskAuthor(role),

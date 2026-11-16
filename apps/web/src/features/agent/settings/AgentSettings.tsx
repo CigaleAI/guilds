@@ -3,12 +3,13 @@ import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   useAgent,
   useAgentHarness,
+  useHarnessCatalog,
   useOrgMachines,
   useSaveAgentSettings,
 } from "../../../api/queries/agents";
 import { useGuild } from "../../../api/queries/guilds";
 import { useOrgModels } from "../../../api/queries/models";
-import type { AgentDetail, AgentHarness, Harness, Machine } from "../../../api/types/agents";
+import type { AgentDetail, AgentHarness, Harness, HarnessCatalog, Machine } from "../../../api/types/agents";
 import { hasConnectedProvider } from "../../../api/types/models";
 import { useIdentity } from "../../../app/identity";
 import {
@@ -23,12 +24,12 @@ import {
 import { MachineGroup, ModelStep, SubscriptionStep } from "../AgentSteps";
 import { CodingReadinessBanner } from "../CodingReadiness";
 import { CodingRepositories } from "../CodingRepositories";
-import { codingProblems, harnessProblems, type CodingProblem } from "../harness";
+import { codingProblems, harnessProblems, missingRepositoryText, type CodingProblem } from "../harness";
 import { focusMax } from "../IdentityFields";
 import { chosenMachine } from "../../machines/machines";
 import { agentHandleError, handleHint } from "../../../app/names";
 import { AvatarPicker } from "./AvatarPicker";
-import { configErrors, configFormOf, configOf, type ConfigForm } from "./configForm";
+import { configErrors, configFormOf, configOf, missesRepository, type ConfigForm } from "./configForm";
 import { Group } from "./Group";
 import { HarnessField } from "./HarnessFields";
 import {
@@ -173,6 +174,23 @@ export function readinessProblems(
   return kind === "coding" ? codingProblems(status) : harnessProblems(status);
 }
 
+/**
+ * What the Repositories section says while the agent of this kind picks none: a subscription
+ * agent's turns run in its home, unless its harness needs a repository; a coding agent's runs fail.
+ */
+export function missingRepositoriesNote(
+  form: ConfigForm,
+  kind: SettingsKind,
+  catalog: readonly HarnessCatalog[] | undefined,
+): string {
+  if (form.harness && missesRepository(form, catalog)) {
+    return `No repository picked. ${missingRepositoryText([form.harness])}`;
+  }
+  return kind === "subscription"
+    ? "No repository picked, so this agent's turns run in its home."
+    : "No repository picked, so this agent's coding runs fail at start.";
+}
+
 /** The title of the readiness banner of a saved agent of this kind. */
 export function readinessTitle(kind: SettingsKind): string {
   return kind === "subscription" ? "The subscription isn't ready" : "Coding isn't ready";
@@ -225,6 +243,7 @@ export function AgentSettings() {
   const machines = useOrgMachines(org.id);
   const save = useSaveAgentSettings(agentId, guildId);
   const harness = useAgentHarness(agentId);
+  const catalog = useHarnessCatalog();
   const [draft, setDraft] = useState<Form | null>(null);
 
   const saved = useMemo(() => (agent.data ? formOf(agent.data) : null), [agent.data]);
@@ -241,7 +260,7 @@ export function AgentSettings() {
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
   const set = (patch: Partial<Form>) => setDraft({ ...form, ...patch });
   const setConfig = (next: ConfigForm) => setDraft({ ...form, ...next });
-  const errors = configErrors(form, { models: models.data, machines: machines.data });
+  const errors = configErrors(form, { models: models.data, machines: machines.data, harnesses: catalog.data });
   const machine = chosenMachine(machines.data, form.machine_id);
   const moveTo = machineMove(machine, agent.data.machine_id);
   const nameError = settingsNameError(form.name);
@@ -354,11 +373,7 @@ export function AgentSettings() {
         usable={harness.data?.usable_repositories}
         picked={form.repositories}
         onPick={(repositories) => set({ repositories })}
-        missingNote={
-          kind === "subscription"
-            ? "No repository picked, so this agent's turns run in its home."
-            : "No repository picked, so this agent's coding runs fail at start."
-        }
+        missingNote={missingRepositoriesNote(form, kind, catalog.data)}
       />
     ),
   };

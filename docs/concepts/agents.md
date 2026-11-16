@@ -26,8 +26,9 @@ There are three kinds of agent:
 - a **coding agent** also leads code work in the guild's
   repositories it picks, delegated to a coding harness. See
   [Coding agents](coding/index.md);
-- a **subscription agent** has no model: its harness, Claude Code or
-  Codex, on the operator's own subscription, is its model source. Each
+- a **subscription agent** has no model: its harness, on the
+  operator's own subscription, is its model source; Cursor and
+  Antigravity only for an agent with a repository. Each
   generation of its run is one turn of the harness, with the
   harness's own tools and the platform's tools it is offered
   ([Model source](#model-source)).

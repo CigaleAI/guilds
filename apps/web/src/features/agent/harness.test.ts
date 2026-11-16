@@ -15,7 +15,8 @@ import {
   harnessLabel,
   harnessOffered,
   harnessProblems,
-  runsSubscription,
+  missingRepositoryText,
+  needsRepository,
   harnessOptions,
   isHarnessEffort,
   listedHarnessModel,
@@ -256,7 +257,7 @@ const CATALOG: HarnessCatalog[] = [
     harness: "codex",
     label: "Codex",
     enabled: true,
-    subscription: true,
+    needs_repository: false,
     models: [
       { id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" },
     ],
@@ -266,7 +267,7 @@ const CATALOG: HarnessCatalog[] = [
     harness: "cursor",
     label: "Cursor",
     enabled: false,
-    subscription: false,
+    needs_repository: true,
     models: [{ id: "composer-2.5", label: "Composer 2.5", efforts: [], default_effort: null }],
     unlisted_efforts: [],
   },
@@ -302,10 +303,21 @@ test("leaving the effort unset names the model's default effort, else the harnes
   assert.equal(defaultEffortLabel(undefined), "Harness default");
 });
 
-test("a subscription is offered the harnesses the catalogue says run one, every one before it loads", () => {
-  assert.equal(runsSubscription(CATALOG, "codex"), true);
-  assert.equal(runsSubscription(CATALOG, "cursor"), false);
-  assert.equal(runsSubscription(undefined, "cursor"), true);
+test("a subscription agent needs a repository on the harnesses the catalogue says, on none before it loads", () => {
+  assert.equal(needsRepository(CATALOG, "codex"), false);
+  assert.equal(needsRepository(CATALOG, "cursor"), true);
+  assert.equal(needsRepository(undefined, "cursor"), false);
+});
+
+test("why a subscription agent without a repository cannot run on a harness names each that needs one", () => {
+  assert.equal(
+    missingRepositoryText(["cursor"]),
+    "Cursor keeps its own system prompt, so it runs a subscription agent only with a repository.",
+  );
+  assert.equal(
+    missingRepositoryText(["cursor", "antigravity"]),
+    "Cursor and Antigravity keep their own system prompt, so they run a subscription agent only with a repository.",
+  );
 });
 
 test("a harness's problems leave out the repositories only code tasks need", () => {

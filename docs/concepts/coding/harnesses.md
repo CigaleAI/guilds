@@ -201,7 +201,13 @@ coding agent's Settings show the same choice:
 - **Harness**: a button with its logo for each harness the box offers,
   **Claude Code** (Anthropic), **Codex** (OpenAI), **Cursor** (Cursor),
   and **Antigravity** (Google). A harness the machine's image lacks is
-  greyed and marked "Not on machine".
+  greyed and marked "Not on machine". For a subscription agent that
+  picks no repository, Cursor and Antigravity are greyed and marked
+  "Needs a repository", with a line under the buttons: "Cursor and
+  Antigravity keep their own system prompt, so they run a subscription
+  agent only with a repository." A subscription agent already on one
+  of them that picks none shows that line, for its harness, as the
+  harness's error, and cannot save.
 - **Harness model**, once a harness is picked: a select of
   "Subscription default", the harness's listed models by name with
   their id beneath, and "Custom…". Its hint reads "Custom takes any
@@ -258,8 +264,8 @@ the same way.
 
 A subscription agent's Settings have **Identity**, **Harness**, and
 **Machine**. Its **Harness** section starts with **Model source**, to
-move it to a model on a key, then the harness buttons, Claude Code and
-Codex only, with the harness's model and effort, then **Agent
+move it to a model on a key, then the harness buttons, with the
+harness's model and effort, then **Agent
 capabilities** without Coding and **Run limits** without the model
 loop's: max steps, max tool calls, max wake-ups, and **Max scripts**.
 A subscription agent that is not ready opens on the banner "The

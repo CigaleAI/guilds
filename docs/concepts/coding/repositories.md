@@ -242,7 +242,9 @@ in the create dialog, "No repository picked. You can create the agent
 and pick one later in its Settings."; in a coding agent's Settings,
 "No repository picked, so this agent's coding runs fail at start."; in
 a subscription agent's, "No repository picked, so this agent's turns
-run in its home."
+run in its home.", or on Cursor or Antigravity "No repository picked.
+`<Harness>` keeps its own system prompt, so it runs a subscription
+agent only with a repository."
 
 Then the guild's GitHub login, whose changes are the guild's, saved as
 they are made:

@@ -111,8 +111,8 @@ export type HarnessCatalog = {
   label: string;
   /** False when the box turns the harness off: offered only to an agent already on it. */
   enabled: boolean;
-  /** Whether a subscription agent may run on the harness. */
-  subscription: boolean;
+  /** Whether a subscription agent on the harness needs a repository: Cursor and Antigravity keep their own system prompt. */
+  needs_repository: boolean;
   models: HarnessCatalogModel[];
   /** The efforts for the subscription's default model or a custom one; empty when the model name carries it. */
   unlisted_efforts: HarnessEffort[];
