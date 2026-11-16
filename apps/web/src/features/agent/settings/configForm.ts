@@ -22,6 +22,7 @@ export const defaultAgentConfig: AgentConfig = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   max_wake_ups: 10,
+  max_turn_minutes: 30,
   keep_tool_result_generations: null,
   max_scripts: 10,
   max_workspace_mib: 10240,
@@ -61,9 +62,33 @@ export const limitFields = [
     label: "Max wake-ups",
     hint: "The most wake-ups one run may fire.",
   },
+  {
+    key: "max_turn_minutes",
+    label: "Max turn minutes",
+    hint: "Minutes one turn of the harness may run before it is stopped.",
+  },
 ] as const;
 
 type LimitKey = (typeof limitFields)[number]["key"];
+
+/** The limits a subscription agent has: the ones its harness keeps, and its turn's time. */
+const subscriptionLimitKeys: ReadonlySet<LimitKey> = new Set<LimitKey>([
+  "max_steps",
+  "max_tool_calls",
+  "max_wake_ups",
+  "max_turn_minutes",
+]);
+
+/** The limits a model on a key has: the model loop's, without a harness turn's time. */
+const keyLimitKeys: ReadonlySet<LimitKey> = new Set<LimitKey>(
+  limitFields.flatMap((field) => (field.key === "max_turn_minutes" ? [] : [field.key])),
+);
+
+/** The run limits Settings shows an agent on `source`. */
+export function limitFieldsFor(source: ModelSource): ReadonlyArray<(typeof limitFields)[number]> {
+  const shown = source === "subscription" ? subscriptionLimitKeys : keyLimitKeys;
+  return limitFields.filter((field) => shown.has(field.key));
+}
 
 /** A model config and the agent's machine as a form edits them: numbers stay text while typed. */
 export type ConfigForm = {
@@ -147,6 +172,7 @@ export function configFormOf(config: AgentConfig, source: ModelSource, machineId
     max_tool_calls: String(config.max_tool_calls),
     max_input_tokens: String(config.max_input_tokens),
     max_wake_ups: String(config.max_wake_ups),
+    max_turn_minutes: String(config.max_turn_minutes),
     keep_tool_result_generations:
       config.keep_tool_result_generations === null ? "" : String(config.keep_tool_result_generations),
     max_scripts: String(config.max_scripts ?? 10),
@@ -342,6 +368,7 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     max_tool_calls: Number(form.max_tool_calls),
     max_input_tokens: Number(form.max_input_tokens),
     max_wake_ups: Number(form.max_wake_ups),
+    max_turn_minutes: Number(form.max_turn_minutes),
     keep_tool_result_generations: form.keep_tool_result_generations.trim()
       ? Number(form.keep_tool_result_generations)
       : null,

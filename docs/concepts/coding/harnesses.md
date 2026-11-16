@@ -151,14 +151,13 @@ and no code tools.
   it.
 - A harness turned off with `HARNESSES_OFF` is refused as a new pick
   for a subscription agent as for a coding agent.
-- Claude Code runs a subscription agent's turns: each generation of
-  its run is one turn of the CLI in the agent's home, on the run's
-  system prompt in place of Claude Code's own, resuming the run's
-  session ([Runs](../runs.md#harness-turns)). The CLI is given the
-  orchestrator's MCP server through `--mcp-config`
+- Claude Code and Codex run a subscription agent's turns: each
+  generation of its run is one turn of the CLI in the agent's home, on
+  the run's system prompt in place of the CLI's own, resuming the
+  run's session ([Runs](../runs.md#harness-turns)). The CLI is given
+  the orchestrator's MCP server for that one call
   ([Drivers](#drivers)) and calls the run's Guilds tools there, beside
-  its own. A Codex subscription agent's runs fail at start with
-  `subscription.not_runnable`.
+  its own.
 
 ### Managed configuration
 
@@ -304,7 +303,7 @@ machine that has it."
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
 | Subscription harness | Claude Code or Codex |
-| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; each generation one Claude Code turn of at most 30 minutes, polled every second; on Codex their runs fail at start |
+| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; each generation one turn of Claude Code or Codex of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |
@@ -312,7 +311,7 @@ machine that has it."
 | Codex credential | A ChatGPT login only; an `auth.json` holding only an API key is no credential |
 | Antigravity credential | A Google sign-in only |
 | Organisation model keys | Never in the sandbox |
-| Usage and cost | None recorded for harness calls |
+| Usage and cost | None recorded for a `code_task` call; a subscription agent's turn records its tokens on its reply, at no price ([Usage](../usage.md#cost-of-a-harness-turn)) |
 | Image | Codex always; Claude Code, Cursor, and Antigravity when built with them |
 | Harness configuration in the home | Removed before every call; logins and sessions kept |
 
@@ -498,33 +497,52 @@ pinned to the CLI version the image installs.
 
 | Harness | Command | Model and effort | Resume | Prompt |
 | --- | --- | --- | --- | --- |
-| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, then `--effort <effort>`, before `--resume` | `--resume <session id>` | stdin |
+| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, then `--effort <effort>`, then `--max-turns <n>`, before `--resume` | `--resume <session id>` | stdin |
 | Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>`, then `-c model_reasoning_effort="<effort>"`, after the managed flags and before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) |
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
 | Antigravity | `agy --output-format stream-json --dangerously-skip-permissions --disable-slash-commands --add-dir <run folder> -p "Read your task in <prompt file> and follow it."` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | the prompt file, named in `-p`; `--add-dir` lets the CLI's tools reach it outside the repository |
 
-A request with a `system_prompt` starts Claude Code with
-`--system-prompt-file <run folder>/<call id>.system.md`, after
-`--settings` and before the model, so that text replaces Claude Code's
-own system prompt. `start` writes the file with mode 0600 beside the
-prompt file, and `result` removes both with the call's state. Codex,
-Cursor, and Antigravity refuse a system prompt (`<harness> takes no
-system prompt`) before the call starts.
+A request with a `system_prompt` writes it to
+`<run folder>/<call id>.system.md`, with mode 0600 beside the prompt
+file, and `result` removes both with the call's state. Claude Code
+starts with `--system-prompt-file <file>`, after `--settings` and
+before the model; Codex with `-c model_instructions_file="<file>"`,
+after the managed flags and before the model. Either way that text
+replaces the CLI's own system prompt, Codex's base instructions
+included. Cursor and Antigravity refuse a system prompt (`<harness>
+takes no system prompt`) before the call starts.
 
-A request with an `mcp_url` and its `mcp_token` starts Claude Code
-with `--mcp-config <run folder>/<call id>.mcp.json`, after the system
-prompt file. The file names one HTTP server, `guilds`, at that URL,
-with the token as its `Authorization: Bearer` header; with
-`--strict-mcp-config` it is the only MCP server the call uses. `start`
-writes it with mode 0600 beside the prompt files, and `result` removes
-it with them. The URL must be an `http` or `https` URL with no query,
-the token 43 to 128 URL-safe base64 characters, and each comes with
-the other (`mcp_url is invalid`, `mcp_token is invalid`, `mcp_url and
-mcp_token go together` otherwise). Codex, Cursor, and Antigravity
-refuse one (`<harness> takes no MCP server`) before the call starts.
-The orchestrator sends such a request through a request file, never on
-the command line, and the token is in neither the CLI's environment
-nor its command line.
+A request with an `mcp_url` and its `mcp_token` gives the CLI one
+HTTP MCP server, `guilds`, at that URL, with the token as its
+`Authorization: Bearer` header, and no other. `start` writes
+`<run folder>/<call id>.mcp.json` with mode 0600 beside the prompt
+files, and `result` removes it with them:
+
+| Harness | The file holds | Command line, after the system prompt |
+| --- | --- | --- |
+| Claude Code | `mcpServers.guilds`: the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
+| Codex | the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
+
+Claude Code reads the token from the file. Codex reads it from
+`GUILDS_MCP_TOKEN`, which the supervisor sets from the file in the
+CLI's own environment alone, never its own or `guilds-harness`'s, and
+which Codex leaves out of the commands its model runs. Codex's
+configuration in the home holds no server: the overrides last one
+call. The URL must be an `http` or `https` URL with no query, the
+token 43 to 128 URL-safe base64 characters, and each comes with the
+other (`mcp_url is invalid`, `mcp_token is invalid`, `mcp_url and
+mcp_token go together` otherwise). Cursor and Antigravity refuse one
+(`<harness> takes no MCP server`) before the call starts. The
+orchestrator sends such a request through a request file, never on
+the command line, and the token is on no command line.
+
+A request with a `max_turns`, a count of 1 or more, starts Claude Code
+with `--max-turns <n>`, which ends its turn after that many model
+calls with the result subtype `error_max_turns`; `result` then says
+`max_turns: true`. Codex, Cursor, and Antigravity have no such limit
+and refuse one (`<harness> takes no turn limit`), and a value that is
+not a whole number of 0 or more is refused (`max_turns is invalid`),
+before the call starts. A `code_task` call sends none.
 
 The orchestrator resolves the agent's model and effort through the
 catalogue before the call: a listed Cursor model becomes its CLI name
@@ -613,7 +631,10 @@ What a repository can still steer is recorded in
 ### Code
 
 `apps/orchestrator/src/coding/harnesses.ts` (the harnesses, the ones
-the box turns off, credential fixes),
+the box turns off, `TURN_HARNESSES`, the ones that run a subscription
+agent's turns and that alone a subscription agent, a recipe's
+subscription role, and Settings' model source offer, credential
+fixes),
 `apps/orchestrator/src/coding/harness-models.ts` (the catalogue),
 `apps/orchestrator/src/config/index.ts` (reading `HARNESSES_OFF`),
 `apps/orchestrator/src/toolbox/harness-setup.ts` (the harness checks

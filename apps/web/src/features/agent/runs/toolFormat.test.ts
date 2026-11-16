@@ -304,6 +304,22 @@ test("a code task reads by its repository and session, and ends with its status 
   assert.equal(codeTaskStatus("other"), "");
 });
 
+test("a call of Codex's own tool reads as what it did, in the platform's verbs", () => {
+  const friendly = (name: string, args: Record<string, unknown>) =>
+    friendlyToolCall(callWith(name, args));
+  assert.equal(friendly("command_execution", { command: "bash -lc 'cat greet.py'" }), "Run bash -lc 'cat greet.py'");
+  assert.equal(friendly("command_execution", {}), "Run command");
+  assert.equal(friendly("file_change", { changes: [{ path: "greet.py", kind: "update" }] }), "Change greet.py");
+  assert.equal(
+    friendly("file_change", { changes: [{ path: "a.py", kind: "add" }, { path: "b.py" }] }),
+    "Change 2 files",
+  );
+  assert.equal(friendly("file_change", { changes: [] }), "Change files");
+  assert.equal(friendly("file_change", { changes: [{ kind: "add" }] }), "", "arguments of another shape read as nothing");
+  assert.equal(friendly("web_search", { query: "guilds" }), 'Search web "guilds"');
+  assert.equal(friendly("web_search", {}), "Search web");
+});
+
 test("a call of Claude Code's own tool reads as what it did, in the platform's verbs", () => {
   const friendly = (name: string, args: Record<string, unknown>) =>
     friendlyToolCall(callWith(name, args));

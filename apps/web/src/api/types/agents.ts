@@ -131,6 +131,8 @@ export type AgentConfig = {
   max_input_tokens: number;
   /** The most wake-ups a run may fire. */
   max_wake_ups: number;
+  /** How many minutes one turn of a subscription agent's harness runs before it is stopped. */
+  max_turn_minutes: number;
   /**
    * User turns, including the current one, whose tool results stay in the model prompt; null takes
    * the guild's `keep_tool_result_generations`.

@@ -11,6 +11,7 @@ import {
   isCodeSearchArguments,
   isCodeTaskArguments,
   isConnectorToolArguments,
+  isFileChangeArguments,
   isFileReadArguments,
   isFileToolArguments,
   isHarnessToolArguments,
@@ -369,6 +370,18 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
     args.description ? `Delegate ${args.description}` : "Delegate task",
   ),
   TodoWrite: () => "Update todos",
+  command_execution: summaryOf(isHarnessToolArguments, (args) => {
+    const command = firstCommandLine(args.command ?? "");
+    return command ? `Run ${command}` : "Run command";
+  }),
+  file_change: summaryOf(isFileChangeArguments, (args) => {
+    const [only, ...more] = args.changes;
+    if (only === undefined) return "Change files";
+    return more.length ? `Change ${args.changes.length} files` : `Change ${only.path}`;
+  }),
+  web_search: summaryOf(isHarnessToolArguments, (args) =>
+    args.query ? `Search web "${args.query}"` : "Search web",
+  ),
 });
 
 /** A call with one short text argument, as `key: value`; empty for any other call. */

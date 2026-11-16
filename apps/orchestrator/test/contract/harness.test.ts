@@ -23,8 +23,8 @@ import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensan
 import { toolFixture } from "../helpers/toolbox.js";
 
 // A live turn of each harness in the runtime image, on a real subscription, and live turns of a
-// Claude Code subscription agent, one of which calls a Guilds tool on the orchestrator's MCP
-// server. Each runs when its credential is in the environment:
+// subscription agent on Claude Code and on Codex, one of each calling a Guilds tool on the
+// orchestrator's MCP server. Each runs when its credential is in the environment:
 // CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, or for Codex CODEX_AUTH_JSON, the path of an auth.json
 // from `codex login`.
 const IMAGE = process.env.CONTRACT_RUNTIME_IMAGE ?? "agent-runtime:0.4";
@@ -105,6 +105,7 @@ for (const { harness, credential } of LIVE) {
 }
 
 const claudeSkip = imageMissing || (process.env.CLAUDE_CODE_OAUTH_TOKEN ? false : "set CLAUDE_CODE_OAUTH_TOKEN to run the live subscription turn");
+const codexSkip = imageMissing || (process.env.CODEX_AUTH_JSON ? false : "set CODEX_AUTH_JSON to run the live Codex subscription turn");
 
 type Row = { seq: number; payload: Record<string, unknown>; metadata: Record<string, unknown> };
 
@@ -122,12 +123,18 @@ function sandboxReach(): { bind: string; host: string } {
 }
 
 /**
- * One live turn of a Claude Code subscription agent on run `r_live_turn`, opened by `prompt` under
+ * One live turn of a subscription agent on `harness` on run `r_live_turn`, opened by `prompt` under
  * the system prompt `system`, whose harness is served the native tools `offered` on a listener of
  * the orchestrator's MCP server, with `postFromRun` as its guild chat. The run's rows, its errors,
  * and its metadata.
  */
-async function liveSubscriptionTurn(system: string, prompt: string, offered: string[], posted: string[]) {
+async function liveSubscriptionTurn(
+  harness: "claude-code" | "codex",
+  system: string,
+  prompt: string,
+  offered: string[],
+  posted: string[],
+) {
   const server = await startOpenSandboxServer();
   const sandboxes = new RunSandboxes({ url: server.url, apiKey: server.apiKey, image: IMAGE, workspaceRoot: server.workspaceRoot });
   await sandboxes.start();
@@ -144,8 +151,14 @@ async function liveSubscriptionTurn(system: string, prompt: string, offered: str
   try {
     prepareWorkspace(server.workspaceRoot, MACHINE.id, agentId);
     const machine = await sandboxes.ensure(MACHINE);
-    const secrets = { CLAUDE_CODE_OAUTH_TOKEN: String(process.env.CLAUDE_CODE_OAUTH_TOKEN) };
+    const secrets: Record<string, string> =
+      harness === "claude-code" ? { CLAUDE_CODE_OAUTH_TOKEN: String(process.env.CLAUDE_CODE_OAUTH_TOKEN) } : {};
     const sandbox = agentSandbox(machine, agentHome(agentId), { ...secrets, ...seatEnvironment(seat) });
+    if (harness === "codex") {
+      await machine.files!.writeFiles([
+        { path: `${agentHome(agentId)}/.codex/auth.json`, data: readFileSync(String(process.env.CODEX_AUTH_JSON), "utf8") },
+      ]);
+    }
     const events = new RunEventBus({
       nextSeq: async () => rows.length,
       insertMessage: async (message: Row) => {
@@ -169,13 +182,13 @@ async function liveSubscriptionTurn(system: string, prompt: string, offered: str
       guild_id: "g_1",
       sandbox,
       secrets,
-      harness: "claude-code",
+      harness,
       offered_tools: new Set(offered),
       group_chat: group_chat as never,
     });
     const schemas = schemasFor(offered);
     const tools: GenerationTools = { run: ctx.run, hooks: ctx.hooks, schemas, secrets, connections: new Map(), maxToolCalls: 50 };
-    const agent = { id: agentId, org_id: "org_contract", guild_id: "g_1", config: { model: null, harness: "claude-code", browser: false, coding: false, scripting: false, memory: false } };
+    const agent = { id: agentId, org_id: "org_contract", guild_id: "g_1", config: { model: null, harness, browser: false, coding: false, scripting: false, memory: false } };
     const toolCalls = new ToolCalls({
       db: { getAgent: async () => null, getRun: async () => null, listMessages: async () => rows },
       events,
@@ -211,7 +224,7 @@ async function liveSubscriptionTurn(system: string, prompt: string, offered: str
       run: { id: "r_live_turn", kind: "direct", metadata: {} },
       agent,
       source: "subscription",
-      snapshot: { model: null, harness: "claude-code", harness_model: null, harness_effort: null, tools: schemas },
+      snapshot: { model: null, harness, harness_model: null, harness_effort: null, max_steps: 30, max_turn_minutes: 10, tools: schemas },
     };
     await loop.runTurn(gen as never, tools);
     return { rows: rows.slice(2), errors, metadata };
@@ -227,6 +240,7 @@ async function liveSubscriptionTurn(system: string, prompt: string, offered: str
 
 test("a live Claude Code subscription turn answers under the system prompt that replaces its own", { skip: claudeSkip, timeout: 600_000 }, async () => {
   const { rows, errors, metadata } = await liveSubscriptionTurn(
+    "claude-code",
     "You are Quill, an agent of a test guild. Answer every message with the single word PINEAPPLE, then stop.",
     "Run `echo ready` in the shell, then answer.",
     [],
@@ -237,11 +251,15 @@ test("a live Claude Code subscription turn answers under the system prompt that 
   assert.match(String(rows.at(-1)?.payload.content), /PINEAPPLE/, "the run's system prompt replaced Claude Code's own");
   assert.ok(rows.some((row) => row.payload.role === "tool"), "the shell call and its result are rows");
   assert.ok(typeof (metadata.harness_turn as { session_id?: unknown })?.session_id === "string");
+  const usage = rows.at(-1)?.metadata.usage as { input_tokens?: number } | undefined;
+  assert.ok((usage?.input_tokens ?? 0) > 0, "the reply records the turn's tokens");
+  assert.equal(rows.at(-1)?.metadata.cost_source, "subscription");
 });
 
 test("a live Claude Code subscription turn calls a Guilds tool on the orchestrator's MCP server", { skip: claudeSkip, timeout: 600_000 }, async () => {
   const posted: string[] = [];
   const { rows, errors } = await liveSubscriptionTurn(
+    "claude-code",
     "You are Quill, an agent of a test guild. Your tool `mcp__guilds__group_post` posts to the guild's chat. " +
       "Call it exactly once with the content PINEAPPLE, then answer with the single word done.",
     "Tell the guild.",
@@ -256,5 +274,41 @@ test("a live Claude Code subscription turn calls a Guilds tool on the orchestrat
   const result = rows.find((row) => row.seq === call.seq + 1);
   assert.equal(result?.payload.role, "tool");
   assert.match(String(result?.payload.content), /remaining_tool_calls: 49$/);
+  assert.ok(!rows.some((row) => JSON.stringify(row.payload).includes("mcp__guilds__group_post")), "the harness's own events for it make no row");
+});
+
+test("a live Codex subscription turn answers under the system prompt that replaces its instructions, and records its tokens", { skip: codexSkip, timeout: 600_000 }, async () => {
+  const { rows, errors, metadata } = await liveSubscriptionTurn(
+    "codex",
+    "You are Quill, an agent of a test guild. Answer every message with the single word PINEAPPLE, then stop.",
+    "Run `echo ready` in the shell, then answer.",
+    [],
+    [],
+  );
+  assert.deepEqual(errors, []);
+  assert.ok(rows.every((row) => row.metadata.from_harness === "codex"));
+  assert.match(String(rows.at(-1)?.payload.content), /PINEAPPLE/, "the run's system prompt replaced Codex's instructions");
+  assert.ok(rows.some((row) => row.payload.role === "tool"), "the shell call and its result are rows");
+  assert.ok(typeof (metadata.harness_turn as { session_id?: unknown })?.session_id === "string");
+  const usage = rows.at(-1)?.metadata.usage as { input_tokens?: number } | undefined;
+  assert.ok((usage?.input_tokens ?? 0) > 0, "the reply records the turn's tokens");
+  assert.equal(rows.at(-1)?.metadata.cost_source, "subscription");
+});
+
+test("a live Codex subscription turn calls a Guilds tool on the orchestrator's MCP server", { skip: codexSkip, timeout: 600_000 }, async () => {
+  const posted: string[] = [];
+  const { rows, errors } = await liveSubscriptionTurn(
+    "codex",
+    "You are Quill, an agent of a test guild. Your tool `mcp__guilds__group_post` posts to the guild's chat. " +
+      "Call it exactly once with the content PINEAPPLE, then answer with the single word done.",
+    "Tell the guild.",
+    ["group_post"],
+    posted,
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(posted, ["PINEAPPLE"], "the call reached the guild chat through the server");
+  const call = rows.find((row) => JSON.stringify(row.payload.tool_calls ?? []).includes('"name":"group_post"'));
+  assert.ok(call, "the call is the run's own tool call");
+  assert.equal(call.metadata.from_harness, undefined);
   assert.ok(!rows.some((row) => JSON.stringify(row.payload).includes("mcp__guilds__group_post")), "the harness's own events for it make no row");
 });

@@ -115,8 +115,9 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   builder_ask_question: { kind: "post" },
 });
 
-// The tools of Claude Code's own, which a subscription agent's harness calls: they touch the
-// agent's own home, or the web.
+// The tools of the harness's own, which a subscription agent's harness calls: Claude Code's by
+// their names, Codex's by the items its log reports them as. They touch the agent's own home, or
+// the web.
 const HARNESS_TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   Bash: { kind: "execute", level: "local" },
   Read: { kind: "read", level: "local" },
@@ -131,6 +132,9 @@ const HARNESS_TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   Task: { kind: "execute", level: "local" },
   WebFetch: { kind: "read" },
   WebSearch: { kind: "read" },
+  command_execution: { kind: "execute", level: "local" },
+  file_change: { kind: "write", level: "local" },
+  web_search: { kind: "read" },
 });
 
 /** An agent's Memory, `org/<org>/agents/<agent>/memory.md`. */
@@ -182,7 +186,7 @@ function calledToolName(call: ToolCall, resultMsg: StepMessage | null | undefine
 /**
  * Classifies a recorded tool call by effect, level, and serving connected server, using the tool
  * name its result records and the run's snapshot; a tool neither the platform nor the run offers
- * reads as one of Claude Code's own when it is.
+ * reads as one of a harness's own when it is.
  */
 export function classifyToolCall(
   call: ToolCall,

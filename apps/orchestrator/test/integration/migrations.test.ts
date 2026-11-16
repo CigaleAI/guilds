@@ -32,6 +32,7 @@ const toolResultTurnsDb = uniqueDbName("agent_platform_migrate_tool_result_turns
 const remoteIdDb = uniqueDbName("agent_platform_migrate_remote_id");
 const providersDb = uniqueDbName("agent_platform_migrate_providers");
 const agentRepositoriesDb = uniqueDbName("agent_platform_migrate_agent_repositories");
+const turnMinutesConfigDb = uniqueDbName("agent_platform_migrate_turn_minutes_config");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -49,6 +50,7 @@ after(async () => {
   await dropIsolatedDatabase(remoteIdDb);
   await dropIsolatedDatabase(providersDb);
   await dropIsolatedDatabase(agentRepositoriesDb);
+  await dropIsolatedDatabase(turnMinutesConfigDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -373,6 +375,56 @@ test("the wake-ups config migration gives agent configs and run snapshots max_wa
     const capped = agentConfig({ max_wake_ups: 3 });
     await agent("capped", 1, capped);
     const { max_wake_ups: _runWakeUps, ...olderSnapshot } = runSnapshot(agentConfig());
+    await run("run_active", "active", olderSnapshot);
+    await run("run_completed", "completed", olderSnapshot);
+    const cappedSnapshot = runSnapshot(capped);
+    await run("run_capped", "active", cappedSnapshot);
+
+    await applyMigrations(pool);
+    const agents = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const configs = new Map(agents.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(configs.get("old"), agentConfig());
+    assert.deepEqual(configs.get("capped"), capped);
+    const runs = await pool.query<{ id: string; config_snapshot: Record<string, unknown> }>("SELECT id, config_snapshot FROM public.runs");
+    const snapshots = new Map(runs.rows.map((row) => [row.id, row.config_snapshot]));
+    assert.deepEqual(snapshots.get("run_active"), runSnapshot(agentConfig()));
+    assert.deepEqual(snapshots.get("run_completed"), runSnapshot(agentConfig()));
+    assert.deepEqual(snapshots.get("run_capped"), cappedSnapshot);
+  } finally {
+    await pool.end();
+  }
+});
+
+
+test("the turn minutes config migration gives agent configs and run snapshots max_turn_minutes, keeping the values they have", async () => {
+  const pool = await createPool(await createIsolatedDatabase(turnMinutesConfigDb), reportPoolError);
+  try {
+    const folder = chainBefore("0031_agent_turn_minutes_config");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    const run = (id: string, status: string, snapshot: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.runs (id, agent_id, status, config_snapshot, created_at, updated_at, org_id)
+         VALUES ($1, 'old', $2, $3, $4, $4, 'org_1')`,
+        [id, status, JSON.stringify(snapshot), now],
+      );
+    const { max_turn_minutes: _agentMinutes, ...older } = agentConfig();
+    await agent("old", 0, older);
+    const capped = agentConfig({ max_turn_minutes: 5 });
+    await agent("capped", 1, capped);
+    const { max_turn_minutes: _runMinutes, ...olderSnapshot } = runSnapshot(agentConfig());
     await run("run_active", "active", olderSnapshot);
     await run("run_completed", "completed", olderSnapshot);
     const cappedSnapshot = runSnapshot(capped);

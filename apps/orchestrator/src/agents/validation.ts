@@ -6,7 +6,7 @@ import {
   harnessOffMessage,
   isHarness,
   isHarnessOff,
-  isSubscriptionHarness,
+  isTurnHarness,
   SUBSCRIPTION_AGENTS_OFF_MESSAGE,
   subscriptionHarnessMessage,
 } from "../coding/harnesses.js";
@@ -223,7 +223,7 @@ function rejectUnsoundModelSource(model: string | null, coding: boolean, harness
   if (harness === null) {
     throw new AgentValidationError("an agent without a model is a subscription agent: it needs a harness");
   }
-  if (!isSubscriptionHarness(harness)) {
+  if (!isTurnHarness(harness)) {
     throw new AgentValidationError(subscriptionHarnessMessage(harness));
   }
 }
@@ -463,6 +463,7 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     max_tool_calls: requirePositiveInteger(filled.max_tool_calls, "max_tool_calls"),
     max_input_tokens: requirePositiveInteger(filled.max_input_tokens, "max_input_tokens"),
     max_wake_ups: requirePositiveInteger(filled.max_wake_ups, "max_wake_ups"),
+    max_turn_minutes: requirePositiveInteger(filled.max_turn_minutes, "max_turn_minutes"),
     keep_tool_result_generations:
       filled.keep_tool_result_generations === null
         ? null

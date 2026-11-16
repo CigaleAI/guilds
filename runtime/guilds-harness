@@ -14,7 +14,10 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
   records its exit code. A request with a `system_prompt` starts a CLI that takes one with
   that system prompt in place of its own; any other CLI refuses it. A request with an
   `mcp_url` and its `mcp_token` starts a CLI that takes an MCP server with that one server, the
-  token sent as its bearer; any other CLI refuses it.
+  token sent as its bearer; any other CLI refuses it. The token reaches the CLI through a
+  private file: Claude Code reads it there, and the supervisor sets it in Codex's own
+  environment alone. A request with a `max_turns` starts a CLI that takes a limit on its model
+  calls with that limit; any other CLI refuses it.
 - `poll`: the raw events after a byte offset into the log, their normalised progress lines,
   the new offset, the session id once the harness has reported one, and whether the CLI has
   exited.
@@ -85,6 +88,9 @@ MCP_SERVER = "guilds"
 # The orchestrator's MCP server, as the start request names it: its URL and the turn's token.
 MCP_URL_RE = re.compile(r"https?://[A-Za-z0-9.:\[\]_-]+(/[A-Za-z0-9._~/-]*)?")
 MCP_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43,128}")
+# The variable a Codex turn reads its MCP token from: set in the CLI's own environment alone, and
+# kept out of the commands its model runs.
+CODEX_MCP_TOKEN_ENV = "GUILDS_MCP_TOKEN"
 
 
 class ToolError(Exception):
@@ -92,10 +98,12 @@ class ToolError(Exception):
 
 
 class Launch(NamedTuple):
-    """The model and effort a call starts the CLI with; empty leaves each to the harness."""
+    """The model and effort a call starts the CLI with, empty to leave each to the harness, and
+    the most model calls its turn may make, 0 for no limit."""
 
     model: str
     effort: str
+    max_turns: int
 
 
 class McpServer(NamedTuple):
@@ -210,10 +218,21 @@ class Driver:
         """The arguments that give the CLI the MCP servers of the configuration file at `path`."""
         raise ToolError(f"{self.name} takes no MCP server")
 
+    def mcp_env(self, path: Path) -> dict[str, str]:
+        """The variables the CLI alone is started with for the MCP configuration file at `path`;
+        none for a CLI that reads the file itself."""
+        return {}
+
+    def max_turns_args(self, max_turns: int) -> list[str]:
+        """The arguments that end the turn after `max_turns` model calls."""
+        raise ToolError(f"{self.name} takes no turn limit")
+
     def model_args(self, launch: Launch) -> list[str]:
-        """`--model` with the model, then the effort's arguments; nothing for what is empty."""
+        """`--model` with the model, then the effort's arguments, then the turn limit's; nothing
+        for what is empty."""
         argv = ["--model", launch.model] if launch.model else []
-        return argv + (self.effort_args(launch.effort) if launch.effort else [])
+        argv += self.effort_args(launch.effort) if launch.effort else []
+        return argv + (self.max_turns_args(launch.max_turns) if launch.max_turns else [])
 
     def credential(self, env: dict[str, str]) -> str | None:
         """`secret` or `login` when the harness has a credential to run on, else None."""
@@ -313,6 +332,9 @@ class ClaudeCode(Driver):
     def effort_args(self, effort: str) -> list[str]:
         return ["--effort", effort]
 
+    def max_turns_args(self, max_turns: int) -> list[str]:
+        return ["--max-turns", str(max_turns)]
+
     def system_prompt_args(self, path: Path) -> list[str]:
         return ["--system-prompt-file", str(path)]
 
@@ -374,6 +396,7 @@ class ClaudeCode(Driver):
                     "message": text or last_text,
                     "is_error": is_error,
                     "error": (text or str(event.get("subtype") or "")) if is_error else "",
+                    "max_turns": event.get("subtype") == "error_max_turns",
                 }
             if event.get("type") == "assistant":
                 texts = [
@@ -433,6 +456,8 @@ class Codex(Driver):
         if session_id:
             argv.append("resume")
         argv += ["--json", "--dangerously-bypass-approvals-and-sandbox", *self.managed]
+        argv += self.system_prompt_args(files.system) if files.system else []
+        argv += self.mcp_config_args(files.mcp) if files.mcp else []
         argv += self.model_args(launch)
         if session_id:
             argv.append(session_id)
@@ -442,6 +467,32 @@ class Codex(Driver):
 
     def effort_args(self, effort: str) -> list[str]:
         return ["-c", f'model_reasoning_effort="{effort}"']
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        # Codex's own base instructions give way to the file; a rule file would only add to them.
+        return ["-c", f"model_instructions_file={_toml_string(str(path))}"]
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        # Codex takes an MCP server from its configuration alone, so the file holds what the
+        # call's overrides and the CLI's environment give it.
+        return {"url": server.url, "token": server.token}
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        # `mcp_servers={}` among the managed overrides drops every other server first.
+        server = f"mcp_servers.{MCP_SERVER}"
+        return [
+            "-c",
+            f"{server}.url={_toml_string(str(_json_file(path).get('url') or ''))}",
+            "-c",
+            f"{server}.bearer_token_env_var={_toml_string(CODEX_MCP_TOKEN_ENV)}",
+            # Codex hands its whole environment to the commands its model runs unless told otherwise.
+            "-c",
+            f"shell_environment_policy.exclude=[{_toml_string(CODEX_MCP_TOKEN_ENV)}]",
+        ]
+
+    def mcp_env(self, path: Path) -> dict[str, str]:
+        token = _json_file(path).get("token")
+        return {CODEX_MCP_TOKEN_ENV: token} if isinstance(token, str) and token else {}
 
     def credential(self, env: dict[str, str]) -> str | None:
         """A ChatGPT login: auth.json holding tokens, not only an API key."""
@@ -746,6 +797,11 @@ def _text(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
+def _toml_string(value: str) -> str:
+    """A TOML basic string of `value`, as a `-c` override's value takes it."""
+    return json.dumps(value)
+
+
 def _driver(spec: dict[str, Any]) -> Driver:
     driver = DRIVERS.get(str(spec.get("harness") or ""))
     if driver is None:
@@ -898,14 +954,18 @@ def op_check(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _launch(spec: dict[str, Any]) -> Launch:
-    """The model the harness runs and its effort, each empty for the harness's default."""
+    """The model the harness runs and its effort, each empty for the harness's default, and its
+    turn's limit on model calls, 0 for none."""
     model = spec.get("model") or ""
     if not isinstance(model, str) or (model and not MODEL_RE.fullmatch(model)):
         raise ToolError("model is invalid")
     effort = spec.get("effort") or ""
     if not isinstance(effort, str) or (effort and effort not in EFFORTS):
         raise ToolError("effort is invalid")
-    return Launch(model, effort)
+    max_turns = spec.get("max_turns") or 0
+    if not isinstance(max_turns, int) or isinstance(max_turns, bool) or max_turns < 0:
+        raise ToolError("max_turns is invalid")
+    return Launch(model, effort, max_turns)
 
 
 def _start_request(spec: dict[str, Any]) -> tuple[Driver, str, str, Path, str, str]:
@@ -1014,8 +1074,8 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
         RUNS / run_id / f"{call_id}.system.md" if system_prompt else None,
         RUNS / run_id / f"{call_id}.mcp.json" if mcp else None,
     )
-    # Refuses an effort, a system prompt or an MCP server the harness cannot take before anything
-    # is claimed or reset.
+    # Refuses an effort, a turn limit, a system prompt or an MCP server the harness cannot take
+    # before anything is claimed or reset.
     driver.model_args(launch)
     if files.system:
         driver.system_prompt_args(files.system)
@@ -1058,12 +1118,15 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
 def _run_cli(state: dict[str, Any], out: Any, err: Any) -> int:
     """Starts the CLI in its own process group with its output in the log; returns its exit code."""
     stdin_path = state.get("stdin")
+    env = {key: value for key, value in os.environ.items() if key not in DROPPED_ENV}
+    if state.get("mcp_config_path"):
+        env.update(_driver(state).mcp_env(Path(state["mcp_config_path"])))
     stdin = open(stdin_path, "rb") if stdin_path else subprocess.DEVNULL
     try:
         child = subprocess.Popen(
             state["argv"],
             cwd=state["cwd"],
-            env={key: value for key, value in os.environ.items() if key not in DROPPED_ENV},
+            env=env,
             stdin=stdin,
             stdout=out,
             stderr=err,
@@ -1228,6 +1291,7 @@ def op_result(spec: dict[str, Any]) -> dict[str, Any]:
         "message": outcome.get("message") or "",
         "is_error": bool(outcome.get("is_error")),
         "error": outcome.get("error") or "",
+        "max_turns": bool(outcome.get("max_turns")),
         "events": len(events),
         "unparsed": unparsed,
         "stderr": _stderr_tail(paths["stderr"]),

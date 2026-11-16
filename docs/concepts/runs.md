@@ -65,8 +65,8 @@ turn of its harness instead: the harness's CLI runs in the agent's
 sandbox on the run's system prompt and the messages that opened the
 generation, with its own tools and the run's Guilds tools, which it
 calls on the orchestrator's MCP server, and the run keeps what it
-writes as rows while it runs ([Harness turns](#harness-turns)). Only
-Claude Code runs a subscription agent's turns.
+writes as rows while it runs ([Harness turns](#harness-turns)).
+Claude Code and Codex run a subscription agent's turns.
 
 ### What a run stores
 
@@ -104,6 +104,12 @@ long:
   up. At the limit the run completes.
 - **Max input tokens**: the size of the prompt sent to the model.
   Above it the model is not called and the run completes.
+
+A subscription agent's turn keeps Max steps and Max tool calls, and
+adds **Max turn minutes**, how long the turn runs before its harness
+is stopped. Max steps ends a Claude Code turn after that many model
+calls; Codex has no such limit. Max input tokens does not apply: the
+harness keeps its own context ([Harness turns](#harness-turns)).
 
 A run that hit its tool-call or input-token limit cannot be resumed.
 Start a new one.
@@ -253,6 +259,7 @@ An ended run shows a banner under the transcript:
 | Wrap-up warning | when 8 tool calls or fewer are left |
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
 | Max wake-ups | 10 by default, for a coding agent too |
+| Max turn minutes | 30 by default; a subscription agent's turn of its harness |
 | Full tool results kept | the agent's setting, else its guild's; 2 user turns for a new guild |
 | Results never stubbed | under 2048 bytes |
 | Routine check | every 30 seconds |
@@ -386,10 +393,12 @@ run on a key with the same access would, less the code tools
 Its `secrets` reach the harness's environment.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
-`max_wake_ups`, `keep_tool_result_generations`,
+`max_wake_ups`, `max_turn_minutes`, `keep_tool_result_generations`,
 `projection_policy_version`, and `thinking_level`. `max_wake_ups` is
 the most wake-ups the run may fire, counted over the fired wake-ups of
-its chain; `wake_after` is refused past it.
+its chain; `wake_after` is refused past it. `max_turn_minutes` is how
+long a subscription agent's turn runs before its harness is stopped
+([Harness turns](#harness-turns)).
 
 Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
 `harness` is a coding agent's harness or null, `harness_model` the
@@ -442,9 +451,8 @@ A run whose snapshot has no `model` is a subscription agent's
 harness ([Harness turns](#harness-turns)). Before the machine is
 woken, it fails with `harness.missing` when the snapshot names no
 harness, and with `subscription.not_runnable`, "`<Harness>` cannot run
-a subscription agent's turns yet: pick Claude Code in the agent's
-Settings, or give the agent a model on a key", on any harness but
-Claude Code.
+a subscription agent: pick Claude Code or Codex, or give the agent a
+model", on any other harness.
 
 At start, the loop cancels the machine's idle timer, ensures the
 machine is up, and checks the disk caps. A home or machine over its
@@ -519,12 +527,15 @@ under the call id `turn_<generation>_<run id>`
    every user message since the run's last assistant or tool row, in
    order, joined by a blank line: the opening message, a message the
    operator sent, a Group Chat info or Schedule wake-up message, or a
-   wake-up's message. A run whose `metadata.harness_turn` holds a
-   session resumes it; a new run starts a new session. The run records
+   wake-up's message. On Claude Code the turn makes at most the
+   snapshot's `max_steps` model calls (`--max-turns`); Codex has no
+   such limit, so `max_turn_minutes` and `max_tool_calls` bound its
+   turn. A run whose `metadata.harness_turn` holds a session resumes
+   it; a new run starts a new session. The run records
    `metadata.harness_turn` at the start and again once the CLI reports
    its session. The generation's grant on the orchestrator's MCP server
-   opens before the start: the CLI is given its URL and token in a
-   private configuration file
+   opens before the start: the CLI is given its URL and token for that
+   one call
    ([The MCP server](../tools-and-connectors/tools-in-a-run.md#the-mcp-server)).
 2. **Poll** every second. Each poll's new events become rows as they
    come, published as `message.committed`
@@ -533,11 +544,19 @@ under the call id `turn_<generation>_<run id>`
    `tool_calls`, and each result a tool row. Text, tool inputs, and
    results are redacted with the run's secret values, and each result
    is capped as a tool's output is. Every row carries
-   `from_harness: "claude-code"` and the generation number. A call of
-   a tool of the orchestrator's MCP server, which Claude Code names
+   `from_harness`, the harness, and the generation number. A call of
+   a tool of the orchestrator's MCP server, which both CLIs name
    `mcp__guilds__<tool>`, and its result make no row from these
    events: the server keeps the call as the run's own, an assistant
    row holding it and its tool row, as a model's call is kept.
+
+   | CLI | Message | Call of its own tool | Result |
+   | --- | --- | --- | --- |
+   | Claude Code | each `assistant` event's text | each `tool_use` block, under its id and tool name | each `tool_result` block of a `user` event |
+   | Codex | each completed `agent_message` item | each `command_execution` (its `command`), `file_change` (its `changes`) or `web_search` (its `query`) item as it starts, or as it completes when it did not announce its start, under `<call id>.<item id>` and the item's type | the completed item: a command's output, a line per changed file, nothing for a search |
+
+   Codex's other items (its reasoning, its plan, an error notice) make
+   no row.
 3. **End.** A CLI that exits 0 without an error result ends the
    generation as a model's final reply does: the run completes or
    waits by the same rules. Any other ending records its error:
@@ -548,7 +567,8 @@ under the call id `turn_<generation>_<run id>`
 | `harness.failed` | the CLI exited otherwise, or its turn ended in error: "`<Harness>`'s turn failed (`<detail>`)", the detail as a code task's ([Result](coding/code-tasks.md#result)) |
 | `harness.lost` | a poll found the turn's state gone, or the CLI exited and its result could not be read |
 | `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
-| `harness.timed_out` | the turn ran 30 minutes; the harness got `stop` |
+| `harness.timed_out` | the turn ran its snapshot's `max_turn_minutes`: "`<Harness>` was stopped after `<minutes>` minutes."; the harness got `stop` |
+| `generation.max_steps` | Claude Code ended its turn at its `max_steps` model calls: "max_steps reached". The run stays open, as a model's run does at the limit |
 | `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls; the harness got `stop`, and the run completes |
 | `generation.blocked` | a call of the MCP server filed a blocking issue; the harness got `stop` |
 
@@ -559,8 +579,21 @@ three failed polls, a stop the MCP server's calls asked for, or an
 error. However the turn ends, the generation's token is revoked once
 the server has kept the call it is running, and a call of the
 harness's own tools still without a result gets the interrupted
-result, marked `from_harness`. Usage and cost are not recorded for a
-turn.
+result, marked `from_harness`.
+
+The turn's reply records the tokens the turn spent, over every model
+call of the CLI, as a model reply records its call's
+([Usage](usage.md#cost-of-a-harness-turn)): `metadata.usage`,
+`cost_usd` 0, and `cost_source: "subscription"`. A message of the CLI
+with no call of its own tools is held until the CLI's next event, so
+the reply is the one the usage follows; when none is held, an empty
+reply records it, and a turn that ends without its usage keeps the
+held message as it is.
+
+| CLI | Usage read from | The turn's tokens |
+| --- | --- | --- |
+| Claude Code | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the invocation's; input counts the cache's reads and writes |
+| Codex | `turn.completed`'s `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` | the thread's total less what the run's earlier Codex replies recorded; a total below that is a new thread's, all of it the turn's |
 
 `metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
@@ -816,8 +849,9 @@ cancel and resume are, and records `cancel_reason: "operator"`.
     harness turn, and the offered tools (`offered-tools.ts`)
   - `completion.ts`: model calls, input counting, and credentials
   - `harness-loop.ts`: a subscription agent's turns on its harness;
-    `parse-claude-code.ts` and `harness-rows.ts`: Claude Code's events
-    and the rows they make
+    `harness-ending.ts`: how a turn ended and the run error it fails
+    with; `parse-claude-code.ts` and `parse-codex.ts`: each CLI's
+    events; `harness-rows.ts`: the rows they make
   - `tool-calls.ts`: tool calls and interruption results
   - `events.ts`: committed rows, run errors, and stream events
   - `run-secrets.ts`: the secrets of each generation

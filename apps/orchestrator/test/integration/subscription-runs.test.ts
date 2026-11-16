@@ -135,6 +135,7 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     assert.ok(call.system_prompt?.includes("$GUILDS_PORTS"));
     assert.equal(call.stdin, "Make the greeting name the guild.");
     assert.ok(!call.argv.includes("--resume"));
+    assert.equal(call.argv[call.argv.indexOf("--max-turns") + 1], String(first.config_snapshot.max_steps), "the turn makes at most max_steps model calls");
 
     // The next message resumes the session the first turn reported.
     const next = await app.inject({ method: "POST", url: `/api/runs/${runId}/messages`, headers: HEADERS, payload: { content: "Yes, name the agent too." } });

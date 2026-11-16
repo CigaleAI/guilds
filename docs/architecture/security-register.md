@@ -86,15 +86,19 @@ Guilds tools.
 (`buildHarnessMcpApp`, `apps/orchestrator/src/http/harness-mcp-routes.ts`)
 published by `docker-compose.yml`, and `<call id>.mcp.json` in the
 turn's run folder, `.runs/<run id>/` in the agent's home, written by
-`start` in `runtime/guilds-harness`.
+`start` in `runtime/guilds-harness`; since 2026-11-16 also the
+environment of a Codex turn's CLI, which the supervisor in
+`runtime/guilds-harness` sets from that file.
 
 **Exposure:** the MCP listener is reachable from every sandbox on the
 host: on a Linux engine every container reaches the bridge's gateway,
 and on Docker Desktop every container reaches the host's loopback
 (SEC-63). While a subscription agent's generation runs, its bearer
-token sits in the configuration file in the agent's home. Any process
-on the agent's machine can read it: the harness itself, a command it
-runs, a package install (SEC-4), a steered harness (SEC-8), and every
+token sits in the configuration file in the agent's home, and, since
+2026-11-16 on Codex, in the environment of the Codex process, which
+every process running as root on the machine reads at
+`/proc/<pid>/environ`. Any process on the agent's machine can read
+it: the harness itself, a command it runs, a package install (SEC-4), a steered harness (SEC-8), and every
 other agent placed on the machine (SEC-24), as it can read a
 repository token (SEC-10). With the token, a process calls every
 Guilds tool the run offers, as the agent: it writes and deletes notes,
@@ -102,7 +106,9 @@ records, and files the agent may write, posts to the group chat, sets
 routines and wake-ups, reads and runs scripts, drives the agent's
 browser, stores secrets, files issues, and calls every connector tool
 the agent's logins offer, such as a GitHub write, until the generation
-ends, for up to 30 minutes.
+ends: for up to 30 minutes until 2026-11-16, and since then for up to
+the agent's `max_turn_minutes`, 30 by default, which an operator can
+raise.
 
 **Control in place:** the token is 32 bytes from the platform's
 random source, one per generation, kept only in the orchestrator's
@@ -117,11 +123,18 @@ body over 1 MiB is refused. Each call goes through the run's offer
 gate, narrowed to the agent's live bindings on every list and call,
 never a tool the generation was not offered nor a code tool; through
 redaction and the byte cap; counts toward `max_tool_calls`; and is
-kept in the run as the agent's own call. The URL and the token are in
-no environment and on no command line: the start request travels
-through a request file only root reads, and the configuration file is
-mode 0600, removed with the turn's other private files. A token found
-after the generation ended answers 401.
+kept in the run as the agent's own call. The URL and the token are on
+no command line: the start request travels through a request file only
+root reads, and the configuration file is mode 0600, removed with the
+turn's other private files. Until 2026-11-16 only Claude Code took the
+server, and the token was in no environment. A Codex turn takes it as
+`-c` overrides for that one call, which name the variable
+`GUILDS_MCP_TOKEN` instead of the token, so the token is on no command
+line and in no configuration file of Codex's home; the supervisor sets
+the variable in the CLI's own environment alone, not in its own nor in
+`guilds-harness`'s, and Codex leaves it out of the commands its model
+runs (`shell_environment_policy.exclude`). A token found after the
+generation ended answers 401.
 
 **Fix to make:** none of a token's reach can be narrowed below the
 machine while agents share a machine. An operator gives an agent that
@@ -169,10 +182,12 @@ harness.
 
 **Where:** `HarnessLoop` in
 `apps/orchestrator/src/generation/harness-loop.ts`, and `start` with a
-`system_prompt` and the Claude Code driver in `runtime/guilds-harness`.
+`system_prompt` and the Claude Code driver in `runtime/guilds-harness`;
+since 2026-11-16 the Codex driver as well.
 
-**Exposure:** each turn of a subscription agent hands Claude Code the
-run's whole composed system prompt: the Guidelines, the Task, State
+**Exposure:** each turn of a subscription agent hands its harness,
+Claude Code and since 2026-11-16 Codex, the run's whole composed
+system prompt: the Guidelines, the Task, State
 (the roster, the recent group-chat messages, the collections the agent
 reads, the names of its secrets, its connectors' State), and Memory.
 Its prompt is whatever opened the generation: an operator's message,
@@ -183,8 +198,10 @@ prompts off (SEC-28), and the network open. Text in any of that, or in
 a file, command output, or page the CLI reads, can steer it to send
 its secrets, State, or Memory wherever the container reaches (SEC-8).
 The prompt leaves the box for the vendor's API on the operator's
-subscription. While the turn runs, the system prompt is also a file in
-the agent's home, readable by any process on the machine (SEC-24).
+subscription: Anthropic's for Claude Code, OpenAI's for Codex. While
+the turn runs, the system prompt is also a file in the agent's home,
+readable by any process on the machine (SEC-24); Codex reads it
+through `model_instructions_file`, as its own instructions.
 Since 2026-11-16 the harness also calls the run's Guilds tools,
 connector tools included, on the orchestrator's MCP server (SEC-64):
 steered text can make it write the agent's notes, records, files, and
@@ -199,8 +216,10 @@ redacted with the run's secret values before it is stored, and each
 tool result is capped. The system prompt
 file is mode 0600 and goes with the turn's state. The driver removes
 the variables that would move the CLI onto a metered key and turns
-off hooks, plugins, and project MCP servers. A turn stops after 30
-minutes. The organisation's model keys never reach the sandbox.
+off hooks, plugins, and project MCP servers; Codex also loads no
+`config.toml` or rules from the home. A turn stops after 30
+minutes; since 2026-11-16 after the agent's `max_turn_minutes`, 30 by
+default. The organisation's model keys never reach the sandbox.
 
 **Fix to make:** start the harness with only its own credential in its
 environment, and limit what the agent's container reaches. Until then,

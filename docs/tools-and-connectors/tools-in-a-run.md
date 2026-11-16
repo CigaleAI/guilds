@@ -55,16 +55,19 @@ offered, connectors included, less the five code tools (`shell`,
 `shell_status`, `file_read`, `code_search`, `code_task`): its harness
 has its own. The run's snapshot records that offer. The harness calls
 those tools on the orchestrator's MCP server
-([MCP server](#the-mcp-server)), which Claude Code names
-`mcp__guilds__<tool>`. Each list and each call re-reads the agent's
-bindings and flags, and offers no tool its generation did not offer.
+([MCP server](#the-mcp-server)), which Claude Code and Codex name
+`mcp__guilds__<tool>`, and the run's prompt names each tool that way.
+Each list and each call re-reads the agent's bindings and flags, and
+offers no tool its generation did not offer.
 
 ### The MCP server
 
 Each generation of a subscription agent's run is given the
 orchestrator's MCP server: the URL of its agent's path,
 `<HARNESS_MCP_URL>/mcp/<agent id>`, and a bearer token
-([Deployment](../architecture/deployment.md#the-mcp-listener)). The
+([Deployment](../architecture/deployment.md#the-mcp-listener)), for
+that one call of its CLI and no other MCP server
+([Drivers](../concepts/coding/harnesses.md#drivers)). The
 token is 32 random bytes, kept only in the orchestrator's memory,
 compared by its SHA-256 digest in constant time, redacted from the
 run's rows, and valid only for that agent's path while that generation

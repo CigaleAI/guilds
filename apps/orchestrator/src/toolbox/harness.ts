@@ -198,6 +198,7 @@ async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHoo
     session_id: turn.session,
     model: run.harness_model,
     effort: run.harness_effort,
+    max_turns: null,
   });
   await rememberTurn(services, run, turn);
 }

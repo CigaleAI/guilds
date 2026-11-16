@@ -32,7 +32,7 @@ export function ModelSourceField({ form, onChange }: ModelSourceFieldProps) {
       />
       <p className="text-xs text-muted">
         {form.model_source === "subscription"
-          ? "Claude Code runs every turn on your own subscription, with its own tools and the guild's tools this agent is given. Codex subscription agents can't run yet: their runs fail at start."
+          ? "The harness runs every turn on your own subscription, with its own tools and the guild's tools this agent is given."
           : "A model on one of the organisation's keys runs every turn."}
       </p>
     </div>

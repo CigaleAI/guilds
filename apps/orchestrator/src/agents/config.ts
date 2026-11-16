@@ -9,6 +9,7 @@ export const CONFIG_KEYS = new Set([
   "max_tool_calls",
   "max_input_tokens",
   "max_wake_ups",
+  "max_turn_minutes",
   "keep_tool_result_generations",
   "max_scripts",
   "max_workspace_mib",
@@ -33,6 +34,8 @@ export const DEFAULT_MAX_TOOL_CALLS = 50;
 export const DEFAULT_MAX_INPUT_TOKENS = 100_000;
 /** The most wake-ups a run may fire, for every agent, coding or not. */
 export const DEFAULT_MAX_WAKE_UPS = 10;
+/** How many minutes a subscription agent's turn runs before its harness is stopped. */
+export const DEFAULT_MAX_TURN_MINUTES = 30;
 export const DEFAULT_MAX_SCRIPTS = 10;
 /** An agent's workspace cap, in MiB. Above this the next generation fails at start. */
 export const DEFAULT_MAX_WORKSPACE_MIB = 10240;
@@ -111,6 +114,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
   max_tool_calls: DEFAULT_MAX_TOOL_CALLS,
   max_input_tokens: DEFAULT_MAX_INPUT_TOKENS,
   max_wake_ups: DEFAULT_MAX_WAKE_UPS,
+  max_turn_minutes: DEFAULT_MAX_TURN_MINUTES,
   keep_tool_result_generations: null,
   max_scripts: DEFAULT_MAX_SCRIPTS,
   max_workspace_mib: DEFAULT_MAX_WORKSPACE_MIB,

@@ -7,6 +7,7 @@ import {
   DEFAULT_MAX_SCRIPTS,
   DEFAULT_MAX_WORKSPACE_MIB,
   DEFAULT_MAX_TOOL_CALLS,
+  DEFAULT_MAX_TURN_MINUTES,
   DEFAULT_MAX_WAKE_UPS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TOKENS,
@@ -253,7 +254,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 23);
+  assert.equal(CONFIG_KEYS.size, 24);
   assert.throws(() => validateAgentConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateAgentConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateAgentConfig({ model }), false);
@@ -279,6 +280,7 @@ test("a config that leaves out every setting but its model takes every default",
     max_tool_calls: DEFAULT_MAX_TOOL_CALLS,
     max_input_tokens: DEFAULT_MAX_INPUT_TOKENS,
     max_wake_ups: DEFAULT_MAX_WAKE_UPS,
+    max_turn_minutes: DEFAULT_MAX_TURN_MINUTES,
     keep_tool_result_generations: null,
     max_scripts: DEFAULT_MAX_SCRIPTS,
     max_workspace_mib: DEFAULT_MAX_WORKSPACE_MIB,
@@ -532,6 +534,16 @@ test("max_wake_ups defaults to 10 for every agent, coding or not, and takes a po
   assert.equal(validateAgentConfig({ model, max_wake_ups: 1 }).max_wake_ups, 1);
   for (const refused of [0, -1, 2.5, "3", null]) {
     assert.throws(() => validateAgentConfig({ model, max_wake_ups: refused }), /max_wake_ups must be a positive integer/);
+  }
+});
+
+test("max_turn_minutes defaults to 30, a subscription agent's harness turn's time, and takes a positive whole number", () => {
+  const subscription = { model: null, harness: "codex" };
+  assert.equal(DEFAULT_MAX_TURN_MINUTES, 30);
+  assert.equal(validateAgentConfig(subscription).max_turn_minutes, DEFAULT_MAX_TURN_MINUTES);
+  assert.equal(validateAgentConfig({ ...subscription, max_turn_minutes: 90 }).max_turn_minutes, 90);
+  for (const refused of [0, -1, 2.5, "3", null]) {
+    assert.throws(() => validateAgentConfig({ ...subscription, max_turn_minutes: refused }), /max_turn_minutes must be a positive integer/);
   }
 });
 

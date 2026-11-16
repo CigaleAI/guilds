@@ -11,6 +11,7 @@ import {
   defaultAgentConfig,
   withCoding,
   withHarnessModel,
+  limitFieldsFor,
 } from "./configForm";
 
 test("switching coding on moves default limits to the coding budgets and back", () => {
@@ -208,6 +209,20 @@ test("keep tool results starts empty for the guild's, round-trips, and takes a w
       "A whole number, 1 or more, or empty.",
     );
   }
+});
+
+test("max turn minutes starts at 30, round-trips, takes a whole number of 1 or more, and shows only on a subscription", () => {
+  const form = configFormOf(defaultAgentConfig, "subscription");
+  assert.equal(form.max_turn_minutes, "30");
+  assert.equal(configOf({ ...form, max_turn_minutes: "45" }, undefined).max_turn_minutes, 45);
+  assert.equal(configFormOf({ ...defaultAgentConfig, max_turn_minutes: 45 }, "subscription").max_turn_minutes, "45");
+  assert.equal(configErrors({ ...form, max_turn_minutes: "0" }).max_turn_minutes, "A whole number, 1 or more.");
+  assert.deepEqual(
+    limitFieldsFor("subscription").map((field) => field.key),
+    ["max_steps", "max_tool_calls", "max_wake_ups", "max_turn_minutes"],
+  );
+  assert.ok(!limitFieldsFor("key").some((field) => field.key === "max_turn_minutes"));
+  assert.ok(limitFieldsFor("key").some((field) => field.key === "max_input_tokens"));
 });
 
 test("limits the operator already changed stay as typed", () => {

@@ -8,6 +8,8 @@ import {
   turnReasoning,
   turnText,
   turnUsage,
+  replyUsage,
+  usageTitle,
 } from "./runFlowModel";
 import type { FlowSegment, Segment } from "./runFlowModel";
 import type {
@@ -351,4 +353,29 @@ test("a subscription agent's harness turn reads as a flow of its own tools' call
       ["Bash", "execute", null],
     ],
   );
+});
+
+test("a harness turn on the subscription notes its tokens on its reply, and prices none of its steps", () => {
+  const usage = { input_tokens: 9120, output_tokens: 212, cache_read_tokens: 4096, cache_write_tokens: 12 };
+  const reply = row(
+    { role: "assistant", content: "Changed the greeting." },
+    { generation: 1, from_harness: "codex", usage, cost_usd: 0, cost_source: "subscription" },
+  );
+  assert.deepEqual(replyUsage(reply), {
+    label: "9.3k tok · on the subscription",
+    title: "9,120 in · 212 out · 4,096 cached · 12 cache writes",
+  });
+  const priced = row(
+    { role: "assistant", content: "Done." },
+    { generation: 1, usage: { input_tokens: 100, output_tokens: 20, cache_read_tokens: 0 }, cost_usd: 0.002, cost_source: "catalog" },
+  );
+  assert.deepEqual(replyUsage(priced), { label: "120 tok · $0.0020", title: "100 in · 20 out" });
+  assert.equal(replyUsage(row({ role: "assistant", content: "Hi." }, { generation: 1, from_harness: "codex" })), null);
+
+  const turn = row(
+    { role: "assistant", content: "", tool_calls: [call("c1", "command_execution", { command: "ls" })] },
+    { generation: 1, from_harness: "codex", usage, cost_usd: 0, cost_source: "subscription" },
+  );
+  assert.equal(stepCostUsd({ index: 1, turn, calls: [] }), null, "the subscription's cost is no price");
+  assert.equal(usageTitle({ input_tokens: 5, output_tokens: 1, cache_read_tokens: 0 }), "5 in · 1 out");
 });

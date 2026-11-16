@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, describe, test } from "node:test";
 import { generationLive } from "../../src/generation/completion.js";
-import { harnessTurnFailure, harnessTurnPrompt, harnessTurnTiming } from "../../src/generation/harness-loop.js";
+import { harnessTurnFailure } from "../../src/generation/harness-ending.js";
+import { harnessTurnPrompt, harnessTurnTiming } from "../../src/generation/harness-loop.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 import type { MessageRow } from "../../src/db/runs.js";
@@ -118,6 +119,12 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
       assert.equal(row.metadata.generation, 1);
     }
     assert.equal(published.filter((name) => name === "message.committed").length, 7);
+    assert.deepEqual(
+      [kept[6]?.metadata.usage, kept[6]?.metadata.cost_usd, kept[6]?.metadata.cost_source],
+      [{ input_tokens: 12, output_tokens: 140, cache_read_tokens: 0 }, 0, "subscription"],
+      "the reply records the turn's usage, with no price",
+    );
+    assert.ok(kept.slice(0, 6).every((row) => row.metadata.usage === undefined));
     assert.equal(published[0], "generation.started");
     assert.equal(published.at(-1), "generation.finished");
     assert.equal(db.run.status, "active", "a direct run waits for its next message");
@@ -135,6 +142,17 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.ok(call.argv.includes("--strict-mcp-config"));
     assert.equal(call.stdin, "use bash twice", "the message that opened the generation is the prompt");
     assert.ok(!call.argv.includes("--resume"), "a new run starts a new session");
+    assert.equal(call.argv[call.argv.indexOf("--max-turns") + 1], String(SUBSCRIBER.max_steps), "its turn makes at most max_steps model calls");
+  });
+
+  test("a Claude Code turn that stops at its max_steps ends the generation with generation.max_steps", async () => {
+    const recorded = recordedEvents("claude-code");
+    const stopped = JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, num_turns: 30, session_id: RECORDED_SESSION, usage: { input_tokens: 40, output_tokens: 9 } });
+    const { loop, rows, errors, sandbox } = subscriptionLoop([...recorded.slice(0, 3), stopped]);
+    sandbox.env.HARNESS_STUB_EXIT = "1";
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(errors().map((error) => [error.operation, error.message]), [["generation.max_steps", "max_steps reached"]]);
+    assert.equal(rows().at(-1)?.metadata.cost_source, "subscription", "its usage is kept as a finished turn's");
   });
 
   test("the CLI's events for a call of the orchestrator's MCP server make no row of their own", async () => {
@@ -172,6 +190,24 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal((db.run.metadata as { harness_turn?: { call_id: string } }).harness_turn?.call_id, "turn_2_r_1");
   });
 
+  test("a turn whose usage follows a call, or whose reply has no usage after it, keeps both its rows", async () => {
+    const recorded = recordedEvents("claude-code");
+    const usage = recorded.at(-1)!;
+    const { loop, rows } = subscriptionLoop([...recorded.slice(0, 3), usage]);
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(rows().map((row) => [row.payload.role, row.payload.content, row.metadata.cost_source]), [
+      ["assistant", "I'll look at the greeting first.", undefined],
+      ["tool", "1\tprint('hello')\n", undefined],
+      ["assistant", "", "subscription"],
+    ], "with no reply held, an empty reply records the usage");
+
+    const unfinished = subscriptionLoop(recorded.slice(0, -1));
+    await unfinished.loop.generator.generate("r_1", 1);
+    const reply = unfinished.rows().at(-1);
+    assert.match(String(reply?.payload.content), /Should the greeting also name the agent\?$/, "the held reply is kept when the turn ends");
+    assert.equal(reply?.metadata.usage, undefined);
+  });
+
   test("a cancel stops the CLI mid-tool, and the call it was in gets the interrupted result", async () => {
     const { loop, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
     await loop.beginGeneration("r_1", "a_1");
@@ -195,13 +231,16 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal(stub.rows().length, 7);
   });
 
-  test("a turn past its time is stopped and ends the generation with harness.timed_out", async () => {
+  test("a turn past its agent's max_turn_minutes is stopped and ends the generation with harness.timed_out", async () => {
     harnessTurnTiming.minuteMs = 20;
     try {
-      const { loop, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+      const { loop, db, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+      db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), max_turn_minutes: 50 };
+      const started = Date.now();
       await loop.generator.generate("r_1", 1);
+      assert.ok(Date.now() - started >= 1000, "the turn ran its fifty minutes");
       assert.equal(errors().at(-1)?.operation, "harness.timed_out");
-      assert.match(String(errors().at(-1)?.message), /^Claude Code was stopped after 30 minutes\. The run's next turn resumes its session\.$/);
+      assert.match(String(errors().at(-1)?.message), /^Claude Code was stopped after 50 minutes\. The run's next turn resumes its session\.$/);
       assert.equal(stubsRunning(bin), false);
       assert.equal(rows().at(-1)?.payload.content, INTERRUPTED_CONTENT);
     } finally {
@@ -245,10 +284,10 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
 
   test("a subscription agent on a harness that runs no turn fails at start, before its machine wakes", async () => {
     const { loop, db, errors, machines } = subscriptionLoop(recordedEvents("claude-code"));
-    db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), harness: "codex" };
+    db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), harness: "cursor" };
     await loop.generator.generate("r_1", 1);
     assert.equal(errors().at(-1)?.operation, "subscription.not_runnable");
-    assert.match(String(errors().at(-1)?.message), /^Codex cannot run a subscription agent's turns yet: pick Claude Code/);
+    assert.match(String(errors().at(-1)?.message), /^Cursor cannot run a subscription agent: pick Claude Code or Codex/);
     assert.equal(machines.length, 0);
   });
 });
@@ -304,7 +343,7 @@ describe("a harness turn's prompt and outcome", () => {
   });
 
   test("each way a turn ends names its run error, and a clean exit none", () => {
-    const failure = (ending: Parameters<typeof harnessTurnFailure>[1]) => harnessTurnFailure("claude-code", ending, ".runs/r/t.harness.jsonl");
+    const failure = (ending: Parameters<typeof harnessTurnFailure>[1]) => harnessTurnFailure("claude-code", ending, ".runs/r/t.harness.jsonl", 30);
     assert.equal(failure({ settled: "exited", stopped: null, result: { exit_code: 0, is_error: false } }), null);
     assert.equal(failure({ settled: "exited", stopped: null, result: { exit_code: 0, is_error: true, events: 3, error: "Not logged in" } })?.code, "harness.failed");
     assert.equal(failure({ settled: "missing", stopped: null, result: null })?.code, "harness.lost");

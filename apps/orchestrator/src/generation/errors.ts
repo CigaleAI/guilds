@@ -1,4 +1,4 @@
-import { HARNESS_INFO } from "../coding/harnesses.js";
+import { subscriptionHarnessMessage } from "../coding/harnesses.js";
 import type { Harness } from "../db/schema/index.js";
 import { errorName, writeLog, type LogFields, type LogLevel } from "../observability/log.js";
 
@@ -52,9 +52,7 @@ export class SubscriptionRunUnavailable extends Error {
   readonly code = "subscription.not_runnable";
 
   constructor(harness: Harness) {
-    super(
-      `${HARNESS_INFO[harness].label} cannot run a subscription agent's turns yet: pick Claude Code in the agent's Settings, or give the agent a model on a key`,
-    );
+    super(subscriptionHarnessMessage(harness));
     this.name = "SubscriptionRunUnavailable";
   }
 }
@@ -116,6 +114,9 @@ export class HarnessMcpRefused extends Error {
     this.name = "HarnessMcpRefused";
   }
 }
+
+/** What a generation that made its last model call records as its run error. */
+export const STEP_LIMIT_MESSAGE = "max_steps reached";
 
 /** What a run that made its last tool call tells its model, and records as its run error. */
 export const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";

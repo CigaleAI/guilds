@@ -27,10 +27,10 @@ There are three kinds of agent:
   repositories it picks, delegated to a coding harness. See
   [Coding agents](coding/index.md);
 - a **subscription agent** has no model: its harness, Claude Code or
-  Codex, on the operator's own subscription, is its model source. On
-  Claude Code, each generation of its run is one turn of the harness,
-  with the harness's own tools and none of the platform's; on Codex,
-  its runs fail at start ([Model source](#model-source)).
+  Codex, on the operator's own subscription, is its model source. Each
+  generation of its run is one turn of the harness, with the
+  harness's own tools and the platform's tools it is offered
+  ([Model source](#model-source)).
 
 ## How it works
 
@@ -77,15 +77,13 @@ The settings of the orchestrator's model loop do not apply to it:
 temperature, thinking level, max output tokens, max input tokens, and
 keep tool results stay at their defaults.
 
-On Claude Code, each generation of a subscription agent's run is one
-turn of the CLI in the agent's sandbox: the run's composed system
-prompt replaces Claude Code's own, the messages that opened the
-generation are its prompt, and the run shows what it writes and the
-tools it uses ([Runs](runs.md#harness-turns)). The run's next
-generation resumes the same session. A subscription agent:
+Each generation of a subscription agent's run is one turn of its
+harness's CLI, Claude Code or Codex, in the agent's sandbox: the run's
+composed system prompt replaces the CLI's own, the messages that
+opened the generation are its prompt, and the run shows what it
+writes and the tools it uses ([Runs](runs.md#harness-turns)). The
+run's next generation resumes the same session. A subscription agent:
 
-- runs only on Claude Code: on Codex, its runs fail at start with
-  `subscription.not_runnable`;
 - is offered the tools a model on a key would be, connectors
   included, but the code tools: its harness calls them on the
   orchestrator's MCP server, under a token of the generation's
@@ -93,8 +91,9 @@ generation resumes the same session. A subscription agent:
   beside the harness's own tools. Each call counts toward
   `max_tool_calls`, with every call of the harness's own;
 - takes no attachments and has no repositories or code tools;
-- records no usage or cost for its turns, and stops a turn after 30
-  minutes.
+- records each turn's tokens on its reply, at no price
+  ([Usage](usage.md#cost-of-a-harness-turn)), and stops a turn after
+  its **Max turn minutes**.
 
 Next to a model on a key sit three options:
 
@@ -119,14 +118,19 @@ Run limits stop a run that goes on too long:
 | Max tool calls | tool calls in one run | 50 |
 | Max input tokens | the size of the prompt sent to the model | 100000 |
 | Max wake-ups | the wake-ups one run may fire | 10 |
+| Max turn minutes | how long one turn of a subscription agent's harness runs before it is stopped | 30 |
 | Keep tool results | how many user turns keep full tool output in the prompt; older large results are stubbed | empty: the guild's ([Guilds](guilds.md#other-guild-settings)) |
 
 Only a guild admin sets, changes, or clears an agent's **Keep tool
 results**. Anyone else's save that changes it is refused; one that
 leaves it as it is passes.
 
-A coding agent starts at 200 steps and 200 tool calls. What happens
-at each limit is on [Runs](runs.md).
+A coding agent starts at 200 steps and 200 tool calls. A subscription
+agent's **Run limits** show Max steps, Max tool calls, Max wake-ups,
+and Max turn minutes; its Max steps bounds the model calls of one turn
+on Claude Code, and Codex has no such limit; an agent on a key shows every limit but Max
+turn minutes, which its runs do not read. What happens at each limit
+is on [Runs](runs.md).
 
 ### Capabilities
 
@@ -207,10 +211,9 @@ is disabled once the guild is full. Each agent row shows:
    variant, and one of six identity colours.
 2. **Model**: while the box offers subscription agents, it starts with
    **Model source**: **Model on a key** or **Subscription**. Under
-   **Subscription** a line reads "Claude Code runs every turn on your
+   **Subscription** a line reads "The harness runs every turn on your
    own subscription, with its own tools and the guild's tools this
-   agent is given. Codex subscription agents can't run yet: their runs
-   fail at start." On a key, the
+   agent is given." On a key, the
    model, from the organisation's chosen models grouped by provider,
    preselected with its default when it has one. With no provider
    connected, the step shows a guide to **Model keys** in its place.
@@ -346,7 +349,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
-| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; each generation one turn of Claude Code, offered the platform's tools but the code tools through the orchestrator's MCP server; on Codex its runs fail at start |
+| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools but the code tools through the orchestrator's MCP server |
 | Repositories | only on a coding agent; each one the agent can use ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
@@ -360,7 +363,7 @@ saves.
 
 ### Configuration keys
 
-Agent configuration is a JSON object of twenty-three keys. A missing key
+Agent configuration is a JSON object of twenty-four keys. A missing key
 takes its default, then the check runs. `model` has no default, so a
 configuration without it is 422 `missing keys: model`; a subscription
 agent sends `model: null`. Unknown keys
@@ -377,6 +380,7 @@ the agent.
 | `max_tool_calls` | positive integer | `50` (`200` for a new coding agent) | [Runs](runs.md#generation) |
 | `max_input_tokens` | positive integer | `100000` | [Runs](runs.md#generation) |
 | `max_wake_ups` | positive integer | `10` | [Runs](runs.md#snapshot) |
+| `max_turn_minutes` | positive integer | `30` | [Runs](runs.md#harness-turns) |
 | `keep_tool_result_generations` | positive integer, or null for the guild's `keep_tool_result_generations` | `null` | [Runs](runs.md#tool-result-stubbing) |
 | `max_scripts` | positive integer | `10` | [Scripts](scripts.md) |
 | `max_workspace_mib` | positive integer | `10240` | [Agent home](agent-home.md) |

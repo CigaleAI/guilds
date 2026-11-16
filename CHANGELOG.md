@@ -8,6 +8,58 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A Claude Code subscription agent's turn makes at most the
+run's `max_steps` model calls: the CLI starts with `--max-turns`, and a
+turn that stops there ends the generation with `generation.max_steps`,
+"max_steps reached", as a model's run does. Codex has no such limit;
+`max_turn_minutes` and `max_tool_calls` bound its turn. The runtime
+image must be rebuilt: `guilds-harness start` takes `max_turns`, which
+only the Claude Code driver accepts, and `result` says whether the
+turn stopped at it.
+
+**Rebuild.** Agent configs and run snapshots gain `max_turn_minutes`,
+how many minutes a subscription agent's turn of its harness runs
+before it is stopped: a whole number of 1 or more, 30 by default; a
+migration fills it in. A turn past it records `harness.timed_out`,
+"`<Harness>` was stopped after `<minutes>` minutes". Settings shows
+**Max turn minutes** under **Run limits** for a subscription agent
+alone, and a captured recipe carries it. A `code_task` call keeps its
+own `timeout_minutes`.
+
+**Rebuild.** A subscription agent's turn records the tokens it spent:
+its reply's metadata holds `usage` (input, output, cache reads, and
+cache writes where the CLI reports them) from Claude Code's `result`
+event or Codex's `turn.completed`, with `cost_usd` 0 and the new
+`cost_source: "subscription"`, and the agent's, guild's, and
+organisation's usage count it as one call at no cost. A Codex turn
+records what its thread's total holds past the run's earlier turns.
+`TokenUsage` gains an optional `cache_write_tokens`. In the operator
+app, a reply that records usage ends with its tokens and cost, or
+**on the subscription**, and a step's or generation's cost leaves a
+subscription turn out.
+
+**Rebuild.** A Codex subscription agent runs: each generation of its
+run is one turn of `codex exec` in the agent's sandbox, as a Claude
+Code one is. The run's composed system prompt replaces Codex's own
+instructions through `model_instructions_file`, a private file in the
+turn's run folder; the orchestrator's MCP server is given for that one
+call by `-c mcp_servers.guilds.*` overrides, its token read from
+`GUILDS_MCP_TOKEN`, which only the CLI's own process holds and which
+the commands Codex runs do not inherit; and the run's next generation
+resumes the thread with `codex exec resume`. The prompt names each
+tool `mcp__guilds__<tool>`, as Codex's model calls it. The run shows
+Codex's messages as assistant rows and its commands, patches, and web
+searches as calls with their results, marked `from_harness: "codex"`;
+in the operator app they read as **Run**, **Change**, and **Search
+web**. A run on a harness that runs no turn fails at start with
+`subscription.not_runnable`, which reads "`<Harness>` cannot run a
+subscription agent: pick Claude Code or Codex, or give the agent a
+model", and the Model source note says the harness runs every turn.
+The runtime image must be rebuilt: the Codex driver takes a
+`system_prompt` and an MCP server
+([SEC-62](docs/architecture/security-register.md#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network),
+[SEC-64](docs/architecture/security-register.md#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools)).
+
 **Rebuild.** A Claude Code subscription agent calls its Guilds tools:
 its run is offered what a run on a key with the same access would be,
 connectors included, less the code tools, and its snapshot records

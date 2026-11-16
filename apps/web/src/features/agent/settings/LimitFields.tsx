@@ -1,22 +1,13 @@
 import { TextField } from "@guildsrun/ui";
-import { limitFields, type FieldsProps } from "./configForm";
-
-/** The limits a subscription agent has: its harness replaces the model loop the others bound. */
-const subscriptionLimitKeys: ReadonlySet<string> = new Set([
-  "max_steps",
-  "max_tool_calls",
-  "max_wake_ups",
-]);
+import { limitFieldsFor, type FieldsProps } from "./configForm";
 
 /**
  * The run limits and the tool-result turns; a subscription agent shows only the limits its harness
- * keeps, without the model loop's output and input tokens and tool-result turns.
+ * keeps and its turn's time, without the model loop's output and input tokens and tool-result turns.
  */
 export function LimitFields({ form, onChange, errors }: FieldsProps) {
   const subscription = form.model_source === "subscription";
-  const fields = subscription
-    ? limitFields.filter((field) => subscriptionLimitKeys.has(field.key))
-    : limitFields;
+  const fields = limitFieldsFor(form.model_source);
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {fields.map((field) => (
