@@ -1,6 +1,6 @@
 import { ArrowLeft, Download, FileUp, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useDeleteFile, useFileSections, useUploadFile } from "../../api/queries/files";
 import type { AccessRow, ItemSections, ReachSubject } from "../../api/types/access";
 import type { FileItem, StoredFile } from "../../api/types/files";
@@ -9,6 +9,7 @@ import { useMediaQuery, visiblePanes, wideScreen } from "../../app/media";
 import {
   Banner,
   Button,
+  Checkbox,
   ConfirmDialog,
   Dialog,
   DialogBody,
@@ -36,8 +37,9 @@ import { StartingAccessField } from "../access/StartingAccessField";
 import { UnlistedItem } from "../access/UnlistedItem";
 import { useOpenItem } from "../access/useOpenItem";
 import { LatestChange, type OpenChangeStep } from "../notes/LatestChange";
+import { deleteFilesInTurn, fileDeletionFailureToast, type FileDeletionOutcome } from "./deleteFiles";
 import { attemptFileDownload } from "./download";
-import { fileMeta, searchFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
+import { fileMeta, filesInSelection, searchFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
 
 type FilesBrowserProps = {
   /** The guild's or agent's page whose files the browser lists; a file uploaded from it starts with a row for it. */
@@ -66,15 +68,33 @@ export function FilesBrowser({ page, guildId, onOpenStep, initialPath }: FilesBr
   const [query, setQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [accessItem, setAccessItem] = useState<FileItem | null>(null);
+  const [selectionIds, setSelectionIds] = useState<ReadonlySet<string>>(new Set());
 
   const sections = list.data ?? noFiles;
   const listed = listedItems(sections);
+  const shown = searchFiles(sections, query);
+  const selection = filesInSelection(shown, selectionIds);
+  if (selection.length !== selectionIds.size) setSelectionIds(new Set(selection.map((item) => item.id)));
   const { opened, open, choose } = useOpenItem(sections, initialPath);
   const panes = visiblePanes(wide, listOpen, opened.state !== "none");
   const showList = wide ? undefined : () => setListOpen(true);
   const pickFile = (path: string) => {
     choose(path);
     setListOpen(false);
+  };
+  const toggleSelection = (item: FileItem) =>
+    setSelectionIds((ids) => {
+      const next = new Set(ids);
+      if (!next.delete(item.id)) next.add(item.id);
+      return next;
+    });
+  const settleDeletion = ({ deleted }: FileDeletionOutcome) => {
+    const deletedIds = new Set(deleted.map((item) => item.id));
+    setSelectionIds((ids) => new Set([...ids].filter((id) => !deletedIds.has(id))));
+    if (open && deletedIds.has(open.id)) {
+      choose(undefined);
+      setListOpen(true);
+    }
   };
 
   return (
@@ -96,14 +116,21 @@ export function FilesBrowser({ page, guildId, onOpenStep, initialPath }: FilesBr
           />
           <IconButton icon={FileUp} label="Upload a file" variant="surface" onClick={() => setUploading(true)} />
         </div>
+        <FileSelectionBar
+          selection={selection}
+          onClear={() => setSelectionIds(new Set())}
+          onDeletionSettled={settleDeletion}
+        />
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
           <FileListContent
             page={page}
             list={list}
-            shown={searchFiles(sections, query)}
+            shown={shown}
             searching={Boolean(query.trim())}
             selectedPath={open?.display_path ?? null}
+            selectionIds={selectionIds}
             onPick={(item) => (isUnreached(item) ? setAccessItem(item) : pickFile(item.display_path))}
+            onToggleSelection={toggleSelection}
           />
         </div>
       </aside>
@@ -190,6 +217,76 @@ function NoOpenFile({ opened, listed, onUpload, onShowList }: NoOpenFileProps) {
   );
 }
 
+type FileSelectionBarProps = {
+  /** The files of the selection the page shows, in its order. */
+  selection: readonly FileItem[];
+  onClear: () => void;
+  /** Runs once a confirmed delete has sent every request, with what each one did. */
+  onDeletionSettled: (outcome: FileDeletionOutcome) => void;
+};
+
+/**
+ * How many files are selected, and the actions on them: clearing the selection, and deleting the
+ * files once the operator confirms. The delete acts on the files the confirmation named, one request
+ * at a time, and a second confirm while it runs sends nothing more.
+ */
+function FileSelectionBar({ selection, onClear, onDeletionSettled }: FileSelectionBarProps) {
+  const remove = useDeleteFile();
+  const [confirming, setConfirming] = useState<readonly FileItem[] | null>(null);
+  const running = useRef<Promise<void> | null>(null);
+
+  const deleteConfirmed = (files: readonly FileItem[]) => {
+    running.current ??= deleteFilesInTurn(files, (id) => remove.mutateAsync(id)).then((outcome) => {
+      running.current = null;
+      onDeletionSettled(outcome);
+      const deleted = outcome.deleted.length;
+      if (deleted > 0) toast({ kind: "success", title: `${deleted} ${deleted === 1 ? "file" : "files"} deleted` });
+      if (outcome.failed.length > 0) toast(fileDeletionFailureToast(outcome.failed));
+    });
+    return running.current;
+  };
+
+  return (
+    <>
+      {selection.length > 0 ? (
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 text-sm">{selection.length} selected</span>
+          <Button variant="ghost" size="xs" onClick={onClear}>
+            Clear selection
+          </Button>
+          <Button variant="outline" size="xs" onClick={() => setConfirming(selection)}>
+            <Icon icon={Trash2} size={14} />
+            Delete selected
+          </Button>
+        </div>
+      ) : null}
+      <ConfirmDialog
+        kind="destructive"
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+        title={`Delete ${confirming?.length ?? 0} ${confirming?.length === 1 ? "file" : "files"}?`}
+        description={
+          <>
+            {confirming?.map((item) => (
+              <span key={item.id} className="block truncate font-mono text-sm">
+                {item.name}
+              </span>
+            ))}
+            <span className="mt-2 block">
+              Each file and its bytes are removed, for every guild and agent it is shared with. Agents that fetched one
+              keep their copies.
+            </span>
+          </>
+        }
+        confirmLabel="Delete files"
+        onConfirm={() => (confirming ? deleteConfirmed(confirming) : undefined)}
+      />
+    </>
+  );
+}
+
 type FileListContentProps = {
   page: ReachSubject;
   list: UseQueryResult<ItemSections<FileItem>>;
@@ -198,12 +295,25 @@ type FileListContentProps = {
   /** Whether a search is typed, so an empty section says no file matches. */
   searching: boolean;
   selectedPath: string | null;
+  /** The ids of the files in the selection, which bulk actions act on. */
+  selectionIds: ReadonlySet<string>;
   /** Opens a file, or the access list of a greyed one. */
   onPick: (item: FileItem) => void;
+  /** Adds a file to the selection, or takes it out; the open file is unchanged. */
+  onToggleSelection: (item: FileItem) => void;
 };
 
 /** The page's files as they load: the two sections, or a failure. */
-function FileListContent({ page, list, shown, searching, selectedPath, onPick }: FileListContentProps) {
+function FileListContent({
+  page,
+  list,
+  shown,
+  searching,
+  selectedPath,
+  selectionIds,
+  onPick,
+  onToggleSelection,
+}: FileListContentProps) {
   if (list.isPending) return <SkeletonRows rows={5} label="Loading files" />;
   if (list.isError) {
     return <Banner tone="error" title="Couldn't load the files" meta={list.error.message} />;
@@ -221,7 +331,9 @@ function FileListContent({ page, list, shown, searching, selectedPath, onPick }:
             key={item.id}
             item={item}
             selected={item.display_path === selectedPath}
+            inSelection={selectionIds.has(item.id)}
             onPick={onPick}
+            onToggleSelection={onToggleSelection}
           />
         ))}
       </SectionList>
@@ -236,7 +348,9 @@ function FileListContent({ page, list, shown, searching, selectedPath, onPick }:
             item={item}
             home={homeLabel(item)}
             selected={item.display_path === selectedPath}
+            inSelection={selectionIds.has(item.id)}
             onPick={onPick}
+            onToggleSelection={onToggleSelection}
           />
         ))}
       </SectionList>
@@ -249,38 +363,51 @@ type FileRowProps = {
   /** Where a shared file is homed, before its facts. */
   home?: string;
   selected: boolean;
+  inSelection: boolean;
   onPick: (item: FileItem) => void;
+  onToggleSelection: (item: FileItem) => void;
 };
 
-/** One listed file: its name, description and facts, and how the page reaches it, greyed when no row does. */
-function FileRow({ item, home, selected, onPick }: FileRowProps) {
+/**
+ * One listed file: its box in the selection, then its name, description and facts, and how the
+ * page reaches it, greyed when no row does. The box selects; the row opens.
+ */
+function FileRow({ item, home, selected, inSelection, onPick, onToggleSelection }: FileRowProps) {
   const unreached = isUnreached(item);
   const facts = fileMeta(item, relativeTime(item.updated_at));
   return (
-    <Row
-      asChild
-      interactive
-      density="compact"
-      mono
-      muted={unreached}
-      selected={selected}
-      lead={<Icon icon={Paperclip} size={14} />}
-      title={item.name}
-      meta={
-        <>
-          <span className="block truncate">{item.description}</span>
-          <span className="block truncate">{home ? `${home} · ${facts}` : facts}</span>
-        </>
-      }
-      trail={<ModeTag mode={item.viewer_mode} />}
-    >
-      <button
-        type="button"
-        aria-current={selected ? "true" : undefined}
-        title={unreached ? "No row reaches it for this page: open its access list" : undefined}
-        onClick={() => onPick(item)}
+    <div className="flex min-w-0 items-center gap-1 pl-2">
+      <Checkbox
+        aria-label={`Select ${item.name}`}
+        checked={inSelection}
+        onCheckedChange={() => onToggleSelection(item)}
       />
-    </Row>
+      <Row
+        className="min-w-0 flex-1"
+        asChild
+        interactive
+        density="compact"
+        mono
+        muted={unreached}
+        selected={selected}
+        lead={<Icon icon={Paperclip} size={14} />}
+        title={item.name}
+        meta={
+          <>
+            <span className="block truncate">{item.description}</span>
+            <span className="block truncate">{home ? `${home} · ${facts}` : facts}</span>
+          </>
+        }
+        trail={<ModeTag mode={item.viewer_mode} />}
+      >
+        <button
+          type="button"
+          aria-current={selected ? "true" : undefined}
+          title={unreached ? "No row reaches it for this page: open its access list" : undefined}
+          onClick={() => onPick(item)}
+        />
+      </Row>
+    </div>
   );
 }
 

@@ -138,7 +138,25 @@ and closed, and says what it holds when it holds nothing.
   it too ([Access](access.md#the-access-panel)). A change to the list
   refreshes both sections at once.
 - Deleting asks first. Agents that fetched the file keep their
-  copies.
+  copies. Every files list refreshes after a delete, refused or not.
+- Each file has a box beside it that selects it without opening it;
+  clicking the file opens it without selecting it. A selection holds
+  only files the list shows: a search that hides a selected file, or
+  a refresh that drops it, takes it out, and it stays out when the
+  search is cleared. While files are selected, a bar above the
+  sections shows how many, **Clear selection**, and **Delete
+  selected**. **Delete selected** asks first, naming the count and
+  each file, and saying that each file and its bytes are removed for
+  every guild and agent it is shared with while agents that fetched
+  one keep their copies. Nothing is sent before the confirm. The
+  confirm deletes the files it named, one request at a time, each
+  through `DELETE /api/files/:file_id`, so the server decides each
+  file as it decides a single delete; a second confirm while they run
+  sends nothing more. One toast counts the files deleted and another
+  names each refused file with the server's reason; neither shows
+  when it would count none. Deleted files leave the selection,
+  refused ones stay selected to try again, and when the open file is
+  deleted the browser opens the first file the page reaches.
 - **Upload a file** takes a file, a description of at most 400
   characters, and the file's first access row: a subject and a mode.
   The row starts as the page's guild or agent at `write`; any subject

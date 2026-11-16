@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { ItemSections } from "../../api/types/access";
 import type { FileItem } from "../../api/types/files";
 import { ApiError } from "../../api/client";
-import { fileMeta, searchFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
+import { fileMeta, filesInSelection, searchFiles, uploadExpectedVersion, uploadFailure, uploadProblem } from "./fileList";
 
 const item = (name: string, description: string): FileItem => ({
   id: `f_${name}`,
@@ -33,6 +33,19 @@ test("files match the search by name or description in each section, and all sho
   assert.deepEqual(names(searchFiles(files, "FIGURES")), { own: ["report.pdf"], shared: ["figures.csv"] });
   assert.deepEqual(names(searchFiles(files, "logo")), { own: [], shared: ["logo.png"] });
   assert.deepEqual(names(searchFiles(files, "nothing")), { own: [], shared: [] });
+});
+
+test("the selection holds each shown file once, in the page's order, and leaves out ids the page does not show", () => {
+  const report = item("report.pdf", "Quarterly figures");
+  const logo = item("logo.png", "The brand mark");
+  const shown = { own: [report, logo], shared: [report] };
+  const selection = new Set([logo.id, report.id, "f_gone"]);
+  assert.deepEqual(
+    filesInSelection(shown, selection).map((file) => file.name),
+    ["report.pdf", "logo.png"],
+  );
+  assert.deepEqual(filesInSelection(searchFiles(shown, "brand"), selection), [logo]);
+  assert.deepEqual(filesInSelection(shown, new Set()), []);
 });
 
 test("an upload needs a non-empty file under the cap and a description", () => {
