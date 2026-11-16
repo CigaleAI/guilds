@@ -1,5 +1,6 @@
 import {
   DriveFolderError,
+  driveFetch,
   loadDriveFile,
   loadDriveRootId,
   loadSharedDrive,
@@ -8,7 +9,7 @@ import {
   type DriveLogin,
 } from "./folder.js";
 
-/** What a folder's path reads when a folder on the way up to its Drive's root cannot be read. */
+/** What a folder's path reads when a folder on the way up to its Drive's root cannot be read, or has no name. */
 export const DRIVE_PATH_UNAVAILABLE = "Full path unavailable";
 
 /** The most folders a path climbs before it reads as unavailable. */
@@ -17,12 +18,35 @@ const MAX_PATH_DEPTH = 32;
 /** A folder with its path: the names from its Drive's root down to it, joined by " / ", or `DRIVE_PATH_UNAVAILABLE`. */
 export type LocatedDriveFolder = DriveFolder & { path: string };
 
-/** What `read` resolves to, or null when Drive refuses it to this login. */
-async function absentWhenRefused<T>(read: Promise<T>): Promise<T | null> {
+/** A Drive request that failed before Drive answered it: the network, the proxy, or the timeout. */
+class DriveUnreachableError extends Error {
+  constructor(options: ErrorOptions) {
+    super("Drive could not be reached", options);
+    this.name = "DriveUnreachableError";
+  }
+}
+
+/** `login`, with each request that fails before Drive answers it failing as a `DriveUnreachableError`. */
+function unreachableAsError(login: DriveLogin): DriveLogin {
+  const fetchDrive = driveFetch(login);
+  return {
+    ...login,
+    client: async (url, init) => {
+      try {
+        return await fetchDrive(url, init);
+      } catch (error) {
+        throw new DriveUnreachableError({ cause: error });
+      }
+    },
+  };
+}
+
+/** What `read` resolves to, or null when Drive refuses it to this login or cannot be reached. */
+async function absentWhenUnread<T>(read: Promise<T>): Promise<T | null> {
   try {
     return await read;
   } catch (error) {
-    if (error instanceof DriveFolderError) {
+    if (error instanceof DriveFolderError || error instanceof DriveUnreachableError) {
       return null;
     }
     throw error;
@@ -33,8 +57,11 @@ async function absentWhenRefused<T>(read: Promise<T>): Promise<T | null> {
 class DriveTree {
   private readonly files = new Map<string, Promise<DriveFileMeta | null>>();
   private myDriveRoot: Promise<string | null> | null = null;
+  private readonly login: DriveLogin;
 
-  constructor(private readonly login: DriveLogin) {}
+  constructor(login: DriveLogin) {
+    this.login = unreachableAsError(login);
+  }
 
   /** The file, or null when this login cannot read it. */
   private readableFile(fileId: string): Promise<DriveFileMeta | null> {
@@ -42,13 +69,13 @@ class DriveTree {
     if (known) {
       return known;
     }
-    const read = absentWhenRefused(loadDriveFile(this.login.accessToken, fileId, this.login));
+    const read = absentWhenUnread(loadDriveFile(this.login.accessToken, fileId, this.login));
     this.files.set(fileId, read);
     return read;
   }
 
   private myDriveRootId(): Promise<string | null> {
-    this.myDriveRoot ??= absentWhenRefused(loadDriveRootId(this.login.accessToken, this.login));
+    this.myDriveRoot ??= absentWhenUnread(loadDriveRootId(this.login.accessToken, this.login));
     return this.myDriveRoot;
   }
 
@@ -58,7 +85,7 @@ class DriveTree {
    */
   private async rootName(top: DriveFileMeta): Promise<string | null> {
     if (top.driveId && top.driveId === top.id) {
-      const drive = await absentWhenRefused(loadSharedDrive(this.login.accessToken, top.id, this.login));
+      const drive = await absentWhenUnread(loadSharedDrive(this.login.accessToken, top.id, this.login));
       return drive?.name ?? null;
     }
     return top.id === (await this.myDriveRootId()) ? "My Drive" : null;
@@ -80,7 +107,11 @@ class DriveTree {
         const root = await this.rootName(file);
         return root === null ? DRIVE_PATH_UNAVAILABLE : [root, ...names].join(" / ");
       }
-      names.unshift(file.name.trim());
+      const name = file.name.trim();
+      if (!name) {
+        return DRIVE_PATH_UNAVAILABLE;
+      }
+      names.unshift(name);
       fileId = parent;
     }
     return DRIVE_PATH_UNAVAILABLE;

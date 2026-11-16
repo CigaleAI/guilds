@@ -116,6 +116,7 @@ function FolderSearch({ connectionId, searchBox, disabled, onPick }: FolderSearc
       {lookup.query.trim() && lookup.results ? (
         <FolderResults
           options={lookup.results}
+          disabled={disabled}
           onPick={(option) => {
             onPick(option);
             lookup.reset();
@@ -186,11 +187,13 @@ function PickedFolder({ folderId, folder, reading, error, disabled, onRemove }: 
 
 type FolderResultsProps = {
   options: LookupOption[];
+  /** True while the settings save, when no folder can be picked. */
+  disabled: boolean;
   onPick: (option: LookupOption) => void;
 };
 
 /** Folders a search found, each with its path, which tells folders of the same name apart. */
-function FolderResults({ options, onPick }: FolderResultsProps) {
+function FolderResults({ options, disabled, onPick }: FolderResultsProps) {
   return (
     <ul className="flex max-h-56 flex-col overflow-y-auto rounded-lg bg-surface p-1">
       {options.length ? (
@@ -198,8 +201,9 @@ function FolderResults({ options, onPick }: FolderResultsProps) {
           <li key={String(option.value)}>
             <button
               type="button"
+              disabled={disabled}
               onClick={() => onPick(option)}
-              className="flex w-full cursor-pointer flex-col rounded-md px-2.5 py-1.5 text-left hover:bg-paper-hi"
+              className="flex w-full cursor-pointer flex-col rounded-md px-2.5 py-1.5 text-left hover:bg-paper-hi disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="text-sm break-words">{option.label}</span>
               <span className="text-xs break-words text-muted">

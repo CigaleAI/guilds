@@ -67,7 +67,7 @@ export type DriveFileMeta = {
 /** A file as the Drive MCP tools return it: its id, title, first parent and type, empty when Drive has none. */
 export type McpFile = { id: string; title: string; parentId: string; mimeType: string };
 
-function driveFetch(options: DriveClientOptions): FetchFn {
+export function driveFetch(options: DriveClientOptions): FetchFn {
   return options.client ?? proxyFetch(options.proxyUrl ?? "");
 }
 

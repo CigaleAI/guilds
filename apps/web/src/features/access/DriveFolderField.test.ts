@@ -332,6 +332,67 @@ test("the saved Drive folder shows its path and link on load; removing it clears
   });
 });
 
+test("while a save is pending, found folders, shown or arriving, cannot be picked by click or key, and the pick being saved stays", async () => {
+  const held: ((status: number) => void)[] = [];
+  const heldSave = () =>
+    new Promise<number>((resolve) => {
+      held.push(resolve);
+    });
+  await withDriveCard(driveServer(true), ORG, false, [heldSave(), heldSave()], async (page) => {
+    const CURRENT_RESULT = "InvoicesMy Drive / Clients / Invoices";
+    const pickedLink = () =>
+      document.querySelector<HTMLAnchorElement>('a[href^="https://drive.google.com/"]')?.href;
+    const archivedLink = `https://drive.google.com/drive/folders/${encodeURIComponent(ARCHIVED)}`;
+    /** Clicks the found folder, then presses Enter and Space on it, as a pointer and a keyboard would. */
+    const attemptPick = async (label: string) => {
+      const result = page.button(label);
+      assert.ok(result, `the ${label} result`);
+      assert.equal(result.disabled, true, "a found folder cannot be picked while the save is pending");
+      result.focus();
+      assert.notEqual(document.activeElement, result, "a found folder takes no focus while the save is pending");
+      await page.press(label);
+      for (const key of ["Enter", " "]) {
+        result.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+        result.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
+      }
+      await page.until(() => true, "the attempts settle");
+      assert.equal(pickedLink(), archivedLink, "the pick being saved stays");
+      assert.ok(page.button("Remove folder Invoices"));
+    };
+
+    await page.until(() => page.text().includes("My Drive / Projects / Reports"), "the saved folder's path");
+    await page.press("Remove folder Reports");
+    await page.press("Remove folder");
+    await page.type("Invoices");
+    await page.until(() => page.text().includes("My Drive / Clients / Archive / Invoices"), "the found folders");
+    await page.press("InvoicesMy Drive / Clients / Archive / Invoices");
+    assert.equal(pickedLink(), archivedLink);
+
+    await page.type("Invoices");
+    await page.until(() => Boolean(page.button(CURRENT_RESULT)), "another folder shows before the save");
+    await page.press("Save settings");
+    await attemptPick(CURRENT_RESULT);
+    held.shift()?.(200);
+    await page.until(() => page.toastTitles().includes("Google Drive settings saved"), "the first save goes through");
+    await page.until(() => page.button(CURRENT_RESULT)?.disabled === false, "found folders can be picked once the save settles");
+
+    await page.type("");
+    await page.type("Invoices");
+    await page.press("Save settings");
+    assert.equal(page.button(CURRENT_RESULT), undefined, "the search has not answered when the save starts");
+    await page.until(() => Boolean(page.button(CURRENT_RESULT)), "the search answers while the save is pending");
+    await attemptPick(CURRENT_RESULT);
+    held.shift()?.(200);
+    await page.until(() => page.button("Save settings")?.disabled === false, "the second save settles");
+
+    assert.equal(pickedLink(), archivedLink);
+    assert.deepEqual(
+      page.requests.filter((request) => request.method === "PUT").map((request) => JSON.parse(request.body)),
+      [{ settings: { folder_id: ARCHIVED } }, { settings: { folder_id: ARCHIVED } }],
+    );
+  });
+});
+
 test("an inherited Drive login's folder shows its path and link, with no removal and no search", async () => {
   await withDriveCard(driveServer(false), GUILD, false, [], async (page) => {
     await page.until(() => page.text().includes("My Drive / Projects / Reports"), "the inherited folder's path");

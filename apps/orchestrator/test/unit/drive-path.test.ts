@@ -127,9 +127,59 @@ test("folders of the same name tell apart by path, and read shared parents once"
   assert.equal(reads.filter((path) => path.endsWith("/files/root")).length, 1);
 });
 
-test("a failure that is not Drive's own fails the path", async () => {
-  const client: FetchFn = async () => {
-    throw new TypeError("network down");
+test("a path is unavailable when a parent, the shared drive, or the My Drive root cannot be reached", async () => {
+  const answers: Record<string, object> = {
+    "/files/child": { id: "child", name: "Child", parents: ["parent"] },
+    "/files/parent": { id: "parent", name: "Parent", parents: ["my_root"] },
+    "/files/team_drive": { id: "team_drive", name: "Drive", driveId: "team_drive" },
+    "/files/root": { id: "my_root" },
+    "/files/my_root": { id: "my_root", name: "My Drive" },
+    "/drives/team_drive": { id: "team_drive", name: "Engineering" },
   };
-  await assert.rejects(() => pathOf({ accessToken: "tok", client }, "any"), /network down/);
+  const expected: Record<string, [string, string]> = {
+    "/files/parent": [DRIVE_PATH_UNAVAILABLE, "Engineering"],
+    "/drives/team_drive": ["My Drive / Parent / Child", DRIVE_PATH_UNAVAILABLE],
+    "/files/root": [DRIVE_PATH_UNAVAILABLE, "Engineering"],
+  };
+  for (const [unreachable, paths] of Object.entries(expected)) {
+    const client: FetchFn = async (url) => {
+      const path = new URL(url).pathname.replace("/drive/v3", "");
+      if (path === unreachable) {
+        throw new TypeError("fetch failed");
+      }
+      return Response.json(answers[path]);
+    };
+    const located = await locateDriveFolders({ accessToken: "tok", client }, [
+      { id: "child", name: "Child" },
+      { id: "team_drive", name: "Engineering" },
+    ]);
+    assert.deepEqual(
+      located,
+      [
+        { id: "child", name: "Child", path: paths[0] },
+        { id: "team_drive", name: "Engineering", path: paths[1] },
+      ],
+      `${unreachable} unreachable`,
+    );
+  }
+});
+
+test("a path is unavailable when a folder on the way up has a blank name", async () => {
+  const { login } = fakeDrive({
+    my_root: { name: "My Drive" },
+    unnamed: { name: "   ", parents: ["my_root"] },
+    reports: { name: "Reports", parents: ["unnamed"] },
+  });
+  assert.equal(await pathOf(login, "reports"), DRIVE_PATH_UNAVAILABLE);
+});
+
+test("a failure in reading Drive's answer is not taken for an unreadable path", async () => {
+  const client: FetchFn = async () =>
+    ({
+      status: 200,
+      text: () => {
+        throw new RangeError("unexpected");
+      },
+    }) as unknown as Response;
+  await assert.rejects(() => pathOf({ accessToken: "tok", client }, "any"), RangeError);
 });

@@ -69,9 +69,10 @@ own lookup, so no one picks it again.
 
 The path climbs only the parents the login can read, at most 32
 folders, and never the same folder twice. When a parent cannot be
-read, such as the parent of a folder shared with the account, or
-Drive fails, the path reads **Full path unavailable**. The name and
-the link still show. When the folder itself cannot be read, the field
+read, such as the parent of a folder shared with the account, has a
+blank name, or Drive fails or cannot be reached, the path reads
+**Full path unavailable**. The name, the id in the link, and the link
+still show. When the folder itself cannot be read, the field
 shows its id, the link, and the lookup's error. The saved setting is
 kept either way.
 
@@ -82,7 +83,9 @@ or trashed, and the Google login stays connected. **Cancel** changes
 nothing. After the removal, **Save settings** stays off until another
 folder is picked. Until a save succeeds, the saved folder and the
 login stay as they are, and **Discard** brings the saved folder back.
-A refused save leaves the saved folder in place. An inherited login's
+While a save is pending, the search and its results are off, including
+results that arrive during the save, so the folder being saved is the
+one shown. A refused save leaves the saved folder in place. An inherited login's
 folder shows its name, path, and link, with no removal and no search.
 
 ## Gmail
