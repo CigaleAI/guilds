@@ -126,7 +126,7 @@ export class CodingRuns {
   ): Promise<boolean> {
     const { db, events } = this.services;
     const { repositories } = await loadAgentRepositories(db, agent);
-    const tokens = db.repositoryTokens(repositories);
+    const tokens = db.repositoryTokens(repositories, "push_and_pull_requests");
     const mint = async () => {
       try {
         await tokens.mint();
