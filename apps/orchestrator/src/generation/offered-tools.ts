@@ -55,7 +55,6 @@ export type OfferedToolSettings = {
    * missing while it is.
    */
   browserOptimized: boolean;
-  coding: boolean;
   scripting: boolean;
   memory: boolean;
   schedules: boolean;
@@ -67,7 +66,6 @@ export function offeredToolSettings(config: AgentConfig, kind: RunRow["kind"]): 
   return {
     browser: config.browser,
     browserOptimized: config.browser_optimized === true,
-    coding: config.coding,
     scripting: config.scripting,
     memory: config.memory,
     schedules: kind !== "schedule",

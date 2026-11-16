@@ -26,7 +26,6 @@ const NOTE_BINDING: ResolvableBinding = {
 const SETTINGS: OfferedToolSettings = {
   browser: true,
   browserOptimized: false,
-  coding: false,
   scripting: true,
   memory: true,
   schedules: true,

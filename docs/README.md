@@ -149,8 +149,6 @@ How the product works, for the operator. Start with
   Cursor, Antigravity, and your subscription
 - [Repositories](concepts/coding/repositories.md) — the guild's git
   repositories
-- [Code tools](concepts/coding/code-tools.md) — shell, file reads,
-  search
 - [Reviewing changes](concepts/coding/reviewing-changes.md) —
   checkpoints, diffs, commit trailers
 

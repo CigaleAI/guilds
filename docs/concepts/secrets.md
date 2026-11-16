@@ -422,7 +422,7 @@ The State snapshot's `environment` lists each secret's name and
 description ([System prompt](system-prompt.md)).
 
 The harness driver removes these variables before it starts a
-harness ([Code tools](coding/code-tools.md)):
+harness ([Harness environment](coding/harnesses.md#harness-environment)):
 
 | Harness | Removed |
 | --- | --- |
@@ -469,10 +469,8 @@ Redaction uses:
 Every tool result, log line, and repository diff has those strings
 replaced with `[REDACTED:<name>]`, the longest values first.
 
-The full `shell` logs and harness event logs that the code tools keep
-in the agent's home are stored unredacted. Reading one back with
-`file_read` passes through redaction
-([Code tools](coding/code-tools.md)).
+The harness event logs kept in the agent's home are stored unredacted
+([Process](coding/harnesses.md#process)).
 
 ### `secret_store`
 

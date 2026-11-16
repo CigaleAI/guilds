@@ -206,12 +206,6 @@ returns a JSON-serializable value. `console.log` is not captured. To
 reuse a snippet, the agent writes it to a note and reads it back with
 `note_get`.
 
-## Code
-
-`shell`, `shell_status`, `file_read`, and `code_search` are the code
-tools ([Code tools](../concepts/coding/code-tools.md)). They run
-through `guilds-code`.
-
 ## Group chat
 
 `group_post` takes one required `content` string with non-whitespace

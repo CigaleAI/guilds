@@ -5,11 +5,8 @@ import path from "node:path";
 import { test } from "node:test";
 import type { TokenEntry } from "../../src/coding/git.js";
 import { repoRoot } from "../../src/lib/paths.js";
-import { createToolHooks } from "../../src/toolbox/index.js";
-import { runCodeHelper } from "../../src/toolbox/code.js";
-import { gitCredentialEnv, HostCodeSandbox } from "../helpers/code-sandbox.js";
+import { gitCredentialEnv } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
-import { toolFixture } from "../helpers/toolbox.js";
 
 const GITHUB: TokenEntry = {
   token: "ghs_shop",
@@ -98,20 +95,3 @@ test("an entry whose username or token spans lines is not answered", () => {
   assert.equal(fill(agent, "https://github.com/acme/shop.git"), "");
 });
 
-test("shell exports GH_TOKEN only inside a GitHub repository", async () => {
-  const sandbox = new HostCodeSandbox();
-  for (const name of ["shop", "infra"]) {
-    mkdirSync(path.join(sandbox.home, "repos", name), { recursive: true });
-  }
-  await sandbox.files.writeFiles([
-    { path: "/run/guilds/a_1/git-tokens.json", data: JSON.stringify({ repositories: { shop: GITHUB, infra: GITLAB } }) },
-  ]);
-  const shellIn = async (repository: string) => {
-    const ctx = toolFixture({ run_id: `r_${repository}`, agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-    ctx.run.code_default_cwd = `repos/${repository}`;
-    const result = await runCodeHelper(ctx.run, createToolHooks(), { op: "shell", command: 'printf "gh=%s" "${GH_TOKEN:-none}"' });
-    return result.text;
-  };
-  assert.match(await shellIn("shop"), /gh=ghs_shop/);
-  assert.match(await shellIn("infra"), /gh=none/);
-});

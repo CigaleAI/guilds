@@ -8,7 +8,7 @@ import {
   interruptionRecord,
   pendingToolCalls,
 } from "../../src/generation/tool-calls.js";
-import { configSnapshot, runOffer } from "../../src/generation/snapshot.js";
+import { configSnapshot } from "../../src/generation/snapshot.js";
 import { mcpIndex } from "../../src/generation/offered-tools.js";
 import { mcpRedactions } from "../../src/generation/run-secrets.js";
 import { workspaceMaxMib } from "../../src/generation/workspace.js";
@@ -152,15 +152,6 @@ test("a subscription agent's run offers what a key agent's with its access and s
   assert.ok(direct.tools.some((tool) => tool.function.name === "browser_navigate"), "the browser tools run in the orchestrator");
   assert.ok(direct.tools.some((tool) => tool.function.name === "ok"), "and the connection's tools");
   assert.deepEqual(direct.secrets, access.secrets, "its secrets still reach its environment");
-});
-
-test("a subscription agent's run is never offered a tool that runs in its sandbox", () => {
-  const access = { tools: ["shell", "shell_status", "file_read", "code_search", "note_find"], secrets: [], mcp: [] };
-  const offer = runOffer({ ...AGENT_CONFIG, model: null, harness: "claude-code", coding: true }, access, "direct");
-  assert.deepEqual(offer.tools, ["note_find", "report_issue"]);
-  const keyed = runOffer({ ...AGENT_CONFIG, coding: true, harness: "claude-code" }, access, "direct");
-  assert.ok(["shell", "shell_status", "file_read", "code_search"].every((name) => keyed.tools.includes(name)));
-  assert.ok(!keyed.tools.includes("code_task"));
 });
 
 test("mcpRedactions skips missing connections and decrypt failures", async () => {

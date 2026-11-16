@@ -99,8 +99,6 @@ Some tools have no switch:
 - `report_issue` is always offered.
 - The browser tools follow the agent's **browser** capability
   ([Browser](browser.md)).
-- The code tools follow the agent's **coding** capability
-  ([Coding agents](coding/index.md)).
 
 Some switched tools are also left out of a run, whatever the
 switches say:

@@ -757,9 +757,8 @@ cancellation or restart appends `ERROR: execution interrupted` for
 every unresolved call, so the next model request is valid.
 
 On orchestrator startup, unresolved tool calls in active runs get
-those interruption results. Startup does not replay a model call. An
-unresolved `code_task` is stopped and checkpointed first
-([Code tools](coding/code-tools.md)). A subscription agent's run with
+those interruption results. Startup does not replay a model call. A
+subscription agent's run with
 a `metadata.harness_turn` has its harness turn ended first: the turn's
 CLI gets `stop` on the agent's machine when the machine runs, the
 session its result names replaces the one kept, so the run's next

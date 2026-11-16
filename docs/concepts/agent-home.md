@@ -259,5 +259,6 @@ the only way in:
   one at a time, and the file is created or replaced without
   following a link at its name.
 
-The code tools never take this path. They run inside the container,
-so a link resolves there ([Code tools](coding/code-tools.md)).
+The sandbox helpers never take this path. They run inside the
+container, so a link resolves there
+([Process](coding/harnesses.md#process)).

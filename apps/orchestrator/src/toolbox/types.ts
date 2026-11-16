@@ -124,8 +124,6 @@ export type ToolRun = {
   harness_effort: Effort | null;
   /** The repositories a coding run works on, the ones its agent picks, by their folder under `repos/`. */
   code_repositories: string[];
-  /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
-  code_default_cwd: string;
 };
 
 /** The hooks the loop composes for one run, each bound to what the run record does not hold. */
@@ -171,7 +169,6 @@ export function createToolRun(
     harness_model: null,
     harness_effort: null,
     code_repositories: [],
-    code_default_cwd: "",
     ...partial,
   };
 }

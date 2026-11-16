@@ -7,7 +7,6 @@ import type { FunctionTool } from "../lib/tool-schema.js";
 import { callTool } from "../mcp/service.js";
 import { errorMessage } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
-import { repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
 import {
   identityOutput,
   invokeTool,
@@ -171,11 +170,8 @@ export type GenerationTools = {
 /** A connection's answer to a tool call: its text, or the failure the model reads as the call's result. */
 type ConnectionAnswer = { ok: true; text: string } | { ok: false; failure: OperationFailure };
 
-/**
- * What the next tool calls of a run are kept against: how many calls the run has made, the agent
- * whose connections they reach, and the reads its results record.
- */
-type CallLedger = { executed: number; owner: AgentRow | null; reads: ReadRow[] };
+/** What the next tool calls of a run are kept against: how many calls the run has made, and the agent whose connections they reach. */
+type CallLedger = { executed: number; owner: AgentRow | null };
 
 /** What tool calls are made with, built once by the loop. */
 export type ToolCallsServices = {
@@ -234,11 +230,10 @@ export class ToolCalls {
     return {
       executed: executedToolCalls(history),
       owner: await db.getAgent(tools.run.agent_id),
-      reads: history.filter((row) => row.payload.role === "tool").map((row) => ({ seq: row.seq, metadata: row.metadata })),
     };
   }
 
-  /** Runs `call` and keeps its result with the budget it leaves; the call and its read join `ledger`. */
+  /** Runs `call` and keeps its result with the budget it leaves; the call joins `ledger`. */
   private async keepCall(
     turn: RunGeneration,
     tools: GenerationTools,
@@ -247,11 +242,10 @@ export class ToolCalls {
   ): Promise<KeptToolRecord> {
     ledger.executed += 1;
     const [payload, metadata] = stampToolResult(
-      ...(await this.callTool(call, tools, ledger.owner, ledger.reads)),
+      ...(await this.callTool(call, tools, ledger.owner)),
       remainingAfter(tools.maxToolCalls, ledger.executed),
     );
-    const row = await this.services.events.commitMessage(turn.runId, payload, { generation: turn.generation, ...metadata });
-    ledger.reads.push({ seq: row.seq, metadata });
+    await this.services.events.commitMessage(turn.runId, payload, { generation: turn.generation, ...metadata });
     return [payload, metadata];
   }
 
@@ -288,16 +282,8 @@ export class ToolCalls {
     return pending.length;
   }
 
-  /**
-   * One call's result: from its connection when the run offers it as a connection tool, else
-   * from the native tool, where a read of a range unchanged since an earlier read points to it.
-   */
-  private async callTool(
-    call: ToolCall,
-    tools: GenerationTools,
-    owner: AgentRow | null,
-    reads: ReadRow[],
-  ): Promise<ToolRecord> {
+  /** One call's result: from its connection when the run offers it as a connection tool, else from the native tool. */
+  private async callTool(call: ToolCall, tools: GenerationTools, owner: AgentRow | null): Promise<ToolRecord> {
     const { run, hooks, connections, secrets } = tools;
     const name = call.function.name;
     const offered = run.offered_tools === null || run.offered_tools.has(name) || name in run.dynamic_tools;
@@ -305,21 +291,7 @@ export class ToolCalls {
     if (offered && target !== undefined) {
       return this.callConnectionTool(call, target, owner, secrets);
     }
-    const [payload, metadata] = await invokeTool(this.services.tools, run, hooks, call);
-    const step = repeatedReadStep(reads, metadata);
-    if (step === null) {
-      return [payload, metadata];
-    }
-    const [content, pipeline] = processOutput(
-      repeatedReadText(metadata, step),
-      identityOutput,
-      secrets,
-      toolResultMaxBytes(),
-    );
-    return [
-      { ...payload, content },
-      { ...metadata, ...pipeline, repeat_of: step },
-    ];
+    return invokeTool(this.services.tools, run, hooks, call);
   }
 
   /** Calls `remoteName` on the connection; a failure is the call's result, as the model reads it, and is logged. */

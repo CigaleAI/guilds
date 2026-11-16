@@ -164,8 +164,6 @@ Each concept has a page of its own.
   Antigravity.
 - [Repositories](coding/repositories.md): the guild's git
   repositories.
-- [Code tools](coding/code-tools.md): `shell`, file reads, and
-  search.
 - [Reviewing changes](coding/reviewing-changes.md): checkpoints and
   diffs.
 

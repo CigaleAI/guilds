@@ -128,10 +128,7 @@ export class CodingRuns {
     }
   }
 
-  /**
-   * A coding generation's repositories, placed with tokens that push and open pull requests. The
-   * working directory of its code tools starts in the repository when there is one.
-   */
+  /** A coding generation's repositories, placed with tokens that push and open pull requests. */
   async prepareRepositories(gen: KeyGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     const repositories = await this.placeRepositories(gen, sandbox, tools, "push_and_pull_requests");
     if (repositories === null) {
@@ -139,9 +136,6 @@ export class CodingRuns {
     }
     const names = repositories.map((row) => row.name);
     tools.run.code_repositories = names;
-    if (repositories.length === 1) {
-      tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
-    }
     return true;
   }
 

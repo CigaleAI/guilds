@@ -155,9 +155,6 @@ test("a subscription agent's harness calls its Guilds tools on the MCP server, k
 
   const offered: string[] = run.config_snapshot.tools.map((tool: { function: { name: string } }) => tool.function.name);
   assert.ok(offered.includes("note_write") && offered.includes("group_post") && offered.includes("report_issue"), "the snapshot records the offer");
-  for (const sandboxTool of ["shell", "shell_status", "file_read", "code_search", "code_task"]) {
-    assert.ok(!offered.includes(sandboxTool), sandboxTool);
-  }
 
   const answers = stub.mcpAnswers().slice(before);
   assert.deepEqual(answers.map((answer) => [answer.method, answer.status]), [

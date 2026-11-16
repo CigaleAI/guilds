@@ -8,8 +8,8 @@ A run draws its tools from three sources:
 
 - [Native tools](native.md) ship in the box. Bindings turn most of
   them on or off ([Access](../concepts/access.md)).
-- [Code tools](../concepts/coding/code-tools.md) and the browser tools
-  follow the agent's `coding` and `browser` flags.
+- The browser tools follow the agent's `browser` flag
+  ([Browser](../concepts/browser.md)).
 - [Connectors](connectors.md) bring the tools of a login an
   organisation, a guild, or an agent signed in with. The
   [connector list](connector-list.md) describes each one.
