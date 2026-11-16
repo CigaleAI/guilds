@@ -170,7 +170,8 @@ A collection opens at `/tables/<id>` on **Records**.
     selects the record, and **Select this page** in the header selects
     every record of the page, or none. Each change of the table, the
     search, the filters, the sort or the page clears the selection,
-    even when the same records stay shown; a column the table loses
+    even when the same records stay shown, and the boxes stay off
+    until the new view's records arrive; a column the table loses
     clears it too. Fetching the same view again keeps it, less the
     records the view no longer shows. A bar shows how many are
     selected, **Clear selection**, and **Edit selected**.

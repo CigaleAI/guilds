@@ -26,8 +26,9 @@ stays off while it runs and after. The dialog names the records saved
 and lists those the server refuses with its reasons, and **Retry
 failed** sends them the same value, to them only; the records re-read
 after every edit, refused ones included. Each change of the table, the
-search, the filters, the sort or the page clears the selection;
-fetching the same view again keeps it.
+search, the filters, the sort or the page clears the selection, and
+the boxes stay off until the new view's records arrive; fetching the
+same view again keeps it.
 
 **Rebuild.** A guild's or an agent's **State → Files** selects several
 files at once: each file has a box that selects it without opening

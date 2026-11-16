@@ -217,6 +217,8 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
   });
 
   const shown = records.data?.records ?? [];
+  // While a new view loads, the previous view's rows stay shown, and none of them can be selected.
+  const selectable = records.isPlaceholderData ? [] : shown;
   const {
     selecting,
     toggleSelecting,
@@ -226,7 +228,7 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
     selectionIds,
     setSelectionIds,
   } = useRecordSelection(
-    shown,
+    selectable,
     collection.columns,
     JSON.stringify([collection.id, query, where, sort, offset]),
   );
@@ -239,8 +241,8 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
   const columns: DataTableColumn<CollectionRecord>[] = [
     ...selectionColumns({
       selecting,
-      disabled: !target,
-      page: shown,
+      disabled: !target || records.isPlaceholderData,
+      page: selectable,
       selectedCount: selection.length,
       selectionIds,
       onSelectionChange: setSelectionIds,
@@ -434,7 +436,7 @@ function RecordCell({ collectionId, record, column, editable }: RecordCellProps)
 
 type SelectionColumnsOptions = {
   selecting: boolean;
-  /** Whether the boxes are off, before a column is chosen. */
+  /** Whether the boxes are off: before a column is chosen, and while a new view loads. */
   disabled: boolean;
   /** The records the page shows. */
   page: readonly CollectionRecord[];

@@ -44,7 +44,7 @@ function record(id: number): CollectionRecord {
 /** A PATCH the panel sent: its path and its JSON body. */
 type SentPatch = { path: string; body: string };
 
-test("selection mode takes a column before any record and selects the page's records apart from opening them, another column, table or view clears the selection, and a bulk edit names its column and records, sends one typed PATCH per record, in turn, fixes its value from the first save, keeps the refused ones to retry alone with that value, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
+test("selection mode takes a column before any record and selects the page's records apart from opening them, another column, table or view clears the selection, a view still loading selects none of the previous view's rows, and a bulk edit names its column and records, sends one typed PATCH per record, in turn, fixes its value from the first save, keeps the refused ones to retry alone with that value, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
   const window = new Window({ url: "http://localhost/" });
   const globals = {
     window,
@@ -91,6 +91,9 @@ test("selection mode takes a column before any record and selects the page's rec
     let inFlight = 0;
     let mostInFlight = 0;
     let listFetches = 0;
+    // While set, a listing waits for it, and pages past the first send their own records.
+    let listGate: Promise<void> | null = null;
+    let pagesDiffer = false;
     globalThis.fetch = async (input, init) => {
       const url = new URL(String(input), "http://localhost");
       if (init?.method === "PATCH") {
@@ -107,8 +110,13 @@ test("selection mode takes a column before any record and selects the page's rec
       }
       if (/^\/api\/collections\/c[12]\/records$/.test(url.pathname)) {
         listFetches += 1;
+        if (listGate) await listGate;
         const query = url.searchParams.get("query");
-        const records = query ? stored.filter((item) => String(item.id) === query) : stored;
+        const page =
+          pagesDiffer && Number(url.searchParams.get("offset")) > 0
+            ? [record(4), record(5), record(6)]
+            : stored;
+        const records = query ? stored.filter((item) => String(item.id) === query) : page;
         // The listing claims more records than it sends, and sends the same ones for every page.
         const total = query ? records.length : 100;
         return Response.json({ total, records, columns: collection.columns });
@@ -332,6 +340,31 @@ test("selection mode takes a column before any record and selects the page's rec
     assert.equal(toolbar(), null, "another table");
     await settle(() => showCollection(collection));
     await until(() => rows() === 3, "the first table's records");
+
+    // While a new page loads, the previous page's rows stay shown and none can be selected; the
+    // new page's rows can once they arrive.
+    pagesDiffer = true;
+    let releaseList: () => void = () => undefined;
+    listGate = new Promise((resolve) => {
+      releaseList = resolve;
+    });
+    const fetchesBeforeNext = listFetches;
+    await press("Next");
+    await until(() => listFetches > fetchesBeforeNext, "the next page asked for");
+    assert.ok(button("Select record #1"), "the previous page still shown");
+    assert.equal(button("Select record #1")?.disabled, true, "no box on a previous page's row");
+    assert.equal(button("Select this page")?.disabled, true, "no page box while the page loads");
+    assert.equal(toolbar(), null);
+    listGate = null;
+    releaseList();
+    await until(() => button("Select record #4") !== undefined, "the next page's records");
+    assert.equal(button("Select record #1"), undefined);
+    await press("Select record #4");
+    assert.equal(toolbar(), "1 selected");
+    await press("Previous");
+    await until(() => button("Select record #1") !== undefined, "the first page again");
+    assert.equal(toolbar(), null, "the first page");
+    pagesDiffer = false;
 
     // Cancel sends nothing; a value the column refuses is named and not sent.
     await press("Select record #1");
