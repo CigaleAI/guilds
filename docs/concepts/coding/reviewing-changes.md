@@ -1,11 +1,9 @@
 # Reviewing changes
 
-Every change a [coding agent](index.md)'s code task or a subscription
-agent's turn makes to a repository can be reviewed from its run. The
-platform takes **checkpoints**: snapshots of each working tree,
-uncommitted files included, around every [code task](code-tasks.md),
-and around every turn of a subscription agent that works in
-repositories ([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
+Every change a subscription agent's turn makes to a repository can be
+reviewed from its run. The platform takes **checkpoints**: snapshots of
+each working tree, uncommitted files included, around every turn of a
+subscription agent that works in repositories ([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
 The difference between two checkpoints is the diff the operator
 reviews: what one harness turn changed.
 
@@ -34,10 +32,6 @@ index, recorded under a ref of the run. Uncommitted and untracked files
 are included; ignored files are not. The current branch and the index
 stay as they are.
 
-- **Task checkpoints.** Each `code_task` call takes its own `start`
-  before the harness starts and its own `end` after it ends, in the
-  repository it worked in. Its result and metadata carry the diffstat
-  between them and the changed files.
 - **Turn checkpoints.** Each turn of a subscription agent that picks
   repositories takes its own `start` in each of them before its CLI
   starts and its own `end` after the turn, under the turn's call id.
@@ -99,7 +93,6 @@ shows "Couldn't load the diff" with the reason.
 
 | Rule | Value or behaviour |
 | --- | --- |
-| Task checkpoints | `start` and `end` around each `code_task` |
 | Turn checkpoints | `start` and `end` around each turn of a subscription agent that picks repositories; recorded only for a turn that changed one |
 | What is captured | Committed, uncommitted, and untracked files; not ignored ones |
 | Where | Local refs in the agent's clone, never pushed, never deleted |
@@ -113,8 +106,6 @@ shows "Couldn't load the diff" with the reason.
 
 | Ref | Written |
 | --- | --- |
-| `refs/guild/runs/<run id>/tasks/<call id>/start` | Before the harness starts, in the call's repository |
-| `refs/guild/runs/<run id>/tasks/<call id>/end` | After the harness ends, in the call's repository |
 | `refs/guild/runs/<run id>/tasks/turn_<generation>_<run id>/start` | Before a subscription agent's turn starts, in each repository it picks |
 | `refs/guild/runs/<run id>/tasks/turn_<generation>_<run id>/end` | After the turn ends, in each of them |
 
@@ -122,9 +113,7 @@ shows "Couldn't load the diff" with the reason.
 temporary one, runs `git add --all` against it, writes the tree, and
 records a commit with `git commit-tree`, parented on `HEAD` when there
 is one, as `guilds checkpoint <checkpoint@guilds.invalid>`, with the
-message `guild run <run id> task <call id> start`. A `code_task` the restart cut short gets its own
-end checkpoint at startup when its machine is running, so its task diff
-is available ([Lifecycle](code-tasks.md#lifecycle)).
+message `guild run <run id> task <call id> start`.
 
 A subscription agent's run stores `metadata.turn_changes`, one entry
 per turn that changed a repository, in order:

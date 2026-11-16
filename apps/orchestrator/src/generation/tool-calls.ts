@@ -1,16 +1,13 @@
-import { Type } from "typebox";
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
-import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
-import type { AssistantMessage, Harness, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
-import { keepMatching } from "../lib/decode.js";
-import type { JsonObject } from "../lib/json.js";
+import { getRun, listMessages, type MessageRow } from "../db/runs.js";
+import type { AssistantMessage, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import { callTool } from "../mcp/service.js";
 import { errorMessage } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
-import { callSegment, repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
+import { repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
 import {
   identityOutput,
   invokeTool,
@@ -22,10 +19,8 @@ import {
   type ToolHooks,
   type ToolRun,
 } from "../toolbox/index.js";
-import { CodeTaskParameters } from "../toolbox/harness.js";
 import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import type { CodingRuns } from "./coding.js";
 import { GenerationBlocked, GenerationCancelled, logOperationFailure, type OperationFailure } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
@@ -35,54 +30,6 @@ import type { ConnectorPool } from "./prepare.js";
 /** The tool calls of a run's history: which are pending, how many ran, and the record of an interrupted one. */
 
 export const INTERRUPTED_CONTENT = "ERROR: execution interrupted";
-
-/** A `code_task` call the orchestrator lost track of when it restarted. */
-export type LostCodeTask = {
-  harness: Harness;
-  repository: string | null;
-  session_id: string | null;
-  log_path: string | null;
-  run_id: string;
-  call_id: string;
-};
-
-/** The arguments of a `code_task` call that say where its work was: the repository and the session. */
-const CodeTaskWhere = Type.Pick(CodeTaskParameters, ["repo", "session_id"]);
-
-/** The call's arguments; none when the model wrote no JSON object. */
-function callArguments(call: ToolCall): JsonObject {
-  try {
-    return parseArguments(call);
-  } catch {
-    return {};
-  }
-}
-
-/** Where a `code_task` call's arguments say its work was: the repository and the session, each null when they name none. */
-function codeTaskWhere(call: ToolCall): Pick<LostCodeTask, "repository" | "session_id"> {
-  const args = keepMatching(CodeTaskWhere, callArguments(call));
-  return { repository: args?.repo || null, session_id: args?.session_id || null };
-}
-
-/** A lost `code_task` call, from what its run remembered about it and from the call's own arguments. */
-export function lostCodeTask(
-  run: Pick<RunRow, "id" | "metadata">,
-  call: ToolCall,
-  harness: Harness,
-): LostCodeTask {
-  const callId = callSegment(call.id);
-  const remembered = run.metadata.harness_task;
-  const known = remembered?.call_id === callId ? remembered : null;
-  const where = codeTaskWhere(call);
-  return {
-    harness,
-    repository: known?.repository ?? where.repository,
-    session_id: known?.session_id ?? where.session_id,
-    log_path: known?.log_path ?? null,
-    run_id: run.id,
-    call_id: callId,
-  };
-}
 
 export function toolCallsOf(payload: AssistantMessage): ToolCall[] {
   return payload.tool_calls ?? [];
@@ -237,7 +184,6 @@ export type ToolCallsServices = {
   events: RunEventBus;
   generations: ActiveGenerations;
   machines: AgentMachines;
-  coding: CodingRuns;
   tools: ToolServices;
 };
 
@@ -322,22 +268,21 @@ export class ToolCalls {
 
   /**
    * Gives each call of the run's history that has no result the interrupted result, numbered
-   * `generation` or its own; a lost `code_task` is stopped on its machine. Returns how many.
+   * `generation` or its own. Returns how many.
    */
   async resolveUnresolved(runId: string, generation: number | null): Promise<number> {
-    const { db, events, coding } = this.services;
+    const { db, events } = this.services;
     const rows = await db.listMessages(runId);
     const pending = pendingToolCalls(rows);
     const run = await db.getRun(runId);
     const maxToolCalls = run?.config_snapshot.max_tool_calls ?? DEFAULT_MAX_TOOL_CALLS;
     let executed = executedToolCalls(rows);
     for (const [call, callGeneration] of pending) {
-      let record = interruptionRecord(call, generation ?? callGeneration);
-      if (record[1].tool_name === "code_task" && run) {
-        record = await coding.interruptedCodeTask(run, call, record);
-      }
       executed += 1;
-      const [payload, metadata] = stampToolResult(...record, remainingAfter(maxToolCalls, executed));
+      const [payload, metadata] = stampToolResult(
+        ...interruptionRecord(call, generation ?? callGeneration),
+        remainingAfter(maxToolCalls, executed),
+      );
       await events.commitMessage(runId, payload, metadata);
     }
     return pending.length;

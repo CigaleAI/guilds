@@ -16,7 +16,7 @@ export class HarnessSetupError extends Error {
   }
 }
 
-/** What a coding run or a `code_task` call of an agent with no harness picked fails with. */
+/** What a coding run or a subscription turn of an agent with no harness picked fails with. */
 export function harnessMissingError(): HarnessSetupError {
   const labels = harnessesOn().map((harness) => HARNESS_INFO[harness].label);
   const choices = labels.length > 1 ? `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1)}` : labels.join("");

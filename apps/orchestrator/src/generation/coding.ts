@@ -16,13 +16,12 @@ import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "..
 import { getGuild } from "../db/guilds.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
-import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
+import { getRun, mergeRunMetadata } from "../db/runs.js";
 import {
   RunRepositoryChangeSchema,
   type Harness,
   type RunRepositoryChange,
   type RunTurnChange,
-  type ToolCall,
 } from "../db/schema/index.js";
 import { assertMatches, keepMatching } from "../lib/decode.js";
 import { isObjectNode, type JsonValue } from "../lib/json.js";
@@ -33,8 +32,6 @@ import { agentRunDir } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import { redact } from "../secrets/index.js";
 import { callSegment, runCodeHelper } from "../toolbox/code.js";
-import { endLostTurn, type LostTurnEnd } from "../toolbox/harness.js";
-import { interruptedText } from "../toolbox/harness-result.js";
 import { assertHarnessReady, checkHarnessOn, HarnessSetupError, type HarnessCheck } from "../toolbox/harness-setup.js";
 import { createToolHooks, type ToolRun } from "../toolbox/index.js";
 import type { ToolServices } from "../toolbox/services.js";
@@ -44,7 +41,7 @@ import type { RunEventBus, RunGeneration } from "./events.js";
 import type { Generation, KeyGeneration } from "./generate.js";
 import { harnessTurnCallId, type SubscriptionGeneration } from "./harness-loop.js";
 import type { AgentMachines } from "./machines.js";
-import { lostCodeTask, type GenerationTools, type InterruptedToolRecord, type LostCodeTask } from "./tool-calls.js";
+import type { GenerationTools } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
 
 export const RUN_DIFF_MAX_BYTES = 256 * 1024;
@@ -308,63 +305,6 @@ export class CodingRuns {
       await db.clearHarnessLogin(agentId, harness);
     }
     return check;
-  }
-
-  /**
-   * A `code_task` the orchestrator never saw finish: the harness gets `stop` on its machine, so
-   * it never keeps running with nobody polling it; its state is cleared, the task's end
-   * checkpoint is taken, and the result names its session and log.
-   */
-  async interruptedCodeTask(
-    run: RunRow,
-    call: ToolCall,
-    record: InterruptedToolRecord,
-  ): Promise<InterruptedToolRecord> {
-    const harness = run.config_snapshot.harness;
-    if (harness === null) {
-      return record;
-    }
-    const task = lostCodeTask(run, call, harness);
-    const ended = await this.endLostTurn(run.agent_id, task);
-    const session_id = ended.session_id ?? task.session_id;
-    const content = interruptedText({ ...task, session_id, stopped: ended.stopped });
-    const bytes = Buffer.byteLength(content, "utf8");
-    return [
-      { ...record[0], content },
-      {
-        ...record[1],
-        harness,
-        status: "interrupted",
-        session_id,
-        repository: task.repository ?? "unknown",
-        log_path: task.log_path,
-        start_sha: ended.start_sha,
-        end_sha: ended.end_sha,
-        original_bytes: bytes,
-        stored_bytes: bytes,
-      },
-    ];
-  }
-
-  /** Ends a lost `code_task` on its agent's machine; a machine that is not running has no harness left to stop. */
-  private async endLostTurn(agentId: string, task: LostCodeTask): Promise<LostTurnEnd> {
-    const { db, machines } = this.services;
-    try {
-      const agent = await db.getAgent(agentId);
-      const sandbox = agent ? await machines.sandboxes.connectRunning(agent.machine_id) : null;
-      if (agent === null || sandbox === null) {
-        return { stopped: true, session_id: null, start_sha: null, end_sha: null };
-      }
-      return await endLostTurn(maintenanceRun(task.run_id, agent, sandbox), task.call_id, task.harness, task.repository);
-    } catch (error) {
-      writeLog("warn", errorMessage(error), {
-        run_id: task.run_id,
-        agent_id: agentId,
-        operation: "code_task.stop",
-        error_type: errorName(error),
-      });
-      return { stopped: false, session_id: null, start_sha: null, end_sha: null };
-    }
   }
 
   /**

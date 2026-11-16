@@ -7,8 +7,7 @@ as its model source instead of a model.
 It runs headless in the agent's sandbox, in one of the guild's
 [repositories](repositories.md), on the operator's own subscription.
 The agent picks one harness, and optionally the model it runs and the
-effort it runs it at. Each [code task](code-tasks.md) is one turn of
-that harness.
+effort it runs it at.
 
 The harness runs on a credential the agent has: a subscription token
 granted to it as a [secret](../secrets.md), or a login made in its
@@ -464,7 +463,7 @@ A harness the box turns off is `harness.off`
 ([Turning a harness off](#turning-a-harness-off)).
 
 A driver that parses none of its CLI's output fails the call, naming
-the CLI's version ([Result](code-tasks.md#result)).
+the CLI's version.
 
 ### Image build
 
@@ -587,7 +586,7 @@ Driver environment:
 | Antigravity | none | `GEMINI_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, `AGY_ADC_AUTH`, `AGY_LLM_GATEWAY_URL`, `AGY_ACCOUNT`, `GOOGLE_CLOUD_QUOTA_PROJECT`, `GOOGLE_CLOUD_LOCATION` |
 
 The variables every harness loses, and the rest of its environment, are
-in [Harness environment](code-tasks.md#harness-environment).
+in [Harness environment](#harness-environment).
 
 A turn ends:
 
@@ -649,6 +648,68 @@ A repository's own harness configuration (`.claude/`, `.mcp.json`,
 
 What a repository can still steer is recorded in
 [SEC-29](../../architecture/security-register.md#sec-29--a-repository-can-carry-configuration-its-coding-harness-loads).
+
+### Process
+
+`guilds-harness` runs one short exec per op. The request is base64
+JSON on the command line, carrying the op, its arguments, the run id,
+the agent id, the call id, and the result's byte cap. A request whose
+encoding passes 64 KiB, and a request that holds a credential, such as
+a start that gives the turn its MCP server, is written through the
+sandbox file API to `/run/guilds/requests/<run id>-<call id>.json`
+instead, and the helper reads and deletes it. Only root reads
+`/run/guilds`. The helper answers with one base64 JSON envelope,
+`{ ok, text, meta }` or `{ ok: false, error }`. Each op waits up to 60
+seconds.
+
+| Op | Does |
+| --- | --- |
+| `check` | Whether the harness's CLI is installed, its version, its credential (`secret`, `login`, or none), and with a login its `account` |
+| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives one, the system prompt file, forks a supervisor in its own session, and returns |
+| `poll` | The raw events after a byte offset into the log as whole lines, their progress lines, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
+| `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
+| `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |
+
+The supervisor starts the CLI in its own process group in
+`repos/<repo>`, or in the agent's home when the request names no
+repository, appends the CLI's raw events to the log, waits for it, and
+records its exit code.
+
+A call's state is under `/run/guilds/<agent id>/harness/` (mode 0700),
+which goes with the container: `<call id>.json` (what was started),
+`.pid` (the CLI's process group), `.exit`, `.session`, and `.stderr`.
+`result` removes them and the prompt files once the CLI has exited.
+
+The raw event log, `.runs/<run id>/<call id>.harness.jsonl` in the
+agent's home, is stored unredacted. `.runs/` keeps the folders of the
+agent's 20 most recent runs, so the log of an older run is gone.
+
+### Harness environment
+
+The harness gets the environment of every command the orchestrator
+runs for the agent: `HOME`, `GUILDS_AGENT_HOME`, `PORT`,
+`GUILDS_PORTS`, the agent's secrets, and its secret aliases
+([Agent home](../agent-home.md)). It also gets `PAGER=cat`,
+`GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
+`DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and
+`GUILD_AGENT_ID`, so commit trailers work
+([Reviewing changes](reviewing-changes.md#commit-trailers)).
+
+`GH_TOKEN`, `GITHUB_TOKEN`, and `GUILDS_RUN_DIR` are never in a
+harness's environment: the harness opens a pull request with its
+provider's connector tool. git still reads its token through the
+credential helper ([Tokens](repositories.md#tokens)). Each driver also
+sets its own variables and removes those that would move the harness
+off the subscription ([Drivers](#drivers)).
+
+### Sessions
+
+Session ids are the harness's own ([Drivers](#drivers)). Each harness
+keeps its session state in the agent's home (`~/.claude`, `~/.codex`,
+`~/.cursor`, `~/.gemini`), so a session survives container recreation
+and counts against `max_workspace_mib`. A run keeps the session its
+latest turn reported, and its next turn resumes it
+([Runs](../runs.md#harness-turns)).
 
 ### Code
 

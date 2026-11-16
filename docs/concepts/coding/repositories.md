@@ -449,8 +449,8 @@ for any HTTPS host.
 working directory as `GH_TOKEN` for `gh`
 ([GitHub](../../tools-and-connectors/github.md)). A repository of
 another provider gives no `GH_TOKEN`. A harness gets no repository
-token in its environment, a code task's or a subscription agent's turn
-alike ([Harness environment](code-tasks.md#harness-environment)).
+token in its environment
+([Harness environment](harnesses.md#harness-environment)).
 
 Before each `shell` command, each code task start and poll, and each
 poll of a subscription agent's turn, a token within 10 minutes of

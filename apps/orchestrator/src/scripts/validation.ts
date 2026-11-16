@@ -51,7 +51,6 @@ export const NATIVE_TOOL_NAMES = new Set([
   "shell_status",
   "file_read",
   "code_search",
-  "code_task",
   "secret_store",
   "secret_request",
 ]);

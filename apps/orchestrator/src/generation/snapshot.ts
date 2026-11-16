@@ -15,7 +15,6 @@ import {
 } from "../db/schema/index.js";
 import { promptHash } from "../prompts/index.js";
 import { CODING_TOOLS } from "../toolbox/code.js";
-import { HARNESS_TOOLS } from "../toolbox/harness.js";
 import { schemasFor } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
 import { firstClassScriptSchemas } from "../toolbox/script.js";
@@ -30,7 +29,7 @@ export type RunKind = RunRow["kind"];
 export type RunOffer = { tools: string[]; mcp: RuntimeAccess["mcp"] };
 
 /** The native tools that run in the agent's sandbox, which a subscription agent's harness has its own of. */
-const SANDBOX_TOOLS: ReadonlySet<string> = new Set<string>([...CODING_TOOLS, ...HARNESS_TOOLS]);
+const SANDBOX_TOOLS: ReadonlySet<string> = new Set<string>(CODING_TOOLS);
 
 /**
  * What a run of `kind` offers an agent with `config` and `access`: the native tools the access

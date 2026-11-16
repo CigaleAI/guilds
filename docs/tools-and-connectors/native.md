@@ -208,11 +208,9 @@ reuse a snippet, the agent writes it to a note and reads it back with
 
 ## Code
 
-`code_task`, `shell`, `shell_status`, `file_read`, and `code_search`
-are the code tools ([Code tools](../concepts/coding/code-tools.md),
-[Code tasks](../concepts/coding/code-tasks.md)). `code_task` runs
-through `guilds-harness` and hands code work to the agent's coding
-harness. The other four run through `guilds-code`.
+`shell`, `shell_status`, `file_read`, and `code_search` are the code
+tools ([Code tools](../concepts/coding/code-tools.md)). They run
+through `guilds-code`.
 
 ## Group chat
 

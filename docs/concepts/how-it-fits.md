@@ -166,8 +166,6 @@ Each concept has a page of its own.
   repositories.
 - [Code tools](coding/code-tools.md): `shell`, file reads, and
   search.
-- [Code tasks](coding/code-tasks.md): `code_task`, one delegated
-  piece of code work.
 - [Reviewing changes](coding/reviewing-changes.md): checkpoints and
   diffs.
 

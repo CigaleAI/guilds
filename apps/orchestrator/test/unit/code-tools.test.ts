@@ -279,26 +279,26 @@ test("every code tool is registered with an object schema and its required argum
     shell_status: [],
     file_read: ["path"],
     code_search: ["pattern"],
-    code_task: ["brief"],
   };
-  for (const name of [...CODING_TOOLS, "code_task"]) {
+  for (const name of CODING_TOOLS) {
     const tool = REGISTRY[name];
     assert.ok(tool, name);
     const parameters = (tool.schema.function as { parameters: { type: string; required: string[] } }).parameters;
     assert.equal(parameters.type, "object");
     assert.deepEqual(parameters.required, required[name], name);
   }
-  for (const removed of ["file_edit", "file_write", "code_match", "code_map", "code_find", "code_outline", "code_callers"]) {
+  for (const removed of ["code_task", "file_edit", "file_write", "code_match", "code_map", "code_find", "code_outline", "code_callers"]) {
     assert.equal(REGISTRY[removed], undefined, removed);
   }
 });
 
-test("coding offers code_task and the code tools; without it they are refused names", () => {
+test("coding offers the code tools; without it they are refused names", () => {
   const coding = offeredToolNames(["note_find", "shell"], { coding: true });
-  for (const name of [...CODING_TOOLS, "code_task"]) {
+  for (const name of CODING_TOOLS) {
     assert.ok(coding.includes(name), name);
   }
-  const plain = offeredToolNames(["note_find", "shell", "file_read", "code_task"], {});
+  assert.ok(!coding.includes("code_task"));
+  const plain = offeredToolNames(["note_find", "shell", "file_read"], {});
   assert.deepEqual(plain, ["note_find", "report_issue"]);
   const noScripts = offeredToolNames(["note_find", "script_list", "script_run"], {
     scripting: false,
@@ -327,7 +327,7 @@ test("coding offers code_task and the code tools; without it they are refused na
   assert.deepEqual(aliased.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
   const names = (snapshot.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
   assert.ok(names.includes("shell"));
-  assert.ok(names.includes("code_task"));
+  assert.ok(!names.includes("code_task"));
 });
 
 test("agent workspace max is the agent's cap, never above the host cap", () => {

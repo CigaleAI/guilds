@@ -310,7 +310,7 @@ directory, at `.runs/<run id>/attachments/<attachment id>/<filename>`,
 and the turn's prompt follows each message's text with one line per
 image: `Attached image: /home/<agent id>/.runs/<run id>/attachments/<attachment id>/<filename>`.
 The files go with the run's folder, which `.runs/` keeps for the
-agent's 20 most recent runs ([Code tasks](coding/code-tasks.md)). An
+agent's 20 most recent runs ([Process](coding/harnesses.md#process)). An
 image the store no longer holds fails the turn at start with
 `harness.start`.
 
@@ -507,7 +507,7 @@ delivery, a routine, or a wake-up.
 
 A subscription agent's generation is one turn of its harness's CLI,
 under the call id `turn_<generation>_<run id>`
-([Process](coding/code-tasks.md#process)):
+([Process](coding/harnesses.md#process)):
 
 1. **Start.** `guilds-harness start` runs the CLI in the agent's home,
    or in the working tree of the one repository it picks, under
@@ -565,7 +565,7 @@ under the call id `turn_<generation>_<run id>`
 | Operation | Cause |
 | --- | --- |
 | `harness.start` | `start` failed: "`<Harness>` did not start: `<reason>`" |
-| `harness.failed` | the CLI exited otherwise, or its turn ended in error: "`<Harness>`'s turn failed (`<detail>`)", the detail as a code task's ([Result](coding/code-tasks.md#result)) |
+| `harness.failed` | the CLI exited otherwise, or its turn ended in error: "`<Harness>`'s turn failed (`<detail>`)", the detail the most telling of the CLI's error, its stderr's last lines, or its exit code |
 | `harness.lost` | a poll found the turn's state gone, or the CLI exited and its result could not be read |
 | `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
 | `harness.timed_out` | the turn ran its snapshot's `max_turn_minutes`: "`<Harness>` was stopped after `<minutes>` minutes."; the harness got `stop` |

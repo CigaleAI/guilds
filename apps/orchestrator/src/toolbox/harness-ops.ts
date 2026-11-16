@@ -2,14 +2,11 @@ import { Type, type Static } from "typebox";
 import { harnessLaunch } from "../coding/harness-models.js";
 import type { Effort, Harness } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
-import { isObjectNode } from "../lib/json.js";
-import { errorMessage, writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 import { HARNESS_HELPER, runCodeHelper, runCodeHelperFromFile, type CodeResult } from "./code.js";
 import { createToolHooks, type CancelEvent, type ToolRun } from "./types.js";
 
 const HARNESS_OP_TIMEOUT_SECONDS = 60;
-const CHECKPOINT_TIMEOUT_SECONDS = 300;
 const PROGRESS_LINE_CHARS = 240;
 
 /** A text field of an op's meta; null when it is absent or empty. */
@@ -62,26 +59,12 @@ export const HarnessCheckMeta = Type.Object({
 });
 export type HarnessCheckMeta = Static<typeof HarnessCheckMeta>;
 
-/**
- * A repository's record in a checkpoint's meta: the task's start and end commits, and what changed
- * between them; each file is kept when it reads as a changed file.
- */
-const CheckpointRepository = Type.Object({
-  start_sha: Type.Optional(Type.String()),
-  end_sha: Type.Optional(Type.String()),
-  files_changed: Type.Optional(Type.Number()),
-  insertions: Type.Optional(Type.Number()),
-  deletions: Type.Optional(Type.Number()),
-  files: Type.Optional(Type.Array(Type.Unknown())),
-});
-export type CheckpointRepository = Static<typeof CheckpointRepository>;
-
 /** The run the harness ops run under: not interrupted mid-exec; the poll loop stops the harness itself. */
 export function opsRun(run: ToolRun): ToolRun {
   return { ...run, cancel_event: null };
 }
 
-/** The id a check outside a `code_task` call runs under, named for the check. */
+/** The id a check outside a turn runs under, named for the check. */
 export function checkCallId(): string {
   return `harness_check_${Date.now()}`;
 }
@@ -267,29 +250,6 @@ export async function endHarnessTurn(
     return { settled: result === null ? "unreadable" : "exited", stopped: null, result };
   }
   return { settled, ...(await stopHarness(ops, callId, harness)) };
-}
-
-/** Takes the task's `start` or `end` checkpoint in `repository`; the repository's record, or empty when it fails. */
-export async function checkpoint(
-  run: ToolRun,
-  callId: string,
-  which: "start" | "end",
-  repository: string,
-): Promise<CheckpointRepository> {
-  try {
-    const result = await runCodeHelper(
-      run,
-      createToolHooks(),
-      { op: "checkpoint", call_id: callId, which, task: callId, repositories: [repository] },
-      { timeoutSeconds: CHECKPOINT_TIMEOUT_SECONDS },
-    );
-    const repositories = result.meta.repositories;
-    const first = Array.isArray(repositories) ? repositories[0] : undefined;
-    return first !== undefined && isObjectNode(first) ? (keepMatching(CheckpointRepository, first) ?? {}) : {};
-  } catch (error) {
-    writeLog("warn", errorMessage(error), { run_id: run.run_id, agent_id: run.agent_id, operation: "code_task.checkpoint" });
-    return {};
-  }
 }
 
 function clipProgressLine(line: string): string {

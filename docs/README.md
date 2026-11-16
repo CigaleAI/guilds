@@ -151,8 +151,6 @@ How the product works, for the operator. Start with
   repositories
 - [Code tools](concepts/coding/code-tools.md) — shell, file reads,
   search
-- [Code tasks](concepts/coding/code-tasks.md) — `code_task`, the
-  harness turn
 - [Reviewing changes](concepts/coding/reviewing-changes.md) —
   checkpoints, diffs, commit trailers
 

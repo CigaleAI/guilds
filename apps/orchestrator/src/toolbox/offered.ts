@@ -1,6 +1,5 @@
 import { BROWSER_TOOLS, OPTIMIZED_BROWSER_TOOLS } from "./browser.js";
 import { CODING_TOOLS } from "./code.js";
-import { HARNESS_TOOLS } from "./harness.js";
 import { SCHEDULE_TOOLS } from "./schedule.js";
 import { SCRIPT_TOOLS } from "./script.js";
 
@@ -26,7 +25,6 @@ const BROWSER_AND_CODING_TOOLS: ReadonlySet<string> = new Set<string>([
   ...BROWSER_TOOLS,
   ...OPTIMIZED_BROWSER_TOOLS,
   ...CODING_TOOLS,
-  ...HARNESS_TOOLS,
 ]);
 
 function isHiddenByOfferedFlag(name: string, options: ToolSwitches): boolean {
@@ -57,7 +55,7 @@ function browserToolNames(options: ToolSwitches): readonly string[] {
 }
 
 function capabilityToolNames(options: ToolSwitches): string[] {
-  return [...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []), ...browserToolNames(options)];
+  return [...(options.coding ? CODING_TOOLS : []), ...browserToolNames(options)];
 }
 
 // The browser and code tools follow the agent's flags, not bindings.
