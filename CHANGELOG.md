@@ -8,6 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** The Drive card's **Folder** shows the picked folder's
+name, its full path as the login can read it, and **Open in Google
+Drive**. The saved folder is read again on reload, and search results
+show their paths. A path the login cannot read in full, cycles, and
+paths past 32 folders read **Full path unavailable**. The name and the
+link still show, and the saved setting stays. **Remove folder** asks
+first, says nothing in Drive is deleted or trashed and the login stays
+connected, and clears only the unsaved pick. The saved folder stays
+until another is picked and saved. An inherited login's folder has no
+removal. Every login's **Save settings** stays off while a required
+setting is missing or empty.
+
 **Rebuild.** A table's **Records** selects several records at once in
 selection mode, which **Select records** turns on and **Exit
 selection mode** turns off, clearing the column and the selection. In

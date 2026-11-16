@@ -203,7 +203,7 @@ function TextSetting({ property, label, hint, disabled, value, onChange }: TextS
 }
 
 /** A search box over a property's lookup, debounced; `onPick` takes the chosen option. */
-function useLookup(search: (query: string) => Promise<LookupOption[]>) {
+export function useLookup(search: (query: string) => Promise<LookupOption[]>) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<LookupOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);

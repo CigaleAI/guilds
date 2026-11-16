@@ -55,11 +55,13 @@ export type DriveRequest<T extends TSchema> = {
   init?: DriveRequestInit;
 };
 
-type DriveFileMeta = {
+/** A Drive file as the connector reads it: its id, name, type, parents, and the shared drive it is in, empty when none. */
+export type DriveFileMeta = {
   id: string;
   name: string;
   mimeType: string;
   parents: string[];
+  driveId: string;
 };
 
 /** A file as the Drive MCP tools return it: its id, title, first parent and type, empty when Drive has none. */
@@ -215,14 +217,14 @@ export async function driveBytes(
   };
 }
 
-async function loadDriveFile(
+export async function loadDriveFile(
   accessToken: string,
   fileId: string,
   options: DriveClientOptions = {},
 ): Promise<DriveFileMeta> {
   const url =
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}` +
-    "?fields=id,name,mimeType,parents&supportsAllDrives=true";
+    "?fields=id,name,mimeType,parents,driveId&supportsAllDrives=true";
   const payload = await driveJson(accessToken, { url, schema: DriveFile }, options);
   if (!payload.id) {
     throw new DriveFolderError("Drive folder lookup is missing id or name");
@@ -232,10 +234,11 @@ async function loadDriveFile(
     name: payload.name ?? "",
     mimeType: payload.mimeType ?? "",
     parents: (payload.parents ?? []).filter(Boolean),
+    driveId: payload.driveId ?? "",
   };
 }
 
-async function loadSharedDrive(
+export async function loadSharedDrive(
   accessToken: string,
   driveId: string,
   options: DriveClientOptions = {},

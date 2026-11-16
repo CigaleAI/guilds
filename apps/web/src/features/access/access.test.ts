@@ -11,6 +11,7 @@ import {
   filterTools,
   isCapabilityNativeTool,
   listedBrowserTools,
+  lacksRequiredSetting,
   loginSettingsPanel,
   nativeToolDisplay,
   offersOptimizedBrowser,
@@ -391,6 +392,31 @@ test("a login shows its schema's settings once signed in, a github login its rep
   assert.deepEqual(loginSettingsPanel(server({ slug: "github" })), { kind: "github" });
   assert.equal(loginSettingsPanel(server({ slug: "github", connection_id: null })), null);
   assert.equal(loginSettingsPanel(server()), null);
+});
+
+test("a Drive login shows its schema's settings as its folder", () => {
+  const schema = { type: "object", properties: { folder_id: { type: "string" } } };
+  assert.deepEqual(loginSettingsPanel(server({ slug: "drive", settings_schema: schema })), {
+    kind: "drive_folder",
+    schema,
+  });
+  assert.equal(
+    loginSettingsPanel(server({ slug: "drive", settings_schema: schema, status: "pending" })),
+    null,
+  );
+});
+
+test("settings lack a required setting when they leave it out or empty, and not an optional one", () => {
+  const schema = {
+    type: "object",
+    properties: { folder_id: { type: "string" }, note: { type: "string" } },
+    required: ["folder_id"],
+  };
+  assert.equal(lacksRequiredSetting(schema, { folder_id: "f1" }), false);
+  assert.equal(lacksRequiredSetting(schema, {}), true);
+  assert.equal(lacksRequiredSetting(schema, { folder_id: undefined, note: "n" }), true);
+  assert.equal(lacksRequiredSetting(schema, { folder_id: "" }), true);
+  assert.equal(lacksRequiredSetting({ type: "object" }, {}), false);
 });
 
 test("a_disconnected_github_login_with_an_account_hint_shows_no_repositories", () => {

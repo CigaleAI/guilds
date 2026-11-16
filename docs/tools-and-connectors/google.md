@@ -57,6 +57,34 @@ finish setup in guilds.run. The Drive card then shows a **Folder**
 field: search for the folder by name, or paste a folder link, then
 save. The card reads connected, showing the folder's name.
 
+### The Drive folder on the card
+
+The **Folder** field shows the picked folder's name, its full path
+from My Drive or its shared drive's name down to it, and **Open in
+Google Drive**, a link to
+`https://drive.google.com/drive/folders/<folder id>`. Each search
+result shows its path too, which tells folders of the same name apart.
+On reload, the field reads the saved folder again through the login's
+own lookup, so no one picks it again.
+
+The path climbs only the parents the login can read, at most 32
+folders, and never the same folder twice. When a parent cannot be
+read, such as the parent of a folder shared with the account, or
+Drive fails, the path reads **Full path unavailable**. The name and
+the link still show. When the folder itself cannot be read, the field
+shows its id, the link, and the lookup's error. The saved setting is
+kept either way.
+
+On the scope's own login, **Remove folder** (the X beside the folder)
+asks first. It names the folder and says what removal does: the
+folder leaves the unsaved settings only. Nothing in Drive is deleted
+or trashed, and the Google login stays connected. **Cancel** changes
+nothing. After the removal, **Save settings** stays off until another
+folder is picked. Until a save succeeds, the saved folder and the
+login stay as they are, and **Discard** brings the saved folder back.
+A refused save leaves the saved folder in place. An inherited login's
+folder shows its name, path, and link, with no removal and no search.
+
 ## Gmail
 
 Gmail calls `https://gmail.googleapis.com/gmail/v1` with the login's
@@ -86,7 +114,10 @@ The login waits for its `folder_id` setting
 
 - Its `lookup` takes a pasted folder link or id. Otherwise it searches
   folders by name across My Drive, folders shared with the account,
-  and shared drives.
+  and shared drives. Each option's `value` is the folder id, its
+  `label` the folder's name, and its `detail` the folder's path, or
+  `Full path unavailable` ([The Drive folder on the card](#the-drive-folder-on-the-card)).
+  The card reads the saved folder with this same lookup, by its id.
 - Its `validate` requires one folder that is not My Drive. The login's
   `account_hint` is that folder's name.
 
