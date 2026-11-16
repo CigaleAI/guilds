@@ -528,7 +528,10 @@ under the call id `turn_<generation>_<run id>`
    `tool_calls`, and each result a tool row. Text, tool inputs, and
    results are redacted with the run's secret values, and each result
    is capped as a tool's output is. Every row carries
-   `from_harness: "claude-code"` and the generation number.
+   `from_harness: "claude-code"` and the generation number. A call of
+   a tool of the orchestrator's MCP server, which Claude Code names
+   `mcp__guilds__<tool>`, and its result make no row from these
+   events.
 3. **End.** A CLI that exits 0 without an error result ends the
    generation as a model's final reply does: the run completes or
    waits by the same rules. Any other ending records its error:

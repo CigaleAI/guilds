@@ -137,6 +137,27 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.ok(!call.argv.includes("--resume"), "a new run starts a new session");
   });
 
+  test("the CLI's events for a call of the orchestrator's MCP server make no row of their own", async () => {
+    const session = { parent_tool_use_id: null, session_id: RECORDED_SESSION };
+    const mcpCall = JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "toolu_mcp", name: "mcp__guilds__note_write", input: { path: "a.md" } }] },
+      ...session,
+    });
+    const mcpResult = JSON.stringify({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_mcp", content: "wrote a.md" }] },
+      ...session,
+    });
+    const [init, ...rest] = recordedEvents("claude-code");
+    const { loop, rows, errors } = subscriptionLoop([init!, mcpCall, mcpResult, ...rest]);
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(errors(), []);
+    const kept = rows();
+    assert.equal(kept.length, 7, "the recorded turn's rows alone");
+    assert.ok(!kept.some((row) => JSON.stringify(row.payload).includes("toolu_mcp")));
+  });
+
   test("the run's next generation resumes the session with the messages added since its reply", async () => {
     const { loop, db, calls } = subscriptionLoop(recordedEvents("claude-code"));
     await loop.generator.generate("r_1", 1);

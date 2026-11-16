@@ -91,6 +91,18 @@ export function isTurnHarness(harness: Harness): harness is TurnHarness {
   return TURN_HARNESSES.some((item) => item === harness);
 }
 
+/** The name a subscription agent's harness is given the orchestrator's MCP server under (`runtime/guilds-harness`). */
+export const HARNESS_MCP_SERVER = "guilds";
+
+/**
+ * What a harness that runs a subscription agent's turns puts before a tool's own name when it
+ * offers its model a tool of the orchestrator's MCP server: Claude Code names an MCP tool
+ * `mcp__<server>__<tool>`.
+ */
+export const HARNESS_MCP_TOOL_PREFIX: Record<TurnHarness, string> = {
+  "claude-code": `mcp__${HARNESS_MCP_SERVER}__`,
+};
+
 /** Why a subscription agent cannot run on a harness it may not run on. */
 export function subscriptionHarnessMessage(harness: Harness): string {
   const offered = SUBSCRIPTION_HARNESSES.map((item) => HARNESS_INFO[item].label).join(" or ");
