@@ -84,14 +84,14 @@ type Request = { method: string; path: string; body: string };
 
 /**
  * Renders the Drive card for `owner`, answering the login's lookup from `lookups` (or refusing it
- * when `lookupFails`), and the settings save with each of `saveStatuses` in turn. Runs `check`
+ * when `lookupFails`), and the settings save with each of `saveStatuses` in turn, once it settles. Runs `check`
  * with the page's helpers and every request the page sent.
  */
 async function withDriveCard(
   server: McpServerAccess,
   owner: AccessOwner,
   lookupFails: boolean,
-  saveStatuses: number[],
+  saveStatuses: (number | Promise<number>)[],
   check: (page: {
     text: () => string;
     button: (label: string) => HTMLButtonElement | undefined;
@@ -149,7 +149,7 @@ async function withDriveCard(
         return Response.json({ options: lookups[url.searchParams.get("q") ?? ""] ?? [] });
       }
       if (url.pathname === "/api/mcp/connections/conn_drive/settings" && method === "PUT") {
-        const status = statuses.shift() ?? 200;
+        const status = await (statuses.shift() ?? 200);
         return status === 200
           ? Response.json({ id: "conn_drive", status: "connected" })
           : Response.json({ detail: "picked folder is not available to this login" }, { status });
@@ -257,7 +257,11 @@ async function withDriveCard(
 }
 
 test("the saved Drive folder shows its path and link on load; removing it clears only the unsaved pick, and Save waits for a replacement", async () => {
-  await withDriveCard(driveServer(true), ORG, false, [422, 200], async (page) => {
+  let answerSave: (status: number) => void = () => undefined;
+  const heldSave = new Promise<number>((resolve) => {
+    answerSave = resolve;
+  });
+  await withDriveCard(driveServer(true), ORG, false, [422, heldSave], async (page) => {
     await page.until(() => page.text().includes("My Drive / Projects / Reports"), "the saved folder's path");
     assert.match(page.text(), /Reports/);
     const link = document.querySelector<HTMLAnchorElement>('a[href^="https://drive.google.com/"]');
@@ -309,6 +313,10 @@ test("the saved Drive folder shows its path and link on load; removing it clears
     await page.until(() => page.toastTitles().includes("Couldn't save the settings"), "the refused save says so");
     assert.ok(page.button("Remove folder Invoices"), "a refused save keeps the pick to retry");
     await page.press("Save settings");
+    assert.equal(page.button("Save settings")?.disabled, true, "a pending save cannot be sent again");
+    assert.equal(page.button("Remove folder Invoices")?.disabled, true, "a pending save cannot be edited");
+    await page.press("Save settings");
+    answerSave(200);
     await page.until(() => page.toastTitles().includes("Google Drive settings saved"), "the save goes through");
 
     const saves = page.requests.filter((request) => request.method === "PUT");
