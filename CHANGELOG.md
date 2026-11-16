@@ -8,6 +8,24 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A Claude Code subscription agent calls its Guilds tools:
+its run is offered what a run on a key with the same access would be,
+connectors included, less the code tools, and its snapshot records
+that offer. Each generation's turn gets the orchestrator's MCP server
+in a private `--mcp-config` file in its run folder, with a token that
+lasts as long as the generation; Claude Code names each tool
+`mcp__guilds__<tool>`, and the run's system prompt names them so,
+with the Guidelines parts of the tools it is offered. A call is kept
+as a model's call is, an assistant row and its tool row with the
+`remaining_tool_calls` trailer, counted toward `max_tool_calls` with
+the harness's own calls; a call past the limit ends the generation
+with `generation.max_tool_calls`, and one that files a blocking issue
+with `generation.blocked`, each stopping the harness. The Model source
+note says Claude Code runs with its own tools and the guild's tools
+the agent is given. The runtime image must be rebuilt: `guilds-harness
+start` takes `mcp_url` and `mcp_token`
+([SEC-64](docs/architecture/security-register.md#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools)).
+
 **Rebuild.** The orchestrator listens on a second port,
 `HARNESS_MCP_PORT` (8090 by default), apart from the operator app's:
 the MCP listener a subscription agent's harness reaches from its

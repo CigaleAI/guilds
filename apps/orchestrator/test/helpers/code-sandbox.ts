@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { repoRoot } from "../../src/lib/paths.js";
 import { CODE_HELPER, HARNESS_HELPER } from "../../src/toolbox/code.js";
@@ -126,6 +126,12 @@ export function helperRequest(command: string): Record<string, unknown> | null {
   return match ? (JSON.parse(Buffer.from(match[1]!, "base64").toString("utf8")) as Record<string, unknown>) : null;
 }
 
+/** The request a helper command on `sandbox` carries, inline or in the request file it names; null for no helper at all. */
+export function sandboxHelperRequest(sandbox: HostCodeSandbox, command: string): Record<string, unknown> | null {
+  const file = /guilds-(?:code|harness) @(\S+)$/.exec(command.trim());
+  return file ? (JSON.parse(readFileSync(sandbox.local(file[1]!), "utf8")) as Record<string, unknown>) : helperRequest(command);
+}
+
 /** A helper's answer, as the sandbox returns it: an `ok` envelope holding `meta`. */
 export function helperAnswer(meta: Record<string, unknown>, text = "") {
   const envelope = Buffer.from(JSON.stringify({ ok: true, text, meta }), "utf8").toString("base64");
@@ -143,7 +149,7 @@ export function answerOps(
   const answered: Array<Record<string, unknown>> = [];
   const run = sandbox.commands.run;
   sandbox.commands.run = async (command, opts) => {
-    const request = helperRequest(command);
+    const request = sandboxHelperRequest(sandbox, command);
     const meta = request ? answers[String(request.op)] : undefined;
     if (request === null || meta === undefined) {
       return run(command, opts);

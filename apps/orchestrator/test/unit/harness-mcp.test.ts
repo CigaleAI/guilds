@@ -100,6 +100,14 @@ test("a grant's token is 256 random bits, and its URL names the agent's path und
   assert.ok(!first.grant.digest.equals(Buffer.from(first.access.token)), "the token is kept as its digest");
 });
 
+test("a grant's tools redact its token from the run's rows and results", () => {
+  const { server, gen, tools } = fixture();
+  const { grant, access } = server.open(gen, tools);
+  assert.equal(grant.tools.secrets.HARNESS_MCP_TOKEN, access.token);
+  assert.equal(grant.tools.run.secrets.HARNESS_MCP_TOKEN, access.token);
+  assert.equal(tools.secrets.HARNESS_MCP_TOKEN, undefined, "the generation's own tools are left as they are");
+});
+
 test("a request with the generation's token is answered", async () => {
   const { server, gen, tools } = fixture();
   const { access } = server.open(gen, tools);

@@ -950,17 +950,27 @@ harness (`generation/harness-loop.ts`). The set-up, the cancel
 settlement, the finish, and the events around either loop are shared.
 A subscription generation on no harness fails with `harness.missing`,
 and on any harness but Claude Code with `subscription.not_runnable`,
-before the machine is woken. It offers no tool and resolves no model
-credential; its harness is checked as a coding run's is. Its turn
-starts the CLI with the run's first row as its system prompt
-(`--system-prompt-file`) and the user messages since the run's last
-reply on stdin, polls every second, keeps each poll's Claude Code
+before the machine is woken. Its tools are narrowed as a key
+generation's are, and no model credential is resolved; its harness is
+checked as a coding run's is. Its turn opens a grant on the
+`HarnessMcpServer` (`generation/harness-mcp.ts`), starts the CLI with
+the run's first row as its system prompt (`--system-prompt-file`), the
+server's URL and the grant's token (`--mcp-config`), and the user
+messages since the run's last reply on stdin, polls every second, keeps each poll's Claude Code
 events as rows through `events.commitMessage`
 (`generation/parse-claude-code.ts`, `generation/harness-rows.ts`),
 keeps the session in `metadata.harness_turn` for the next generation
 to resume, and ends with `harness.start`, `harness.failed`,
 `harness.lost`, `harness.unresponsive`, or `harness.timed_out` when
-it does not exit cleanly. The start, the poll, the stop, the result,
+it does not exit cleanly. The server runs the harness's calls through
+`ToolCalls.executeHarnessCall`, one at a time per grant; a call past
+`max_tool_calls` or one that files a blocking issue asks the turn to
+stop, and the loop stops the harness and records
+`generation.max_tool_calls` or `generation.blocked`. A run's
+`events.commitMessage` appends one row at a time, so the poll's rows
+and the server's take the next sequence number each. The grant is
+revoked, once its running call is kept, before the turn's own calls
+without a result get theirs. The start, the poll, the stop, the result,
 and the log are the `guilds-harness` ops `code_task` calls too
 (`toolbox/harness-ops.ts`). Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has

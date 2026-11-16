@@ -383,7 +383,11 @@ operator's value goes to the secrets API, never into the transcript.
 ### Connectors
 
 Remote MCP servers and adapters run in the orchestrator. Connect
-tokens never enter the sandbox. Encryption uses one master key.
+tokens never enter the sandbox. Encryption uses one master key. A
+subscription agent's harness calls its connector tools through the
+orchestrator's MCP server: the token of its running generation, a file
+on its machine, reaches them, never the login's credential
+([SEC-64](security-register.md#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools)).
 
 Official tool HTTP leaves the orchestrator. It goes through
 `ADAPTER_PROXY_URL` when it is set and direct otherwise.

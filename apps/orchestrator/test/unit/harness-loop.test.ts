@@ -7,7 +7,7 @@ import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 import type { MessageRow } from "../../src/db/runs.js";
 import type { ResolvedAgentConfig } from "../../src/db/schema/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
-import { answerOps, helperRequest, type HostCodeSandbox } from "../helpers/code-sandbox.js";
+import { answerOps, sandboxHelperRequest, type HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 import { toolFixture } from "../helpers/toolbox.js";
@@ -65,7 +65,7 @@ function subscriptionLoop(lines: string[], check: Record<string, unknown> = HARN
 function failOp(sandbox: HostCodeSandbox, op: string, error: string): void {
   const run = sandbox.commands.run;
   sandbox.commands.run = async (command, opts) => {
-    if (helperRequest(command)?.op !== op) {
+    if (sandboxHelperRequest(sandbox, command)?.op !== op) {
       return run(command, opts);
     }
     const envelope = Buffer.from(JSON.stringify({ ok: false, error }), "utf8").toString("base64");

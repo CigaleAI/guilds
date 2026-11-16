@@ -396,10 +396,7 @@ export class RunGenerator {
     if (sandboxes === null) {
       return null;
     }
-    const tools =
-      gen.source === "key"
-        ? await this.generationTools(gen, sandboxes, secrets)
-        : await this.harnessTools(gen, sandboxes, secrets);
+    const tools = await this.generationTools(gen, sandboxes, secrets);
     return (await this.isReady(gen, sandboxes.machine, tools)) ? { tools, sandbox: sandboxes.machine } : null;
   }
 
@@ -490,9 +487,13 @@ export class RunGenerator {
     return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareRepositories(gen, gen.agent, sandbox, tools));
   }
 
-  /** The tools the generation calls: those its snapshot froze that the agent's live bindings and settings still offer. */
+  /**
+   * The tools the generation calls: those its snapshot froze that the agent's live bindings and
+   * settings still offer. A model calls them on a key; a subscription's harness calls them through
+   * the orchestrator's MCP server.
+   */
   private async generationTools(
-    gen: KeyGeneration,
+    gen: Generation,
     sandboxes: RunSandboxes,
     secrets: GenerationSecrets,
   ): Promise<GenerationTools> {
@@ -516,27 +517,7 @@ export class RunGenerator {
     };
   }
 
-  /**
-   * The run record a subscription's harness runs under, which offers no tool, beside the values
-   * its rows are redacted with. No step of the model loop's set-up runs for it.
-   */
-  private async harnessTools(
-    gen: SubscriptionGeneration,
-    sandboxes: RunSandboxes,
-    secrets: GenerationSecrets,
-  ): Promise<GenerationTools> {
-    const offer: ToolOffer = { names: new Set(), scripts: [], connections: new Map() };
-    return {
-      run: await this.toolRun(gen, sandboxes, secrets, offer),
-      hooks: this.toolHooks(gen, sandboxes),
-      schemas: [],
-      secrets: secrets.values,
-      connections: offer.connections,
-      maxToolCalls: gen.snapshot.max_tool_calls,
-    };
-  }
-
-  private async offeredNames(gen: KeyGeneration, frozen: RunConfigSnapshot["tools"]): Promise<Set<string>> {
+  private async offeredNames(gen: Generation, frozen: RunConfigSnapshot["tools"]): Promise<Set<string>> {
     const { agent, run } = gen;
     const scope: ToolBindingScope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
     const rows = await this.services.db.listBindingsCovering(scope);
@@ -549,7 +530,7 @@ export class RunGenerator {
    * browser on and the System One key is not set, and records `browse_integration_off_at` on the
    * run's metadata so later generations of the run do not log it again.
    */
-  private async warnBrowseKeyMissing(gen: KeyGeneration): Promise<void> {
+  private async warnBrowseKeyMissing(gen: Generation): Promise<void> {
     const { agent, run } = gen;
     if (agent.config.browser_optimized !== true || isOptimizedBrowserOn(agent.config)) {
       return;

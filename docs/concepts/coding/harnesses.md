@@ -154,9 +154,11 @@ and no code tools.
 - Claude Code runs a subscription agent's turns: each generation of
   its run is one turn of the CLI in the agent's home, on the run's
   system prompt in place of Claude Code's own, resuming the run's
-  session ([Runs](../runs.md#harness-turns)). The CLI reaches no tool
-  of the platform, only its own. A Codex subscription agent's runs
-  fail at start with `subscription.not_runnable`.
+  session ([Runs](../runs.md#harness-turns)). The CLI is given the
+  orchestrator's MCP server through `--mcp-config`
+  ([Drivers](#drivers)) and calls the run's Guilds tools there, beside
+  its own. A Codex subscription agent's runs fail at start with
+  `subscription.not_runnable`.
 
 ### Managed configuration
 

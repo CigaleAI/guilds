@@ -72,11 +72,14 @@ without Memory never reads Memory instructions, and an agent without
 `group_post` never reads how to post. How to call a tool stays on the
 tool; the Guidelines teach the habits every agent shares.
 
-A [subscription agent](agents.md#model-source)'s run offers no tool,
-so its Guidelines keep none of those parts. They keep a part of their
-own for its harness: where it runs, its home, its toolchains, its
-ports, and that its secrets are variables it never prints. Its Memory
-section is the read-only one.
+A [subscription agent](agents.md#model-source)'s run offers its tools
+through the orchestrator's MCP server, so its Guidelines keep the
+parts of the tools it is offered, each tool named as its harness calls
+it ([Tool names](#tool-names)). They keep a part of their own for its
+harness: where it runs, its home, its toolchains, its ports, that its
+secrets are variables it never prints, and, when the run offers a
+tool, that the guild's tools come from the platform's MCP server and
+that its own tools' calls count toward `max_tool_calls` too.
 
 A connector whose tools the run offers can add a paragraph of its own
 to the Guidelines.
@@ -235,8 +238,8 @@ without its tags, when the condition holds, and removed otherwise:
 
 The tools a part reads are those a direct run of the agent offers:
 the native tools its access grants under its switches, with
-`report_issue` always among them. A subscription agent's run offers
-none. A part inside another is resolved first.
+`report_issue` always among them, less the code tools for a
+subscription agent. A part inside another is resolved first.
 
 Without scripts, the State intro drops the `scripts` explanation.
 Without tools, it drops the sentences on listing tools and the tool
@@ -323,7 +326,8 @@ this order:
    wake-up message, and `previous_run_at` as the mark of what changed
    since the last fire ([Routines](routines.md)).
 7. A subscription agent's harness: its container, its home, its
-   toolchains, its ports, and its secrets as variables.
+   toolchains, its ports, its secrets as variables, and where the
+   guild's tools come from.
 8. `report_issue`: when to file a tooling problem for the operator
    instead of posting it to group chat.
 

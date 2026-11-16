@@ -192,7 +192,9 @@ of its harness, and reads like any other: each message the harness
 wrote while it called its own tools is a step, each of those calls is
 a call card with its input and result, and its last message is the
 reply bubble ([Runs](runs.md#harness-turns)). Its rows carry
-`from_harness`. The run's error banner names a turn that did not end
+`from_harness`. A call of the run's Guilds tools, which the harness
+makes on the orchestrator's MCP server, reads as a model's call of
+that tool does. The run's error banner names a turn that did not end
 cleanly, such as `harness.failed` or `harness.timed_out`.
 
 A call of Claude Code's own tool reads as what it did, coloured by its

@@ -63,9 +63,10 @@ Every row a generation adds carries its generation number, starting at
 A [subscription agent](agents.md#model-source)'s generation is one
 turn of its harness instead: the harness's CLI runs in the agent's
 sandbox on the run's system prompt and the messages that opened the
-generation, with its own tools, and the run keeps what it writes as
-rows while it runs ([Harness turns](#harness-turns)). Only Claude
-Code runs a subscription agent's turns.
+generation, with its own tools and the run's Guilds tools, which it
+calls on the orchestrator's MCP server, and the run keeps what it
+writes as rows while it runs ([Harness turns](#harness-turns)). Only
+Claude Code runs a subscription agent's turns.
 
 ### What a run stores
 
@@ -379,9 +380,10 @@ guild's `keep_tool_result_generations` when the agent's is null, and
 with the offered `tools`, `mcp`, `secrets`, and the `scripts`
 ([Scripts](scripts.md#snapshot)). Its `model` states the run's model
 source: a model on a key, or null for a subscription agent's run. A
-subscription agent's run offers no `tools` and no `mcp` connection: its
-harness reaches no tool of the platform. Its `secrets` still reach the
-harness's environment.
+subscription agent's run offers the `tools` and `mcp` connections a
+run on a key with the same access would, less the code tools
+([Tools in a run](../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)).
+Its `secrets` reach the harness's environment.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `max_wake_ups`, `keep_tool_result_generations`,
@@ -456,8 +458,8 @@ harness installed and credentialed, repositories prepared
 ([Coding agents](coding/index.md)). A subscription agent's run is
 checked for its harness the same way: not turned off, installed, and
 credentialed, with the same errors
-([Harnesses](coding/harnesses.md#credentials-and-errors)). None of the
-model loop's set-up runs for it: no tool is offered and no model
+([Harnesses](coding/harnesses.md#credentials-and-errors)). Its tools
+are narrowed to the agent's live bindings as a model's are; no model
 credential is resolved.
 
 It loads every payload in order and repeats the loop up to
@@ -520,7 +522,10 @@ under the call id `turn_<generation>_<run id>`
    wake-up's message. A run whose `metadata.harness_turn` holds a
    session resumes it; a new run starts a new session. The run records
    `metadata.harness_turn` at the start and again once the CLI reports
-   its session.
+   its session. The generation's grant on the orchestrator's MCP server
+   opens before the start: the CLI is given its URL and token in a
+   private configuration file
+   ([The MCP server](../tools-and-connectors/tools-in-a-run.md#the-mcp-server)).
 2. **Poll** every second. Each poll's new events become rows as they
    come, published as `message.committed`
    ([Run transcript](run-transcript.md#harness-turns)): each message
@@ -531,7 +536,8 @@ under the call id `turn_<generation>_<run id>`
    `from_harness: "claude-code"` and the generation number. A call of
    a tool of the orchestrator's MCP server, which Claude Code names
    `mcp__guilds__<tool>`, and its result make no row from these
-   events.
+   events: the server keeps the call as the run's own, an assistant
+   row holding it and its tool row, as a model's call is kept.
 3. **End.** A CLI that exits 0 without an error result ends the
    generation as a model's final reply does: the run completes or
    waits by the same rules. Any other ending records its error:
@@ -543,11 +549,15 @@ under the call id `turn_<generation>_<run id>`
 | `harness.lost` | a poll found the turn's state gone, or the CLI exited and its result could not be read |
 | `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
 | `harness.timed_out` | the turn ran 30 minutes; the harness got `stop` |
+| `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls; the harness got `stop`, and the run completes |
+| `generation.blocked` | a call of the MCP server filed a blocking issue; the harness got `stop` |
 
 A harness that does not stop adds "It did not stop and may still be
 running; its log is `<path>`." Once `start` has gone, every way out
 but a clean exit or lost state sends `stop`: a cancel, the time limit,
-three failed polls, or an error. However the turn ends, a call of the
+three failed polls, a stop the MCP server's calls asked for, or an
+error. However the turn ends, the generation's token is revoked once
+the server has kept the call it is running, and a call of the
 harness's own tools still without a result gets the interrupted
 result, marked `from_harness`. Usage and cost are not recorded for a
 turn.

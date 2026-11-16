@@ -26,12 +26,15 @@ import { executedToolCalls, type GenerationTools, type ToolCalls } from "./tool-
 
 // The orchestrator's MCP server, which serves a subscription agent's harness the Guilds tools its
 // run offers, over MCP's Streamable HTTP transport answered with plain JSON. Each generation's
-// turn holds one grant: a random token bound to its agent and run, kept only as its digest in
-// this process, and revoked when the generation ends. A call goes the way a model's call goes,
-// one at a time in arrival order, and is kept as the run's rows.
+// turn holds one grant: a random token bound to its agent and run, held only in this process,
+// compared by its digest, and revoked when the generation ends. A call goes the way a model's
+// call goes, one at a time in arrival order, and is kept as the run's rows.
 
 /** The bytes of randomness in a turn's token: 256 bits from the platform's CSPRNG. */
 const TOKEN_BYTES = 32;
+
+/** The name a turn's token is redacted under in its run's rows. */
+export const HARNESS_MCP_TOKEN_SECRET = "HARNESS_MCP_TOKEN";
 
 /** The latest protocol version the server speaks, which it answers a client asking for one it does not with. */
 const LATEST_PROTOCOL_VERSION = "2025-11-25";
@@ -87,8 +90,9 @@ export type HarnessMcpResponse =
 export type HarnessTurnStop = { kind: "max_tool_calls" } | { kind: "blocked"; issueId: string };
 
 /**
- * A generation's grant on the server: the generation and its tools, its token's digest, its calls
- * in arrival order, and the stop its calls asked of its turn, null until one does.
+ * A generation's grant on the server: the generation and its tools, whose redaction holds the
+ * token, the token's digest it is compared by, its calls in arrival order, and the stop its calls
+ * asked of its turn, null until one does.
  */
 export type HarnessGrant = {
   gen: SubscriptionGeneration;
@@ -180,11 +184,13 @@ export class HarnessMcpServer {
 
   /**
    * Opens the generation's grant: a new token, bound to its agent and run, that the server accepts
-   * until `close`. An agent's earlier grant is revoked.
+   * until `close`, and that the run's rows are redacted of. An agent's earlier grant is revoked.
    */
   open(gen: SubscriptionGeneration, tools: GenerationTools): HarnessMcpOpening {
     const token = randomBytes(TOKEN_BYTES).toString("base64url");
-    const grant: HarnessGrant = { gen, tools, digest: tokenDigest(token), calls: new AsyncLock(), stop: null };
+    const secrets = { ...tools.secrets, [HARNESS_MCP_TOKEN_SECRET]: token };
+    const redacting: GenerationTools = { ...tools, secrets, run: { ...tools.run, secrets: { ...tools.run.secrets, [HARNESS_MCP_TOKEN_SECRET]: token } } };
+    const grant: HarnessGrant = { gen, tools: redacting, digest: tokenDigest(token), calls: new AsyncLock(), stop: null };
     this.grants.set(gen.agent.id, grant);
     return { grant, access: { url: `${this.baseUrl}/mcp/${encodeURIComponent(gen.agent.id)}`, token } };
   }

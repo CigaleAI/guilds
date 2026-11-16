@@ -47,6 +47,60 @@ The model may name a tool the run does not offer. The call then
 returns `ERROR: tool <name> is not offered this run`. A name no tool
 has returns `ERROR: unknown tool <name>`.
 
+### A subscription agent's run
+
+A [subscription agent](../concepts/agents.md#model-source)'s run is
+offered what a run on a key with the same access, flags, and kind is
+offered, connectors included, less the five code tools (`shell`,
+`shell_status`, `file_read`, `code_search`, `code_task`): its harness
+has its own. The run's snapshot records that offer. The harness calls
+those tools on the orchestrator's MCP server
+([MCP server](#the-mcp-server)), which Claude Code names
+`mcp__guilds__<tool>`. Each list and each call re-reads the agent's
+bindings and flags, and offers no tool its generation did not offer.
+
+### The MCP server
+
+Each generation of a subscription agent's run is given the
+orchestrator's MCP server: the URL of its agent's path,
+`<HARNESS_MCP_URL>/mcp/<agent id>`, and a bearer token
+([Deployment](../architecture/deployment.md#the-mcp-listener)). The
+token is 32 random bytes, kept only in the orchestrator's memory,
+compared by its SHA-256 digest in constant time, redacted from the
+run's rows, and valid only for that agent's path while that generation
+runs. It is issued when the turn
+opens and revoked when the generation ends, however it ends; a
+restart revokes every token. A request without it, with another
+token, at another agent's path, or after the generation ended answers
+401 and nothing more.
+
+| MCP method | Answer |
+| --- | --- |
+| `initialize` | The server, `guilds`, with the tools capability, on the protocol version the client asks for when the server speaks it (2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05), else 2025-11-25 |
+| `tools/list` | The run's tools, each with its own name, description, and input schema |
+| `tools/call` | The call's result as text, `isError` when the call failed |
+| `ping` | An empty result |
+| any other request | JSON-RPC error -32601 |
+
+A `tools/call` runs as a model's call does
+([How a tool call runs](#how-a-tool-call-runs)), connection tools
+through their login: the offer gate, the decode, redaction, the byte
+cap, and the `remaining_tool_calls` trailer. The run keeps it as a
+model's call: an assistant row holding the call, its arguments
+redacted, then its tool row, neither marked `from_harness`. A call id
+is `mcp_<id>`. A generation's calls run one at a time, in the order
+they arrive. A call of a tool the run does not offer when it comes, or with no
+tool name, answers JSON-RPC error -32602 and runs nothing.
+
+`max_tool_calls` counts every tool result of the run, the harness's
+own tools' included. A call once the run has made that many is
+refused with the result "Tool call limit reached. Start a new run to
+continue.", runs nothing, and ends the generation: the harness is
+stopped, and the run records `generation.max_tool_calls` and
+completes. A `report_issue` call that files a blocking issue ends the
+generation the same way, with `generation.blocked`. A call after
+either is refused with that message.
+
 ### Connector logins at run start
 
 Each connector the agent has on resolves to one login. Its status
