@@ -192,7 +192,7 @@ function CredentialStatusCard({ note, entry, agent, harness }: CredentialStatusC
         <div className="flex items-center gap-2">
           <StatusBadge status={badge.status}>{badge.label}</StatusBadge>
           <span className="text-xs font-medium text-fg">
-            {badge.status === "ok" ? "Ready for code tasks" : "Authentication required"}
+            {badge.status === "ok" ? "Ready to run" : "Authentication required"}
           </span>
         </div>
         {showLoginCheck ? <CheckLogin agent={agent} harness={harness} /> : null}
@@ -240,7 +240,7 @@ type HarnessReadinessProps = {
 };
 
 /**
- * What the picked harness still needs before the agent's code tasks run: the token its variable
+ * What the picked harness still needs before the agent's turns run: the token its variable
  * reads, with a picker among the secrets reaching the agent; its credential status as
  * `harnessCredentialNote` words it; and a check for a login in the agent's home.
  */

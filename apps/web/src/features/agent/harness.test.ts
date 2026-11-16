@@ -246,7 +246,7 @@ test("why a subscription agent without a repository cannot run on a harness name
   );
 });
 
-test("a harness's problems leave out the repositories only code tasks need", () => {
+test("a harness's problems leave out its repositories, which the repositories note names", () => {
   assert.deepEqual(harnessProblems(status({ harness: null, repositories: [] })), [
     { kind: "harness" },
   ]);
