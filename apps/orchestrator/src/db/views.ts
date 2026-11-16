@@ -2,7 +2,7 @@ import { numberOrNull } from "../lib/numbers.js";
 import { formatColumnTimestamp } from "./codecs.js";
 import type { GroupMessageRow } from "./group-chat.js";
 import type { MessageRow, RunRow } from "./runs.js";
-import type { RunChain, RunConfigSnapshot, RunMetadata, RunRepositoryChange } from "./schema/index.js";
+import type { RunChain, RunConfigSnapshot, RunMetadata, RunRepositoryChange, RunTurnChange } from "./schema/index.js";
 
 export function iso(value: string | Date): string {
   if (value instanceof Date) {
@@ -64,6 +64,7 @@ export type RunView = Pick<
   schedule_id?: string;
   instruction_hash?: string | null;
   repos?: RunRepositoryChange[];
+  turn_changes?: RunTurnChange[];
   chain?: RunChain;
   continued_by_run_id?: string;
 };
@@ -96,12 +97,13 @@ export function runItem(row: RunRow, generating: boolean): RunView {
   };
 }
 
-// A coding run carries what it changed in each repository, and its place in a run chain.
-// Other runs omit the keys.
-function codingFields(metadata: RunMetadata): Pick<RunView, "repos" | "chain" | "continued_by_run_id"> {
-  const { repos, chain, continued_by_run_id: continuedBy } = metadata;
+// A coding run carries what it changed in each repository, and its place in a run chain; a
+// subscription agent's run, what each of its turns changed. Other runs omit the keys.
+function codingFields(metadata: RunMetadata): Pick<RunView, "repos" | "turn_changes" | "chain" | "continued_by_run_id"> {
+  const { repos, turn_changes: turnChanges, chain, continued_by_run_id: continuedBy } = metadata;
   return {
     ...(repos ? { repos } : {}),
+    ...(turnChanges ? { turn_changes: turnChanges } : {}),
     ...(chain ? { chain } : {}),
     ...(continuedBy ? { continued_by_run_id: continuedBy } : {}),
   };

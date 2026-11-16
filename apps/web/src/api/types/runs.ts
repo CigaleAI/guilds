@@ -54,6 +54,8 @@ export type Run = {
   schedule_id?: string;
   /** What a coding run changed in each repository, between its checkpoints. */
   repos?: RunRepositoryChange[];
+  /** What each turn of a subscription agent's run changed; a turn that changed nothing has none. */
+  turn_changes?: RunTurnChange[];
   /** A coding run's place in a run chain, when it continues an earlier run. */
   chain?: { root_run_id: string; index: number; previous_run_id: string };
   /** The run that continued this one after its hand-off. */
@@ -89,7 +91,7 @@ export type NewRun = { message: string; files?: File[] };
 /** The operator's next message in a run, with the images attached to it. */
 export type RunMessageInput = { runId: string; content: string; files?: File[] };
 
-/** A run's or a code task's diff in one repository, cut at the server's limit. */
+/** A run's, a code task's, or a turn's diff in one repository, cut at the server's limit. */
 export type RunDiff = { repository: string; diff: string; truncated: boolean };
 
 /** `GET /api/runs/:run_id/tasks/:call_id/log`: a code task's kept harness log, redacted. */
@@ -127,7 +129,13 @@ export type LiveDelta = { text: string; content?: string };
 /** `run.continued` on a run's stream: the run of its chain that carries on. */
 export type RunContinuation = { run_id: string };
 
-/** One repository's change over a run: its start and end checkpoints and their diffstat. */
+/**
+ * What one turn of a subscription agent's run changed: the call id its checkpoints are kept
+ * under, its generation, and each repository it changed.
+ */
+export type RunTurnChange = { call_id: string; generation: number; repos: RunRepositoryChange[] };
+
+/** One repository's change over a run, or over one turn of it: its start and end checkpoints and their diffstat. */
 export type RunRepositoryChange = {
   name: string;
   branch: string | null;

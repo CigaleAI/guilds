@@ -91,7 +91,11 @@ run's next generation resumes the same session. A subscription agent:
   `max_tool_calls`, with every call of the harness's own;
 - takes images attached to a message as files in its home, whose
   paths its prompt names ([Runs](runs.md#attachments)), and has no
-  repositories or code tools;
+  code tools;
+- works in the repositories it picks, if any: its turn clones them,
+  starts in its one repository, and pushes branches through git's
+  credential helper with a token that pushes alone
+  ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them));
 - records each turn's tokens on its reply, at no price
   ([Usage](usage.md#cost-of-a-harness-turn)), and stops a turn after
   its **Max turn minutes**.
@@ -295,13 +299,13 @@ keeps it as `?section=` (`identity`, `model`, `machine`, `harness`,
 or `repositories`), so a link can open Settings on one section.
 Without one, Settings opens on Identity. A section the agent's kind
 lacks opens where its content lives: `harness` or `repositories`
-opens Model on an agent on a key without Coding, and `model` or
-`repositories` opens Harness on a subscription agent.
+opens Model on an agent on a key without Coding, and `model` opens
+Harness on a subscription agent.
 
 An agent has **Identity**, **Model**, and **Machine**. A coding agent
 has **Identity**, **Machine**, **Harness**, **Lead model**, and
 **Repositories**. A subscription agent has **Identity**, **Harness**,
-and **Machine** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
+**Machine**, and **Repositories** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
 The sections follow the form's Coding button and its **Model source**,
 so turning Coding on or picking another source changes them before
 the save. **Model source** shows at the top of an agent's Model, and
@@ -332,8 +336,8 @@ saves.
   organisation's default.
 - **Machine**: the machine picker and **Disk**
   ([Machines](machines.md), [Agent home](agent-home.md)).
-- **Harness** and **Repositories**, on a coding agent:
-  [Harnesses](coding/harnesses.md) and
+- **Harness** and **Repositories**, on a coding agent and a
+  subscription agent: [Harnesses](coding/harnesses.md) and
   [Repositories](coding/repositories.md). **Repositories** ticks the
   repositories the agent works on, saved with the rest of Settings.
   Turning **Coding** off before the first save unticks them.
@@ -349,7 +353,7 @@ saves.
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
 | Subscription agent | no model; a harness, Claude Code or Codex; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools but the code tools through the orchestrator's MCP server |
-| Repositories | only on a coding agent; each one the agent can use ([Repositories](coding/repositories.md)) |
+| Repositories | only on a coding agent or a subscription agent; each one the agent can use ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
 | Kimi Code models | only on a coding agent |
@@ -391,7 +395,7 @@ the agent.
 | `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null; `claude-code` or `codex` without a model | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_effort` | effort or null; needs a harness | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
-| `repositories` | list of repository names, each once, that the agent can use; only on a coding agent | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
+| `repositories` | list of repository names, each once, that the agent can use; only on a coding agent or a subscription agent | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
 | `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
 | `scripting` | boolean | `true` | [Scripts](scripts.md) |
 | `memory` | boolean | `true` | [Memory](memory.md) |

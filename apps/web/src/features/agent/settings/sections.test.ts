@@ -14,7 +14,12 @@ import {
 
 test("an agent's sections follow the create dialog's steps for its kind", () => {
   assert.deepEqual(settingsSections("key"), ["identity", "model", "machine"]);
-  assert.deepEqual(settingsSections("subscription"), ["identity", "harness", "machine"]);
+  assert.deepEqual(settingsSections("subscription"), [
+    "identity",
+    "harness",
+    "machine",
+    "repositories",
+  ]);
   assert.deepEqual(settingsSections("coding"), [
     "identity",
     "machine",
@@ -42,7 +47,7 @@ test("a section link opens where its content lives for the agent's kind", () => 
   assert.equal(openSection("unknown", "coding"), "identity");
   assert.equal(openSection("harness", "subscription"), "harness");
   assert.equal(openSection("model", "subscription"), "harness");
-  assert.equal(openSection("repositories", "subscription"), "harness");
+  assert.equal(openSection("repositories", "subscription"), "repositories");
 });
 
 test("a coding problem is fixed under Harness, or under Repositories when the guild has none", () => {

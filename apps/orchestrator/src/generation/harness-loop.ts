@@ -79,6 +79,11 @@ export type SubscriptionGeneration = RunGeneration & {
   snapshot: HarnessRunConfigSnapshot;
 };
 
+/** The id that names a generation's turn: its state and log on the machine, and its checkpoints in the agent's repositories. */
+export function harnessTurnCallId(gen: Pick<RunGeneration, "runId" | "generation">): string {
+  return callSegment(`turn_${gen.generation}_${gen.runId}`);
+}
+
 /** A call of the harness's own tool whose result has not come yet, and when its row was kept. */
 type PendingCall = { call: ToolCall; seen: number };
 
@@ -91,6 +96,8 @@ type HarnessRunTurn = {
   grant: HarnessGrant;
   /** The id that names the turn's state and log on the machine. */
   call_id: string;
+  /** The repository the CLI starts in: the agent's one repository, or null for its home when it has none or several. */
+  repository: string | null;
   log_path: string;
   deadline: number;
   session: string | null;
@@ -277,14 +284,19 @@ export class HarnessLoop {
     }
   }
 
-  /** The turn of the generation under `grant`, its clock started, resuming the session the run's last turn left. */
+  /**
+   * The turn of the generation under `grant`, its clock started, resuming the session the run's
+   * last turn left, in the repository the generation placed when it placed one alone.
+   */
   private openTurn(gen: SubscriptionGeneration, tools: GenerationTools, grant: HarnessGrant): HarnessRunTurn {
-    const callId = callSegment(`turn_${gen.generation}_${gen.runId}`);
+    const callId = harnessTurnCallId(gen);
+    const placed = tools.run.code_repositories;
     return {
       harness: gen.snapshot.harness,
       ops: opsRun(tools.run),
       grant,
       call_id: callId,
+      repository: placed.length === 1 ? (placed[0] ?? null) : null,
       log_path: harnessLogPath(gen.runId, callId),
       deadline: Date.now() + gen.snapshot.max_turn_minutes * harnessTurnTiming.minuteMs,
       session: gen.run.metadata.harness_turn?.session_id ?? null,
@@ -308,7 +320,7 @@ export class HarnessLoop {
       await launchHarness(turn.ops, turn.call_id, {
         harness: turn.harness,
         prompt,
-        repository: null,
+        repository: turn.repository,
         system_prompt: system,
         mcp,
         session_id: turn.session,
@@ -377,7 +389,7 @@ export class HarnessLoop {
     turn: HarnessRunTurn,
   ): Promise<TurnSettled> {
     for (;;) {
-      const settled = turnInterruption(tools.run, turn) ?? (await this.pollTurnOnce(gen, turn));
+      const settled = turnInterruption(tools.run, turn) ?? (await this.pollTurnOnce(gen, tools, turn));
       if (settled !== null) {
         return settled;
       }
@@ -388,10 +400,15 @@ export class HarnessLoop {
     }
   }
 
-  /** One poll of the turn, its new events kept as rows redacted with the turn's secrets and token. */
-  private async pollTurnOnce(gen: SubscriptionGeneration, turn: HarnessRunTurn): Promise<Settled | null> {
+  /**
+   * One poll of the turn, once the repository tokens that near their expiry are replaced, its new
+   * events kept as rows redacted with the turn's token and the generation's secrets, those tokens
+   * included.
+   */
+  private async pollTurnOnce(gen: SubscriptionGeneration, tools: GenerationTools, turn: HarnessRunTurn): Promise<Settled | null> {
     let polled: HarnessPollResult;
     try {
+      await tools.hooks.before_command?.();
       polled = await pollHarness(turn.ops, turn.call_id, turn.harness, turn.offset);
     } catch (error) {
       return countFailedTurnPoll(turn, errorMessage(error));
@@ -402,7 +419,7 @@ export class HarnessLoop {
     }
     turn.offset = polled.poll.offset ?? turn.offset;
     await this.noteSession(gen.runId, turn, stringOrNull(polled.poll.session_id));
-    await this.keepEvents(gen, turn.grant.tools.secrets, turn, polled.events);
+    await this.keepEvents(gen, { ...turn.grant.tools.secrets, ...tools.secrets }, turn, polled.events);
     return polled.poll.exited === true ? "exited" : null;
   }
 

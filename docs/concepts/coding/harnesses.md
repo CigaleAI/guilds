@@ -138,15 +138,17 @@ A subscription agent has no model: its harness is its model source
 ([Agents](../agents.md#model-source)). It names the harness, its
 model, and its effort in the same `harness`, `harness_model`, and
 `harness_effort` as a coding agent, and its credential, login record,
-harness check, and readiness read the same way. It has no repository
-and no code tools.
+harness check, and readiness read the same way. It has no code tools.
+It may pick repositories, which its turns work in
+([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
 
 - Only Claude Code and Codex run a subscription agent. Cursor and
   Antigravity stay harnesses of coding agents only.
 - A harness turned off with `HARNESSES_OFF` is refused as a new pick
   for a subscription agent as for a coding agent.
 - Claude Code and Codex run a subscription agent's turns: each
-  generation of its run is one turn of the CLI in the agent's home, on
+  generation of its run is one turn of the CLI in the agent's home, or
+  in its one repository, on
   the run's system prompt in place of the CLI's own, resuming the
   run's session ([Runs](../runs.md#harness-turns)). The CLI is given
   the orchestrator's MCP server for that one call
@@ -379,7 +381,7 @@ harness). The CLI names a Cursor model starts under stay on the server.
 | `harness_model` | Its model, or null |
 | `harness_effort` | Its effort, or null |
 | `machine_harnesses` | The harness CLIs the agent's machine carries; null until its container first started |
-| `repositories` | The names of the repositories a coding run clones: those the agent picks and can use, in its order |
+| `repositories` | The names of the repositories a coding run, or a subscription agent's turn, clones: those the agent picks and can use, in its order |
 | `usable_repositories` | The names of the repositories the agent can use ([Repositories](repositories.md#an-agents-picks)) |
 | `harnesses` | One entry per harness, below |
 

@@ -8,6 +8,25 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A subscription agent works in repositories. It picks
+them in `config.repositories` and under **Repositories** in its
+Settings, as a coding agent does, and a recipe's subscription role
+keeps its repositories at apply. Before each turn they are cloned or
+updated in its home, and its CLI starts in its one repository, or in
+its home with several. The harness commits and pushes a branch
+itself through git's credential helper, with a token that pushes
+alone: a GitHub installation token with `contents: write` and no
+other permission, replaced before it expires and emptied from the
+tokens file when the turn ends. Its environment holds no `GH_TOKEN`.
+Its system prompt says where the repositories are and how it
+branches, commits and pushes, and names the GitHub connector's
+`create_pull_request` as the harness calls it when the run offers it,
+else that the pushed branch ends its part. Each turn that changed a
+repository is recorded in the run's `turn_changes`, shown under
+**Turn `<n>`** in the run's **Changes** panel, with its diff at
+`GET /api/runs/:id/turns/:call_id/changes/:repository/diff`
+([SEC-66](docs/architecture/security-register.md#sec-66--a-subscription-agents-harness-pushes-to-its-repositories-and-what-it-reads-can-steer-the-push)).
+
 **No impact.** A subscription agent runs every way an agent's run
 starts: a direct message, a group delivery, a routine's firing, a
 wake-up, and a message to a resumed run each run one turn of its

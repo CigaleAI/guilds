@@ -590,7 +590,9 @@ test("a role's repositories are names the recipe lists, on a coding role, each o
   role.config = { ...role.config, coding: true, repositories: "api" };
   assert.deepEqual(found(), [["repositories.invalid", "error", path, "config.repositories must be a list of repository names, each once"]]);
   role.config = { ...role.config, coding: false, repositories: ["api"] };
-  assert.deepEqual(found(), [["repositories.coding", "warning", path, "config.repositories is only for a coding role; apply leaves it out"]]);
+  assert.deepEqual(found(), [["repositories.coding", "warning", path, "config.repositories is only for a coding or subscription role; apply leaves it out"]]);
+  role.config = { ...role.config, coding: false, model: null, harness: "codex", repositories: ["api"] };
+  assert.deepEqual(found(), [], "a subscription role works on repositories");
   role.config = { ...role.config, coding: false, repositories: [] };
   assert.deepEqual(found(), []);
 });

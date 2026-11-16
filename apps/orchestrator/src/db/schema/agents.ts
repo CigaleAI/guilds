@@ -84,8 +84,9 @@ export type AgentConfig = {
   /** The effort the harness runs its model at; null leaves it to the harness. */
   harness_effort: Effort | null;
   /**
-   * The repositories a coding agent works on, by name, in this order: each one the agent can use
-   * (its guild's, or one picked on the GitHub login it clones with). Empty on any other agent.
+   * The repositories a coding agent or a subscription agent works on, by name, in this order:
+   * each one the agent can use (its guild's, or one picked on the GitHub login it clones with).
+   * Empty on an agent on a key that does not code.
    */
   repositories: string[];
   /**
@@ -138,7 +139,8 @@ export type RunScriptSnapshot = {
  * `runs.config_snapshot`: the settings a run is created with, whose `model` states its model
  * source as `modelSourceOf` reads it, the tools it is offered (each an OpenAI function schema,
  * passed to the model as is), the connections and secrets it reaches, and the scripts it pins.
- * A coding run reads its repositories from its agent when it starts, as it reads the guild's.
+ * A coding run, and a subscription agent's turn, reads its repositories from its agent when it
+ * starts, as it reads the guild's.
  */
 export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib" | "repositories"> & {
   projection_policy_version: number;
@@ -163,7 +165,10 @@ export type RunChain = { root_run_id: string; index: number; previous_run_id: st
 
 const NullableString = Type.Union([Type.String(), Type.Null()]);
 
-/** One repository's change over a coding run, as the end checkpoint reports it: its checkpoints and their diffstat. */
+/**
+ * One repository's change over a coding run, or over one turn of a subscription agent's run, as
+ * the end checkpoint reports it: its checkpoints and their diffstat.
+ */
 export const RunRepositoryChangeSchema = Type.Object({
   name: Type.String(),
   branch: NullableString,
@@ -175,6 +180,12 @@ export const RunRepositoryChangeSchema = Type.Object({
   deletions: Type.Integer(),
 });
 export type RunRepositoryChange = Static<typeof RunRepositoryChangeSchema>;
+
+/**
+ * What one turn of a subscription agent's run changed in its repositories: the call id its
+ * checkpoints are kept under, its generation, and each repository it changed.
+ */
+export type RunTurnChange = { call_id: string; generation: number; repos: RunRepositoryChange[] };
 
 /** The `code_task` call a run last started a harness turn for, to recover it when the call is lost. */
 export type RunHarnessTask = {
@@ -253,6 +264,8 @@ export type RunMetadata = {
   chain?: RunChain;
   continued_by_run_id?: string;
   repos?: RunRepositoryChange[];
+  /** What each turn of a subscription agent's run changed, in order; a turn that changed nothing has no entry. */
+  turn_changes?: RunTurnChange[];
   host_id?: string;
   harness_task?: RunHarnessTask;
   harness_turn?: RunHarnessTurn;

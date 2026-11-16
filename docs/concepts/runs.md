@@ -480,7 +480,9 @@ checked for its harness the same way: not turned off, installed, and
 credentialed, with the same errors
 ([Harnesses](coding/harnesses.md#credentials-and-errors)). Its tools
 are narrowed to the agent's live bindings as a model's are; no model
-credential is resolved.
+credential is resolved. One whose agent picks repositories is checked
+for them as a coding run is, then has them prepared before its turn
+([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them)).
 
 It loads every payload in order and repeats the loop up to
 `max_steps` times. Each step filters every tool result through the
@@ -533,6 +535,8 @@ under the call id `turn_<generation>_<run id>`
 ([Process](coding/code-tasks.md#process)):
 
 1. **Start.** `guilds-harness start` runs the CLI in the agent's home,
+   or in the working tree of the one repository it picks, under
+   `repos/<name>` ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them)),
    on the agent's harness model and effort, with the run's first row,
    its composed system prompt, in place of the CLI's own
    ([Drivers](coding/harnesses.md#drivers)). Its prompt on stdin is
@@ -550,8 +554,9 @@ under the call id `turn_<generation>_<run id>`
    opens before the start: the CLI is given its URL and token for that
    one call
    ([The MCP server](../tools-and-connectors/tools-in-a-run.md#the-mcp-server)).
-2. **Poll** every second. Each poll's new events become rows as they
-   come, published as `message.committed`
+2. **Poll** every second, once each repository token within 10
+   minutes of its expiry is replaced. Each poll's new events become
+   rows as they come, published as `message.committed`
    ([Run transcript](run-transcript.md#harness-turns)): each message
    of the CLI an assistant row, its calls of its own tools the row's
    `tool_calls`, and each result a tool row. Text, tool inputs, and
@@ -611,7 +616,9 @@ held message as it is.
 `metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
 `.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`, under the
-same retention as a code task's.
+same retention as a code task's. A turn in repositories that changed
+one appends an entry to `metadata.turn_changes`
+([Reviewing changes](coding/reviewing-changes.md#refs)).
 
 ### Harness turns by how a run starts
 

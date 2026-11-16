@@ -356,7 +356,8 @@ export class RunGenerator {
 
   /**
    * Sets the generation up and runs it, in model steps on a key or in a turn of the harness on a
-   * subscription; afterwards a coding run's checkpoints and the workspace sizes are kept.
+   * subscription; afterwards a coding run's checkpoints, a subscription turn's end in its
+   * repositories, and the workspace sizes are kept.
    */
   private async runGeneration(gen: Generation): Promise<void> {
     const { coding, workspace, generations, harness } = this.services;
@@ -371,7 +372,9 @@ export class RunGenerator {
         await harness.runTurn(gen, ready.tools);
       }
     } finally {
-      if (gen.snapshot.coding) {
+      if (gen.source === "subscription") {
+        await coding.endTurnInRepositories(gen, ready.sandbox, ready.tools.run.code_repositories);
+      } else if (gen.snapshot.coding) {
         await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox, ready.tools.run.code_repositories);
       }
       if (!generations.isCancelled(gen.runId)) {
@@ -401,17 +404,28 @@ export class RunGenerator {
     return (await this.isReady(gen, sandboxes.machine, tools)) ? { tools, sandbox: sandboxes.machine } : null;
   }
 
-  /** A coding run starts only with a harness picked and repositories its agent picks and can use. */
+  /**
+   * A coding run starts only with a harness picked and repositories its agent picks and can use;
+   * a subscription run whose agent picks repositories, only when it can use each of them.
+   */
   private async isStartable(gen: Generation): Promise<boolean> {
-    const { db, events } = this.services;
+    if (gen.source === "subscription") {
+      return !gen.agent.config.repositories.length || this.canUseItsRepositories(gen);
+    }
     if (!gen.snapshot.coding) {
       return true;
     }
     if (gen.snapshot.harness === null) {
       const missing = harnessMissingError();
-      await events.recordError(gen, missing.code, missing);
+      await this.services.events.recordError(gen, missing.code, missing);
       return false;
     }
+    return this.canUseItsRepositories(gen);
+  }
+
+  /** Whether the agent picks a repository and can use each one it picks; the run says why not. */
+  private async canUseItsRepositories(gen: Generation): Promise<boolean> {
+    const { db, events } = this.services;
     const problem = agentRepositoriesProblem(await loadAgentRepositories(db, gen.agent));
     if (problem !== null) {
       await events.recordError(gen, problem.code, problem);
@@ -472,7 +486,8 @@ export class RunGenerator {
 
   /**
    * Whether the generation may take its first step: the workspace has room, a subscription's or a
-   * coding run's harness is ready, and a coding run's repositories are cloned.
+   * coding run's harness is ready, and the repositories a coding run or a subscription turn works
+   * in are cloned.
    */
   private async isReady(gen: Generation, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     const { workspace, coding } = this.services;
@@ -480,12 +495,12 @@ export class RunGenerator {
       return false;
     }
     if (gen.source === "subscription") {
-      return coding.harnessReady(gen, tools.run);
+      return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareTurnRepositories(gen, sandbox, tools));
     }
     if (!gen.snapshot.coding) {
       return true;
     }
-    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareRepositories(gen, gen.agent, sandbox, tools));
+    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareRepositories(gen, sandbox, tools));
   }
 
   /**

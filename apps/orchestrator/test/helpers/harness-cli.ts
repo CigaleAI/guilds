@@ -35,6 +35,11 @@ export function recordedEvents(name: string): string[] {
 /** A stand-in line that makes the CLI sleep until it is stopped. */
 export const HANG = JSON.stringify({ stub: "hang" });
 
+/** A stand-in line that makes the CLI run `argv` in its working directory and print its exit code and output. */
+export function runLine(...argv: string[]): string {
+  return JSON.stringify({ stub: "run", argv });
+}
+
 /** A stand-in line that makes the CLI send the JSON-RPC request `method` to the orchestrator's MCP server, numbered `id`. */
 export function mcpLine(method: string, params: Record<string, unknown> = {}, id = 1): string {
   return JSON.stringify({ stub: "mcp", method, params, id });
@@ -44,10 +49,11 @@ export function mcpLine(method: string, params: Record<string, unknown> = {}, id
 export type StubMcpAnswer = { method: string; status: number; answer: { result?: Record<string, unknown>; error?: { code: number; message: string } } | null };
 
 /**
- * A sandbox on this machine with the stand-in CLI on PATH as `binary`, replaying `lines`; each
- * start of it is returned by `calls`, and `replay` gives the next start other lines.
+ * A sandbox on this machine of agent `agentId`, with the stand-in CLI on PATH as `binary`,
+ * replaying `lines`; each start of it is returned by `calls`, and `replay` gives the next start
+ * other lines.
  */
-export function stubCliSandbox(binary: string, lines: string[], env: Record<string, string> = {}) {
+export function stubCliSandbox(binary: string, lines: string[], env: Record<string, string> = {}, agentId = "a_1") {
   const bin = tempDir("harness-bin-");
   copyFileSync(STUB, path.join(bin, binary));
   chmodSync(path.join(bin, binary), 0o755);
@@ -57,7 +63,7 @@ export function stubCliSandbox(binary: string, lines: string[], env: Record<stri
   const eventsFile = path.join(scratch, "events.jsonl");
   const replay = (next: string[]) => writeFileSync(eventsFile, next.join("\n") + "\n");
   replay(lines);
-  const sandbox = new HostCodeSandbox("a_1", {
+  const sandbox = new HostCodeSandbox(agentId, {
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     HARNESS_STUB_EVENTS: eventsFile,
     HARNESS_STUB_RECORD: record,

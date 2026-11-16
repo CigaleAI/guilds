@@ -14,6 +14,8 @@ export const runKeys = {
   run: (runId: string) => ["run", runId] as const,
   runDiff: (runId: string, repository: string) => ["run", runId, "diff", repository] as const,
   taskDiff: (runId: string, callId: string) => ["run", runId, "task-diff", callId] as const,
+  turnDiff: (runId: string, callId: string, repository: string) =>
+    ["run", runId, "turn-diff", callId, repository] as const,
   taskLog: (runId: string, callId: string) => ["run", runId, "task-log", callId] as const,
   runMessages: (runId: string) => ["run", runId, "messages"] as const,
 };
@@ -151,6 +153,19 @@ export function useRunDiff(runId: string, repository: string | null) {
     staleTime: Infinity,
     queryFn: () =>
       api<RunDiff>(`${runPath(runId)}/changes/${encodeURIComponent(repository ?? "")}/diff`),
+  });
+}
+
+/** The diff one turn of a subscription agent's run made in one repository, fetched on demand. */
+export function useTurnDiff(runId: string, callId: string, repository: string | null) {
+  return useQuery({
+    queryKey: runKeys.turnDiff(runId, callId, repository ?? ""),
+    enabled: Boolean(repository),
+    staleTime: Infinity,
+    queryFn: () =>
+      api<RunDiff>(
+        `${runPath(runId)}/turns/${encodeURIComponent(callId)}/changes/${encodeURIComponent(repository ?? "")}/diff`,
+      ),
   });
 }
 

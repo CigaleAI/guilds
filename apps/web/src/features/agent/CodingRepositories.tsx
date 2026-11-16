@@ -121,7 +121,7 @@ type CodingRepositoriesProps = {
 };
 
 /**
- * The repositories a coding agent works on, picked among those it can use, then the guild's
+ * The repositories a coding or subscription agent works on, picked among those it can use, then the guild's
  * repositories it picks from: its GitHub login and the repositories picked on it, then those added
  * by URL. While the agent picks none it can use, `missingNote` says what that means where it shows.
  */
@@ -129,8 +129,8 @@ export function CodingRepositories({ guild, usable, picked, onPick, missingNote 
   return (
     <>
       <p className="text-sm text-fg-2">
-        Code tasks run in the repositories this agent picks. The repositories of {guild.name} below
-        are shared by its coding agents; each picks the ones it works on.
+        This agent works in the repositories it picks. The repositories of {guild.name} below are
+        shared by its agents; each picks the ones it works on.
       </p>
       <RepositoryPicker usable={usable} picked={picked} onPick={onPick} />
       {usable && !picksUsableRepository(usable, picked) ? (

@@ -387,11 +387,12 @@ function connection(id: string, status: McpConnectionRow["status"], installation
   return connectionRow({ id, status, account_hint: "acme", ciphertext, nonce });
 }
 
-/** The tokens of `rows`, minted through GitHub on `db` with `options`; no row here uses an access token. */
+/** The tokens of `rows` as a coding run mints them, through GitHub on `db` with `options`; no row here uses an access token. */
 function githubTokens(db: unknown, rows: CodingRepository[], options: MintOptions): RepositoryTokens {
   return new RepositoryTokens(
     { github: new GithubProvider(db as never, options), access_token: new AccessTokenProvider({} as never) },
     rows,
+    "push_and_pull_requests",
   );
 }
 
@@ -460,6 +461,28 @@ test("repository tokens: one per connection, limited to its repositories, refres
   assert.equal(files[0]?.path, "/run/guilds/a_1/git-tokens.json");
   assert.equal((JSON.parse(String(files[0]!.data)) as { repositories: Record<string, unknown> }).repositories.shop !== undefined, true);
   assert.deepEqual(saved, []);
+});
+
+test("a token minted to push asks GitHub for contents write alone, on the same repositories", async () => {
+  const db = { getMcpConnection: async (id: string) => connection(id, "connected", 11) };
+  const asked: unknown[] = [];
+  const fake = fakeFetch((_url, init) => {
+    const body = JSON.parse(String(init.body)) as { repository_ids: number[]; permissions: unknown };
+    asked.push(body);
+    return json(201, {
+      token: "ghs_push",
+      expires_at: "2026-09-30T13:00:00Z",
+      repositories: [{ id: 101, full_name: "acme/shop" }],
+    });
+  });
+  const tokens = new RepositoryTokens(
+    { github: new GithubProvider(db as never, { app: APP, fetch: fake.fetch, masterKey: MASTER }), access_token: new AccessTokenProvider({} as never) },
+    [codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 })],
+    "push",
+  );
+  await tokens.mint();
+  assert.deepEqual(asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");
+  assert.equal(tokens.entries.shop?.token, "ghs_push");
 });
 
 test("a repository stored without an id finds it by its path, and one GitHub renamed gets its current URL", async () => {

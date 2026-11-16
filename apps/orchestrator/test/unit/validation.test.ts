@@ -487,6 +487,12 @@ test("only a coding agent picks repositories", () => {
   assert.deepEqual(validateAgentConfig({ model, repositories: [] }).repositories, []);
 });
 
+test("a subscription agent picks repositories, as a coding agent does", () => {
+  const subscription = validateAgentConfig({ model: null, harness: "claude-code", repositories: ["shop", "docs"] });
+  assert.deepEqual(subscription.repositories, ["shop", "docs"]);
+  assert.equal(subscription.coding, false);
+});
+
 test("a config picks only repositories the agent can use, and keeps one it already picked", () => {
   const model = VALID_CONFIG.model;
   const config = validateAgentConfig({ model, coding: true, harness: "codex", repositories: ["shop", "billing", "wiki"] });

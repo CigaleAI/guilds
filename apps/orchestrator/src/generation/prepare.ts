@@ -5,7 +5,8 @@ import { AgentValidationError, validateAgentConfig } from "../agents/validation.
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { HARNESS_MCP_TOOL_PREFIX, isTurnHarness } from "../coding/harnesses.js";
-import { stateRepositories } from "../coding/repositories.js";
+import { pullRequestToolOf } from "../coding/git.js";
+import { stateRepositories, type CodingRepository } from "../coding/repositories.js";
 import { modelSourceOf, type AgentConfig, type ResolvedAgentConfig, type RunTaskSource } from "../db/schema/index.js";
 import { ARTIFACT_TOOLS, FILE_TOOLS, NOTE_TOOLS, SCHEDULE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
@@ -37,7 +38,7 @@ import type { ActiveGenerations } from "./active-generations.js";
 import { codingRepositoriesDatabase, loadAgentRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
-import { runOffer, type PreparedRun } from "./snapshot.js";
+import { runOffer, type PreparedRun, type RunOffer } from "./snapshot.js";
 import { collectionCatalog, type CatalogCollection } from "../artifacts/collections.js";
 import { agentTask, taskSnapshot } from "../artifacts/task.js";
 import type { ArtifactStore } from "../artifacts/store.js";
@@ -113,6 +114,8 @@ export type PromptCapabilities = {
   schedules: boolean;
   issues: boolean;
   harness: boolean;
+  repositories: boolean;
+  pullRequestTool: string | null;
   toolNaming: ToolNaming;
 };
 
@@ -128,9 +131,17 @@ export function runToolNaming(config: Pick<AgentConfig, "model" | "harness">): T
   return { prefix: HARNESS_MCP_TOOL_PREFIX[harness] };
 }
 
-function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabilities {
+/**
+ * What the standing prompt of a run with `offer` tells an agent with `config`, which works in
+ * `repositories`: a subscription agent with repositories also reads how it works in them, and
+ * the tool its run offers that opens their pull requests.
+ */
+function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: CodingRepository[]): PromptCapabilities {
+  const { tools } = offer;
   const memory = config.memory;
   const offers = (names: readonly string[]) => names.some((name) => tools.includes(name));
+  const harness = modelSourceOf(config).kind === "subscription";
+  const worksInRepositories = harness && repositories.length > 0;
   return {
     scripts: config.scripting && offers(SCRIPT_TOOLS),
     notes: offers(NOTE_TOOLS),
@@ -145,7 +156,9 @@ function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabil
     groupPost: tools.includes("group_post"),
     schedules: offers(SCHEDULE_TOOLS),
     issues: tools.includes("report_issue"),
-    harness: modelSourceOf(config).kind === "subscription",
+    harness,
+    repositories: worksInRepositories,
+    pullRequestTool: worksInRepositories ? pullRequestToolOf(repositories, offer.mcp) : null,
     toolNaming: runToolNaming(config),
   };
 }
@@ -177,7 +190,8 @@ export class RunPreparation {
     const [rawStanding, task, memory] = await this.prompts(agent);
     // The standing prompt describes what a direct run offers; its schedule part says which runs set schedules.
     const offer = runOffer(config, access, "direct");
-    const caps = promptCapabilities(config, offer.tools);
+    const repositories = config.repositories.length ? (await loadAgentRepositories(db, agent)).repositories : [];
+    const caps = promptCapabilities(config, offer, repositories);
     const standing = standingForCapabilities(rawStanding, caps);
     const historyRows = await db.listGroupMessages(agent.guild_id, { throughSeq });
     const history = await groupRouter.history({
@@ -198,7 +212,7 @@ export class RunPreparation {
       scripts: caps.scripts ? await scripts.catalog(agent.id) : [],
       maxToolCalls: config.max_tool_calls,
       connectors: await this.connectorState(agent),
-      repositories: caps.coding ? stateRepositories((await loadAgentRepositories(db, agent)).repositories, agent.id) : null,
+      repositories: caps.coding || caps.repositories ? stateRepositories(repositories, agent.id) : null,
     });
     return {
       agent,

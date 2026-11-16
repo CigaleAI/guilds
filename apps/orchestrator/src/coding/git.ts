@@ -4,6 +4,8 @@ import { TOKEN_REFRESH_MS } from "../github/tokens.js";
 import type { Queryable } from "../db/pg.js";
 import type { SandboxFiles } from "../sandbox/sdk.js";
 import type { AgentRow } from "../db/agents.js";
+import type { RunMcpConnection, RunMcpTool } from "../db/schema/index.js";
+import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { accessTokenProvider } from "./access-token-provider.js";
 import { githubProvider } from "./github-provider.js";
 import type { CodingRepository } from "./repositories.js";
@@ -46,17 +48,59 @@ export type TokenEntry = {
   provider: GitProviderName;
 };
 
-/** How a git provider gives its repositories their tokens: the entry of each of `repositories`, all its own, by repository name. */
+/**
+ * What a run's repository tokens may do on the host: push branches alone, or push branches and
+ * open pull requests. A provider whose tokens the box does not mint carries what the host grants.
+ */
+export type GitTokenScope = "push" | "push_and_pull_requests";
+
+/**
+ * How a git provider gives its repositories their tokens: the entry of each of `repositories`, all
+ * its own, by repository name, each token limited to `scope` where the provider mints it.
+ */
 export type GitProvider = {
-  mint(repositories: CodingRepository[]): Promise<Map<string, TokenEntry>>;
+  mint(repositories: CodingRepository[], scope: GitTokenScope): Promise<Map<string, TokenEntry>>;
 };
 
 /** Every git provider, by the name a repository gives it. */
 export type GitProviders = Record<GitProviderName, GitProvider>;
 
+/** A connector's tool that opens a pull request: the connector's server, and the tool's own name on it. */
+type PullRequestTool = Pick<RunMcpConnection, "server_id"> & Pick<RunMcpTool, "remote_name">;
+
 /**
- * The tokens of a run's guild repositories, each minted through its repository's git provider; a
- * repository without one gets none. Knows when a token needs replacing.
+ * The connector tool that opens a pull request on each provider's repositories, under that
+ * connector's login and bindings; none for a provider whose host has no connector.
+ */
+const PULL_REQUEST_TOOLS: Record<GitProviderName, PullRequestTool | null> = {
+  github: { server_id: GITHUB_SERVER_ID, remote_name: "create_pull_request" },
+  access_token: null,
+};
+
+/**
+ * The name the run offers, among its connections `mcp`, the tool that opens a pull request on the
+ * provider of one of `repositories`; null when the run is offered none.
+ */
+export function pullRequestToolOf(
+  repositories: CodingRepository[],
+  mcp: ReadonlyArray<Pick<RunMcpConnection, "server_id" | "tools">>,
+): string | null {
+  for (const repository of repositories) {
+    const wanted = repository.provider === null ? null : PULL_REQUEST_TOOLS[repository.provider];
+    const tool = mcp
+      .filter((connection) => connection.server_id === wanted?.server_id)
+      .flatMap((connection) => connection.tools)
+      .find((item) => item.remote_name === wanted?.remote_name);
+    if (tool !== undefined) {
+      return tool.name;
+    }
+  }
+  return null;
+}
+
+/**
+ * The tokens of a run's guild repositories, each minted through its repository's git provider
+ * within `scope`; a repository without one gets none. Knows when a token needs replacing.
  */
 export class RepositoryTokens {
   entries: Record<string, TokenEntry> = {};
@@ -64,6 +108,7 @@ export class RepositoryTokens {
   constructor(
     private providers: GitProviders,
     private repositories: CodingRepository[],
+    private scope: GitTokenScope,
   ) {}
 
   get values(): string[] {
@@ -89,7 +134,7 @@ export class RepositoryTokens {
       if (provider === null) {
         continue;
       }
-      for (const [name, entry] of await this.providers[provider].mint(rows)) {
+      for (const [name, entry] of await this.providers[provider].mint(rows, this.scope)) {
         entries[name] = entry;
       }
     }
@@ -102,9 +147,14 @@ export class RepositoryTokens {
   }
 }
 
-/** The tokens of a run's `repositories`, minted and recorded on `db` through each one's git provider. */
-export function repositoryTokens(db: Queryable, repositories: CodingRepository[]): RepositoryTokens {
-  return new RepositoryTokens({ github: githubProvider(db), access_token: accessTokenProvider(db) }, repositories);
+/** Empties the agent's tokens file, so the credential helper answers for no repository until a run writes it again. */
+export async function eraseRepositoryTokens(files: SandboxFiles, agentId: string): Promise<void> {
+  await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: {} }) }]);
+}
+
+/** The tokens of a run's `repositories` within `scope`, minted and recorded on `db` through each one's git provider. */
+export function repositoryTokens(db: Queryable, repositories: CodingRepository[], scope: GitTokenScope): RepositoryTokens {
+  return new RepositoryTokens({ github: githubProvider(db), access_token: accessTokenProvider(db) }, repositories, scope);
 }
 
 const CREDENTIAL_FAILURE = /could not read (username|password)|authentication failed|terminal prompts disabled/i;

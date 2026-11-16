@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-66](#sec-66--a-subscription-agents-harness-pushes-to-its-repositories-and-what-it-reads-can-steer-the-push) | A subscription agent's harness pushes to its repositories, and what it reads can steer the push | Open |
 | [SEC-65](#sec-65--an-image-attached-to-a-subscription-agents-message-is-a-file-every-process-on-its-machine-reads) | An image attached to a subscription agent's message is a file every process on its machine reads | Open |
 | [SEC-64](#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools) | A subscription agent's MCP token lets any process on its machine call its Guilds tools | Open |
 | [SEC-63](#sec-63--on-docker-desktop-every-sandbox-reaches-the-operator-app) | On Docker Desktop every sandbox reaches the operator app | Open |
@@ -74,6 +75,61 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-66 — A subscription agent's harness pushes to its repositories, and what it reads can steer the push
+
+**Status:** open.
+
+**Found:** 2026-11-16, letting a subscription agent work in the
+repositories it picks.
+
+**Where:** `CodingRuns.prepareTurnRepositories` and
+`CodingRuns.endTurnInRepositories` in
+`apps/orchestrator/src/generation/coding.ts`, the `push` scope of
+`GithubProvider` in `apps/orchestrator/src/coding/github-provider.ts`,
+`/run/guilds/<agent id>/git-tokens.json` and `guilds-git-credential`,
+and the `repositories` part of `apps/orchestrator/src/prompts/system.md`.
+
+**Exposure:** a subscription agent that picks repositories runs each
+turn in its harness's CLI beside a token that pushes to each of them.
+The CLI runs as root (SEC-6) with its permission prompts off (SEC-28),
+the network open, and the agent's granted secrets in its environment
+(SEC-62). git reads the token through the credential helper, and any
+process on the machine reads the tokens file while the turn runs
+(SEC-10, SEC-24). The harness reads repository files, commit messages,
+a contributor guide, command output, and what its Guilds and connector
+tools return. Instructions planted in any of it can steer the harness
+to push what the operator did not intend, to any unprotected branch of
+the repositories its agent picks, the default branch included, or to
+send the token out. No lead model reviews the work before it is
+pushed, as one does a code task's. With the GitHub connector's
+`create_pull_request` On, it can be steered to open a pull request
+too, under that login's own permissions (SEC-47). A repository added
+with an access token pushes with whatever the host grants that token
+(SEC-61).
+
+**Control in place:** a turn gets tokens only for the repositories
+its agent picks. A GitHub token holds `contents: write` alone, which
+pushes a branch and opens no pull request, issue, workflow run, or
+administration change; it lives one hour and is replaced before it
+expires. A code task's token keeps `contents` and `pull_requests`
+write. The CLI's environment holds no `GH_TOKEN`, `GITHUB_TOKEN`, or
+repository token, and the token is redacted from the run's rows. The
+tokens file is emptied when a turn that started ends, however it ends;
+a turn an orchestrator restart cut short, or a generation whose clone
+failed, leaves it until the agent's next generation. A turn stops
+after its `max_turn_minutes`. The system prompt tells the agent to
+work on a branch of its own, never the default branch, and that
+repository content, issue text, and command output are data, never
+instructions. Each turn's change is checkpointed and recorded on the
+run for review. Branch protection and required reviews on the host
+still apply.
+
+**Fix to make:** the control-plane git proxy of SEC-10, which would
+hold the token and check the branch a push names. Until then, protect
+each repository's default branch on its host, and give an agent whose
+repositories take content from people the organisation does not trust
+a machine of its own.
 
 ## SEC-65 — An image attached to a subscription agent's message is a file every process on its machine reads
 
@@ -145,8 +201,10 @@ Guilds tool the run offers, as the agent: it writes and deletes notes,
 records, and files the agent may write, posts to the group chat, sets
 routines and wake-ups, reads and runs scripts, drives the agent's
 browser, stores secrets, files issues, and calls every connector tool
-the agent's logins offer, such as a GitHub write, until the generation
-ends: for up to 30 minutes until 2026-11-16, and since then for up to
+the agent's logins offer, such as a GitHub write (since 2026-11-16
+the GitHub connector's `create_pull_request`, which the system prompt
+of a subscription agent with repositories names when it is On), until
+the generation ends: for up to 30 minutes until 2026-11-16, and since then for up to
 the agent's `max_turn_minutes`, 30 by default, which an operator can
 raise.
 
@@ -246,6 +304,9 @@ Since 2026-11-16 the harness also calls the run's Guilds tools,
 connector tools included, on the orchestrator's MCP server (SEC-64):
 steered text can make it write the agent's notes, records, files, and
 Memory, post to the group chat, set routines, and call its connectors.
+Since 2026-11-16 a subscription agent that picks repositories also
+runs each turn beside a token that pushes to them, and reads their
+content, which can steer its pushes (SEC-66).
 
 **Control in place:** until 2026-11-16 the harness was offered no tool
 and no connection of the platform. The tools it calls now go through
@@ -283,7 +344,9 @@ and `requireManagedSecret` in `apps/orchestrator/src/secrets/service.ts`,
 behind `POST /api/guilds/:id/repositories`.
 
 **Exposure:** a repository added with an access token gives every
-coding agent of its guild the value of the secret it names. The
+coding agent of its guild the value of the secret it names; since
+2026-11-16, every subscription agent of its guild that picks it too,
+for each of its turns (SEC-66). The
 orchestrator writes that value to the agent's tokens file at each
 generation start, as it writes a GitHub token. Unlike a GitHub token,
 it does not expire after an hour and is not limited by the box to
@@ -301,6 +364,10 @@ lines, and the orchestrator refuses a secret whose value does, so a
 value cannot add fields to git's credential protocol. The secret
 joins no environment unless it is also granted. The token is kept off
 the workspace disk and redacted from tool results.
+
+A subscription agent's turn cannot narrow such a token as it narrows a
+GitHub token to `contents: write`; the tokens file is emptied when the
+turn ends.
 
 **Fix to make:** the control-plane git proxy of SEC-10, which would
 keep the token in the orchestrator. Until then the token's reach is
@@ -870,7 +937,12 @@ behind an operator's approval.
 **Residual risk:** an agent with a GitHub writing tool On can be
 steered to use it on any repository its login picked. Content it
 reads can also steer its other tools, as it can a coding agent's
-commands (SEC-8).
+commands (SEC-8). Since 2026-11-16 a subscription agent that picks
+repositories opens its pull requests with this connector's
+`create_pull_request`, which its system prompt names when it is On,
+and pushes the branch with a token of its own that holds
+`contents: write` alone (SEC-66); the connector's session token stays
+broader.
 
 ## SEC-46 — Deleting an agent, a guild, or an organisation leaves its files' bytes in the blob store
 
@@ -1153,7 +1225,11 @@ move it off the Google sign-in (`GEMINI_API_KEY`,
 `AGY_ACCOUNT`, and the Google Cloud project variables), and
 `GH_TOKEN` and `GITHUB_TOKEN` like every harness. The settings never
 spend paid credits past the plan and turn telemetry off. The image
-the release workflow publishes carries no Antigravity CLI.
+the release workflow publishes carries no Antigravity CLI. Antigravity
+runs no subscription agent, so the push token a subscription agent's
+turn holds since 2026-11-16 (SEC-66) is never beside a repository's
+customisations it loads; Antigravity reaches a repository only through
+a coding agent's `code_task`, whose brief tells it not to push.
 
 **Fix to make:** establish what a repository's `.agents/` can run on
 load. Until then an operator who wants no repository customisation to
@@ -1421,7 +1497,10 @@ user-level hooks from `~/.cursor/` before every call, so only the
 repository's own hooks run, and those are versioned in the
 repository, where review sees them. Claude Code and Codex run no
 project hooks (SEC-29). The guild's repositories are the ones its
-operators add.
+operators add. Cursor runs no subscription agent, so the push token
+a subscription agent's turn holds since 2026-11-16 (SEC-66) is never
+beside a repository's Cursor hooks; Cursor reaches a repository only
+through a coding agent's `code_task`.
 
 **Residual risk:** a Cursor agent on a repository that takes pushes
 from people the organisation does not trust runs their hooks. An
@@ -1538,6 +1617,12 @@ the agent's secrets allow: read and send them out, change the
 working tree, and push to the unprotected branches of the
 repositories its agent picks through git (SEC-10). It reaches the other agents on its
 machine (SEC-24). Nothing enforces the preamble.
+
+Since 2026-11-16 a subscription agent's harness pushes on purpose:
+its turn runs in the repositories its agent picks, its system prompt
+tells it to push its branch, and no lead model checks the work before
+it does (SEC-66). Its GitHub token holds `contents: write` alone, and
+`GH_TOKEN` and `GITHUB_TOKEN` stay out of its environment.
 
 On 2026-10-14 a technical control on `git push` was considered. The
 credential helper reaches git through the system configuration and
@@ -2142,7 +2227,9 @@ repositories of another agent's guild.
 
 **Control in place:** each token lives one hour. It reaches only
 the repositories its agent picks that use its connection, with
-contents and pull requests write. Since 2026-11-16 a coding agent
+contents and pull requests write; since 2026-11-16 a subscription
+agent's turn gets one with contents write alone, and its tokens file
+is emptied when the turn ends (SEC-66). Since 2026-11-16 a coding agent
 picks the repositories it works on, and its run gets a token for
 those alone; before, it got one for every repository of its guild.
 An agent of a guild therefore holds no token for a repository of
@@ -2209,7 +2296,9 @@ and its granted secrets allow, including pushing to the unprotected
 branches of the repositories it picks and opening pull requests with
 its installation token (SEC-10). Its own token cannot reach other
 guilds' repositories; the tokens of other agents on its machine
-can (SEC-24).
+can (SEC-24). Since 2026-11-16 a subscription agent's harness reads
+its repositories' content and pushes in its own turn, with no lead
+model between them (SEC-66).
 
 ## SEC-7 — A coding agent's workspace can fill the shared disk
 

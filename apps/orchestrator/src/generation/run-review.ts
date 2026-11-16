@@ -68,7 +68,7 @@ export type AgentHarness = {
 /** What a run changed: each repository's change, as its end checkpoint reports it. */
 export type RunChanges = { repositories: RunRepositoryChange[] };
 
-/** A run's or one `code_task` call's diff in one repository. */
+/** A run's, one `code_task` call's, or one subscription turn's diff in one repository. */
 export type RunDiff = { repository: string } & CodeDiff;
 
 function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["coding"]> {
@@ -174,6 +174,20 @@ export async function repositoryDiff(
     throw new RunRequestError(404, "the run changed nothing in that repository");
   }
   return { repository, ...(await codingOf(services).runDiff(run.id, repository)) };
+}
+
+/** What one turn of a subscription agent's run changed in one repository, between the turn's checkpoints. */
+export async function turnDiff(
+  services: RunReviewServices,
+  run: RunRow,
+  callId: string,
+  repository: string,
+): Promise<RunDiff> {
+  const turn = (run.metadata.turn_changes ?? []).find((item) => item.call_id === callId);
+  if (!turn?.repos.some((item) => item.name === repository)) {
+    throw new RunRequestError(404, "that turn changed nothing in that repository");
+  }
+  return { repository, ...(await codingOf(services).runDiff(run.id, repository, callId)) };
 }
 
 /** What one `code_task` call of a run changed. */

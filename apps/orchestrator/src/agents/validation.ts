@@ -336,14 +336,17 @@ function requireRepositories(value: unknown): AgentConfig["repositories"] {
   return names;
 }
 
-/** Only a coding agent works on repositories: a list on any other agent is refused. */
-function rejectRepositoriesWithoutCoding(repositories: AgentConfig["repositories"], coding: boolean): void {
-  if (repositories.length && !coding) {
-    throw new AgentValidationError("repositories are only for coding agents");
+/**
+ * Only an agent that holds a harness works on repositories: a coding agent, or a subscription
+ * agent, which has no model. A list on an agent on a key that does not code is refused.
+ */
+function rejectRepositoriesWithoutHarness(repositories: AgentConfig["repositories"], coding: boolean, model: string | null): void {
+  if (repositories.length && !coding && model !== null) {
+    throw new AgentValidationError("repositories are only for coding agents and subscription agents");
   }
 }
 
-/** Whether a value is repositories a coding agent's config takes, as `validateAgentConfig` checks them. */
+/** Whether a value is repositories an agent's config takes, as `validateAgentConfig` checks them. */
 export function isValidRepositoryList(value: unknown): value is AgentConfig["repositories"] {
   try {
     requireRepositories(value);
@@ -447,7 +450,7 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
   rejectUnsoundModelSource(model, coding, harness);
   const harnessModel = requireHarnessModel(filled.harness_model, harness);
   const repositories = requireRepositories(filled.repositories);
-  rejectRepositoriesWithoutCoding(repositories, coding);
+  rejectRepositoriesWithoutHarness(repositories, coding, model);
   const config: AgentConfig = {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),

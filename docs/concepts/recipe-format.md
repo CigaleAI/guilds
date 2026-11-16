@@ -58,9 +58,9 @@ flowchart TD
   their tools.
 - **secrets** are the [secrets](secrets.md) each role needs, by name.
 - **external** lists setup the operator does outside the platform.
-- **repositories** are the git repositories coding roles work in, by
-  name and purpose. Each coding role lists the ones it works in. See
-  [Repositories](coding/repositories.md).
+- **repositories** are the git repositories coding roles and
+  subscription roles work in, by name and purpose. Each such role lists
+  the ones it works in. See [Repositories](coding/repositories.md).
 - **design** records the reasoning behind the guild. It does not run.
 
 ### Placeholders that apply resolves
@@ -456,7 +456,7 @@ findings `collection.conflict` and `machine.*`
 | `repositories.unused` | warning | At `repositories.<name>`: no role lists the repository in `config.repositories` |
 | `repositories.invalid` | error | A role's `config.repositories` is not a list of repository names, each once |
 | `repositories.unknown` | error | A role's `config.repositories` names a repository the recipe does not list |
-| `repositories.coding` | warning | A role without `coding` lists repositories; apply leaves them out |
+| `repositories.coding` | warning | A role that is neither a coding role nor a subscription role lists repositories; apply leaves them out |
 | `model.unknown` | warning | `config.model` is not a known model; apply asks for one |
 | `model.coding` | warning | A coding-API model on a role without `coding`; apply asks for another |
 | `model.not_connected` | warning | The model's provider is not connected for the organisation; apply asks for another |

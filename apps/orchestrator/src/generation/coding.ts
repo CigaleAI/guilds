@@ -1,15 +1,29 @@
 import { Type } from "typebox";
 import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
-import { agentGitIdentity, CloneFailure, cloneFailures, repositoryTokens } from "../coding/git.js";
+import {
+  agentGitIdentity,
+  CloneFailure,
+  cloneFailures,
+  eraseRepositoryTokens,
+  repositoryTokens,
+  type GitTokenScope,
+} from "../coding/git.js";
 import { RepositoryTokenInstallationGoneError } from "../coding/github-provider.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
 import { codingRepositoriesDatabase, loadAgentRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
+import type { CodingRepository } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
-import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall } from "../db/schema/index.js";
+import {
+  RunRepositoryChangeSchema,
+  type Harness,
+  type RunRepositoryChange,
+  type RunTurnChange,
+  type ToolCall,
+} from "../db/schema/index.js";
 import { assertMatches, keepMatching } from "../lib/decode.js";
 import { isObjectNode, type JsonValue } from "../lib/json.js";
 import { RepositoryAccessError } from "../github/tokens.js";
@@ -28,6 +42,8 @@ import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
+import type { Generation, KeyGeneration } from "./generate.js";
+import { harnessTurnCallId, type SubscriptionGeneration } from "./harness-loop.js";
 import type { AgentMachines } from "./machines.js";
 import { lostCodeTask, type GenerationTools, type InterruptedToolRecord, type LostCodeTask } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
@@ -90,10 +106,17 @@ function failedClones(value: JsonValue | undefined): CloneFailure[] {
   });
 }
 
+/** A checkpoint's record of one repository as the run keeps it: its checkpoints and diffstat, without the files a call's record lists. */
+function repositoryChange(record: RunRepositoryChange): RunRepositoryChange {
+  const { name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions } = record;
+  return { name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions };
+}
+
 /**
  * What a coding run does around its tool calls: the harness checked and the agent's
- * repositories cloned before the model's first step, the end checkpoint taken after its last,
- * and, outside a run, the diff, the harness log, and the harness check an operator asks for.
+ * repositories cloned before the model's first step, the end checkpoint taken after its last;
+ * what a subscription agent's turn does around its CLI in the repositories its agent picks; and,
+ * outside a run, the diff, the harness log, and the harness check an operator asks for.
  */
 export class CodingRuns {
   constructor(private readonly services: CodingRunsServices) {}
@@ -110,23 +133,61 @@ export class CodingRuns {
   }
 
   /**
-   * A coding generation's repositories, the ones its agent picks: a token for each one with a
-   * git provider, minted through it (written under /run/guilds and added to the run's redaction
-   * values; a GitHub login whose installation GitHub refuses is retired as `installation_gone`),
-   * the agent's git identity, a clone of each one missing from the workspace, and the run's
-   * start checkpoint of each.
-   * The working directory starts in the repository when there is one. Tokens that expire are
-   * replaced before each command once they near it.
+   * A coding generation's repositories, placed with tokens that push and open pull requests, and
+   * the run's start checkpoint of each. The working directory of its code tools starts in the
+   * repository when there is one.
    */
-  async prepareRepositories(
-    turn: RunGeneration,
-    agent: AgentRow,
+  async prepareRepositories(gen: KeyGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
+    const repositories = await this.placeRepositories(gen, sandbox, tools, "push_and_pull_requests");
+    if (repositories === null) {
+      return false;
+    }
+    const names = repositories.map((row) => row.name);
+    await this.checkpoint(maintenanceRun(gen.runId, gen.agent, sandbox), "start", names, null);
+    tools.run.code_repositories = names;
+    if (repositories.length === 1) {
+      tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
+    }
+    return true;
+  }
+
+  /**
+   * A subscription turn's repositories, the ones its agent picks, placed with tokens that push
+   * branches alone, and the turn's start checkpoint of each; true at once for an agent that picks
+   * none.
+   */
+  async prepareTurnRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
+    if (!gen.agent.config.repositories.length) {
+      return true;
+    }
+    const repositories = await this.placeRepositories(gen, sandbox, tools, "push");
+    if (repositories === null) {
+      return false;
+    }
+    const names = repositories.map((row) => row.name);
+    await this.checkpoint(maintenanceRun(gen.runId, gen.agent, sandbox), "start", names, harnessTurnCallId(gen));
+    tools.run.code_repositories = names;
+    return true;
+  }
+
+  /**
+   * Places the repositories the generation's agent picks in its machine, for a run whose tokens
+   * hold `scope`: a token for each one with a git provider, minted through it (written under
+   * /run/guilds and added to the run's redaction values; a GitHub login whose installation GitHub
+   * refuses is retired as `installation_gone`), the agent's git identity, and a clone of each one
+   * missing from the workspace. Tokens that expire are replaced before each command once they
+   * near it. Null when a token or a clone failed, and the run says why.
+   */
+  private async placeRepositories(
+    gen: Generation,
     sandbox: SandboxHandle,
     tools: GenerationTools,
-  ): Promise<boolean> {
+    scope: GitTokenScope,
+  ): Promise<CodingRepository[] | null> {
     const { db, events } = this.services;
+    const { agent } = gen;
     const { repositories } = await loadAgentRepositories(db, agent);
-    const tokens = db.repositoryTokens(repositories);
+    const tokens = db.repositoryTokens(repositories, scope);
     const mint = async () => {
       try {
         await tokens.mint();
@@ -147,15 +208,14 @@ export class CodingRuns {
         await tokens.write(sandbox.files, agent.id);
       }
     } catch (error) {
-      await events.recordError(turn, "repository.token", error);
-      return false;
+      await events.recordError(gen, "repository.token", error);
+      return null;
     }
-    const maintenance = maintenanceRun(turn.runId, agent, sandbox);
     let failed: CloneFailure[];
     try {
       const guild = await db.getGuild(agent.guild_id);
       const setup = await runCodeHelper(
-        maintenance,
+        maintenanceRun(gen.runId, agent, sandbox),
         createToolHooks(),
         {
           op: "git_setup",
@@ -166,19 +226,13 @@ export class CodingRuns {
       );
       failed = failedClones(setup.meta.failed);
     } catch (error) {
-      await events.recordError(turn, "repository.clone", error);
-      return false;
+      await events.recordError(gen, "repository.clone", error);
+      return null;
     }
     if (failed.length) {
       const detail = cloneFailures(failed, repositories, tokens.entries);
-      await events.recordError(turn, "repository.clone", new RepositoryAccessError(`clone failed: ${detail}`));
-      return false;
-    }
-    const names = repositories.map((row) => row.name);
-    await this.checkpoint(maintenance, "start", agent, names);
-    tools.run.code_repositories = names;
-    if (repositories.length === 1) {
-      tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
+      await events.recordError(gen, "repository.clone", new RepositoryAccessError(`clone failed: ${detail}`));
+      return null;
     }
     if (tokens.hasExpiringTokens) {
       tools.hooks.before_command = async () => {
@@ -191,12 +245,35 @@ export class CodingRuns {
         }
       };
     }
-    return true;
+    return repositories;
+  }
+
+  /**
+   * Ends a subscription turn in its `repositories`: takes the turn's end checkpoint, keeps on the
+   * run what the turn changed when it changed a repository, and empties the tokens file the
+   * credential helper answers from. A turn without repositories has nothing to end.
+   */
+  async endTurnInRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, repositories: string[]): Promise<void> {
+    if (!repositories.length) {
+      return;
+    }
+    const { db } = this.services;
+    const callId = harnessTurnCallId(gen);
+    const ended = await this.checkpoint(maintenanceRun(gen.runId, gen.agent, sandbox), "end", repositories, callId);
+    const changed = ended.filter((change) => change.files_changed > 0);
+    if (changed.length) {
+      const kept = (await db.getRun(gen.runId))?.metadata.turn_changes ?? [];
+      const turn: RunTurnChange = { call_id: callId, generation: gen.generation, repos: changed };
+      await db.mergeRunMetadata(gen.runId, { turn_changes: [...kept, turn] }, new Date());
+    }
+    if (sandbox.files) {
+      await eraseRepositoryTokens(sandbox.files, gen.agent.id);
+    }
   }
 
   /** The end checkpoint of the run's repositories, by name, and what the run changed in each since its start. */
   async recordCheckpoints(runId: string, agent: AgentRow, sandbox: SandboxHandle, repositories: string[]): Promise<void> {
-    const repos = await this.checkpoint(maintenanceRun(runId, agent, sandbox), "end", agent, repositories);
+    const repos = await this.checkpoint(maintenanceRun(runId, agent, sandbox), "end", repositories, null);
     if (repos.length) {
       await this.services.db.mergeRunMetadata(runId, { repos }, new Date());
     }
@@ -326,29 +403,29 @@ export class CodingRuns {
   }
 
   /**
-   * Takes a checkpoint of the working tree of each of the run's repositories; the end one lists
-   * what each changed since the start. One that fails, or reports repositories in another shape, is
-   * logged and lists none.
+   * Takes a checkpoint of the working tree of each of the run's repositories, under the run's
+   * refs, or with `callId` under that harness call's; the end one lists what each changed since
+   * the start. One that fails, or reports repositories in another shape, is logged and lists none.
    */
   private async checkpoint(
     run: ToolRun,
     which: "start" | "end",
-    agent: AgentRow,
     names: string[],
+    callId: string | null,
   ): Promise<RunRepositoryChange[]> {
     try {
-      const request = { op: "checkpoint", which, repositories: names };
+      const request = { op: "checkpoint", which, repositories: names, ...(callId === null ? {} : { task: callId }) };
       const result = await runCodeHelper(run, createToolHooks(), request, { timeoutSeconds: 300 });
       if (which === "start") {
         return [];
       }
       const { repositories } = result.meta;
       assertMatches(Type.Array(RunRepositoryChangeSchema), repositories, (problem) => new Error(`checkpoint ${problem}`));
-      return repositories;
+      return repositories.map(repositoryChange);
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: run.run_id,
-        agent_id: agent.id,
+        agent_id: run.agent_id,
         operation: "repository.checkpoint",
         error_type: errorName(error),
       });

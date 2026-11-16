@@ -59,7 +59,7 @@ A recipe carries the design of a guild:
 - seed notes the Tasks rely on, with who may read and write them
 - the tools and connectors each role may use
 - the secrets each role needs, by name only
-- the repositories coding roles work in, by name only
+- the repositories coding and subscription roles work in, by name only
 - setup steps the operator does outside the platform
 
 It never carries credentials, Memory, collection records, browser
