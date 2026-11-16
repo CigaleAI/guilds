@@ -99,14 +99,17 @@ export const HARNESS_TAKES_MAX_TURNS: Record<TurnHarness, boolean> = {
 export const HARNESS_MCP_SERVER = "guilds";
 
 /**
- * What a harness that runs a subscription agent's turns puts before a tool's own name when it
- * offers its model a tool of the orchestrator's MCP server: Claude Code names an MCP tool
- * `mcp__<server>__<tool>`, and so does Codex, whose model reaches it as `tools.mcp__<server>__<tool>`
- * or in the tool namespace `mcp__<server>`.
+ * What each harness puts before a tool's own name when it offers its model a tool of the
+ * orchestrator's MCP server: Claude Code names an MCP tool `mcp__<server>__<tool>`, and so does
+ * Codex, whose model reaches it as `tools.mcp__<server>__<tool>` or in the tool namespace
+ * `mcp__<server>`; Antigravity names it `mcp_<server>_<tool>`; Cursor hands it to its model under
+ * its own name, beside the server's.
  */
-export const HARNESS_MCP_TOOL_PREFIX: Record<TurnHarness, string> = {
+export const HARNESS_MCP_TOOL_PREFIX: Record<Harness, string> = {
   "claude-code": `mcp__${HARNESS_MCP_SERVER}__`,
   codex: `mcp__${HARNESS_MCP_SERVER}__`,
+  cursor: "",
+  antigravity: `mcp_${HARNESS_MCP_SERVER}_`,
 };
 
 /** Why a subscription agent cannot run on a harness it may not run on. */

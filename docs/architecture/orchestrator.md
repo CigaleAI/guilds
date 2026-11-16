@@ -959,9 +959,10 @@ the run's first row as its system prompt, the server's URL and the
 grant's token, and the user messages since the run's last reply on
 stdin, polls every second, and keeps each poll's events as rows
 through `events.commitMessage`: one parser per CLI
-(`generation/parse-claude-code.ts`, `generation/parse-codex.ts`) and
-the steps `HARNESS_TURN_STEPS` makes of its events
-(`generation/harness-rows.ts`), the reply holding the turn's usage
+(`generation/parse-claude-code.ts`, `generation/parse-codex.ts`,
+`generation/parse-cursor.ts`, `generation/parse-antigravity.ts`) and
+the steps the turn's reader from `HARNESS_TURN_STEPS` makes of its
+events (`generation/harness-rows.ts`), the reply holding the turn's usage
 at `cost_source: subscription`. It keeps the session in
 `metadata.harness_turn` for the next generation to resume, stops the
 harness after the snapshot's `max_turn_minutes`, gives Claude Code

@@ -57,6 +57,7 @@ import {
   sessionTurnUsage,
   subscriptionUsageRecord,
   type HarnessResultStep,
+  type HarnessTurnReader,
   type HarnessUsageStep,
 } from "./harness-rows.js";
 import { harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
@@ -99,6 +100,8 @@ type HarnessRunTurn = {
   /** The repository the CLI starts in: the agent's one repository, or null for its home when it has none or several. */
   repository: string | null;
   log_path: string;
+  /** What reads the turn's log into its rows' steps, as its polls bring it. */
+  read: HarnessTurnReader;
   deadline: number;
   session: string | null;
   offset: number;
@@ -298,6 +301,7 @@ export class HarnessLoop {
       call_id: callId,
       repository: placed.length === 1 ? (placed[0] ?? null) : null,
       log_path: harnessLogPath(gen.runId, callId),
+      read: HARNESS_TURN_STEPS[gen.snapshot.harness](callId),
       deadline: Date.now() + gen.snapshot.max_turn_minutes * harnessTurnTiming.minuteMs,
       session: gen.run.metadata.harness_turn?.session_id ?? null,
       offset: 0,
@@ -430,7 +434,7 @@ export class HarnessLoop {
     turn: HarnessRunTurn,
     raw: string,
   ): Promise<void> {
-    for (const step of HARNESS_TURN_STEPS[turn.harness](raw, secrets, turn.call_id)) {
+    for (const step of turn.read(raw, secrets)) {
       if (step.kind === "message") {
         await this.keepMessage(gen, turn, step.payload);
       } else if (step.kind === "result") {

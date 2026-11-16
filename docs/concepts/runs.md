@@ -916,8 +916,9 @@ cancel and resume are, and records `cancel_reason: "operator"`.
   - `harness-loop.ts`: a subscription agent's turns on its harness;
     `harness-prompt.ts`: what a turn reads from the run's rows;
     `harness-ending.ts`: how a turn ended and the run error it fails
-    with; `parse-claude-code.ts` and `parse-codex.ts`: each CLI's
-    events; `harness-rows.ts`: the rows they make
+    with; `parse-claude-code.ts`, `parse-codex.ts`, `parse-cursor.ts`,
+    and `parse-antigravity.ts`: each CLI's events; `harness-rows.ts`:
+    the rows they make
   - `tool-calls.ts`: tool calls and interruption results
   - `events.ts`: committed rows, run errors, and stream events
   - `run-secrets.ts`: the secrets of each generation
