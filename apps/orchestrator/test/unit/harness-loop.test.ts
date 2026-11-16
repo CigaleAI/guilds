@@ -180,7 +180,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
       const { loop, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
       await loop.generator.generate("r_1", 1);
       assert.equal(errors().at(-1)?.operation, "harness.timed_out");
-      assert.match(String(errors().at(-1)?.message), /^Claude Code was stopped after 30 minutes\. Send a message to resume its session\.$/);
+      assert.match(String(errors().at(-1)?.message), /^Claude Code was stopped after 30 minutes\. The run's next turn resumes its session\.$/);
       assert.equal(stubsRunning(bin), false);
       assert.equal(rows().at(-1)?.payload.content, INTERRUPTED_CONTENT);
     } finally {

@@ -111,12 +111,12 @@ const SETTLED_CODE: Record<
 
 const SETTLED_MESSAGE: Record<keyof typeof SETTLED_CODE, (label: string) => string> = {
   missing: (label) =>
-    `${label}'s state is gone: the machine restarted or its container was recreated. Send a message to resume its session.`,
+    `${label}'s state is gone: the machine restarted or its container was recreated. The run's next turn resumes its session.`,
   unreadable: (label) => `${label} exited, and its result could not be read.`,
   unresponsive: (label) =>
-    `${label} stopped answering, so it was stopped. Send a message to resume its session.`,
+    `${label} stopped answering, so it was stopped. The run's next turn resumes its session.`,
   timed_out: (label) =>
-    `${label} was stopped after ${HARNESS_TURN_MINUTES} minutes. Send a message to resume its session.`,
+    `${label} was stopped after ${HARNESS_TURN_MINUTES} minutes. The run's next turn resumes its session.`,
 };
 
 /**
@@ -195,7 +195,7 @@ export class HarnessLoop {
     }
     const turn = this.openTurn(gen, tools);
     try {
-      if (!(await this.startHarness(gen, turn))) {
+      if (!(await this.startTurn(gen, turn))) {
         return;
       }
       const ending = await this.pollToEnd(gen, tools, turn);
@@ -292,7 +292,7 @@ export class HarnessLoop {
    * Starts the CLI on the run's system prompt with the generation's messages; false when it did
    * not start, and the run says why.
    */
-  private async startHarness(gen: SubscriptionGeneration, turn: HarnessRunTurn): Promise<boolean> {
+  private async startTurn(gen: SubscriptionGeneration, turn: HarnessRunTurn): Promise<boolean> {
     const { system, prompt } = harnessTurnPrompt(await this.services.db.listMessages(gen.runId));
     try {
       await launchHarness(turn.ops, turn.call_id, {
@@ -344,7 +344,7 @@ export class HarnessLoop {
     turn: HarnessRunTurn,
   ): Promise<Settled> {
     for (;;) {
-      const settled = interruption(tools.run, turn) ?? (await this.pollOnce(gen, tools, turn));
+      const settled = turnInterruption(tools.run, turn) ?? (await this.pollTurnOnce(gen, tools, turn));
       if (settled !== null) {
         return settled;
       }
@@ -355,7 +355,7 @@ export class HarnessLoop {
     }
   }
 
-  private async pollOnce(
+  private async pollTurnOnce(
     gen: SubscriptionGeneration,
     tools: GenerationTools,
     turn: HarnessRunTurn,
@@ -364,7 +364,7 @@ export class HarnessLoop {
     try {
       polled = await pollHarness(turn.ops, turn.call_id, turn.harness, turn.offset);
     } catch (error) {
-      return countFailedPoll(turn, errorMessage(error));
+      return countFailedTurnPoll(turn, errorMessage(error));
     }
     turn.failures = 0;
     if (polled.poll.missing === true) {
@@ -463,14 +463,14 @@ export class HarnessLoop {
   }
 }
 
-function interruption(run: ToolRun, turn: HarnessRunTurn): Settled | null {
+function turnInterruption(run: ToolRun, turn: HarnessRunTurn): Settled | null {
   if (run.cancel_event?.aborted) {
     return "cancelled";
   }
   return Date.now() >= turn.deadline ? "timed_out" : null;
 }
 
-function countFailedPoll(turn: HarnessRunTurn, message: string): Settled | null {
+function countFailedTurnPoll(turn: HarnessRunTurn, message: string): Settled | null {
   turn.failures += 1;
   if (turn.failures < HARNESS_POLL_FAILURES_MAX) {
     return null;
