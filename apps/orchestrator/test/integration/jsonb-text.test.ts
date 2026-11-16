@@ -204,7 +204,6 @@ test("a run whose opening and replies hold a NUL or an unpaired surrogate stores
     const rows = await listMessages(db, runId);
     assert.deepEqual(rows.map((row) => row.seq), rows.map((_, index) => index));
     const [opening, call, result, reply] = rows.slice(-4);
-    assert.deepEqual(opening?.payload, { role: "user", content: "open \ufffd \ufffd" });
     assert.ok(opening && call && result && reply);
     assert.deepEqual(opening.payload, { role: "user", content: "open \ufffd \ufffd" });
     assert.deepEqual(call.payload, {
@@ -226,6 +225,16 @@ test("a run whose opening and replies hold a NUL or an unpaired surrogate stores
     assert.equal(usage?.calls, 2);
     assert.equal(usage?.input_tokens, 14);
     assert.equal(usage?.output_tokens, 6);
+
+    const openedId = String((await loop.runs.createRun(agentId, "first \u0000 \udc00")).id);
+    await loop.generations.task(openedId);
+    const openedRows = await listMessages(db, openedId);
+    const initial = openedRows.find((row) => row.payload.role === "user");
+    assert.deepEqual(initial?.payload, { role: "user", content: "first \ufffd \ufffd" });
+    assert.equal(requests.length, 4, "the run opened with a message generates until its reply");
+    assert.deepEqual(requests[2]?.messages.at(-1), initial?.payload);
+    assert.deepEqual(openedRows.at(-1)?.payload, { role: "assistant", content: "done \ufffd" });
+    assert.deepEqual((await getRun(db, openedId))?.errors, []);
   } finally {
     generationLive.streamCompletion = previousStream;
     await loop.close();
