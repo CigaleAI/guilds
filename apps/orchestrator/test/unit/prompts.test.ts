@@ -425,11 +425,46 @@ test("a subscription agent's harness reads where it runs, its home, and its port
     harness: true,
   });
   assert.ok(harness.includes("in your own Linux container, as root, with\nyour own tools"));
-  assert.ok(harness.includes("Your working directory is your home (`$HOME`)"));
+  assert.ok(harness.includes("Your home (`$HOME`) stays between runs"));
+  assert.ok(harness.includes("Your turn\n  starts in it."), "without repositories the turn starts in the home");
   assert.ok(harness.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
   assert.ok(harness.includes("Never print their values"));
   assert.ok(!harness.includes("code_task"));
+  assert.ok(!harness.includes("State `repositories` lists"), "the repositories part is for an agent that has some");
   assert.ok(!harness.includes("<capability"));
+});
+
+const HARNESS_CAPS = {
+  scripts: false,
+  notes: false,
+  browser: false,
+  coding: false,
+  tools: true,
+  harness: true,
+  repositories: true,
+  toolNaming: { prefix: "mcp__guilds__" },
+};
+
+test("a subscription agent with repositories reads where they are, how it branches, commits and pushes, and the tool that opens a pull request", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const standing = standingForCapabilities(text, { ...HARNESS_CAPS, pullRequestTool: "github_create_pull_request" });
+  assert.ok(standing.includes("You work in the git repositories State `repositories` lists"));
+  assert.ok(standing.includes("named `agent/<your name>/<topic>`"));
+  assert.ok(standing.includes("Push the branch with `git push origin <branch>`"));
+  assert.ok(standing.includes("no `gh` login, and no\n  API token"));
+  assert.ok(!standing.includes("Your turn\n  starts in it."), "the repositories part says where the turn starts");
+  assert.ok(!standing.includes("<pull_request_tool/>") && !standing.includes("<capability"));
+  const composed = composeSystemPrompt(standing, "Ship it.\n", emptyRunState(), EMPTY_MEMORY, HARNESS_CAPS);
+  assert.ok(composed.includes("Open the branch's pull request with `mcp__guilds__github_create_pull_request`"), "named as the harness calls it");
+  assert.ok(!composed.includes("You have no tool that opens a pull request"));
+});
+
+test("a subscription agent with repositories and no pull request tool is told its part ends with the pushed branch, and names no tool", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const standing = standingForCapabilities(text, { ...HARNESS_CAPS, pullRequestTool: null });
+  assert.ok(standing.includes("You have no tool that opens a pull request: your part ends with the\n  pushed branch."));
+  assert.ok(!standing.includes("Open the branch's pull request"));
+  assert.ok(!standing.includes("<pull_request_tool/>") && !standing.includes("<capability"));
 });
 
 test("the state intro of a run that offers no tool says nothing of listing tools or a tool budget", () => {
@@ -517,5 +552,6 @@ test("a tool tag names one tool; other text is left as it is", () => {
   const naming = { prefix: "mcp__guilds__" };
   assert.equal(nameTools("`<tool>note_write</tool>` and <tool>group_post</tool>", naming), "`mcp__guilds__note_write` and mcp__guilds__group_post");
   assert.equal(nameTools("<tool>not a name</tool> <tool></tool>", naming), "<tool>not a name</tool> <tool></tool>");
+  assert.equal(nameTools("<tool>my-server_open-pr</tool>", naming), "mcp__guilds__my-server_open-pr", "a connection tool's name keeps its dashes");
   assert.equal(nameTools("`<tool>note_write</tool>`", OWN_TOOL_NAMES), "`note_write`");
 });

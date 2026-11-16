@@ -4,6 +4,8 @@ import { TOKEN_REFRESH_MS } from "../github/tokens.js";
 import type { Queryable } from "../db/pg.js";
 import type { SandboxFiles } from "../sandbox/sdk.js";
 import type { AgentRow } from "../db/agents.js";
+import type { RunMcpConnection, RunMcpTool } from "../db/schema/index.js";
+import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { accessTokenProvider } from "./access-token-provider.js";
 import { githubProvider } from "./github-provider.js";
 import type { CodingRepository } from "./repositories.js";
@@ -62,6 +64,39 @@ export type GitProvider = {
 
 /** Every git provider, by the name a repository gives it. */
 export type GitProviders = Record<GitProviderName, GitProvider>;
+
+/** A connector's tool that opens a pull request: the connector's server, and the tool's own name on it. */
+type PullRequestTool = Pick<RunMcpConnection, "server_id"> & Pick<RunMcpTool, "remote_name">;
+
+/**
+ * The connector tool that opens a pull request on each provider's repositories, under that
+ * connector's login and bindings; none for a provider whose host has no connector.
+ */
+const PULL_REQUEST_TOOLS: Record<GitProviderName, PullRequestTool | null> = {
+  github: { server_id: GITHUB_SERVER_ID, remote_name: "create_pull_request" },
+  access_token: null,
+};
+
+/**
+ * The name the run offers, among its connections `mcp`, the tool that opens a pull request on the
+ * provider of one of `repositories`; null when the run is offered none.
+ */
+export function pullRequestToolOf(
+  repositories: CodingRepository[],
+  mcp: ReadonlyArray<Pick<RunMcpConnection, "server_id" | "tools">>,
+): string | null {
+  for (const repository of repositories) {
+    const wanted = repository.provider === null ? null : PULL_REQUEST_TOOLS[repository.provider];
+    const tool = mcp
+      .filter((connection) => connection.server_id === wanted?.server_id)
+      .flatMap((connection) => connection.tools)
+      .find((item) => item.remote_name === wanted?.remote_name);
+    if (tool !== undefined) {
+      return tool.name;
+    }
+  }
+  return null;
+}
 
 /**
  * The tokens of a run's guild repositories, each minted through its repository's git provider

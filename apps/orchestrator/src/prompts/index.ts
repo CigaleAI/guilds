@@ -33,8 +33,11 @@ export function toolName(naming: ToolNaming, tool: string): string {
   return `${naming.prefix}${tool}`;
 }
 
-/** Where a prompt's text names a tool: `<tool>name</tool>`. */
-const TOOL_TAG = /<tool>([A-Za-z0-9_]+)<\/tool>/g;
+/** Where a prompt's text names a tool: `<tool>name</tool>`, the name as a tool's or a connection tool's. */
+const TOOL_TAG = /<tool>([A-Za-z0-9_-]+)<\/tool>/g;
+
+/** Where the standing prompt names the run's tool that opens a pull request on its repositories. */
+const PULL_REQUEST_TOOL_TAG = "<pull_request_tool/>";
 
 /** `text` with each tool it names (`<tool>name</tool>`) written by its name under `naming`. */
 export function nameTools(text: string, naming: ToolNaming): string {
@@ -78,6 +81,10 @@ export type StandingCaps = {
   issues?: boolean;
   /** Whether the agent's harness runs its turns: a subscription agent. Missing means off. */
   harness?: boolean;
+  /** Whether a subscription agent's turns work in repositories it picks. Missing means off. */
+  repositories?: boolean;
+  /** The tool the run offers that opens a pull request on those repositories; missing or null for none. */
+  pullRequestTool?: string | null;
   /** How the prompt names the run's tools. Missing names each by its own name. */
   toolNaming?: ToolNaming;
 };
@@ -212,10 +219,16 @@ export function standingForMemory(standing: string, memory: boolean, memoryWrite
   return resolveCapabilities(standing, { memory_write: memoryWrite, memory, no_memory: !memory });
 }
 
+/**
+ * The standing prompt with each capability part this run has unwrapped and each other one
+ * stripped, and the run's pull request tool named where the prompt names it.
+ */
 export function standingForCapabilities(standing: string, caps: StandingCaps): string {
   const memory = memoryOn(caps);
   const browserOptimized = caps.browserOptimized === true;
-  return resolveCapabilities(standing, {
+  const repositories = caps.repositories === true;
+  const pullRequestTool = caps.pullRequestTool ?? null;
+  const resolved = resolveCapabilities(standing, {
     scripts: caps.scripts,
     notes: caps.notes,
     files: caps.files === true,
@@ -232,8 +245,13 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
     group_post: caps.groupPost !== false,
     schedules: caps.schedules !== false,
     issues: caps.issues !== false,
+    pull_request_tool: pullRequestTool !== null,
+    no_pull_request_tool: pullRequestTool === null,
+    repositories,
+    no_repositories: !repositories,
     harness: caps.harness === true,
   });
+  return pullRequestTool === null ? resolved : resolved.replaceAll(PULL_REQUEST_TOOL_TAG, `<tool>${pullRequestTool}</tool>`);
 }
 
 const PREVIEW_CAPS = {

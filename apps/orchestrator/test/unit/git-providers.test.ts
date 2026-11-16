@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { AccessTokenProvider, credentialTarget } from "../../src/coding/access-token-provider.js";
-import { RepositoryTokens, type GitProvider, type TokenEntry } from "../../src/coding/git.js";
+import { pullRequestToolOf, RepositoryTokens, type GitProvider, type TokenEntry } from "../../src/coding/git.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { RepositoryAccessError } from "../../src/github/tokens.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
@@ -121,4 +121,22 @@ test("access tokens alone never need a refresh", async () => {
   await tokens.mint();
   assert.equal(tokens.hasExpiringTokens, false);
   assert.equal(tokens.needsRefresh(new Date("2999-01-01T00:00:00Z")), false);
+});
+
+test("a run's pull request tool is the one it is offered of the connector of a repository's provider, by the name the run calls it", () => {
+  const github = codingRepository({ name: "shop", url: "https://github.com/acme/shop", provider: "github", connection_id: "conn_a" });
+  const elsewhere = codingRepository({ name: "app", url: "https://git.example.com/team/app.git", provider: "access_token" });
+  const connector = (serverId: string, remoteName: string) => ({
+    server_id: serverId,
+    tools: [
+      { name: "github_get_issue", remote_name: "get_issue" },
+      { name: `github_${remoteName}`, remote_name: remoteName },
+    ],
+  });
+  assert.equal(pullRequestToolOf([github], [connector("mcp_github", "create_pull_request")]), "github_create_pull_request");
+  assert.equal(pullRequestToolOf([elsewhere, github], [connector("mcp_github", "create_pull_request")]), "github_create_pull_request");
+  assert.equal(pullRequestToolOf([github], [connector("mcp_github", "merge_pull_request")]), null, "a GitHub login whose pull request tool is not bound");
+  assert.equal(pullRequestToolOf([github], [connector("mcp_other", "create_pull_request")]), null, "another connector's tool of that name");
+  assert.equal(pullRequestToolOf([elsewhere], [connector("mcp_github", "create_pull_request")]), null, "a host without a connector");
+  assert.equal(pullRequestToolOf([codingRepository({ name: "open", provider: null })], [connector("mcp_github", "create_pull_request")]), null);
 });
