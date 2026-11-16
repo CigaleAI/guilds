@@ -216,6 +216,7 @@ async function liveSubscriptionTurn(
       events,
       machines: null as never,
       mcp,
+      attachments: null,
     });
     const gen = {
       runId: "r_live_turn",

@@ -253,7 +253,13 @@ export class GenerationLoop implements GroupRunner {
       tools,
     });
     this.harnessMcp = new HarnessMcpServer({ db, toolCalls: this.toolCalls }, services.harnessMcpUrl);
-    this.harness = new HarnessLoop({ db, events: this.events, machines: this.machines, mcp: this.harnessMcp });
+    this.harness = new HarnessLoop({
+      db,
+      events: this.events,
+      machines: this.machines,
+      mcp: this.harnessMcp,
+      attachments: this.attachments,
+    });
     this.wakes = services.wakes;
     this.runWakes = new RunWakes({
       db,

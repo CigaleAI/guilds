@@ -45,13 +45,13 @@ const bottomSlack = 64;
 
 /**
  * Why the composer takes no images with this model; undefined when the model takes them. A
- * subscription agent has no model to take them.
+ * subscription agent, with no model, takes them: its harness reads each one as a file.
  */
 export function attachmentsNote(
   models: OrgModels | undefined,
   model: AgentConfig["model"],
 ): string | undefined {
-  if (model === null) return "A subscription agent takes no images";
+  if (model === null) return undefined;
   const listed = models?.models.find((item) => item.id === model);
   if (listed?.attachments === true) return undefined;
   if (!models) return "Checking whether this model accepts images";

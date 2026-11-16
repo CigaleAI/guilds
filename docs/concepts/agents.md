@@ -89,7 +89,9 @@ run's next generation resumes the same session. A subscription agent:
   ([Tools in a run](../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)),
   beside the harness's own tools. Each call counts toward
   `max_tool_calls`, with every call of the harness's own;
-- takes no attachments and has no repositories or code tools;
+- takes images attached to a message as files in its home, whose
+  paths its prompt names ([Runs](runs.md#attachments)), and has no
+  repositories or code tools;
 - records each turn's tokens on its reply, at no price
   ([Usage](usage.md#cost-of-a-harness-turn)), and stops a turn after
   its **Max turn minutes**.

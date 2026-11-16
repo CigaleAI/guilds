@@ -41,8 +41,9 @@ test("the composer says why it takes no images", () => {
   );
 });
 
-test("a subscription agent's composer takes no images", () => {
-  assert.equal(attachmentsNote(modelsWith(true), null), "A subscription agent takes no images");
+test("a subscription agent's composer takes images, whatever the organisation's models take", () => {
+  assert.equal(attachmentsNote(modelsWith(false), null), undefined);
+  assert.equal(attachmentsNote(undefined, null), undefined);
 });
 
 test("a chat link opens at the call or message sequence it names", () => {

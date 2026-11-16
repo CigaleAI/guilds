@@ -46,8 +46,8 @@ export function validateAttachmentIds(raw: string[] | null | undefined): string[
 }
 
 /**
- * The images a message carries, checked against the organisation's uploads and the agent's model.
- * A subscription agent has no model to take them.
+ * The images a message carries, checked against the organisation's uploads, and against the
+ * agent's model when it runs on a key; a subscription agent's harness reads them as files.
  */
 async function resolveAttachments(
   services: RunOperatorServices,
@@ -62,7 +62,7 @@ async function resolveAttachments(
   }
   const source = modelSourceOf(agent.config);
   if (source.kind === "subscription") {
-    throw new RunRequestError(422, "a subscription agent takes no attachments: they go to a model on a key");
+    return services.attachments.resolveUploads(agent.org_id, ids);
   }
   return services.attachments.resolveForModel(agent.org_id, source.model, ids);
 }

@@ -8,6 +8,16 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A subscription agent takes images: a message to it may
+carry the images an operator uploaded, which a model on a key takes
+only when its model accepts them. Before its turn starts, each image
+of the messages that open the generation is written into the agent's
+home at `.runs/<run id>/attachments/<attachment id>/<filename>`, and
+the turn's prompt names it on a line `Attached image: <path>` after
+its message. The composer's paperclip is enabled for a subscription
+agent
+([SEC-65](docs/architecture/security-register.md#sec-65--an-image-attached-to-a-subscription-agents-message-is-a-file-every-process-on-its-machine-reads)).
+
 **No impact.** The Guild Builder writes a subscription role when the
 operator asks for an agent on their own Claude Code or Codex
 subscription: a role with a harness, no model, and coding off keeps no

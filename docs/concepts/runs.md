@@ -225,8 +225,8 @@ dismissed. `/guilds/<id>/agents/<id>/history` opens Chat with the
 drawer expanded.
 
 The **composer** always shows a paperclip. When the agent's model
-accepts images, it adds JPEG, PNG, GIF, or WebP images, at most four,
-10 MiB each. A message may be images with no caption. When the model
+accepts images, or the agent is a subscription agent, it adds JPEG,
+PNG, GIF, or WebP images, at most four, 10 MiB each. A message may be images with no caption. When the model
 does not accept images, or is not among the organisation's chosen
 models, the paperclip is disabled and a tooltip says so. The
 transcript shows the images on the operator's bubble.
@@ -327,15 +327,27 @@ Chat Completions `image_url` parts:
 A Messages API provider receives the same parts as image blocks: a
 data URL as a base64 source, a signed URL as a URL source.
 
+A subscription agent's harness reads each image as a file. Before its
+turn starts, the orchestrator writes every image of the messages that
+open the generation into the agent's home, through its host
+directory, at `.runs/<run id>/attachments/<attachment id>/<filename>`,
+and the turn's prompt follows each message's text with one line per
+image: `Attached image: /home/<agent id>/.runs/<run id>/attachments/<attachment id>/<filename>`.
+The files go with the run's folder, which `.runs/` keeps for the
+agent's 20 most recent runs ([Code tasks](coding/code-tasks.md)). An
+image the store no longer holds fails the turn at start with
+`harness.start`.
+
 Token counting adds 1600 tokens per image. It does not encode those
 URLs.
 
 `POST /api/attachments` takes the file bytes as the body, with the
 name in `X-Filename`. It returns 201 with `id`, `filename`, `mime`,
 `bytes`, `kind`, `url`, and `created_at`. It refuses an empty file or
-one over 10 MiB (422). Sending refs refuses a model that does not take
-attachments, a subscription agent, which has no model, more than four
-refs, or a repeated ref (422), and an unknown ref (404). `GET /api/attachments/:id` serves the bytes to the
+one over 10 MiB (422). Sending refs refuses a model on a key that does not take
+attachments, more than four refs, or a repeated ref (422), and an
+unknown ref (404); a subscription agent takes them whatever a model
+would. `GET /api/attachments/:id` serves the bytes to the
 same organisation.
 
 ### Metadata
@@ -527,7 +539,8 @@ under the call id `turn_<generation>_<run id>`
    every user message since the run's last assistant or tool row, in
    order, joined by a blank line: the opening message, a message the
    operator sent, a Group Chat info or Schedule wake-up message, or a
-   wake-up's message. On Claude Code the turn makes at most the
+   wake-up's message, each followed by a line naming the path of each
+   image attached to it ([Attachments](#attachments)). On Claude Code the turn makes at most the
    snapshot's `max_steps` model calls (`--max-turns`); Codex has no
    such limit, so `max_turn_minutes` and `max_tool_calls` bound its
    turn. A run whose `metadata.harness_turn` holds a session resumes
