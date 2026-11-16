@@ -22,6 +22,11 @@ is picked and saved. An inherited login's folder has no removal. Every
 login's **Save settings** stays off while a required setting is
 missing or empty.
 
+**Fixed.** A subscription agent on Cursor keeps the calls of Cursor's
+own tools, its shell commands, file reads, searches, and edits, as rows
+of its run with their results. A Cursor tool call event carries fields
+of its own beside the tool, and each such event was dropped.
+
 ## 0.2.0
 
 **Breaking.** An agent can run on the operator's own Claude Code,

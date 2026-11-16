@@ -19,6 +19,7 @@ import {
 import { parseAntigravityEvents } from "../../src/generation/parse-antigravity.js";
 import { parseCodexEvents } from "../../src/generation/parse-codex.js";
 import { parseCursorEvents } from "../../src/generation/parse-cursor.js";
+import type { JsonObject } from "../../src/lib/json.js";
 import { parseClaudeCodeEvents, type ClaudeCodeMessage } from "../../src/generation/parse-claude-code.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 
@@ -380,6 +381,36 @@ test("a Cursor chat's calls are rows under the turn's id; a call of the orchestr
   assert.deepEqual(steps[9]?.kind === "result" ? steps[9].result : null, { harness: "cursor", tool_use_id: "turn_1.tool_9", output: "exit 1" });
   assert.deepEqual(steps.at(-1), { kind: "turn_usage", usage: { input_tokens: 1020, output_tokens: 40, cache_read_tokens: 900, cache_write_tokens: 20 } });
   assert.match(steps[7]?.kind === "message" ? steps[7].payload.content : "", /\[REDACTED:TOKEN\]/, "a message is redacted");
+});
+
+test("a Cursor tool call event that carries its own fields beside the tool's kind is still the tool's call", () => {
+  const beside = { hookAdditionalContexts: [], toolCallId: "call-1\nfc_1", startedAtMs: "1794864576842" };
+  const event = (subtype: "started" | "completed", toolCall: JsonObject): string =>
+    JSON.stringify({ type: "tool_call", subtype, call_id: "call-1\nfc_1", tool_call: { ...toolCall, ...beside }, timestamp_ms: 1794864576852 });
+  const shell = { command: "echo hi", toolCallId: "call-1\nfc_1" };
+  const ran = { success: { command: "echo hi", exitCode: 0, stdout: "hi\n", stderr: "" }, isBackground: false };
+  const edited = { success: { path: "/home/a_1/b.txt", linesAdded: 1, diffString: "--- /dev/null\n+++ b/b.txt\n@@ -1,0 +1 @@\n+x" } };
+  const guilds = { name: "guilds-note_find", args: { query: "a" }, providerIdentifier: "guilds", toolName: "note_find", serverIdentifier: "guilds" };
+  const steps = cursorTurnSteps(
+    [
+      event("started", { shellToolCall: { args: shell } }),
+      event("completed", { shellToolCall: { args: shell, result: ran } }),
+      event("completed", { editToolCall: { args: { path: "/home/a_1/b.txt" }, result: edited } }),
+      event("started", { mcpToolCall: { args: guilds, description: "Search notes" } }),
+      event("started", { hookAdditionalContexts: [] }),
+    ].join("\n"),
+    {},
+    "turn_1",
+  );
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["message", "result", "result"],
+    "a call of the orchestrator's server's tool and an event that names no tool make no row",
+  );
+  const started = steps[0];
+  assert.deepEqual(started?.kind === "message" ? started.payload.tool_calls?.[0]?.function.name : null, "shell");
+  assert.deepEqual(steps[1]?.kind === "result" ? steps[1].result.output : null, "hi\n");
+  assert.deepEqual(steps[2]?.kind === "result" ? steps[2].result.output : null, "--- /dev/null\n+++ b/b.txt\n@@ -1,0 +1 @@\n+x");
 });
 
 test("a recorded Antigravity turn parses into its responses' pieces, its tools' calls as they start and end, and the conversation's usage", () => {

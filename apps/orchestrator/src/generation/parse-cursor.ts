@@ -10,14 +10,17 @@ import { isJsonObject, JsonObjectSchema, type JsonObject } from "../lib/json.js"
 
 const TextBlock = Type.Object({ type: Type.Literal("text"), text: Type.String() });
 
-/** A tool call event's `tool_call`: one key, the tool's kind (`shellToolCall`), holding its arguments and, once it completed, its result. */
+/**
+ * What a tool call event's `tool_call` holds under the tool's kind (`shellToolCall`): its arguments
+ * and, once it completed, its result. The event's own fields lie beside the kind, none an object.
+ */
 const ToolCallBody = Type.Object({ args: Type.Optional(JsonObjectSchema), result: Type.Optional(JsonObjectSchema) });
 
 const ToolCallEvent = Type.Object({
   type: Type.Literal("tool_call"),
   subtype: Type.Union([Type.Literal("started"), Type.Literal("completed")]),
   call_id: Type.String(),
-  tool_call: Type.Record(Type.String(), ToolCallBody),
+  tool_call: JsonObjectSchema,
 });
 
 /** The arguments of a call of an MCP server's tool: the server, and the tool's own name and arguments. */
@@ -64,7 +67,7 @@ function messageText(event: JsonObject): string {
   return blocks.flatMap((block) => (isJsonObject(block) ? [keepMatching(TextBlock, block)?.text ?? ""] : [])).join("");
 }
 
-/** The text a tool's result holds: a command's output, a file's content, an error, or the result itself as JSON. */
+/** The text a tool's result holds: a command's output, a file's content, an edit's diff, an error, or the result itself as JSON. */
 function resultText(result: JsonObject): string {
   const success = isJsonObject(result.success) ? result.success : null;
   const error = isJsonObject(result.error) ? result.error : null;
@@ -74,18 +77,33 @@ function resultText(result: JsonObject): string {
   if (success !== null && typeof success.content === "string") {
     return success.content;
   }
+  if (success !== null && typeof success.diffString === "string") {
+    return success.diffString;
+  }
   if (error !== null && typeof error.error === "string") {
     return error.error;
   }
   return JSON.stringify(result);
 }
 
+/** The tool's kind and what it holds, in a tool call event's `tool_call`: its first field that is an object; null when it has none. */
+function toolBody(toolCall: JsonObject): [string, Static<typeof ToolCallBody>] | null {
+  for (const [kind, value] of Object.entries(toolCall)) {
+    const body = isJsonObject(value) ? keepMatching(ToolCallBody, value) : null;
+    if (body !== null) {
+      return [kind, body];
+    }
+  }
+  return null;
+}
+
 /** The call a tool call event's body names; null for a body that names no tool. */
 function toolUse(event: Static<typeof ToolCallEvent>): CursorToolUse | null {
-  const [kind, body] = Object.entries(event.tool_call)[0] ?? [];
-  if (kind === undefined || body === undefined) {
+  const found = toolBody(event.tool_call);
+  if (found === null) {
     return null;
   }
+  const [kind, body] = found;
   const output = body.result === undefined ? null : resultText(body.result);
   const mcp = kind === MCP_KIND ? keepMatching(McpArgs, body.args ?? {}) : null;
   if (mcp !== null) {
