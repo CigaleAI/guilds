@@ -10,6 +10,7 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-72](#sec-72--a-sandbox-on-the-hosted-vm-reached-the-metadata-server-private-addresses-and-caddy) | A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy | Fixed 2026-11-16 |
 | [SEC-71](#sec-71--a-sandbox-on-the-hosted-vm-reached-cloud-sqls-private-address-and-every-port-of-the-vm) | A sandbox on the hosted VM reached Cloud SQL's private address and every port of the VM | Fixed 2026-11-16 |
 | [SEC-70](#sec-70--customers-harness-logins-sit-in-their-agents-homes-on-the-hosted-vm-and-in-its-backups) | Customers' harness logins sit in their agents' homes on the hosted VM and in its backups | Open |
 | [SEC-69](#sec-69--a-subscription-agents-mcp-token-crosses-the-hosted-vms-docker-bridge-in-plain-http) | A subscription agent's MCP token crosses the hosted VM's Docker bridge in plain HTTP | Open, accepted |
@@ -82,6 +83,43 @@ its date (the code that held the issue is removed).
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
 
+## SEC-72 — A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy
+
+**Status:** fixed 2026-11-16.
+
+**Found:** 2026-11-16, when the release that published the MCP
+listener failed its check that a sandbox gets no answer from the VM's
+port 80.
+
+**Where:** hosted's `deploy/gcp-host-net.sh` and
+`infra/scripts/bootstrap-vm.sh`, and the order of the VM's `FORWARD`
+chain.
+
+**Exposure:** the drops of metadata HTTP (`169.254.169.254`) and of
+the RFC1918 ranges were rules of `FORWARD` below its jumps to Docker's
+chains, where Docker accepts what a bridge forwards, so no sandbox
+packet reached them. A process in any organisation's sandbox could ask
+the metadata server for the VM service account's token, which reads
+the platform's secrets in Secret Manager, and could open connections
+to the VM's subnet. Docker forwards a connection to a port it
+publishes, which `INPUT` never sees, so a sandbox also reached Caddy,
+the operator app, at the bridge's gateway. Whether a sandbox used any
+of this is not known: the VM keeps no log of forwarded connections.
+
+**Fix:** what a sandbox may forward is decided in `GUILDS-SANDBOX`, a
+chain `DOCKER-USER` jumps to for each connection a sandbox opens;
+Docker runs `DOCKER-USER` before its own chains. It lets through the
+MCP listener's published port and metadata DNS, and drops every other
+published port, link-local addresses, and the RFC1918 ranges. Each
+release replaces the chain whole and checks, from a container on the
+bridge, that the MCP listener answers and that port 80 and the
+metadata server do not; it prints the rules when a check fails.
+
+**Residual risk:** sandboxes on `docker0` reach each other. A sandbox
+still reaches metadata DNS and the internet. The VM service account's
+credentials were within a sandbox's reach until the fix; rotating the
+secrets it reads is the operator's decision.
+
 ## SEC-71 — A sandbox on the hosted VM reached Cloud SQL's private address and every port of the VM
 
 **Status:** fixed 2026-11-16.
@@ -101,16 +139,13 @@ port the VM listened on.
 
 **Fix:** the Cloud SQL accept matches only traffic that does not come
 from `docker0`, and the unscoped rule is removed. `INPUT` drops every
-new connection from `docker0`, except the MCP listener's port at the
-bridge's gateway, and keeps the answers to connections the VM opened.
-Each release checks from a container on the bridge that the listener
-answers and port 80 does not.
+new connection from `docker0` to a port the VM itself listens on,
+sshd among them, and keeps the answers to connections the VM opened.
 
-**Residual risk:** the rules rely on Docker's userland proxy, its
-default, carrying a sandbox's connection to a published port through
-`INPUT`; a daemon run with `userland-proxy: false` would forward it
-through `FORWARD`, where the RFC1918 drop refuses it. A sandbox still
-reaches metadata DNS and the internet.
+**Residual risk:** `INPUT` does not see a connection to a port Docker
+publishes, Caddy's among them, and the Cloud SQL rule sat beside drops
+that did not take effect:
+[SEC-72](#sec-72--a-sandbox-on-the-hosted-vm-reached-the-metadata-server-private-addresses-and-caddy).
 
 ## SEC-70 — Customers' harness logins sit in their agents' homes on the hosted VM and in its backups
 
