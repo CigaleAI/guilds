@@ -109,7 +109,7 @@ use organisation, guild, and agent ids for the same reason.
 
 | Target | Files | Services |
 | --- | --- | --- |
-| `docker compose up` | `docker-compose.yml` | postgres, opensandbox, orchestrator on the core image: the stack as shipped ([Install](../getting-started/install.md)). Only the orchestrator is published, on `127.0.0.1:${ORCHESTRATOR_PORT}`, 8080 by default |
+| `docker compose up` | `docker-compose.yml` | postgres, opensandbox, orchestrator on the core image: the stack as shipped ([Install](../getting-started/install.md)). Only the orchestrator is published: the operator app on `127.0.0.1:${ORCHESTRATOR_PORT}`, 8080 by default, and the MCP listener on `${HARNESS_MCP_PUBLISH}:${HARNESS_MCP_PORT}` ([The MCP listener](#the-mcp-listener)) |
 | `make up` (dev) | `docker-compose.dev.yml` = `docker-compose.yml` + `docker-compose.watch.yml` | The same three, with the development overlay |
 
 The OpenSandbox service mounts the Docker socket. Sandboxes are
@@ -119,6 +119,8 @@ Ports:
 
 - the orchestrator listens on 8080 in its container, published on
   loopback at `ORCHESTRATOR_PORT`
+- its MCP listener listens on `HARNESS_MCP_PORT`, 8090 by default, in
+  its container, published at `HARNESS_MCP_PUBLISH` on the same port
 - the OpenSandbox server listens on 8080 inside the Compose network
   only (`OPENSANDBOX_URL` is `http://opensandbox:8080`)
 - PostgreSQL listens on 5432 inside the Compose network; the
@@ -128,6 +130,37 @@ Ports:
 - each agent's browser, terminal, and own servers use the ports of
   its slot in its machine's container
   ([Slots and ports](../concepts/machines.md#slots-and-ports))
+
+### The MCP listener
+
+A subscription agent's harness calls its Guilds tools on the
+orchestrator's MCP server, a listener apart from the operator app
+([Orchestrator](orchestrator.md#the-mcp-listener)). OpenSandbox starts
+every sandbox on Docker's default bridge (`network_mode = "bridge"`),
+so the listener's port is published where a container on that bridge
+reaches the host, and no wider:
+
+| Engine | `HARNESS_MCP_PUBLISH` | `HARNESS_MCP_SANDBOX_HOST` | Why |
+| --- | --- | --- | --- |
+| Docker Desktop | `127.0.0.1` | `host.docker.internal` | Every container resolves `host.docker.internal` to the host, and Docker Desktop forwards it to the host's loopback. Docker Desktop cannot publish on the bridge's gateway, an address of its VM |
+| Linux | the default bridge's gateway, `172.17.0.1` unless the daemon sets another | the same address | A container on the bridge reaches the host through its gateway. A port published on `127.0.0.1` is out of its reach, and a container OpenSandbox starts has no `host.docker.internal`. The gateway is an address of the host's `docker0`, not of an interface other hosts route to |
+
+`./setup.sh` writes both for the engine it finds. On a Linux engine
+every container on the host reaches the gateway's port, those on
+other bridge networks included; on Docker Desktop every container
+does, through `host.docker.internal`. A request there needs a
+running generation's token. A deployment whose sandboxes reach the
+orchestrator another way, behind a firewall of its own, sets
+`HARNESS_MCP_URL` and publishes the port there
+([Configure](../operations/configure.md#reaching-the-mcp-server-from-a-sandbox)).
+
+On a Linux engine a sandbox does not reach the operator app's port at
+that address: it is published on loopback alone. On Docker Desktop
+`host.docker.internal` reaches every port published on the host's
+loopback, the operator app's included
+([SEC-63](security-register.md#sec-63--on-docker-desktop-every-sandbox-reaches-the-operator-app)).
+`scripts/smoke-core-stack.sh` checks both from a container on the
+bridge.
 
 `./setup.sh` builds two images on the host (`scripts/images.sh`):
 

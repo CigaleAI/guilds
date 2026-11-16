@@ -19,6 +19,8 @@ import {
 } from "./extension.js";
 import type { AppDeps } from "./http/deps.js";
 import { registerErrorHandler } from "./http/error-handler.js";
+import { registerHarnessMcpRoutes } from "./http/harness-mcp-routes.js";
+import type { HarnessMcpServer } from "./generation/harness-mcp.js";
 import { validationHttp } from "./http/errors.js";
 import { registerRequestOrigin } from "./http/origin.js";
 import { registerDomainRoutes } from "./http/routes.js";
@@ -38,6 +40,25 @@ export type { AppDeps } from "./http/deps.js";
 
 /** Core's build of the React app, served at the site root unless an extension serves its own. */
 const WEB_DIST = path.join(repoRoot(import.meta.url), "apps", "web", "dist");
+
+/** The largest message the MCP listener reads: a tool call's arguments, with room to spare. */
+const HARNESS_MCP_BODY_LIMIT = 1024 * 1024;
+
+/**
+ * Builds the listener subscription agents' harnesses reach the orchestrator's MCP server on, apart
+ * from the API: `/mcp/{agentId}`, and `/health` for a liveness check. The caller listens.
+ */
+export async function buildHarnessMcpApp(server: HarnessMcpServer): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: false,
+    forceCloseConnections: true,
+    bodyLimit: HARNESS_MCP_BODY_LIMIT,
+    ...fastifyRequestIdOptions(),
+    ajv: { customOptions: { coerceTypes: false } },
+  });
+  registerHarnessMcpRoutes(app, server);
+  return app;
+}
 
 /**
  * Builds the HTTP server and returns it. The caller listens, and owns the database and the

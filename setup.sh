@@ -3,7 +3,8 @@
 #
 # It writes into .env what the stack cannot start without and nobody should pick by hand: the
 # absolute path the stack keeps its state under, the master key that encrypts stored credentials,
-# the PostgreSQL password, and the OpenSandbox key. It refuses a state path on a filesystem the
+# the PostgreSQL password, the OpenSandbox key, and where this Docker engine publishes the port
+# agent sandboxes reach the orchestrator's MCP server on. It refuses a state path on a filesystem the
 # stack cannot run on, creates the state directories, and builds the two images the stack runs
 # under local tags: the OpenSandbox server and the agent runtime.
 #
@@ -21,7 +22,7 @@ for arg in "$@"; do
   case "$arg" in
     --env-only) build_images=0 ;;
     -h | --help)
-      sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -149,6 +150,27 @@ for name in ${missing[@]+"${missing[@]}"}; do
   esac
   echo "$name generated"
 done
+
+# A sandbox is a container on the default bridge. Docker Desktop forwards host.docker.internal to the
+# host's loopback, so the port is published there; a Linux engine reaches the host from the bridge
+# through the bridge's gateway, so the port is published on that address and nowhere wider.
+if [[ -z "$(value_of HARNESS_MCP_PUBLISH)" || -z "$(value_of HARNESS_MCP_SANDBOX_HOST)" ]]; then
+  if [[ "$(docker info --format '{{.OperatingSystem}}')" == "Docker Desktop" ]]; then
+    mcp_publish=127.0.0.1
+    mcp_sandbox_host=host.docker.internal
+  else
+    mcp_publish="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
+    mcp_sandbox_host="$mcp_publish"
+  fi
+  if [[ -z "$(value_of HARNESS_MCP_PUBLISH)" ]]; then
+    set_value HARNESS_MCP_PUBLISH "$mcp_publish"
+    echo "HARNESS_MCP_PUBLISH set to $mcp_publish"
+  fi
+  if [[ -z "$(value_of HARNESS_MCP_SANDBOX_HOST)" ]]; then
+    set_value HARNESS_MCP_SANDBOX_HOST "$mcp_sandbox_host"
+    echo "HARNESS_MCP_SANDBOX_HOST set to $mcp_sandbox_host"
+  fi
+fi
 
 mkdir -p "$state_root/notes" "$state_root/workspaces" "$state_root/attachments" \
   "$state_root/connectors" "$state_root/postgres" "$state_root/opensandbox"

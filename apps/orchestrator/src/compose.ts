@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "./app.js";
+import { buildApp, buildHarnessMcpApp } from "./app.js";
 import { ArtifactFiles } from "./artifacts/files.js";
 import { artifactStore } from "./artifacts/store.js";
 import { attachmentService } from "./attachments/index.js";
@@ -44,7 +44,9 @@ import { listMachinePlacements } from "./db/machines.js";
 
 export type Server = {
   app: FastifyInstance;
-  /** Closes the app, running generations, sandbox managers, and the database, in that order. */
+  /** The listener of the MCP server subscription agents' harnesses call their tools on, apart from the API. */
+  harnessMcp: FastifyInstance;
+  /** Closes the app, the MCP listener, running generations, sandbox managers, and the database, in that order. */
   close(): Promise<void>;
 };
 
@@ -134,6 +136,7 @@ export async function createServer(
   const generation = generationLoop(db, {
     notes,
     workspaceRoot: config.workspaceRoot,
+    harnessMcpUrl: config.harnessMcpUrl,
     sandboxes,
     mcp,
     artifacts,
@@ -257,10 +260,13 @@ export async function createServer(
     },
     extensions,
   );
+  const harnessMcp = await buildHarnessMcpApp(generation.harnessMcp);
   return {
     app,
+    harnessMcp,
     async close() {
       await app.close();
+      await harnessMcp.close();
       await generation.close();
       await sandboxes.close();
       stopRuntimeMetrics();

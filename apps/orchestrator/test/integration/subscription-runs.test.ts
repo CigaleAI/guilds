@@ -59,6 +59,7 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     {
       notes,
       workspaceRoot: tempDir("guilds-subscription-ws-"),
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes: sandboxes as unknown as GenerationSandboxes,
       mcp: mcpPool(db),
       artifacts,

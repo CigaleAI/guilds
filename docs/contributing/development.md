@@ -162,7 +162,7 @@ log.
 | --- | --- |
 | orchestrator | `typecheck`, `suppressions`, `lint`, `lint-rules`, `import-cycles`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `import-cycles-web`, `build-web`, `build-storybook` |
-| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the stack asks for `./setup.sh` first, that `.env` is private and unchanged by a second `./setup.sh`, and that the box is healthy, serves the app on loopback alone, holds one operator and no hosted table, creates a guild, and refuses a request from another web origin |
+| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, ports (`SMOKE_PORT`, 18080 by default, and `SMOKE_MCP_PORT`, the one after it), image tag, and state directory. It checks that the stack asks for `./setup.sh` first, that `.env` is private and unchanged by a second `./setup.sh`, and that the box is healthy, serves the app on loopback alone, publishes the MCP listener at `HARNESS_MCP_PUBLISH` alone, holds one operator and no hosted table, creates a guild, and refuses a request from another web origin. From a container on the default bridge, where sandboxes run, it checks that the MCP listener answers at the URL sandboxes are given, refuses a request without a token, and serves no API route, and, outside Docker Desktop, that the operator app's port is not reached at that host |
 
 `scripts/check.sh <commit>` (or `make check COMMIT=<rev>`)
 checks that commit the way CI does: a clean worktree of it and
@@ -233,8 +233,9 @@ and `PREVIEW_MODEL_KEY` and the variable `PREVIEW_MODEL`.
 locally (`make preview`), and prints one line: its URL. It runs a
 copy of the checkout under its own Compose project, port, image tag
 and state directory, all named by `PREVIEW_PORT` (18090 by
-default). The state directory is `guilds-preview-<port>` under
-`$TMPDIR`, or `/tmp` when it is unset. It adds
+default); its MCP listener is on the port after it. The state
+directory is `guilds-preview-<port>` under `$TMPDIR`, or `/tmp` when
+it is unset. It adds
 `docker-compose.preview.yml` to the product stack: Caddy, which asks
 for the password and proxies to the orchestrator with the request's
 `Host` header, and `cloudflared`, a quick tunnel to Caddy. Neither

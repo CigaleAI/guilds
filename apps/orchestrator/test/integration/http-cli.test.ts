@@ -50,6 +50,7 @@ test(
       {
         notes,
         workspaceRoot: env.WORKSPACE_ROOT ?? "",
+        harnessMcpUrl: "http://127.0.0.1:8090",
         sandboxes,
         mcp: mcpPool(db),
         artifacts,

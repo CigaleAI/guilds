@@ -43,6 +43,7 @@ import { isAdmissionRefusal, logOperationFailure, RunRequestError, type Operatio
 import { RunEventBus, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase } from "./generate.js";
 import { HarnessLoop, harnessLoopDatabase } from "./harness-loop.js";
+import { HarnessMcpServer, harnessMcpDatabase } from "./harness-mcp.js";
 import { runWasResumed } from "./lifecycle.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
 import {
@@ -101,6 +102,7 @@ function generationDatabase(db: Queryable) {
     ...runChainsDatabase(db),
     ...runWakesDatabase(db),
     ...harnessLoopDatabase(db),
+    ...harnessMcpDatabase(db),
     ...runGeneratorDatabase(db),
     ...loopDatabase(db),
   };
@@ -119,6 +121,8 @@ export type GenerationLoopServices = {
   notes: NotesStore;
   /** Where machine directories are kept when the provider names no host for a machine. */
   workspaceRoot: string;
+  /** The URL a sandbox reaches the orchestrator's MCP server at, which subscription agents' turns are given. */
+  harnessMcpUrl: string;
   sandboxes: GenerationSandboxes;
   /** The pool runs list and call connection tools through. */
   mcp: ConnectorPool;
@@ -181,6 +185,8 @@ export class GenerationLoop implements GroupRunner {
   preparation: RunPreparation;
   completion: ModelCompletion;
   harness: HarnessLoop;
+  /** The MCP server subscription agents' harness turns call their Guilds tools on. */
+  harnessMcp: HarnessMcpServer;
   coding: CodingRuns;
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
@@ -233,7 +239,6 @@ export class GenerationLoop implements GroupRunner {
       credentials: this.credentials,
       attachments: this.attachments,
     });
-    this.harness = new HarnessLoop({ db, events: this.events, machines: this.machines });
     this.secrets = new RunSecrets(db, this.machines);
     const { tools } = services;
     this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events, tools });
@@ -247,6 +252,8 @@ export class GenerationLoop implements GroupRunner {
       coding: this.coding,
       tools,
     });
+    this.harnessMcp = new HarnessMcpServer({ db, toolCalls: this.toolCalls }, services.harnessMcpUrl);
+    this.harness = new HarnessLoop({ db, events: this.events, machines: this.machines });
     this.wakes = services.wakes;
     this.runWakes = new RunWakes({
       db,

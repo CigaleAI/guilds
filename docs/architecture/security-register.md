@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-63](#sec-63--on-docker-desktop-every-sandbox-reaches-the-operator-app) | On Docker Desktop every sandbox reaches the operator app | Open |
 | [SEC-62](#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network) | A subscription agent's harness holds its whole prompt beside its secrets and the network | Open |
 | [SEC-61](#sec-61--a-repositorys-access-token-is-long-lived-and-written-to-its-agents-machine) | A repository's access token is long-lived and written to its agents' machine | Open |
 | [SEC-60](#sec-60--text-holding-a-nul-or-an-unpaired-surrogate-failed-the-write-of-a-message) | Text holding a NUL or an unpaired surrogate failed the write of a message | Fixed 2026-11-15 |
@@ -71,6 +72,40 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-63 — On Docker Desktop every sandbox reaches the operator app
+
+**Status:** open.
+
+**Found:** 2026-11-16, publishing the MCP listener where a sandbox
+reaches it.
+
+**Where:** the operator app's port, published on
+`127.0.0.1:${ORCHESTRATOR_PORT}` by `docker-compose.yml`, on a box
+whose Docker engine is Docker Desktop.
+
+**Exposure:** Docker Desktop resolves `host.docker.internal` in every
+container and forwards it to the host's loopback, so every container,
+every agent's machine included, reaches every port published on
+`127.0.0.1`. A process on any machine reaches the operator app. In
+`compat-cookie` mode whoever reaches the port is the operator, and a
+request that names `127.0.0.1` as its `Host` passes the host check
+(SEC-15), which guards a browser, not a process that writes its own
+headers. Such a process can then act as the operator: read and change
+every guild, agent, secret's access, and connection, and start runs.
+A Linux engine is not exposed: a container on the bridge does not
+reach a port published on loopback.
+
+**Control in place:** none in `compat-cookie` mode. `trusted-header`
+mode takes the user from a proxy that sends a secret
+(`TRUSTED_PROXY_SECRET`) a sandbox does not hold, so a box in that
+mode refuses such a request.
+
+**Fix to make:** an operator app that a container on the host's
+bridge cannot reach on Docker Desktop, or a credential every API
+request carries. Until then, a box on Docker Desktop is a development
+box: run agents whose content is untrusted on a Linux engine, or in
+`trusted-header` mode.
 
 ## SEC-62 — A subscription agent's harness holds its whole prompt beside its secrets and the network
 

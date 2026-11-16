@@ -56,5 +56,6 @@ export async function runServer(
   });
 
   await server.app.listen({ host: config.host, port: config.port });
+  await server.harnessMcp.listen({ host: config.harnessMcpHost, port: config.harnessMcpPort });
   log.info("listening", { operation: "http.listen" });
 }

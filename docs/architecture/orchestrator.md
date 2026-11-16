@@ -65,6 +65,11 @@ variable, and boot stops.
   default)
 - `HOST` (default `0.0.0.0`)
 - `PORT` (default 8080)
+- `HARNESS_MCP_HOST` (default `127.0.0.1`), `HARNESS_MCP_PORT`
+  (default 8090), and `HARNESS_MCP_URL` (the URL a sandbox is given
+  for the MCP listener; `http://host.docker.internal:<port>` by
+  default, and refused unless an `http` or `https` URL with no
+  credentials, query, or fragment)
 
 [Configure](../operations/configure.md) explains each one. The model
 catalog reads `MODELS_DEV_URL` on its own
@@ -210,11 +215,13 @@ sequenceDiagram
    capabilities, recipe apply, and Builder; reconcile Builder
    sessions
 9. build the Fastify app (`buildApp`, `src/app.ts`), each extension's
-   routes first
+   routes first, then the MCP listener (`buildHarnessMcpApp`), a
+   Fastify app of its own on the loop's `HarnessMcpServer`
 
 `runServer` logs whether Sentry is on and installs the fatal error
 handlers before it calls `createServer`. It then listens on `HOST`
-and `PORT`.
+and `PORT`, and the MCP listener on `HARNESS_MCP_HOST` and
+`HARNESS_MCP_PORT`.
 
 Run reconciliation:
 
@@ -247,7 +254,8 @@ and the session goes idle.
 
 Graceful shutdown (SIGTERM or SIGINT) runs once, in this order:
 
-1. close the HTTP server, sockets and streams included
+1. close the HTTP server, sockets and streams included, then the MCP
+   listener
 2. stop the scheduler, cancel the machines' idle timers, and stop
    the group dispatchers
 3. ask every in-flight generation to stop and interrupt its sandbox
@@ -1004,6 +1012,29 @@ encoding the daemon names answers 502.
 Client frames on either socket count as activity and restart the
 machine's idle timer, and the agent's Chrome timer, at most once
 every 30 seconds.
+
+### The MCP listener
+
+A second listener, apart from the API's, serves the orchestrator's MCP
+server to subscription agents' harnesses
+(`src/http/harness-mcp-routes.ts`, built by `buildHarnessMcpApp`). It
+serves nothing else:
+
+| Route | Answer |
+| --- | --- |
+| `POST /mcp/:agent_id` | A JSON-RPC message of MCP's Streamable HTTP transport: a request is answered with its JSON response, a notification with 202 and no body |
+| `GET`, `DELETE /mcp/:agent_id` | 405, `Allow: POST`: no server stream and no session |
+| `GET /health` | `{ "status": "ok" }`, with no check of the database |
+| anything else | 404 |
+
+A request is answered only with the bearer token of the running
+generation of the agent its path names (`HarnessMcpServer`,
+`src/generation/harness-mcp.ts`). Any other answers 401 with
+`WWW-Authenticate: Bearer`, whatever the reason. A body over 1 MiB
+answers 413, and one that is not a JSON-RPC message 400. Each error
+answers `{ "error": <the status's name> }` and nothing more; a 5xx is
+logged. The listener passes no host or origin check: it is no page's
+API, and the token is its only gate.
 
 ## Observability
 

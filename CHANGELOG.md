@@ -8,6 +8,46 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** The orchestrator listens on a second port,
+`HARNESS_MCP_PORT` (8090 by default), apart from the operator app's:
+the MCP listener a subscription agent's harness reaches from its
+sandbox. It serves `/mcp/<agent id>` and `/health` and nothing else,
+and answers 401 to a request without a running generation's token.
+The Compose file publishes it at `HARNESS_MCP_PUBLISH`, and a sandbox
+is given `HARNESS_MCP_URL`, by default
+`http://<HARNESS_MCP_SANDBOX_HOST>:<HARNESS_MCP_PORT>`. `./setup.sh`
+writes the address and the host for the Docker engine it finds:
+loopback and `host.docker.internal` on Docker Desktop, the default
+bridge's gateway on a Linux engine; run it again on an existing box.
+On Docker Desktop every sandbox also reaches the operator app's port
+([SEC-63](docs/architecture/security-register.md#sec-63--on-docker-desktop-every-sandbox-reaches-the-operator-app)).
+
+**Rebuild.** A Claude Code subscription agent runs: each generation
+of its run is one turn of Claude Code in the agent's sandbox, started
+with the run's composed system prompt in place of Claude Code's own
+and the messages that opened the generation on stdin, polled every
+second, and stopped after 30 minutes. The run shows the CLI's messages
+as assistant rows and each tool it uses (Bash, Read, Edit, …) as a
+call with its result, marked `from_harness`, redacted and capped as
+tool results are. The run's next generation resumes the session kept
+in `metadata.harness_turn`. A turn that does not end cleanly records
+`harness.start`, `harness.failed`, `harness.lost`,
+`harness.unresponsive`, or `harness.timed_out`; a cancel stops the
+CLI. A subscription agent's run is offered no tool and no connection,
+and its Guidelines leave out the tool budget and every part on a tool
+the run does not offer, and gain the facts its harness needs: where
+it runs, its home, its ports. A Codex subscription agent's runs still
+fail at start with `subscription.not_runnable`, which now reads "Codex
+cannot run a subscription agent's turns yet". The runtime image must
+be rebuilt: `guilds-harness start` takes a `system_prompt` and runs in
+the home without a repository, and `poll` returns the raw events it
+read ([SEC-62](docs/architecture/security-register.md#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network)).
+In the operator app, a harness turn reads as a run flow: Claude Code's
+own tools read as what they did, such as **Run** a command, **Read**
+or **Edit** a file, or **Search lines**, coloured by kind, and a call's
+Metadata names the harness under **Called by**. The Model source note
+says Claude Code runs a subscription agent's turns and Codex ones
+cannot run yet.
 **Breaking.** A coding agent works on the repositories it picks, not
 on every repository of its guild. Agent config gains `repositories`, a
 list of names in the order a run clones them; a create or a settings

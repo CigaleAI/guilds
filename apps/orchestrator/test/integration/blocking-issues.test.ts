@@ -44,6 +44,7 @@ test("an open blocking issue disables its agent until it is resolved", { timeout
     mcp: mcpPool(db),
     notes,
     workspaceRoot,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(workspaceRoot),
     artifacts: artifactStore(db, notes.templates),
   });

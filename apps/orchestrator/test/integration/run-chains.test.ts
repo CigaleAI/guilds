@@ -102,6 +102,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     {
       notes,
       workspaceRoot: tempDir("guilds-chain-ws-"),
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes: sandboxes as unknown as GenerationSandboxes,
       mcp: mcpPool(db),
       artifacts,

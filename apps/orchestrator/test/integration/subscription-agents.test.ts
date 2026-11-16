@@ -43,7 +43,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
   const workspaceRoot = env.WORKSPACE_ROOT ?? "";
   const generation = generationLoop(
     db,
-    { notes, workspaceRoot, sandboxes: new ExportSandboxes(workspaceRoot), mcp: mcpPool(db), artifacts },
+    { notes, workspaceRoot, harnessMcpUrl: "http://127.0.0.1:8090", sandboxes: new ExportSandboxes(workspaceRoot), mcp: mcpPool(db), artifacts },
     LOOP_TIMINGS,
   );
   const app = await buildApp(database, {
