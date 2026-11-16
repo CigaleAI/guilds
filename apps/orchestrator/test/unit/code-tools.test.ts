@@ -702,7 +702,7 @@ describe("repositories in a coding generation", () => {
     return { sandbox, db, loop };
   }
 
-  test("a generation clones the repository, starts in it, and records what it changed", async () => {
+  test("a generation clones the repository and starts in it", async () => {
     const { sandbox, db, loop } = setup(`file://${origin()}`);
     const edit = (id: string, text: string) => ({
       id,
@@ -719,27 +719,8 @@ describe("repositories in a coding generation", () => {
       execFileSync("git", ["-C", clone, ...args], { env: gitEnv(sandbox.home), encoding: "utf8" }).trim();
     assert.equal(git(["config", "--global", "user.name"]), "researcher");
     assert.equal(git(["config", "--global", "user.email"]), "a_1@agents.guilds.run");
-    const first = ((db.run.metadata as Record<string, unknown>).repos as Array<Record<string, unknown>>)[0]!;
-    assert.equal(first.name, "shop");
-    assert.equal(first.branch, "main");
-    assert.equal(first.files_changed, 1);
-    assert.equal(first.insertions, 1);
-    assert.equal(first.deletions, 0);
-    assert.equal(first.start_sha, git(["rev-parse", "refs/guild/runs/r_1/start"]));
-    assert.equal(first.end_sha, git(["rev-parse", "refs/guild/runs/r_1/end"]));
     assert.equal(git(["status", "--porcelain"]), "M README.md");
-
-    live.streamCompletion = scripted(db, [[edit("c2", "two")]]) as typeof live.streamCompletion;
-    await loop.generator.generate("r_1", 2);
-    const second = ((db.run.metadata as Record<string, unknown>).repos as Array<Record<string, unknown>>)[0]!;
-    assert.equal(second.start_sha, first.start_sha);
-    assert.notEqual(second.end_sha, first.end_sha);
-    assert.equal(second.insertions, 2);
-
-    const { diff, truncated } = await loop.coding.runDiff("r_1", "shop");
-    assert.equal(truncated, false);
-    assert.match(diff, /^diff --git a\/README\.md b\/README\.md/);
-    assert.match(diff, /\n\+one\n\+two\n/);
+    assert.equal((db.run.metadata as Record<string, unknown>).repos, undefined);
     loop.machines.cancelIdle("a_1");
   });
 

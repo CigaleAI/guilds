@@ -396,7 +396,17 @@ test("public rows carry a bounded preview and their tags", () => {
   assert.equal(posted.messages[0]?.author_user_id, "user_ada");
 });
 
-test("a coding wake lists what it changed in each repository as code writes", () => {
+test("a wake lists what its turns changed in each repository as code writes, summed over its turns", () => {
+  const change = (name: string, branch: string, files: number, insertions: number) => ({
+    name,
+    branch,
+    head_sha: "h",
+    start_sha: "s",
+    end_sha: "e",
+    files_changed: files,
+    insertions,
+    deletions: 1,
+  });
   const view = projectActivity(
     input({
       runs: [
@@ -406,9 +416,9 @@ test("a coding wake lists what it changed in each repository as code writes", ()
           kind: "schedule",
           errors: [],
           metadata: {
-            repos: [
-              { name: "shop", branch: "agent/desk/refunds", head_sha: "h", start_sha: "s", end_sha: "e", files_changed: 3, insertions: 40, deletions: 2 },
-              { name: "docs", branch: "main", head_sha: "h", start_sha: "s", end_sha: "e", files_changed: 0, insertions: 0, deletions: 0 },
+            turn_changes: [
+              { call_id: "turn_1_r_code", generation: 1, repos: [change("shop", "main", 1, 10)] },
+              { call_id: "turn_2_r_code", generation: 2, repos: [change("shop", "agent/desk/refunds", 2, 30), change("docs", "main", 1, 4)] },
             ],
           },
           created_at: ts("15:00:00"),
@@ -419,17 +429,19 @@ test("a coding wake lists what it changed in each repository as code writes", ()
   );
   const wake = view.wakes[0]!;
   assert.equal(wake.outcome, "wrote");
+  const write = (target: string, code: Record<string, unknown>) => ({
+    kind: "code",
+    target,
+    display_path: `repos/${target}`,
+    operation: "change",
+    tool_name: null,
+    call_id: null,
+    at: wake.ended_at,
+    code,
+  });
   assert.deepEqual(wake.writes, [
-    {
-      kind: "code",
-      target: "shop",
-      display_path: "repos/shop",
-      operation: "change",
-      tool_name: null,
-      call_id: null,
-      at: wake.ended_at,
-      code: { branch: "agent/desk/refunds", files_changed: 3, insertions: 40, deletions: 2 },
-    },
+    write("shop", { branch: "agent/desk/refunds", files_changed: 3, insertions: 40, deletions: 2 }),
+    write("docs", { branch: "main", files_changed: 1, insertions: 4, deletions: 1 }),
   ]);
 });
 

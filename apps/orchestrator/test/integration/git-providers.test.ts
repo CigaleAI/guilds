@@ -67,7 +67,7 @@ const answerOnce = (async function* stream() {
   yield ["done", completion] as ["done", Completion];
 }) as unknown as typeof live.streamCompletion;
 
-test("a private repository on another host clones, checkpoints and pushes a branch with its stored access token; each agent of the guild gets only its own repositories", { timeout: 180_000 }, async () => {
+test("a private repository on another host clones and pushes a branch with its stored access token; each agent of the guild gets only its own repositories", { timeout: 180_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const server = new GitServer("oauth2", "glpat-private-token");
   const host = await server.listen();
@@ -196,11 +196,6 @@ test("a private repository on another host clones, checkpoints and pushes a bran
     assert.ok(answered.length >= 2, "the clone and the push each reached the repository");
     assert.ok(answered.every((request) => request.username === "oauth2"));
     assert.ok(server.requests.some((request) => request.status === 401 && request.username === null), "git asked anonymously first");
-    const repos = (run?.metadata as { repos?: Array<Record<string, unknown>> }).repos ?? [];
-    assert.equal(repos[0]?.name, "app");
-    assert.equal(repos[0]?.branch, "agent/coder/notes");
-    assert.equal(repos[0]?.files_changed, 1, "the end checkpoint records what the run changed");
-    assert.deepEqual(repos.map((repo) => repo.name), ["app"]);
     assert.equal(existsSync(path.join(used.home, "repos", "site")), false, "the agent clones only the repositories it picks");
 
     // Another agent of the guild picks the other repository, and its run reaches that one only.

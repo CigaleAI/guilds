@@ -132,9 +132,8 @@ export class CodingRuns {
   }
 
   /**
-   * A coding generation's repositories, placed with tokens that push and open pull requests, and
-   * the run's start checkpoint of each. The working directory of its code tools starts in the
-   * repository when there is one.
+   * A coding generation's repositories, placed with tokens that push and open pull requests. The
+   * working directory of its code tools starts in the repository when there is one.
    */
   async prepareRepositories(gen: KeyGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     const repositories = await this.placeRepositories(gen, sandbox, tools, "push_and_pull_requests");
@@ -142,7 +141,6 @@ export class CodingRuns {
       return false;
     }
     const names = repositories.map((row) => row.name);
-    await this.checkpoint(maintenanceRun(gen.runId, gen.agent, sandbox), "start", names, null);
     tools.run.code_repositories = names;
     if (repositories.length === 1) {
       tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
@@ -270,28 +268,16 @@ export class CodingRuns {
     }
   }
 
-  /** The end checkpoint of the run's repositories, by name, and what the run changed in each since its start. */
-  async recordCheckpoints(runId: string, agent: AgentRow, sandbox: SandboxHandle, repositories: string[]): Promise<void> {
-    const repos = await this.checkpoint(maintenanceRun(runId, agent, sandbox), "end", repositories, null);
-    if (repos.length) {
-      await this.services.db.mergeRunMetadata(runId, { repos }, new Date());
-    }
-  }
-
   /**
-   * The diff a run made in one repository, between its start and end checkpoints, or with
-   * `task` between one subscription turn's, from the agent's machine (woken as the CLI tab
-   * wakes it), at most 256 KiB and redacted.
+   * The diff one subscription turn of a run, `callId`, made in one repository, between the
+   * turn's start and end checkpoints, from the agent's machine (woken as the CLI tab wakes it),
+   * at most 256 KiB and redacted.
    */
-  async runDiff(
-    runId: string,
-    repository: string,
-    task: string | null = null,
-  ): Promise<CodeDiff> {
+  async turnDiff(runId: string, callId: string, repository: string): Promise<CodeDiff> {
     const { agent, sandbox } = await this.runAgent(runId);
     let result;
     try {
-      const request = task === null ? { op: "diff", repository } : { op: "diff", repository, task: callSegment(task) };
+      const request = { op: "diff", repository, task: callSegment(callId) };
       result = await runCodeHelper(maintenanceRun(runId, agent, sandbox), createToolHooks(), request, {
         maxBytes: RUN_DIFF_MAX_BYTES,
       });
@@ -382,18 +368,18 @@ export class CodingRuns {
   }
 
   /**
-   * Takes a checkpoint of the working tree of each of the run's repositories, under the run's
-   * refs, or with `callId` under that harness call's; the end one lists what each changed since
-   * the start. One that fails, or reports repositories in another shape, is logged and lists none.
+   * Takes a checkpoint of the working tree of each of the turn's repositories, under the refs of
+   * the turn `callId` names; the end one lists what each changed since the start. One that fails,
+   * or reports repositories in another shape, is logged and lists none.
    */
   private async checkpoint(
     run: ToolRun,
     which: "start" | "end",
     names: string[],
-    callId: string | null,
+    callId: string,
   ): Promise<RunRepositoryChange[]> {
     try {
-      const request = { op: "checkpoint", which, repositories: names, ...(callId === null ? {} : { task: callId }) };
+      const request = { op: "checkpoint", which, repositories: names, task: callId };
       const result = await runCodeHelper(run, createToolHooks(), request, { timeoutSeconds: 300 });
       if (which === "start") {
         return [];

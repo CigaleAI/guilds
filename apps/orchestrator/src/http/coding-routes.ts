@@ -13,9 +13,7 @@ import {
 import { harnessOffer } from "../coding/harness-models.js";
 import {
   checkAgentHarness,
-  listRunChanges,
   loadHarnessView,
-  repositoryDiff,
   turnDiff,
   type RunReviewServices,
 } from "../generation/run-review.js";
@@ -31,12 +29,6 @@ const RepositoryParams = Type.Object({ guild_id: Type.String(), repository_id: T
 /** The path of one login. */
 const ConnectionParams = Type.Object({ connection_id: Type.String() });
 
-/** The path of one run. */
-const RunParams = Type.Object({ run_id: Type.String() });
-
-/** The path of one repository a run changed. */
-const RunRepositoryParams = Type.Object({ run_id: Type.String(), repository: Type.String() });
-
 /** The path of one repository one turn of a subscription agent's run changed. */
 const TurnRepositoryParams = Type.Object({ run_id: Type.String(), call_id: Type.String(), repository: Type.String() });
 
@@ -44,8 +36,8 @@ const TurnRepositoryParams = Type.Object({ run_id: Type.String(), call_id: Type.
 const HarnessCheckSchema = Type.Object({ harness: Type.Optional(Type.String()) });
 
 /**
- * A guild's repositories, the repositories a GitHub connection reaches, and what a
- * coding run changed in each repository.
+ * A guild's repositories, the repositories a GitHub connection reaches, an agent's harness, and
+ * what a subscription agent's turn changed in each repository.
  */
 export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Promise<void> {
   const { db } = deps;
@@ -133,11 +125,6 @@ export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Prom
     },
   );
 
-  app.get("/api/runs/:run_id/changes", { schema: { params: RunParams } }, async (request) => {
-    const user = await currentUser(db, request, deps);
-    return listRunChanges(await requireVisibleRun(db, request.params.run_id, user.id));
-  });
-
   app.get(
     "/api/runs/:run_id/turns/:call_id/changes/:repository/diff",
     { schema: { params: TurnRepositoryParams } },
@@ -145,16 +132,6 @@ export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Prom
       const user = await currentUser(db, request, deps);
       const run = await requireVisibleRun(db, request.params.run_id, user.id);
       return turnDiff(review, run, request.params.call_id, request.params.repository);
-    },
-  );
-
-  app.get(
-    "/api/runs/:run_id/changes/:repository/diff",
-    { schema: { params: RunRepositoryParams } },
-    async (request) => {
-      const user = await currentUser(db, request, deps);
-      const run = await requireVisibleRun(db, request.params.run_id, user.id);
-      return repositoryDiff(review, run, request.params.repository);
     },
   );
 }

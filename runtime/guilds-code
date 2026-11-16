@@ -935,14 +935,11 @@ def _snapshot(root: Path, message: str) -> str:
 
 
 def _checkpoint_prefix(spec: dict[str, Any]) -> tuple[str, str]:
-    """The refs a checkpoint writes under, and how its commit message names it: the run's,
-    or with `task` one harness call's, `refs/guild/runs/<run id>/tasks/<call id>`."""
+    """The refs a checkpoint of one harness call, `task`, writes under,
+    `refs/guild/runs/<run id>/tasks/<call id>`, and how its commit message names it."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
-    task = spec.get("task")
-    if task:
-        call = _safe_segment(task, "task")
-        return f"refs/guild/runs/{run_id}/tasks/{call}", f"guild run {run_id} task {call}"
-    return f"refs/guild/runs/{run_id}", f"guild run {run_id}"
+    call = _safe_segment(spec.get("task"), "task")
+    return f"refs/guild/runs/{run_id}/tasks/{call}", f"guild run {run_id} task {call}"
 
 
 def _changed_files(root: Path, start: str, end: str) -> list[dict[str, Any]]:
@@ -961,9 +958,9 @@ def _changed_files(root: Path, start: str, end: str) -> list[dict[str, Any]]:
 
 
 def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
-    """Records <prefix>/start (once) or <prefix>/end (each time) in every working tree under
-    the agent's repos/, or those `repositories` names, and at the end the change since the
-    start. With `task`, the end also lists the changed files, at most CHECKPOINT_FILES."""
+    """Records <prefix>/start (once) or <prefix>/end (each time) of the harness call `task` in
+    every working tree under the agent's repos/, or those `repositories` names, and at the end
+    the change since the start and the changed files, at most CHECKPOINT_FILES."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
     which = spec.get("which")
     if which not in ("start", "end"):
@@ -1003,8 +1000,7 @@ def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
                 ):
                     match = re.search(pattern, stat)
                     record[key] = int(match.group(1)) if match else 0
-                if spec.get("task"):
-                    record["files"] = _changed_files(root, start, commit)[:CHECKPOINT_FILES]
+                record["files"] = _changed_files(root, start, commit)[:CHECKPOINT_FILES]
             records.append(record)
         except (ToolError, subprocess.TimeoutExpired) as exc:
             errors.append(f"{name}: {exc}")
@@ -1015,7 +1011,7 @@ def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def op_diff(spec: dict[str, Any]) -> dict[str, Any]:
-    """The change between a run's checkpoints, or with `task` one harness call's."""
+    """The change between the checkpoints of one harness call, `task`."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
     name = _safe_segment(spec.get("repository"), "repository")
     root = REPOS / name
@@ -1025,8 +1021,7 @@ def op_diff(spec: dict[str, Any]) -> dict[str, Any]:
     start = _git_out(root, ["rev-parse", "--verify", "--quiet", f"{prefix}/start"])
     end = _git_out(root, ["rev-parse", "--verify", "--quiet", f"{prefix}/end"])
     if not start or not end:
-        what = f"task {spec.get('task')} of run {run_id}" if spec.get("task") else f"run {run_id}"
-        raise ToolError(f"{what} has no checkpoints in {name}")
+        raise ToolError(f"task {spec.get('task')} of run {run_id} has no checkpoints in {name}")
     done = _git(root, ["diff", "--no-color", "--no-ext-diff", start, end])
     if done.returncode != 0:
         raise ToolError(done.stderr.strip() or "git diff failed")

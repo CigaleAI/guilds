@@ -97,7 +97,7 @@ export type ActivityTrigger =
 
 export type ActivityWriteKind = "record" | "note" | "script" | "memory" | "code";
 
-/** What a coding wake changed in one repository, between its checkpoints. */
+/** What a wake's turns changed in one repository, summed over the turns that changed it, on its latest branch. */
 export type ActivityCodeChange = {
   branch: string | null;
   files_changed: number;
@@ -593,25 +593,30 @@ export function projectActivity(input: ActivityInput): ActivityView {
   };
 }
 
-/** A coding wake's repositories with changes, from `metadata.repos`, as writes of kind `code`. */
+/** The repositories a wake's turns changed, from `metadata.turn_changes`, as writes of kind `code`. */
 function codeWrites(run: GuildActivityRunRow, at: string): ActivityWrite[] {
-  return (run.metadata.repos ?? [])
-    .filter((repo) => repo.files_changed > 0)
-    .map((repo) => ({
-      kind: "code" as const,
-      target: repo.name,
-      display_path: `repos/${repo.name}`,
-      operation: "change",
-      tool_name: null,
-      call_id: null,
-      at,
-      code: {
+  const changed = new Map<string, ActivityCodeChange>();
+  for (const turn of run.metadata.turn_changes ?? []) {
+    for (const repo of turn.repos) {
+      const kept = changed.get(repo.name);
+      changed.set(repo.name, {
         branch: repo.branch,
-        files_changed: repo.files_changed,
-        insertions: repo.insertions,
-        deletions: repo.deletions,
-      },
-    }));
+        files_changed: (kept?.files_changed ?? 0) + repo.files_changed,
+        insertions: (kept?.insertions ?? 0) + repo.insertions,
+        deletions: (kept?.deletions ?? 0) + repo.deletions,
+      });
+    }
+  }
+  return [...changed].map(([name, code]) => ({
+    kind: "code" as const,
+    target: name,
+    display_path: `repos/${name}`,
+    operation: "change",
+    tool_name: null,
+    call_id: null,
+    at,
+    code,
+  }));
 }
 
 /**

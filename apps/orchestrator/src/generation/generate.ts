@@ -305,8 +305,8 @@ export class RunGenerator {
 
   /**
    * Sets the generation up and runs it, in model steps on a key or in a turn of the harness on a
-   * subscription; afterwards a coding run's checkpoints, a subscription turn's end in its
-   * repositories, and the workspace sizes are kept.
+   * subscription; afterwards a subscription turn's end in its repositories and the workspace
+   * sizes are kept.
    */
   private async runGeneration(gen: Generation): Promise<void> {
     const { coding, workspace, generations, harness } = this.services;
@@ -323,8 +323,6 @@ export class RunGenerator {
     } finally {
       if (gen.source === "subscription") {
         await coding.endTurnInRepositories(gen, ready.sandbox, ready.tools.run.code_repositories);
-      } else if (gen.snapshot.coding) {
-        await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox, ready.tools.run.code_repositories);
       }
       if (!generations.isCancelled(gen.runId)) {
         logOperationFailure(await workspace.recordSize(gen.runId, gen.agent, ready.sandbox), "warn");

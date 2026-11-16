@@ -38,8 +38,8 @@ test("an old code_task call of a run has no diff or log route", { timeout: 60_00
   const generation = {
     groupChat: { observe: () => undefined },
     coding: {
-      async runDiff(runId: string, repository: string, task: string | null = null) {
-        diffs.push([runId, repository, task]);
+      async turnDiff(runId: string, callId: string, repository: string) {
+        diffs.push([runId, repository, callId]);
         return { diff: "+print('hello, guild')\n", truncated: false };
       },
     },

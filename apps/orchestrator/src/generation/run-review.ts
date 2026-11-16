@@ -8,7 +8,6 @@ import {
   type Harness,
   type HarnessLogin,
   type HarnessLogins,
-  type RunRepositoryChange,
 } from "../db/schema/index.js";
 import { codingRepositoriesDatabase, loadUsableRepositories } from "../coding/agent-repositories.js";
 import { harnessEffortOf } from "../coding/harness-models.js";
@@ -30,7 +29,7 @@ import { RunRequestError } from "./errors.js";
 export type RunReviewServices = {
   db: Queryable;
   /** The coding runs whose machines hold the repositories; absent on a box without a generation loop. */
-  coding: Pick<CodingRuns, "runDiff" | "checkHarness"> | null;
+  coding: Pick<CodingRuns, "turnDiff" | "checkHarness"> | null;
 };
 
 /**
@@ -63,10 +62,7 @@ export type AgentHarness = {
   harnesses: HarnessCredential[];
 };
 
-/** What a run changed: each repository's change, as its end checkpoint reports it. */
-export type RunChanges = { repositories: RunRepositoryChange[] };
-
-/** A run's, or one subscription turn's, diff in one repository. */
+/** One subscription turn's diff in one repository. */
 export type RunDiff = { repository: string } & CodeDiff;
 
 function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["coding"]> {
@@ -74,11 +70,6 @@ function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["c
     throw new RunRequestError(503, "generation is unavailable");
   }
   return services.coding;
-}
-
-/** The repositories a run changed, as its metadata lists them. */
-function changedRepositories(run: RunRow): RunRepositoryChange[] {
-  return run.metadata.repos ?? [];
 }
 
 /** One harness of the agent: its secret, whether the agent is granted it, and the login its home holds. */
@@ -142,22 +133,6 @@ export async function checkAgentHarness(
   return codingOf(services).checkHarness(agent.id, harness);
 }
 
-export function listRunChanges(run: RunRow): RunChanges {
-  return { repositories: changedRepositories(run) };
-}
-
-/** What a run changed in one repository. */
-export async function repositoryDiff(
-  services: RunReviewServices,
-  run: RunRow,
-  repository: string,
-): Promise<RunDiff> {
-  if (!changedRepositories(run).some((item) => item.name === repository)) {
-    throw new RunRequestError(404, "the run changed nothing in that repository");
-  }
-  return { repository, ...(await codingOf(services).runDiff(run.id, repository)) };
-}
-
 /** What one turn of a subscription agent's run changed in one repository, between the turn's checkpoints. */
 export async function turnDiff(
   services: RunReviewServices,
@@ -169,5 +144,5 @@ export async function turnDiff(
   if (!turn?.repos.some((item) => item.name === repository)) {
     throw new RunRequestError(404, "that turn changed nothing in that repository");
   }
-  return { repository, ...(await codingOf(services).runDiff(run.id, repository, callId)) };
+  return { repository, ...(await codingOf(services).turnDiff(run.id, callId, repository)) };
 }
