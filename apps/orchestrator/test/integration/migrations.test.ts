@@ -34,6 +34,7 @@ const providersDb = uniqueDbName("agent_platform_migrate_providers");
 const agentRepositoriesDb = uniqueDbName("agent_platform_migrate_agent_repositories");
 const turnMinutesConfigDb = uniqueDbName("agent_platform_migrate_turn_minutes_config");
 const subscriptionOnlyDb = uniqueDbName("agent_platform_migrate_subscription_only");
+const kimiDb = uniqueDbName("agent_platform_migrate_kimi");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -53,6 +54,7 @@ after(async () => {
   await dropIsolatedDatabase(agentRepositoriesDb);
   await dropIsolatedDatabase(turnMinutesConfigDb);
   await dropIsolatedDatabase(subscriptionOnlyDb);
+  await dropIsolatedDatabase(kimiDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -601,6 +603,43 @@ test("the subscription-only migration makes each coding agent a subscription age
       harnesses: [{ role: "coder", recommended: "codex", harness: "codex" }],
       creates: { agents: [{ role: "coder", name: "coder", browser: false }], repositories: [] },
     });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the Kimi removal migration drops each organisation's Kimi Code key and a Kimi default, keeping the other providers", async () => {
+  const pool = await createPool(await createIsolatedDatabase(kimiDb), reportPoolError);
+  try {
+    const folder = chainBefore("0033_kimi_removed");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query(
+      `INSERT INTO public.orgs (id, name, slug, default_model, created_at, updated_at)
+       VALUES ('org_1', 'Org', 'org', 'kimi/k3', $1, $1), ('org_2', 'Other', 'other', 'deepinfra/zai-org/GLM-5.3-Flash', $1, $1)`,
+      [now],
+    );
+    const provider = (id: string, org: string, name: string, models: string[]) =>
+      pool.query(
+        `INSERT INTO public.org_model_providers (id, org_id, provider, models, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $5)`,
+        [id, org, name, models, now],
+      );
+    await provider("omp_1", "org_1", "kimi", ["kimi/k3"]);
+    await provider("omp_2", "org_1", "deepinfra", ["deepinfra/zai-org/GLM-5.3-Flash"]);
+    await provider("omp_3", "org_2", "deepinfra", ["deepinfra/zai-org/GLM-5.3-Flash"]);
+
+    await applyMigrations(pool);
+    const providers = await pool.query<{ id: string }>("SELECT id FROM public.org_model_providers ORDER BY id");
+    assert.deepEqual(providers.rows.map((row) => row.id), ["omp_2", "omp_3"]);
+    const orgs = await pool.query<{ id: string; default_model: string | null }>("SELECT id, default_model FROM public.orgs ORDER BY id");
+    assert.deepEqual(
+      orgs.rows.map((row) => [row.id, row.default_model]),
+      [
+        ["org_1", null],
+        ["org_2", "deepinfra/zai-org/GLM-5.3-Flash"],
+      ],
+    );
   } finally {
     await pool.end();
   }

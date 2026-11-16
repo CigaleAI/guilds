@@ -202,7 +202,7 @@ function unknownConfigKeys(role: RecipeRole): RecipeFinding[] {
   return unknown.length ? [finding("config.unknown", "error", `roles.${role.role}.config`, `unknown keys: ${unknown.join(", ")}`)] : [];
 }
 
-/** A model apply cannot create the role with: unknown, a coding plan's, or of a provider the organisation lacks. */
+/** A model apply cannot create the role with: unknown, or of a provider the organisation lacks. */
 function modelFindings(role: RecipeRole, _recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
   const model = String(role.config.model ?? "").trim();
   const path = `roles.${role.role}.config.model`;
@@ -211,9 +211,6 @@ function modelFindings(role: RecipeRole, _recipe: RecipeDocument, ctx: Validatio
     return model ? [finding("model.unknown", "warning", path, `unknown model ${model}; apply asks for one`)] : [];
   }
   const findings: RecipeFinding[] = [];
-  if (parsed.provider.kind === "coding") {
-    findings.push(finding("model.coding", "warning", path, `${model} is a coding plan's model, which runs no agent; apply asks for another`));
-  }
   if (ctx.connectedProviders && !ctx.connectedProviders.has(parsed.provider.id)) {
     findings.push(
       finding("model.not_connected", "warning", path, `${model} needs a ${providerLabel(parsed.provider.id)} key on Model keys; apply asks for another`),

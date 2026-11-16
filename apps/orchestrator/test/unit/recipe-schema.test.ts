@@ -605,11 +605,7 @@ test("a role's repositories are names the recipe lists, on a subscription role, 
 
 test("a role's model is a recommendation: a bad one warns and never blocks", () => {
   const recipe = parseRecipe(fixtureDeskRecipe());
-  recipe.roles[0]!.config = { ...recipe.roles[0]!.config, model: "kimi/kimi-for-coding" };
-  const codingPlan = validateRecipe(recipe, ctx);
-  assert.ok(codingPlan.some((item) => item.code === "model.coding" && item.severity === "warning"));
-  assert.ok(!codingPlan.some((item) => item.code.startsWith("model.") && item.severity === "error"));
-  recipe.roles[0]!.config.model = "deepinfra/zai-org/GLM-5.3-Flash";
+  recipe.roles[0]!.config = { ...recipe.roles[0]!.config, model: "deepinfra/zai-org/GLM-5.3-Flash" };
   const blocked = validateRecipe(recipe, { ...ctx, connectedProviders: new Set() });
   assert.ok(blocked.some((item) => item.code === "model.not_connected" && item.severity === "warning"));
   const ready = validateRecipe(recipe, { ...ctx, connectedProviders: new Set(["deepinfra"]) });

@@ -148,8 +148,6 @@ export function entryFromModelsDev(provider: ProviderDef, row: ModelsDevModel): 
     attachments: row.attachment === true || (row.modalities?.input ?? []).includes("image"),
     context: context !== undefined && context > 0 ? context : null,
     rates,
-    kind: provider.kind,
-    coding_only: provider.kind === "coding",
     listed: true,
   };
 }

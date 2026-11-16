@@ -2241,7 +2241,7 @@ describe("generation", { concurrency: 1 }, () => {
     await assert.rejects(
       () =>
         loop.completion.complete("r_1", {
-          model: "kimi/kimi-for-coding",
+          model: "xai/grok-5",
           messages: [],
           temperature: 0,
           max_tokens: 8,
@@ -2250,7 +2250,7 @@ describe("generation", { concurrency: 1 }, () => {
       (error: unknown) => {
         assert.ok(error instanceof RunLimitError);
         assert.equal(error.operation, "generation.model_key");
-        assert.match(error.message, /connect a Kimi Code key on Model keys/);
+        assert.match(error.message, /connect a xAI key on Model keys/);
         return true;
       },
     );

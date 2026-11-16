@@ -184,7 +184,7 @@ export class ModelCompletion {
     }
     return {
       rows,
-      payloads: await attachments.projectMessages(agent?.org_id ?? "", rows, agent?.config.model ?? ""),
+      payloads: await attachments.projectMessages(agent?.org_id ?? "", rows),
     };
   }
 

@@ -10,9 +10,9 @@ import {
   parseCompletionChunk,
   streamCompletion,
 } from "../../src/llm/client.js";
-import { LLMError, MODEL_USER_AGENT, reasoningEffortForModel, assistantMetadata, assistantPayload, completionTimeoutMs, redactApiKey, type ModelEvent, type ModelMessage, type ModelRequest } from "../../src/llm/completion.js";
+import { LLMError, MODEL_USER_AGENT, reasoningEffort, assistantMetadata, assistantPayload, completionTimeoutMs, redactApiKey, type ModelEvent, type ModelMessage, type ModelRequest } from "../../src/llm/completion.js";
 import { catalogCostUsd } from "../../src/llm/cost.js";
-import { modelNeedsInlineImages, providerById } from "../../src/llm/providers.js";
+import { providerById } from "../../src/llm/providers.js";
 import { GenerationLimitError, INPUT_TOKEN_LIMIT_MESSAGE, countInputTokens, enforceInputTokenLimit } from "../../src/llm/tokens.js";
 import type { ReasoningDetail } from "../../src/db/schema/index.js";
 
@@ -61,14 +61,10 @@ test("applyPromptCacheControl marks the last text message", () => {
 test("catalog attachments flag follows the models.dev snapshot, and an unlisted id takes the default", () => {
   assert.equal(modelAcceptsAttachments("deepinfra/zai-org/GLM-5.3-Flash"), true);
   assert.equal(modelAcceptsAttachments("deepinfra/deepseek-ai/DeepSeek-V4.1-Flash"), true);
-  assert.equal(modelAcceptsAttachments("kimi/k3"), true);
-  assert.equal(modelAcceptsAttachments("kimi/kimi-for-coding"), true);
   assert.equal(modelAcceptsAttachments("deepinfra/Qwen/Qwen3.8-2.4T-A95B"), false);
   assert.equal(modelAcceptsAttachments("openai/gpt-5-dated-2099-01-01"), false);
   assert.equal(modelAcceptsAttachments("local/qwen"), false);
   assert.equal(modelAcceptsAttachments("not-a-provider"), false);
-  assert.equal(modelNeedsInlineImages("kimi/k3"), true);
-  assert.equal(modelNeedsInlineImages("deepinfra/zai-org/GLM-5.3-Flash"), false);
   const unlisted = modelCatalog.entry("openai/gpt-5-dated-2099-01-01");
   assert.deepEqual(
     unlisted && { listed: unlisted.listed, thinking: unlisted.thinking, temperature: unlisted.temperature, rates: unlisted.rates },
@@ -174,42 +170,40 @@ test("catalog cost_usd comes from the catalog's rates for a billed provider", ()
     cache_read_tokens: 400_000,
   });
   assert.ok(Math.abs(mixed.cost_usd - (0.15 * 0.6 + 0.5 + 0.03 * 0.4)) < 1e-9);
-  assert.equal(catalogCostUsd("kimi/kimi-for-coding", usage).cost_source, "unavailable");
   assert.equal(catalogCostUsd("local/qwen", usage).cost_source, "unavailable");
   assert.equal(catalogCostUsd("openai/gpt-5-dated-2099-01-01", usage).cost_source, "unavailable");
   assert.equal(catalogCostUsd("unknown/model", usage).cost_source, "unavailable");
 });
 
-test("reasoningEffortForModel maps Kimi Code levels", () => {
-  assert.equal(reasoningEffortForModel("kimi/k3", "none"), null);
-  assert.equal(reasoningEffortForModel("kimi/k3", "low"), "low");
-  assert.equal(reasoningEffortForModel("kimi/k3", "medium"), "high");
-  assert.equal(reasoningEffortForModel("kimi/k3", "high"), "max");
-  assert.equal(reasoningEffortForModel("openrouter/openai/gpt-6-luna", "high"), "high");
+test("reasoningEffort asks for the thinking level, and for none when it is off", () => {
+  assert.equal(reasoningEffort("none"), null);
+  assert.equal(reasoningEffort("off"), null);
+  assert.equal(reasoningEffort(""), null);
+  assert.equal(reasoningEffort("high"), "high");
 });
 
 test("listProviderModels accepts a 200 and returns the listed ids", async () => {
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ data: [{ id: "kimi-for-coding" }] }));
+    response.end(JSON.stringify({ data: [{ id: "grok-5" }] }));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address === "object");
   try {
     const ids = await listProviderModels(
-      provider("kimi"),
+      provider("xai"),
       { apiKey: "sk-test" },
       {
         fetch: async (url: string | URL | Request, init?: RequestInit) => {
-          assert.equal(String(url), "https://api.kimi.ai/coding/v1/models");
+          assert.equal(String(url), `${String(provider("xai").baseURL)}/models`);
           assert.equal((init?.headers as Record<string, string>)["User-Agent"], MODEL_USER_AGENT);
           assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer sk-test");
           return fetch(`http://127.0.0.1:${address.port}/models`, init);
         },
       },
     );
-    assert.deepEqual(ids, ["kimi-for-coding"]);
+    assert.deepEqual(ids, ["grok-5"]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
@@ -218,8 +212,8 @@ test("listProviderModels accepts a 200 and returns the listed ids", async () => 
 test("listProviderModels rejects a 401 and names the provider", async () => {
   await assert.rejects(
     () =>
-      listProviderModels(provider("kimi"), { apiKey: "bad" }, { fetch: async () => new Response("no", { status: 401 }) }),
-    /Kimi Code rejected the key/,
+      listProviderModels(provider("xai"), { apiKey: "bad" }, { fetch: async () => new Response("no", { status: 401 }) }),
+    /xAI rejected the key/,
   );
   await assert.rejects(
     () => listProviderModels(provider("openai"), { apiKey: " " }, { fetch: async () => new Response("[]") }),
@@ -230,17 +224,17 @@ test("listProviderModels rejects a 401 and names the provider", async () => {
 test("listProviderModels reads a bare list of ids, and returns nothing for a body of another shape", async () => {
   const listing = (body: string) => async () => new Response(body, { status: 200 });
   assert.deepEqual(
-    await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: listing(JSON.stringify([" k3 ", { id: "k2" }, 5, { id: 7 }, ""])) }),
+    await listProviderModels(provider("xai"), { apiKey: "sk" }, { fetch: listing(JSON.stringify([" k3 ", { id: "k2" }, 5, { id: 7 }, ""])) }),
     ["k3", "k2"],
   );
   for (const body of ["null", JSON.stringify({ data: "k3" }), JSON.stringify({ models: [{ id: "k3" }] })]) {
-    assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: listing(body) }), [], body);
+    assert.deepEqual(await listProviderModels(provider("xai"), { apiKey: "sk" }, { fetch: listing(body) }), [], body);
   }
 });
 
 test("listProviderModels answers no models for a listing whose body is not JSON", async () => {
   const fetchFn = async () => new Response("not json", { status: 200 });
-  assert.deepEqual(await listProviderModels(provider("kimi"), { apiKey: "sk" }, { fetch: fetchFn }), []);
+  assert.deepEqual(await listProviderModels(provider("xai"), { apiKey: "sk" }, { fetch: fetchFn }), []);
 });
 
 test("parseCompletionChunk reads a chunk's text, reasoning, tool call pieces, finish reason, and usage", () => {
@@ -359,10 +353,6 @@ test("completionRequestBody shapes the body per provider", () => {
   assert.equal(deepinfra.reasoning_effort, "medium");
   assert.equal(deepinfra.temperature, 0.4);
   assert.equal("cache_control" in deepinfra, false);
-
-  const kimi = completionRequestBody({ ...base, model: "kimi/k3", thinking_level: "high" });
-  assert.equal(kimi.reasoning_effort, "max");
-  assert.equal(kimi.max_tokens, 64);
 
   const local = completionRequestBody({ ...base, model: "local/qwen3:8b", thinking_level: "none" });
   assert.equal(local.model, "qwen3:8b");

@@ -225,6 +225,13 @@
       "when": 1791990000000,
       "tag": "0032_subscription_agents_only",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791993600000,
+      "tag": "0033_kimi_removed",
+      "breakpoints": true
     }
   ]
 }

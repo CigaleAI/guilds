@@ -15,7 +15,7 @@ import {
   assistantPayload,
   completionTimeoutMs,
   providerForModel,
-  reasoningEffortForModel,
+  reasoningEffort,
   type AssembledCompletion,
   type ContentPart,
   type ModelEndpoint,
@@ -229,7 +229,7 @@ function messagesToolChoice(choice: ToolChoice): Anthropic.ToolChoice {
 
 /** The Messages API effort a thinking level asks for; null for none. An effort the API does not take fails the call. */
 function messagesEffort(model: string, level: string): Effort | null {
-  const effort = reasoningEffortForModel(model, level);
+  const effort = reasoningEffort(level);
   if (!effort) {
     return null;
   }

@@ -193,7 +193,7 @@ test("config requires a model with a provider prefix, whatever the catalog lists
   assert.throws(() => validateAgentConfig({ ...VALID_CONFIG, model: "openrouter/" }), /unknown model provider/);
   assert.throws(() => validateAgentConfig({ ...VALID_CONFIG, model: "gpt-4o" }), /unknown model provider/);
   assert.throws(() => validateAgentConfig({ model: "" }), /non-empty/);
-  assert.throws(() => validateAgentConfig({ ...VALID_CONFIG, model: "kimi/kimi-for-coding" }), /a coding plan's models run no agent/);
+  assert.throws(() => validateAgentConfig({ ...VALID_CONFIG, model: "kimi/kimi-for-coding" }), /unknown model provider/);
 });
 
 test("config defaults missing generation keys", () => {
@@ -608,14 +608,13 @@ test("the agent-optimized browser needs the browser on", () => {
   assert.equal(validateAgentConfig({ ...optimized, browser: true }).browser_optimized, true);
 });
 
-test("the agent-optimized browser needs a marketplace browser_model", () => {
+test("the agent-optimized browser needs a browser_model", () => {
   const optimized = { ...VALID_CONFIG, browser: true, browser_optimized: true };
-  const refused = /browser_model must be a marketplace \{provider\}\/\{model\} when browser_optimized is on/;
+  const refused = /browser_model must be a \{provider\}\/\{model\} when browser_optimized is on/;
   assert.throws(() => validateAgentConfig(optimized), refused, "missing");
   assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "  " }), refused, "blank");
   assert.throws(() => validateAgentConfig({ ...optimized, browser_model: 4 }), refused, "not a string");
   assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "nowhere/model" }), refused, "unknown provider");
-  assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "kimi/kimi-for-coding" }), refused, "coding only");
   assert.equal(validateAgentConfig({ ...optimized, browser_model: ` ${VALID_CONFIG.model} ` }).browser_model, VALID_CONFIG.model);
 });
 

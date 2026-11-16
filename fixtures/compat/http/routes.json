@@ -117,7 +117,6 @@
             {
               "id": "openai",
               "label": "OpenAI",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -126,7 +125,6 @@
             {
               "id": "anthropic",
               "label": "Anthropic",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -135,7 +133,6 @@
             {
               "id": "openrouter",
               "label": "OpenRouter",
-              "kind": "marketplace",
               "connected": true,
               "source": "own",
               "key_hint": "abcd",
@@ -144,7 +141,6 @@
             {
               "id": "xai",
               "label": "xAI",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -153,7 +149,6 @@
             {
               "id": "deepinfra",
               "label": "DeepInfra",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -162,16 +157,6 @@
             {
               "id": "local",
               "label": "Local endpoint",
-              "kind": "marketplace",
-              "connected": false,
-              "source": null,
-              "key_hint": null,
-              "base_url": null
-            },
-            {
-              "id": "kimi",
-              "label": "Kimi Code",
-              "kind": "coding",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -203,7 +188,6 @@
             {
               "id": "openai",
               "label": "OpenAI",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -212,7 +196,6 @@
             {
               "id": "anthropic",
               "label": "Anthropic",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -221,7 +204,6 @@
             {
               "id": "openrouter",
               "label": "OpenRouter",
-              "kind": "marketplace",
               "connected": true,
               "source": "own",
               "key_hint": "abcd",
@@ -230,7 +212,6 @@
             {
               "id": "xai",
               "label": "xAI",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -239,7 +220,6 @@
             {
               "id": "deepinfra",
               "label": "DeepInfra",
-              "kind": "marketplace",
               "connected": false,
               "source": null,
               "key_hint": null,
@@ -248,16 +228,6 @@
             {
               "id": "local",
               "label": "Local endpoint",
-              "kind": "marketplace",
-              "connected": false,
-              "source": null,
-              "key_hint": null,
-              "base_url": null
-            },
-            {
-              "id": "kimi",
-              "label": "Kimi Code",
-              "kind": "coding",
               "connected": false,
               "source": null,
               "key_hint": null,

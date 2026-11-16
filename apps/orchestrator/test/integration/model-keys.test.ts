@@ -73,7 +73,7 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.deepEqual(empty.json().models, []);
     assert.deepEqual(
       empty.json().providers.map((item: { id: string; connected: boolean }) => [item.id, item.connected]),
-      [["openai", false], ["anthropic", false], ["openrouter", false], ["xai", false], ["deepinfra", false], ["local", false], ["kimi", false]],
+      [["openai", false], ["anthropic", false], ["openrouter", false], ["xai", false], ["deepinfra", false], ["local", false]],
     );
 
     const catalog = await app.inject({ method: "GET", url: `${base}/model-providers/deepinfra/catalog`, headers: MEMBER });
@@ -95,7 +95,6 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.deepEqual(set.json(), {
       id: "deepinfra",
       label: "DeepInfra",
-      kind: "marketplace",
       connected: true,
       source: "own",
       key_hint: "abcd",
@@ -127,9 +126,9 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.equal(numberedDefault.statusCode, 422);
     assert.deepEqual(numberedDefault.json().detail[0].loc, ["body", "model"]);
 
-    const wrongKind = await put(OWNER, "/default-model", { model: "kimi/k3" });
-    assert.equal(wrongKind.statusCode, 422, wrongKind.body);
-    assert.deepEqual(wrongKind.json(), { detail: "the default must be a marketplace model" });
+    const unknown = await put(OWNER, "/default-model", { model: "kimi/k3" });
+    assert.equal(unknown.statusCode, 422, unknown.body);
+    assert.deepEqual(unknown.json(), { detail: "model must be {provider}/{model}" });
     const unchosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3" });
     assert.equal(unchosen.statusCode, 422, unchosen.body);
     const chosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3-Flash" });

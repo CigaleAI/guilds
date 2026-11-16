@@ -396,10 +396,10 @@ async function setupsNeeded(apply: RecipeApply, orgId: string, recipe: RecipeDoc
   });
 }
 
-/** The models a role may run: one of a connected provider that is not a coding plan's. */
+/** The models a role may run: one of a connected provider. */
 function modelFits(connected: Set<string>, id: string | null): id is string {
   const parsed = id ? parseModelId(id) : null;
-  return Boolean(parsed && connected.has(parsed.provider.id) && parsed.provider.kind !== "coding");
+  return Boolean(parsed && connected.has(parsed.provider.id));
 }
 
 /** The models a preview may pick from: the organisation's connected providers and its default model. */

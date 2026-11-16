@@ -21,7 +21,7 @@ import {
 } from "../db/schema/index.js";
 import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { NAME_RE } from "../lib/names.js";
-import { isCodingOnlyModel, parseModelId } from "../llm/providers.js";
+import { parseModelId } from "../llm/providers.js";
 import {
   AGENT_CONFIG_DEFAULTS,
   BROWSER_LANGUAGES,
@@ -172,7 +172,7 @@ function rejectBrowserOptimizedWithoutBrowser(browserOptimized: boolean, browser
 }
 /**
  * The model the agent-optimized browser plans and reads with: with `browser_optimized` on, a
- * `{provider}/{model}` id of a provider core speaks to that is not a coding plan's; with it
+ * `{provider}/{model}` id of a provider core speaks to; with it
  * off, null or blank, read as null.
  */
 function requireBrowserModel(value: unknown, browserOptimized: boolean): string | null {
@@ -183,9 +183,9 @@ function requireBrowserModel(value: unknown, browserOptimized: boolean): string 
     }
     throw new AgentValidationError("browser_model is only for the agent-optimized browser");
   }
-  if (typeof model !== "string" || !parseModelId(model) || isCodingOnlyModel(model)) {
+  if (typeof model !== "string" || !parseModelId(model)) {
     throw new AgentValidationError(
-      "browser_model must be a marketplace {provider}/{model} when browser_optimized is on",
+      "browser_model must be a {provider}/{model} when browser_optimized is on",
     );
   }
   return model;
@@ -386,12 +386,6 @@ export function assertSubscriptionAgent(config: AgentConfig, previous?: AgentCon
   }
 }
 
-function rejectCodingOnlyModel(model: string | null): void {
-  if (model !== null && isCodingOnlyModel(model)) {
-    throw new AgentValidationError("a coding plan's models run no agent");
-  }
-}
-
 /** A request's or a recipe's config payload as an object; an absent one is empty, anything else is refused. */
 function configPayload(payload: unknown): JsonObject {
   if (payload === undefined || payload === null) {
@@ -416,7 +410,6 @@ function agentConfigFrom(settings: JsonObject): AgentConfig {
   const browser = requireBooleanField(filled.browser, "browser");
   const browserOptimized = requireBooleanField(filled.browser_optimized, "browser_optimized");
   rejectBrowserOptimizedWithoutBrowser(browserOptimized, browser);
-  rejectCodingOnlyModel(model);
   const harness = requireHarness(filled.harness);
   rejectUnsoundModelSource(model, harness);
   const harnessModel = requireHarnessModel(filled.harness_model, harness);
