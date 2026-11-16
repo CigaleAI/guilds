@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Prompt Studio publishes a draft to a subscription
+agent: publishing estimates its composed prompt's input tokens as for
+any agent, and refuses one past `max_input_tokens` only for an agent
+on a key, since a subscription agent's harness keeps its own context.
+
 **Rebuild.** A Claude Code subscription agent's turn makes at most the
 run's `max_steps` model calls: the CLI starts with `--max-turns`, and a
 turn that stops there ends the generation with `generation.max_steps`,
