@@ -29,11 +29,6 @@
       "count": 1
     }
   },
-  "src/attachments/hydrate.ts": {
-    "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
   "src/attachments/index.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
@@ -41,7 +36,7 @@
   },
   "src/attachments/store.ts": {
     "limits/inline-parameter-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/avatars/index.ts": {
@@ -86,9 +81,6 @@
     }
   },
   "src/coding/git.ts": {
-    "limits/bumpy-road": {
-      "count": 1
-    },
     "limits/inline-parameter-type": {
       "count": 1
     }
@@ -144,11 +136,6 @@
   "src/extension.ts": {
     "limits/inline-parameter-type": {
       "count": 5
-    }
-  },
-  "src/generation/chain.ts": {
-    "limits/silent-catch": {
-      "count": 1
     }
   },
   "src/generation/coding.ts": {
@@ -540,7 +527,7 @@
       "count": 1
     }
   },
-  "src/toolbox/harness.ts": {
+  "src/toolbox/harness-ops.ts": {
     "limits/silent-catch": {
       "count": 3
     }

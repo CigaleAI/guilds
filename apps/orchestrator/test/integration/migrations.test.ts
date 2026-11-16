@@ -29,6 +29,12 @@ const listOnlyPathsDb = uniqueDbName("agent_platform_migrate_list_only_paths");
 const homeGuildDb = uniqueDbName("agent_platform_migrate_home_guild");
 const wakeUpsConfigDb = uniqueDbName("agent_platform_migrate_wake_ups_config");
 const toolResultTurnsDb = uniqueDbName("agent_platform_migrate_tool_result_turns");
+const remoteIdDb = uniqueDbName("agent_platform_migrate_remote_id");
+const providersDb = uniqueDbName("agent_platform_migrate_providers");
+const agentRepositoriesDb = uniqueDbName("agent_platform_migrate_agent_repositories");
+const turnMinutesConfigDb = uniqueDbName("agent_platform_migrate_turn_minutes_config");
+const subscriptionOnlyDb = uniqueDbName("agent_platform_migrate_subscription_only");
+const kimiDb = uniqueDbName("agent_platform_migrate_kimi");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -43,6 +49,12 @@ after(async () => {
   await dropIsolatedDatabase(homeGuildDb);
   await dropIsolatedDatabase(wakeUpsConfigDb);
   await dropIsolatedDatabase(toolResultTurnsDb);
+  await dropIsolatedDatabase(remoteIdDb);
+  await dropIsolatedDatabase(providersDb);
+  await dropIsolatedDatabase(agentRepositoriesDb);
+  await dropIsolatedDatabase(turnMinutesConfigDb);
+  await dropIsolatedDatabase(subscriptionOnlyDb);
+  await dropIsolatedDatabase(kimiDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -162,7 +174,7 @@ test("the native CLI migration drops the cli flag from recipe roles, keeping the
     const migrated = await pool.query("SELECT id, body FROM public.recipes ORDER BY id");
     assert.deepEqual(migrated.rows[0].body.roles, [
       { role: "lead", config: { model: "m", browser: true } },
-      { role: "coder", config: { coding: true } },
+      { role: "coder", config: {} },
       { role: "bare" },
     ]);
     assert.equal(migrated.rows[0].body.format, "guilds.recipe");
@@ -266,7 +278,8 @@ test("the agent config migration gives a config each key it predates, keeping th
     const byId = new Map(rows.rows.map((row) => [row.id, row.config]));
     assert.deepEqual(
       byId.get("old"),
-      agentConfig({ model: MODEL, coding: true, harness: "codex", max_steps: 200, keep_tool_result_generations: 1 }),
+      agentConfig({ model: null, harness: "codex", max_steps: 200 }),
+      "a coding agent became a subscription agent",
     );
     assert.deepEqual(byId.get("full"), full);
   } finally {
@@ -387,6 +400,251 @@ test("the wake-ups config migration gives agent configs and run snapshots max_wa
   }
 });
 
+
+test("the turn minutes config migration gives agent configs and run snapshots max_turn_minutes, keeping the values they have", async () => {
+  const pool = await createPool(await createIsolatedDatabase(turnMinutesConfigDb), reportPoolError);
+  try {
+    const folder = chainBefore("0031_agent_turn_minutes_config");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    const run = (id: string, status: string, snapshot: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.runs (id, agent_id, status, config_snapshot, created_at, updated_at, org_id)
+         VALUES ($1, 'old', $2, $3, $4, $4, 'org_1')`,
+        [id, status, JSON.stringify(snapshot), now],
+      );
+    const { max_turn_minutes: _agentMinutes, ...older } = agentConfig();
+    await agent("old", 0, older);
+    const capped = agentConfig({ max_turn_minutes: 5 });
+    await agent("capped", 1, capped);
+    const { max_turn_minutes: _runMinutes, ...olderSnapshot } = runSnapshot(agentConfig());
+    await run("run_active", "active", olderSnapshot);
+    await run("run_completed", "completed", olderSnapshot);
+    const cappedSnapshot = runSnapshot(capped);
+    await run("run_capped", "active", cappedSnapshot);
+
+    await applyMigrations(pool);
+    const agents = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const configs = new Map(agents.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(configs.get("old"), agentConfig());
+    assert.deepEqual(configs.get("capped"), capped);
+    const runs = await pool.query<{ id: string; config_snapshot: Record<string, unknown> }>("SELECT id, config_snapshot FROM public.runs");
+    const snapshots = new Map(runs.rows.map((row) => [row.id, row.config_snapshot]));
+    assert.deepEqual(snapshots.get("run_active"), runSnapshot(agentConfig()));
+    assert.deepEqual(snapshots.get("run_completed"), runSnapshot(agentConfig()));
+    assert.deepEqual(snapshots.get("run_capped"), cappedSnapshot);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the subscription-only migration makes each coding agent a subscription agent and drops the coding agent's stored shapes", async () => {
+  const pool = await createPool(await createIsolatedDatabase(subscriptionOnlyDb), reportPoolError);
+  try {
+    const folder = chainBefore("0032_subscription_agents_only");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'code', $1, $1)",
+      [now],
+    );
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    const tuned = { temperature: 0.4, max_tokens: 2048, max_input_tokens: 50_000, keep_tool_result_generations: 3, max_steps: 200 };
+    await agent("coder", 0, { ...agentConfig(tuned), coding: true, harness: "claude-code", harness_model: "opus", repositories: ["site"] });
+    await agent("cursor", 1, { ...agentConfig(), coding: true, harness: "cursor" });
+    await agent("unharnessed", 2, { ...agentConfig(tuned), coding: true, repositories: ["site"] });
+    await agent("plain", 3, { ...agentConfig(tuned), coding: false });
+    const snapshot = { ...runSnapshot(agentConfig()), harness: "claude-code" };
+    await pool.query(
+      `INSERT INTO public.runs (id, agent_id, status, config_snapshot, metadata, created_at, updated_at, org_id)
+       VALUES ('run_1', 'coder', 'completed', $1, $2, $3, $3, 'org_1')`,
+      [
+        JSON.stringify({ ...snapshot, coding: true }),
+        JSON.stringify({
+          instruction_hash: "h",
+          chain: { root_run_id: "run_0", index: 1, previous_run_id: "run_0" },
+          continued_by_run_id: "run_2",
+          repos: [{ repository: "site", files_changed: 1 }],
+          harness_task: { call_id: "call_1", harness: "claude-code", repository: "site", session_id: null, log_path: "/tmp/log" },
+        }),
+        now,
+      ],
+    );
+    const message = (seq: number, metadata: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.messages (run_id, seq, payload, metadata, created_at) VALUES ('run_1', $1, $2, $3, $4)`,
+        [seq, JSON.stringify({ role: "tool", tool_call_id: `call_${seq}`, content: "out" }), JSON.stringify(metadata), now],
+      );
+    await message(1, {
+      generation: 1,
+      tool_name: "code_task",
+      truncated: false,
+      exit_code: 0,
+      status: "completed",
+      harness: "claude-code",
+      session_id: "s_1",
+      repository: "site",
+      files_changed: 2,
+      insertions: 3,
+      deletions: 1,
+      start_sha: "a",
+      end_sha: "b",
+      log_path: "/tmp/log",
+    });
+    await message(2, { generation: 1, tool_name: "file_read", path: "src/a.ts", range: [1, 4], content_hash: "h", repeat_of: 1 });
+    await message(3, { generation: 1, tool_name: "note_get", path: "notes/a.md" });
+    await message(4, { generation: 0, source: "continuation", previous_run_id: "run_0" });
+    await message(5, { source: "handoff", previous_run_id: "run_0" });
+    await message(6, { source: "ui" });
+    await pool.query(
+      `INSERT INTO public.run_wakes (id, run_id, root_run_id, agent_id, due_at, state, set_tool_call_id, created_at)
+       VALUES ('wk_1', 'run_1', 'run_0', 'coder', $1, 'pending', 'call_1', $1)`,
+      [now],
+    );
+    const recipe = {
+      format: "guilds.recipe",
+      roles: [
+        {
+          role: "coder",
+          config: { model: "m", coding: true, harness: "codex", temperature: 0.2, thinking_level: "high", max_tokens: 100, max_steps: 200, repositories: ["site"] },
+        },
+        { role: "unharnessed", config: { model: "m", coding: true, max_steps: 200, repositories: ["site"] } },
+        { role: "writer", config: { model: "m", coding: false } },
+        { role: "bare" },
+      ],
+    };
+    await pool.query(
+      `INSERT INTO public.recipes (id, org_id, name, body, source_kind, created_at, updated_at)
+       VALUES ('rec_1', 'org_1', 'r', $1, 'file', $2, $2), ('rec_2', 'org_1', 'r2', '{"roles": [{"role": "lead"}]}', 'file', $2, $2)`,
+      [JSON.stringify(recipe), now],
+    );
+    const preview = {
+      recipe_id: "rec_1",
+      harnesses: [{ role: "coder", recommended: "codex", harness: "codex", subscription: false }],
+      creates: { agents: [{ role: "coder", name: "coder", coding: true, browser: false }], repositories: [] },
+    };
+    await pool.query(
+      `INSERT INTO public.recipe_applies (id, org_id, recipe_id, status, recipe_body_version, preview, created_at, updated_at)
+       VALUES ('apl_1', 'org_1', 'rec_1', 'preview', 1, $1, $2, $2)`,
+      [JSON.stringify(preview), now],
+    );
+
+    await applyMigrations(pool);
+    const agents = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const configs = new Map(agents.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(
+      configs.get("coder"),
+      agentConfig({ model: null, max_steps: 200, harness: "claude-code", harness_model: "opus", repositories: ["site"] }),
+      "a coding agent runs on its harness, its model-loop settings at their defaults",
+    );
+    assert.deepEqual(
+      configs.get("cursor"),
+      agentConfig({ model: null, harness: "cursor" }),
+      "a Cursor agent without a repository is a subscription agent that picks none",
+    );
+    assert.deepEqual(configs.get("unharnessed"), agentConfig(tuned), "a coding agent with no harness keeps its model, without repositories");
+    assert.deepEqual(configs.get("plain"), agentConfig(tuned));
+
+    const run = await pool.query<{ config_snapshot: Record<string, unknown>; metadata: Record<string, unknown> }>(
+      "SELECT config_snapshot, metadata FROM public.runs WHERE id = 'run_1'",
+    );
+    assert.deepEqual(run.rows[0]?.config_snapshot, snapshot, "the run keeps the model it ran on");
+    assert.deepEqual(run.rows[0]?.metadata, { instruction_hash: "h" });
+    const messages = await pool.query<{ seq: number; metadata: Record<string, unknown> }>(
+      "SELECT seq, metadata FROM public.messages WHERE run_id = 'run_1' ORDER BY seq",
+    );
+    assert.deepEqual(
+      messages.rows.map((row) => row.metadata),
+      [
+        { generation: 1, tool_name: "code_task", truncated: false, exit_code: 0, status: "completed" },
+        { generation: 1, tool_name: "file_read" },
+        { generation: 1, tool_name: "note_get", path: "notes/a.md" },
+        { generation: 0, source: "system" },
+        { source: "system" },
+        { source: "ui" },
+      ],
+    );
+    const wakeColumns = await pool.query<{ column_name: string }>(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'run_wakes'",
+    );
+    assert.equal(wakeColumns.rows.some((row) => row.column_name === "root_run_id"), false);
+    assert.equal((await pool.query("SELECT id FROM public.run_wakes")).rowCount, 1);
+
+    const recipes = await pool.query<{ id: string; body: { roles: unknown[] } }>("SELECT id, body FROM public.recipes ORDER BY id");
+    assert.deepEqual(recipes.rows[0]?.body.roles, [
+      { role: "coder", config: { harness: "codex", max_steps: 200, repositories: ["site"] } },
+      { role: "unharnessed", config: { model: "m", max_steps: 200 } },
+      { role: "writer", config: { model: "m" } },
+      { role: "bare" },
+    ]);
+    assert.deepEqual(recipes.rows[1]?.body, { roles: [{ role: "lead" }] });
+    const applies = await pool.query<{ preview: Record<string, unknown> }>("SELECT preview FROM public.recipe_applies");
+    assert.deepEqual(applies.rows[0]?.preview, {
+      recipe_id: "rec_1",
+      harnesses: [{ role: "coder", recommended: "codex", harness: "codex" }],
+      creates: { agents: [{ role: "coder", name: "coder", browser: false }], repositories: [] },
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the Kimi removal migration drops each organisation's Kimi Code key and a Kimi default, keeping the other providers", async () => {
+  const pool = await createPool(await createIsolatedDatabase(kimiDb), reportPoolError);
+  try {
+    const folder = chainBefore("0033_kimi_removed");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query(
+      `INSERT INTO public.orgs (id, name, slug, default_model, created_at, updated_at)
+       VALUES ('org_1', 'Org', 'org', 'kimi/k3', $1, $1), ('org_2', 'Other', 'other', 'deepinfra/zai-org/GLM-5.3-Flash', $1, $1)`,
+      [now],
+    );
+    const provider = (id: string, org: string, name: string, models: string[]) =>
+      pool.query(
+        `INSERT INTO public.org_model_providers (id, org_id, provider, models, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $5)`,
+        [id, org, name, models, now],
+      );
+    await provider("omp_1", "org_1", "kimi", ["kimi/k3"]);
+    await provider("omp_2", "org_1", "deepinfra", ["deepinfra/zai-org/GLM-5.3-Flash"]);
+    await provider("omp_3", "org_2", "deepinfra", ["deepinfra/zai-org/GLM-5.3-Flash"]);
+
+    await applyMigrations(pool);
+    const providers = await pool.query<{ id: string }>("SELECT id FROM public.org_model_providers ORDER BY id");
+    assert.deepEqual(providers.rows.map((row) => row.id), ["omp_2", "omp_3"]);
+    const orgs = await pool.query<{ id: string; default_model: string | null }>("SELECT id, default_model FROM public.orgs ORDER BY id");
+    assert.deepEqual(
+      orgs.rows.map((row) => [row.id, row.default_model]),
+      [
+        ["org_1", null],
+        ["org_2", "deepinfra/zai-org/GLM-5.3-Flash"],
+      ],
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
 test("the guild tool-result turns migration keeps existing guilds at 1, starts new ones at 2, and leaves every agent's own value", async () => {
   const pool = await createPool(await createIsolatedDatabase(toolResultTurnsDb), reportPoolError);
   try {
@@ -418,6 +676,173 @@ test("the guild tool-result turns migration keeps existing guilds at 1, starts n
       pool.query("UPDATE public.guilds SET keep_tool_result_generations = 0 WHERE id = 'guild_new'"),
       /guilds_keep_tool_result_generations_positive/,
     );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the remote id migration renames a repository's GitHub id, on a guild's repository and in each login's picks", async () => {
+  const pool = await createPool(await createIsolatedDatabase(remoteIdDb), reportPoolError);
+  try {
+    const folder = chainBefore("0028_repository_remote_id");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'coders', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      `INSERT INTO public.connectors (id, slug, tool_prefix, manifest, source, installed_at, updated_at)
+       VALUES ('mcp_github', 'github', 'github', '{}', 'core', $1, $1)`,
+      [now],
+    );
+    const picked = { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 };
+    const unidentified = { name: "site", url: "https://github.com/acme/site", default_branch: "main" };
+    for (const [id, scope, owner, settings] of [
+      ["conn_picks", "guild", "guild_1", { repositories: [picked, unidentified], folder_id: "kept" }],
+      ["conn_none", "org", "org_1", { folder_id: "kept" }],
+    ] as const) {
+      await pool.query(
+        `INSERT INTO public.mcp_connections (id, mcp_server_id, owner_scope, owner_id, ciphertext, nonce, created_at, updated_at, rotated_at, settings)
+         VALUES ($1, 'mcp_github', $2, $3, '\\x00', '\\x00', $4, $4, $4, $5)`,
+        [id, scope, owner, now, JSON.stringify(settings)],
+      );
+    }
+    await pool.query(
+      `INSERT INTO public.guild_repositories (id, guild_id, name, url, default_branch, connection_id, github_id, created_at, updated_at)
+       VALUES ('repo_1', 'guild_1', 'shop', 'https://github.com/acme/shop', 'main', 'conn_picks', 101, $1, $1)`,
+      [now],
+    );
+
+    await applyMigrations(pool);
+    const repositories = await pool.query<{ remote_id: string }>("SELECT remote_id FROM public.guild_repositories WHERE id = 'repo_1'");
+    assert.equal(Number(repositories.rows[0]?.remote_id), 101);
+    const logins = await pool.query<{ id: string; settings: Record<string, unknown> }>("SELECT id, settings FROM public.mcp_connections ORDER BY id");
+    assert.deepEqual(logins.rows, [
+      { id: "conn_none", settings: { folder_id: "kept" } },
+      {
+        id: "conn_picks",
+        settings: {
+          repositories: [{ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", remote_id: 101 }, unidentified],
+          folder_id: "kept",
+        },
+      },
+    ]);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the repository providers migration gives each repository with a GitHub login the GitHub provider, and one credential at most", async () => {
+  const pool = await createPool(await createIsolatedDatabase(providersDb), reportPoolError);
+  try {
+    const folder = chainBefore("0029_repository_providers");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'coders', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      `INSERT INTO public.connectors (id, slug, tool_prefix, manifest, source, installed_at, updated_at)
+       VALUES ('mcp_github', 'github', 'github', '{}', 'core', $1, $1)`,
+      [now],
+    );
+    await pool.query(
+      `INSERT INTO public.mcp_connections (id, mcp_server_id, owner_scope, owner_id, ciphertext, nonce, created_at, updated_at, rotated_at)
+       VALUES ('conn_1', 'mcp_github', 'guild', 'guild_1', '\\x00', '\\x00', $1, $1, $1)`,
+      [now],
+    );
+    for (const [id, name, connection] of [
+      ["repo_login", "shop", "conn_1"],
+      ["repo_anonymous", "docs", null],
+    ] as const) {
+      await pool.query(
+        `INSERT INTO public.guild_repositories (id, guild_id, name, url, default_branch, connection_id, created_at, updated_at)
+         VALUES ($1, 'guild_1', $2, 'https://github.com/acme/' || $2, 'main', $3, $4, $4)`,
+        [id, name, connection, now],
+      );
+    }
+
+    await applyMigrations(pool);
+    const rows = await pool.query<{ id: string; provider: string | null }>("SELECT id, provider FROM public.guild_repositories ORDER BY id");
+    assert.deepEqual(rows.rows, [
+      { id: "repo_anonymous", provider: null },
+      { id: "repo_login", provider: "github" },
+    ]);
+    await assert.rejects(
+      pool.query("UPDATE public.guild_repositories SET provider = 'access_token' WHERE id = 'repo_anonymous'"),
+      /guild_repositories_credential_check/,
+    );
+    await assert.rejects(
+      pool.query("UPDATE public.guild_repositories SET provider = NULL WHERE id = 'repo_login'"),
+      /guild_repositories_credential_check/,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the agent repositories migration gives each coding agent every repository it cloned, in its login's order then by name, and any other agent none", async () => {
+  const pool = await createPool(await createIsolatedDatabase(agentRepositoriesDb), reportPoolError);
+  try {
+    const folder = chainBefore("0030_agent_repositories");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    for (const guild of ["guild_1", "guild_2"]) {
+      await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ($1, $1, 'org_1', $2, $2)", [guild, now]);
+    }
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    await pool.query(
+      `INSERT INTO public.connectors (id, slug, tool_prefix, manifest, source, installed_at, updated_at)
+       VALUES ('mcp_github', 'github', 'github', '{}', 'core', $1, $1)`,
+      [now],
+    );
+    const login = (id: string, scope: string, owner: string, status: string, names: string[]) =>
+      pool.query(
+        `INSERT INTO public.mcp_connections (id, mcp_server_id, owner_scope, owner_id, status, settings, ciphertext, nonce, created_at, updated_at, rotated_at)
+         VALUES ($1, 'mcp_github', $2, $3, $4, $5, '\\x00', '\\x00', $6, $6, $6)`,
+        [id, scope, owner, status, JSON.stringify({ repositories: names.map((name) => ({ name, url: `https://github.com/acme/${name}`, default_branch: "main" })) }), now],
+      );
+    await login("conn_guild", "guild", "guild_1", "connected", ["site", "shop"]);
+    await login("conn_own", "agent", "own", "connected", ["api"]);
+    await login("conn_dropped", "agent", "fallback", "disconnected", ["old"]);
+    await login("conn_org", "org", "org_1", "connected", ["handbook"]);
+    for (const [id, guild, name] of [
+      ["repo_shop", "guild_1", "shop"],
+      ["repo_docs", "guild_1", "docs"],
+      ["repo_billing", "guild_1", "billing"],
+      ["repo_wiki", "guild_2", "wiki"],
+    ] as const) {
+      await pool.query(
+        `INSERT INTO public.guild_repositories (id, guild_id, name, url, default_branch, created_at, updated_at)
+         VALUES ($1, $2, $3, 'https://git.example.com/' || $3, 'main', $4, $4)`,
+        [id, guild, name, now],
+      );
+    }
+    const { repositories: _repositories, ...coding } = { ...agentConfig(), coding: true, harness: "codex" };
+    const { repositories: _none, ...plain } = agentConfig();
+    const agent = (id: string, guild: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, $2, $1, $3, $4, $4, 'org_1', '', '', $4, 'mach_1', $5)`,
+        [id, guild, JSON.stringify(config), now, slot],
+      );
+    await agent("coder", "guild_1", 0, coding);
+    await agent("own", "guild_1", 1, coding);
+    await agent("fallback", "guild_1", 2, coding);
+    await agent("other", "guild_2", 3, coding);
+    await agent("plain", "guild_1", 4, plain);
+
+    await applyMigrations(pool);
+    const rows = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const repositories = new Map(rows.rows.map((row) => [row.id, row.config.repositories]));
+    assert.deepEqual(repositories.get("coder"), ["site", "shop", "billing", "docs"]);
+    assert.deepEqual(repositories.get("own"), ["api", "billing", "docs", "shop"]);
+    assert.deepEqual(repositories.get("fallback"), ["site", "shop", "billing", "docs"], "a disconnected login of its own leaves the guild's");
+    assert.deepEqual(repositories.get("other"), ["handbook", "wiki"], "a guild without a login takes the organisation's");
+    assert.deepEqual(repositories.get("plain"), []);
+    assert.deepEqual(rows.rows.find((row) => row.id === "plain")?.config, agentConfig());
   } finally {
     await pool.end();
   }

@@ -34,6 +34,8 @@ import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAge
 import type { BlockingIssueRow } from "../../src/db/blocking-issues.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
+import { AccessTokenProvider } from "../../src/coding/access-token-provider.js";
+import { GithubProvider } from "../../src/coding/github-provider.js";
 import type { CodingRepository } from "../../src/coding/repositories.js";
 import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { RunWakeRow } from "../../src/db/wakes.js";
@@ -63,6 +65,7 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   max_wake_ups: 10,
+  max_turn_minutes: 30,
   keep_tool_result_generations: 1,
   max_scripts: 10,
   max_workspace_mib: 10240,
@@ -70,10 +73,10 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
   browser_language: "en-US",
   browser_optimized: false,
   browser_model: null,
-  coding: false,
   harness: null,
   harness_model: null,
   harness_effort: null,
+  repositories: [],
   secret_aliases: {},
   scripting: true,
   memory: true,
@@ -86,7 +89,7 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
  */
 export function runSnapshot(config: AgentConfig = AGENT_CONFIG): RunConfigSnapshot {
   const resolved = resolveAgentConfig(config, DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS);
-  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = resolved;
+  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, repositories: _repositories, ...settings } = resolved;
   return { ...settings, projection_policy_version: 1, database: false, tools: [], mcp: [], secrets: [] };
 }
 
@@ -494,7 +497,10 @@ export class FakeDB {
 
   /** A run's repository tokens, minted and recorded through this fake. */
   repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
-    return new RepositoryTokens(this as never, repositories);
+    return new RepositoryTokens(
+      { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
+      repositories,
+    );
   }
 
   async getMcpServer(_serverId: string) {
@@ -737,7 +743,10 @@ export class RecordingDB {
 
   /** A run's repository tokens, minted and recorded through this fake. */
   repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
-    return new RepositoryTokens(this as never, repositories);
+    return new RepositoryTokens(
+      { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
+      repositories,
+    );
   }
 
   async getMcpServer(_serverId: string) {
@@ -790,16 +799,13 @@ export class RecordingDB {
       systemPromptHash,
       taskPromptHash,
       memoryPromptHash,
-      extraMessages: rawExtra,
       userMetadata,
     } = input;
-    const extraMessages = rawExtra ?? [];
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
       task_content: taskContent,
       user_content: userContent,
-      extra_messages: extraMessages,
       user_metadata: userMetadata,
     };
     this.messages = [
@@ -811,10 +817,6 @@ export class RecordingDB {
       },
     ];
     let seq = 1;
-    for (const [payload, metadata] of extraMessages) {
-      this.messages.push({ seq, payload, metadata, created_at: now });
-      seq += 1;
-    }
     if (userContent !== null) {
       this.messages.push({
         seq,
@@ -1119,6 +1121,7 @@ export function makeLoop(
       wakes,
       notes: notes as NotesStore,
       workspaceRoot,
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes: sandboxes as GenerationSandboxes,
       credentials: TEST_CREDENTIALS,
       // A loop's runs reach no connector until a test gives them a pool that does.

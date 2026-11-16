@@ -1,15 +1,12 @@
-import { Type } from "typebox";
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
-import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
-import type { AssistantMessage, Harness, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
-import { keepMatching } from "../lib/decode.js";
-import type { JsonObject } from "../lib/json.js";
+import { getRun, listMessages, type MessageRow } from "../db/runs.js";
+import type { AssistantMessage, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import { callTool } from "../mcp/service.js";
 import { errorMessage } from "../observability/log.js";
-import { callSegment, repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
+import { redact } from "../secrets/index.js";
 import {
   identityOutput,
   invokeTool,
@@ -21,10 +18,8 @@ import {
   type ToolHooks,
   type ToolRun,
 } from "../toolbox/index.js";
-import { CodeTaskParameters } from "../toolbox/harness.js";
 import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import type { CodingRuns } from "./coding.js";
 import { GenerationBlocked, GenerationCancelled, logOperationFailure, type OperationFailure } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
@@ -34,54 +29,6 @@ import type { ConnectorPool } from "./prepare.js";
 /** The tool calls of a run's history: which are pending, how many ran, and the record of an interrupted one. */
 
 export const INTERRUPTED_CONTENT = "ERROR: execution interrupted";
-
-/** A `code_task` call the orchestrator lost track of when it restarted. */
-export type LostCodeTask = {
-  harness: Harness;
-  repository: string | null;
-  session_id: string | null;
-  log_path: string | null;
-  run_id: string;
-  call_id: string;
-};
-
-/** The arguments of a `code_task` call that say where its work was: the repository and the session. */
-const CodeTaskWhere = Type.Pick(CodeTaskParameters, ["repo", "session_id"]);
-
-/** The call's arguments; none when the model wrote no JSON object. */
-function callArguments(call: ToolCall): JsonObject {
-  try {
-    return parseArguments(call);
-  } catch {
-    return {};
-  }
-}
-
-/** Where a `code_task` call's arguments say its work was: the repository and the session, each null when they name none. */
-function codeTaskWhere(call: ToolCall): Pick<LostCodeTask, "repository" | "session_id"> {
-  const args = keepMatching(CodeTaskWhere, callArguments(call));
-  return { repository: args?.repo || null, session_id: args?.session_id || null };
-}
-
-/** A lost `code_task` call, from what its run remembered about it and from the call's own arguments. */
-export function lostCodeTask(
-  run: Pick<RunRow, "id" | "metadata">,
-  call: ToolCall,
-  harness: Harness,
-): LostCodeTask {
-  const callId = callSegment(call.id);
-  const remembered = run.metadata.harness_task;
-  const known = remembered?.call_id === callId ? remembered : null;
-  const where = codeTaskWhere(call);
-  return {
-    harness,
-    repository: known?.repository ?? where.repository,
-    session_id: known?.session_id ?? where.session_id,
-    log_path: known?.log_path ?? null,
-    run_id: run.id,
-    call_id: callId,
-  };
-}
 
 export function toolCallsOf(payload: AssistantMessage): ToolCall[] {
   return payload.tool_calls ?? [];
@@ -146,6 +93,21 @@ export function pendingToolCalls(
 /** A tool call's result as a run keeps it: the message the model reads, and its metadata. */
 export type ToolRecord = [ToolMessage, ToolResultMetadata];
 
+/** A tool call's result as a run keeps it, with the budget of tool calls it leaves. */
+export type KeptToolRecord = [ToolMessage, ToolResultMetadata & { remaining_tool_calls: number }];
+
+/**
+ * The assistant message that holds a call a run's harness made through the orchestrator's MCP
+ * server, its arguments redacted with `secrets`, as a model's message holds its calls.
+ */
+export function harnessMcpCallMessage(call: ToolCall, secrets: Record<string, string>): AssistantMessage {
+  return {
+    role: "assistant",
+    content: "",
+    tool_calls: [{ ...call, function: { ...call.function, arguments: redact(call.function.arguments, secrets) } }],
+  };
+}
+
 /** The result of a call whose execution was lost, as the run keeps it under a generation's number. */
 export type InterruptedToolRecord = [ToolMessage, ToolResultMetadata & { generation: number }];
 
@@ -208,6 +170,9 @@ export type GenerationTools = {
 /** A connection's answer to a tool call: its text, or the failure the model reads as the call's result. */
 type ConnectionAnswer = { ok: true; text: string } | { ok: false; failure: OperationFailure };
 
+/** What the next tool calls of a run are kept against: how many calls the run has made, and the agent whose connections they reach. */
+type CallLedger = { executed: number; owner: AgentRow | null };
+
 /** What tool calls are made with, built once by the loop. */
 export type ToolCallsServices = {
   db: ToolCallsDatabase;
@@ -215,7 +180,6 @@ export type ToolCallsServices = {
   events: RunEventBus;
   generations: ActiveGenerations;
   machines: AgentMachines;
-  coding: CodingRuns;
   tools: ToolServices;
 };
 
@@ -231,24 +195,12 @@ export class ToolCalls {
    * one, and a call that filed a blocking issue ends the generation with `GenerationBlocked`.
    */
   async execute(turn: RunGeneration, tools: GenerationTools, calls: ToolCall[]): Promise<void> {
-    const { db, events, generations } = this.services;
-    const history = await db.listMessages(turn.runId);
-    let executed = executedToolCalls(history);
-    const owner = await db.getAgent(tools.run.agent_id);
-    const reads = history
-      .filter((row) => row.payload.role === "tool")
-      .map((row) => ({ seq: row.seq, metadata: row.metadata }));
+    const ledger = await this.callLedger(turn.runId, tools);
     for (const call of calls) {
-      if (generations.isCancelled(turn.runId)) {
+      if (this.services.generations.isCancelled(turn.runId)) {
         throw new GenerationCancelled();
       }
-      executed += 1;
-      const [payload, metadata] = stampToolResult(
-        ...(await this.callTool(call, tools, owner, reads)),
-        remainingAfter(tools.maxToolCalls, executed),
-      );
-      const row = await events.commitMessage(turn.runId, payload, { generation: turn.generation, ...metadata });
-      reads.push({ seq: row.seq, metadata });
+      const [, metadata] = await this.keepCall(turn, tools, call, ledger);
       if (metadata.blocking_issue_id !== undefined) {
         throw new GenerationBlocked(metadata.blocking_issue_id);
       }
@@ -256,38 +208,82 @@ export class ToolCalls {
   }
 
   /**
+   * Runs a call the run's harness made through the orchestrator's MCP server, kept as a model's
+   * call is: its assistant row, then its result with the budget it leaves. A call whose result
+   * could not be kept gets the interrupted one before the failure is thrown. Returns the result.
+   */
+  async executeHarnessCall(turn: RunGeneration, tools: GenerationTools, call: ToolCall): Promise<KeptToolRecord> {
+    const { events } = this.services;
+    await events.commitMessage(turn.runId, harnessMcpCallMessage(call, tools.secrets), { generation: turn.generation });
+    try {
+      return await this.keepCall(turn, tools, call, await this.callLedger(turn.runId, tools));
+    } catch (error) {
+      await this.keepInterrupted(turn, tools, call);
+      throw error;
+    }
+  }
+
+  /** What the run's next calls are kept against, read from its history. */
+  private async callLedger(runId: string, tools: GenerationTools): Promise<CallLedger> {
+    const { db } = this.services;
+    const history = await db.listMessages(runId);
+    return {
+      executed: executedToolCalls(history),
+      owner: await db.getAgent(tools.run.agent_id),
+    };
+  }
+
+  /** Runs `call` and keeps its result with the budget it leaves; the call joins `ledger`. */
+  private async keepCall(
+    turn: RunGeneration,
+    tools: GenerationTools,
+    call: ToolCall,
+    ledger: CallLedger,
+  ): Promise<KeptToolRecord> {
+    ledger.executed += 1;
+    const [payload, metadata] = stampToolResult(
+      ...(await this.callTool(call, tools, ledger.owner)),
+      remainingAfter(tools.maxToolCalls, ledger.executed),
+    );
+    await this.services.events.commitMessage(turn.runId, payload, { generation: turn.generation, ...metadata });
+    return [payload, metadata];
+  }
+
+  /** Keeps the interrupted result of `call`, with the budget it leaves. */
+  private async keepInterrupted(turn: RunGeneration, tools: GenerationTools, call: ToolCall): Promise<void> {
+    const { db, events } = this.services;
+    const executed = executedToolCalls(await db.listMessages(turn.runId)) + 1;
+    const [payload, metadata] = stampToolResult(
+      ...interruptionRecord(call, turn.generation),
+      remainingAfter(tools.maxToolCalls, executed),
+    );
+    await events.commitMessage(turn.runId, payload, metadata);
+  }
+
+  /**
    * Gives each call of the run's history that has no result the interrupted result, numbered
-   * `generation` or its own; a lost `code_task` is stopped on its machine. Returns how many.
+   * `generation` or its own. Returns how many.
    */
   async resolveUnresolved(runId: string, generation: number | null): Promise<number> {
-    const { db, events, coding } = this.services;
+    const { db, events } = this.services;
     const rows = await db.listMessages(runId);
     const pending = pendingToolCalls(rows);
     const run = await db.getRun(runId);
     const maxToolCalls = run?.config_snapshot.max_tool_calls ?? DEFAULT_MAX_TOOL_CALLS;
     let executed = executedToolCalls(rows);
     for (const [call, callGeneration] of pending) {
-      let record = interruptionRecord(call, generation ?? callGeneration);
-      if (record[1].tool_name === "code_task" && run) {
-        record = await coding.interruptedCodeTask(run, call, record);
-      }
       executed += 1;
-      const [payload, metadata] = stampToolResult(...record, remainingAfter(maxToolCalls, executed));
+      const [payload, metadata] = stampToolResult(
+        ...interruptionRecord(call, generation ?? callGeneration),
+        remainingAfter(maxToolCalls, executed),
+      );
       await events.commitMessage(runId, payload, metadata);
     }
     return pending.length;
   }
 
-  /**
-   * One call's result: from its connection when the run offers it as a connection tool, else
-   * from the native tool, where a read of a range unchanged since an earlier read points to it.
-   */
-  private async callTool(
-    call: ToolCall,
-    tools: GenerationTools,
-    owner: AgentRow | null,
-    reads: ReadRow[],
-  ): Promise<ToolRecord> {
+  /** One call's result: from its connection when the run offers it as a connection tool, else from the native tool. */
+  private async callTool(call: ToolCall, tools: GenerationTools, owner: AgentRow | null): Promise<ToolRecord> {
     const { run, hooks, connections, secrets } = tools;
     const name = call.function.name;
     const offered = run.offered_tools === null || run.offered_tools.has(name) || name in run.dynamic_tools;
@@ -295,21 +291,7 @@ export class ToolCalls {
     if (offered && target !== undefined) {
       return this.callConnectionTool(call, target, owner, secrets);
     }
-    const [payload, metadata] = await invokeTool(this.services.tools, run, hooks, call);
-    const step = repeatedReadStep(reads, metadata);
-    if (step === null) {
-      return [payload, metadata];
-    }
-    const [content, pipeline] = processOutput(
-      repeatedReadText(metadata, step),
-      identityOutput,
-      secrets,
-      toolResultMaxBytes(),
-    );
-    return [
-      { ...payload, content },
-      { ...metadata, ...pipeline, repeat_of: step },
-    ];
+    return invokeTool(this.services.tools, run, hooks, call);
   }
 
   /** Calls `remoteName` on the connection; a failure is the call's result, as the model reads it, and is logged. */

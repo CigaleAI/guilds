@@ -23,10 +23,10 @@ import { createTypeSafeClient } from "../../src/typesafe/client.js";
 import { createGroupRouter } from "../../src/typesafe/group.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
-import { helperAnswer, helperRequest } from "../helpers/code-sandbox.js";
 import {
   abortableHang,
   AGENT_CONFIG,
+  agentConfig,
   agentRow,
   AGENT_MACHINE,
   completionReply,
@@ -303,7 +303,7 @@ describe("generation", { concurrency: 1 }, () => {
         payload: {
           role: "assistant" as const,
           content: "",
-          tool_calls: [{ id: "c1", type: "function" as const, function: { name: "file_read", arguments: "{}" } }],
+          tool_calls: [{ id: "c1", type: "function" as const, function: { name: "note_get", arguments: "{}" } }],
         },
         metadata: { generation: 1 },
         created_at: new Date(),
@@ -312,7 +312,7 @@ describe("generation", { concurrency: 1 }, () => {
         id: 4,
         seq: 3,
         payload: { role: "tool", tool_call_id: "c1", content: large },
-        metadata: { generation: 1, tool_name: "file_read", path: "repos/shop/src/a.ts" },
+        metadata: { generation: 1, tool_name: "note_get" },
         created_at: new Date(),
       },
       {
@@ -332,8 +332,7 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.generator.generate("r_1", 2);
     const tool = seen.find((item) => item.role === "tool");
     assert.match(String(tool?.content), /"stub":true/);
-    assert.match(String(tool?.content), /file_read/);
-    assert.match(String(tool?.content), /repos\/shop\/src\/a\.ts/);
+    assert.match(String(tool?.content), /note_get/);
     assert.doesNotMatch(String(tool?.content), /xxx/);
     const stored = db.messages.find((row) => row.seq === 3);
     assert.equal((stored?.payload as Record<string, unknown>).content, large);
@@ -401,7 +400,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
     await assert.rejects(() => loop.resumeRun("r_1"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
-      assert.match(error.detail, /tool, token, or chain cap/);
+      assert.match(error.detail, /tool or token cap/);
       assert.equal(error.status, 409);
       return true;
     });
@@ -769,6 +768,28 @@ describe("generation", { concurrency: 1 }, () => {
       assert.equal(error.status, 409);
       return true;
     });
+  });
+
+  test("a subscription agent's prepared prompt describes the tools its run offers by the names its harness calls them, and where it runs", async () => {
+    const { loop, db } = await seededLoop();
+    db.agent.config = agentConfig({ model: null, harness: "claude-code" });
+    const keyed = await seededLoop();
+    const subscription = await loop.preparation.prepare("a_1", null);
+    const key = await keyed.loop.preparation.prepare("a_1", null);
+    for (const text of ["remaining_tool_calls", "tool-invocation budget", "It is only for coordination"]) {
+      assert.ok(key.system.includes(text), `a key agent reads ${text}`);
+      assert.ok(subscription.system.includes(text), `a subscription agent reads ${text}`);
+    }
+    for (const tool of ["report_issue", "memory_write"]) {
+      assert.ok(key.system.includes(`\`${tool}\``), `a key agent reads ${tool}`);
+      assert.ok(subscription.system.includes(`\`mcp__guilds__${tool}\``), `a subscription agent reads ${tool} as Claude Code calls it`);
+      assert.ok(!subscription.system.includes(`\`${tool}\``));
+    }
+    assert.ok(!subscription.system.includes("<tool>"));
+    assert.ok(subscription.system.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
+    assert.ok(subscription.system.includes("from the platform's MCP server, `guilds`"));
+    assert.ok(!key.system.includes("$GUILDS_PORTS"));
+    assert.ok(subscription.system.includes("### Your Memory"));
   });
 
   test("add_message_rejects_group_runs", async () => {
@@ -1535,115 +1556,6 @@ describe("generation", { concurrency: 1 }, () => {
     assert.equal((tool?.metadata as Record<string, unknown>).remaining_tool_calls, 49);
   });
 
-  /** A run of a Claude Code agent with a `code_task` call left unresolved, on a running machine answering `answers`. */
-  async function lostCodeTask(
-    answers: Record<string, Record<string, unknown>>,
-    machine: { running: boolean; connect?: () => Promise<never> } = { running: true },
-  ) {
-    const { loop, db } = await seededLoop();
-    loop.generateInBackground = () => undefined;
-    await loop.runs.createRun("a_1", null);
-    const run = db.run!;
-    run.config_snapshot = { ...(run.config_snapshot as Record<string, unknown>), harness: "claude-code" };
-    run.metadata = {
-      harness_task: {
-        call_id: "call_task",
-        harness: "claude-code",
-        repository: "app",
-        session_id: "s_9",
-        log_path: ".runs/r/call_task.harness.jsonl",
-      },
-    };
-    const sandboxes = loop.machines.sandboxes as unknown as FakeSandboxes;
-    if (machine.running) {
-      sandboxes.running.add("mach_1");
-    }
-    if (machine.connect) {
-      sandboxes.connectRunning = machine.connect;
-    }
-    const requests: Array<Record<string, unknown>> = [];
-    sandboxes.commands = {
-      run: async (command: string) => {
-        const request = helperRequest(command);
-        if (request !== null) {
-          requests.push(request);
-        }
-        return helperAnswer(answers[String(request?.op)] ?? {});
-      },
-    };
-    db.messages.push({
-      seq: 3,
-      payload: {
-        role: "assistant" as const,
-        content: "",
-        tool_calls: [{ id: "call_task", type: "function" as const, function: { name: "code_task", arguments: JSON.stringify({ brief: "x" }) } }],
-      },
-      metadata: { generation: 1 },
-      created_at: new Date(),
-    });
-    await loop.reconcile();
-    const tool = db.messages[db.messages.length - 1];
-    return {
-      content: String((tool?.payload as Record<string, unknown>).content),
-      metadata: tool?.metadata as Record<string, unknown>,
-      ops: requests.map((request) => `${String(request.op)}${request.which ? `:${String(request.which)}` : ""}`),
-      requests,
-    };
-  }
-
-  test("reconcile stops a code_task left running, clears its state, and takes its end checkpoint", async () => {
-    const { content, metadata, ops, requests } = await lostCodeTask({
-      stop: { missing: false, exited: true, session_id: "s_9" },
-      result: { missing: false, exited: true, session_id: "s_10" },
-      checkpoint: { repositories: [{ name: "app", start_sha: "a".repeat(40), end_sha: "b".repeat(40) }] },
-    });
-    assert.deepEqual(ops, ["stop", "result", "checkpoint:end"], "result clears the call's state");
-    assert.ok(requests.every((request) => request.call_id === "call_task"));
-    assert.deepEqual(requests[2]?.repositories, ["app"]);
-    assert.equal(requests[2]?.task, "call_task");
-    assert.match(content, /^interrupted · claude-code · app · session s_10\n/);
-    assert.ok(content.includes("The harness was stopped before it finished"));
-    assert.ok(content.includes("refs/guild/runs/"));
-    assert.ok(content.includes("log: .runs/r/call_task.harness.jsonl"));
-    assert.equal(metadata.status, "interrupted");
-    assert.equal(metadata.session_id, "s_10");
-    assert.equal(metadata.repository, "app");
-    assert.equal(metadata.start_sha, "a".repeat(40));
-    assert.equal(metadata.end_sha, "b".repeat(40), "the task diff is available");
-    assert.equal(metadata.error, "execution interrupted");
-  });
-
-  test("reconcile says when the harness did not stop, and reads no result from it", async () => {
-    const { content, metadata, ops } = await lostCodeTask({
-      stop: { missing: false, exited: false },
-      checkpoint: { repositories: [{ name: "app", start_sha: "a".repeat(40), end_sha: "b".repeat(40) }] },
-    });
-    assert.deepEqual(ops, ["stop", "checkpoint:end"]);
-    assert.ok(content.includes("the harness did not stop: it may still be running"), content);
-    assert.equal(metadata.session_id, "s_9", "the session the run remembered");
-  });
-
-  test("reconcile has nothing to stop on a machine that is not running", async () => {
-    const { content, metadata, ops } = await lostCodeTask({}, { running: false });
-    assert.deepEqual(ops, []);
-    assert.ok(content.includes("The harness was stopped before it finished"));
-    assert.equal(metadata.end_sha, null);
-  });
-
-  test("reconcile that cannot reach the machine says the harness may still be running", async () => {
-    const { content, ops } = await lostCodeTask(
-      {},
-      {
-        running: true,
-        connect: async () => {
-          throw new Error("the sandbox provider is down");
-        },
-      },
-    );
-    assert.deepEqual(ops, []);
-    assert.ok(content.includes("the harness did not stop: it may still be running"), content);
-  });
-
   test("hard_cancel_during_settlement_resolves_each_call_once", async () => {
     restoreBindings();
     const snapshot = {
@@ -2051,7 +1963,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("ensure_cli_runs_on_the_machine_of_its_tier", async () => {
     const db = new FakeDB({});
-    db.agent.config = { ...AGENT_CONFIG, browser: true, coding: true };
+    db.agent.config = { ...AGENT_CONFIG, browser: true };
     Object.assign(db.agent, { machine_box: "custom", machine_cpu: "1.5", machine_memory_mib: 3072 });
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, {
@@ -2329,7 +2241,7 @@ describe("generation", { concurrency: 1 }, () => {
     await assert.rejects(
       () =>
         loop.completion.complete("r_1", {
-          model: "kimi/kimi-for-coding",
+          model: "xai/grok-5",
           messages: [],
           temperature: 0,
           max_tokens: 8,
@@ -2338,7 +2250,7 @@ describe("generation", { concurrency: 1 }, () => {
       (error: unknown) => {
         assert.ok(error instanceof RunLimitError);
         assert.equal(error.operation, "generation.model_key");
-        assert.match(error.message, /connect a Kimi Code key on Model keys/);
+        assert.match(error.message, /connect a xAI key on Model keys/);
         return true;
       },
     );
@@ -2501,7 +2413,6 @@ describe("generation", { concurrency: 1 }, () => {
     db.cancelRunWake = async () => ({
       id: "wk_1",
       run_id: "r_1",
-      root_run_id: "r_1",
       agent_id: "a_1",
       due_at: "2026-01-01T00:05:00.000Z",
       message: null,
@@ -2524,26 +2435,6 @@ describe("generation", { concurrency: 1 }, () => {
       ["run.wake.changed", "run.error wake.cancelled", "generation.finished"],
     );
     assert.deepEqual(seen.at(-1)?.event, ["generation.finished", { generation: 1, standing: "capped" }]);
-    restoreBindings();
-  });
-
-  test("a_run_that_hands_off_finishes_released_before_it_names_its_continuation", async () => {
-    restoreBindings();
-    const db = new FakeDB({});
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    live.streamCompletion = async function* reply() {
-      yield ["done", completionReply("ok")];
-    };
-    loop.chains.takeContinuation = (runId) => (runId === "r_1" ? "r_2" : null);
-    const seen = publishedWithRunState(loop, db);
-    await loop.beginGeneration("r_1", "a_1");
-    loop.generateInBackground("r_1", 1);
-    await waitTask(loop, "r_1");
-    const fromFirst = seen.filter(({ runId }) => runId === "r_1").slice(-2);
-    assert.deepEqual(fromFirst, [
-      { runId: "r_1", event: ["generation.finished", { generation: 1, standing: "open" }], generating: false, status: "active" },
-      { runId: "r_1", event: ["run.continued", { run_id: "r_2" }], generating: false, status: "active" },
-    ]);
     restoreBindings();
   });
 

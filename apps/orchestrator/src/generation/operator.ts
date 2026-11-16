@@ -2,6 +2,7 @@ import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { listMessages, type RunRow } from "../db/runs.js";
+import { modelSourceOf } from "../db/schema/index.js";
 import { messageItem, type RunView } from "../db/views.js";
 import { RunRequestError } from "./errors.js";
 import type { GenerationLoop } from "./index.js";
@@ -44,7 +45,10 @@ export function validateAttachmentIds(raw: string[] | null | undefined): string[
   return ids;
 }
 
-/** The images a message carries, checked against the organisation's uploads and the agent's model. */
+/**
+ * The images a message carries, checked against the organisation's uploads, and against the
+ * agent's model when it runs on a key; a subscription agent's harness reads them as files.
+ */
 async function resolveAttachments(
   services: RunOperatorServices,
   agent: AgentRow,
@@ -56,11 +60,11 @@ async function resolveAttachments(
   if (services.attachments === null) {
     throw new RunRequestError(503, "attachments are not configured");
   }
-  return services.attachments.resolveForMessage({
-    orgId: agent.org_id,
-    model: agent.config.model,
-    ids,
-  });
+  const source = modelSourceOf(agent.config);
+  if (source.kind === "subscription") {
+    return services.attachments.resolveUploads(agent.org_id, ids);
+  }
+  return services.attachments.resolveForModel(agent.org_id, source.model, ids);
 }
 
 /**

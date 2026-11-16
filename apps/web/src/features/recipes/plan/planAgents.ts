@@ -1,6 +1,7 @@
 import { harnessLabel, isHarness } from "../../agent/harness";
-import type { Harness } from "../../../api/types/agents";
+import type { Harness, ModelSource } from "../../../api/types/agents";
 import type { RecipeFinding } from "../../../api/types/recipes";
+import { isStringList } from "../../../api/wire";
 import {
   asArray,
   asObject,
@@ -36,9 +37,12 @@ export type PlanAgent = {
   avatar_shape: string;
   avatar_color: string;
   browser: boolean;
-  coding: boolean;
-  /** The harness a coding agent runs; null when it does not code or none is named yet. */
+  /** A subscription role's agent runs every turn on its harness; any other role's on a model. */
+  model_source: ModelSource;
+  /** The harness a subscription agent runs; null for an agent on a key. */
   harness: Harness | null;
+  /** The repositories the role lists in its config, by name; none when it lists none. */
+  repositories: string[];
   browserInstructions: string;
   task: string;
   taskAuthor: AuthorDraft | null;
@@ -73,7 +77,7 @@ function rolesFromCreatedAgents(
     role: agent.role,
     name_suggestion: agent.name,
     focus: agent.focus || "",
-    config: { model: agent.model, browser: agent.browser, coding: agent.coding },
+    config: { model: agent.model, browser: agent.browser },
     task: { body: agent.task || "", embeds: [], author: null },
     native_tools: Object.fromEntries(asArray(agent.native_tools).map((name) => [name, true])),
     scripts: [],
@@ -93,10 +97,21 @@ export function planRoles(
   return rolesFromCreatedAgents(createdAgents, overlayRoutines);
 }
 
-/** The harness a coding role runs; null when the role does not code or names no known harness. */
-function codingHarness(role: RoleDraft): Harness | null {
+/** Whether the role runs on a subscription, as the server reads it: a known harness and no model. */
+export function roleModelSource(role: RoleDraft): ModelSource {
+  return roleHarness(role) === null ? "key" : "subscription";
+}
+
+/** The harness a subscription role runs: a known one, on a role without a model; null for any other role. */
+function roleHarness(role: RoleDraft): Harness | null {
   const config = asObject(role.config);
-  return config.coding === true && isHarness(config.harness) ? config.harness : null;
+  return isHarness(config.harness) && !config.model ? config.harness : null;
+}
+
+/** The repositories a role lists in its config, by name; none when it lists none, or not as a list of names. */
+function roleRepositories(role: RoleDraft): string[] {
+  const listed = asObject(role.config).repositories;
+  return isStringList(listed) ? listed : [];
 }
 
 export function planAgent(
@@ -115,8 +130,9 @@ export function planAgent(
     avatar_shape: role.avatar_shape || "teardrop",
     avatar_color: role.avatar_color || "#7c5cff",
     browser: Boolean(browser.required || config.browser),
-    coding: config.coding === true,
-    harness: codingHarness(role),
+    model_source: roleModelSource(role),
+    harness: roleHarness(role),
+    repositories: roleRepositories(role),
     browserInstructions: browser.instructions || "",
     task: taskBody(role),
     taskAuthor: taskAuthor(role),
@@ -207,16 +223,14 @@ export function agentMetrics(
 
 /** Something an agent can do beyond chat, as its card lists it. */
 export type AgentCapability = {
-  id: "browser" | "coding";
+  id: "browser" | "subscription";
   label: string;
-  /** The lines shown on hover: the browser login step and its notes, or which harness runs the code. */
+  /** The lines shown on hover: the browser login step and its notes, or which harness runs every turn. */
   hint: string[];
   reviewer: string | null;
-  /** True while apply still has to ask for something before the capability works. */
-  pending: boolean;
 };
 
-/** An agent's capabilities: its browser with the login step apply needs, and its coding harness. */
+/** An agent's capabilities: its browser with the login step apply needs, and its subscription's harness. */
 export function agentCapabilities(
   agent: PlanAgent,
   operator: OperatorActions | null,
@@ -228,17 +242,15 @@ export function agentCapabilities(
       label: "Browser",
       hint: [operator.browser.instructions, ...operator.browser.notes],
       reviewer: operator.browser.reviewer,
-      pending: false,
     });
   }
-  if (agent.coding) {
-    const name = agent.harness ? harnessLabel(agent.harness) : null;
+  if (agent.harness !== null) {
+    const name = harnessLabel(agent.harness);
     capabilities.push({
-      id: "coding",
-      label: name ? `Coding · ${name}` : "Coding · no harness yet",
-      hint: [name ? `Code tasks run on ${name}.` : "Apply asks for the harness."],
+      id: "subscription",
+      label: `Subscription · ${name}`,
+      hint: [`Every turn runs on ${name}, on your own subscription.`],
       reviewer: null,
-      pending: !name,
     });
   }
   return capabilities;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { useOrgMachines } from "../../api/queries/agents";
-import type { Machine } from "../../api/types/agents";
+import type { Harness, Machine } from "../../api/types/agents";
 import type { OrgModels } from "../../api/types/models";
 import { Banner, Button, DialogClose, DialogFooter } from "@guildsrun/ui";
 import { DiskBudget } from "../machines/MachineMeters";
@@ -8,10 +8,17 @@ import { MachinePicker } from "../machines/MachinePicker";
 import { diskBudget, seededDiskMib } from "../machines/machines";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { CapabilitiesFields } from "./settings/CapabilitiesFields";
-import { defaultAgentConfig, type ConfigErrors, type ConfigForm } from "./settings/configForm";
+import {
+  defaultAgentConfig,
+  type ConfigErrors,
+  type ConfigForm,
+  type SettingsAgent,
+} from "./settings/configForm";
 import { Group } from "./settings/Group";
+import { HarnessField } from "./settings/HarnessFields";
 import { LimitFields, MaxDiskField, MaxScriptsField } from "./settings/LimitFields";
 import { ModelFields } from "./settings/ModelFields";
+import { ModelSourceField } from "./settings/ModelSourceField";
 
 /** What every step edits: the config form, its errors, and the machine it names. */
 export type StepProps = {
@@ -44,7 +51,6 @@ export type PlacedAgent = { id: string; machineId: string; diskMib: number };
 
 type MachineGroupProps = StepProps & {
   machines: ReturnType<typeof useOrgMachines>;
-  coding: boolean;
   hint?: string | undefined;
   placed?: PlacedAgent | undefined;
   onDiskTyped?: () => void;
@@ -61,7 +67,6 @@ export function MachineGroup({
   errors,
   machine,
   machines,
-  coding,
   hint,
   placed,
   onDiskTyped,
@@ -78,7 +83,11 @@ export function MachineGroup({
             machines={machines.data}
             value={form.machine_id}
             onChange={(machineId) => setConfig({ ...form, machine_id: machineId })}
-            agent={{ id: placed?.id, browser: form.browser, coding }}
+            agent={{
+              id: placed?.id,
+              browser: form.browser,
+              model_source: form.model_source,
+            }}
             error={errors.machine}
             hint={hint}
           />
@@ -102,40 +111,23 @@ export function MachineGroup({
 }
 
 type ModelStepProps = StepProps & {
-  lead: boolean;
-  codingToggle?: boolean;
-  savedCoding?: boolean;
   models: OrgModels | undefined;
   noProvider: boolean;
 };
 
 /**
- * The model that runs the agent, its capabilities, and its run limits behind a disclosure. A
- * coding agent's model is its lead model, beside the harness that writes the code. With
- * `codingToggle`, the capabilities carry Coding, as an existing agent's Settings has it, kept on
- * when `savedCoding`.
+ * The choice of model source, the model that runs the agent, its capabilities, and its run limits
+ * behind a disclosure.
  */
-export function ModelStep({
-  lead,
-  codingToggle = false,
-  savedCoding = false,
-  models,
-  noProvider,
-  ...step
-}: ModelStepProps) {
+export function ModelStep({ models, noProvider, ...step }: ModelStepProps) {
   const { form, setConfig, errors, machine } = step;
   const patch = (next: Partial<ConfigForm>) => setConfig({ ...form, ...next });
   return (
     <>
-      <Group title={lead ? "Lead model" : "Model"}>
-        {lead ? (
-          <p className="text-sm text-fg-2">
-            Two models work here. The lead model plans, talks to you, and reviews the work, on the
-            organisation&apos;s key. The harness writes the code on your subscription.
-          </p>
-        ) : null}
+      <Group title="Model">
+        <ModelSourceField form={form} onChange={setConfig} />
         {noProvider ? (
-          <ConnectProviderGuide what={lead ? "a coding agent" : "an agent"} />
+          <ConnectProviderGuide what="an agent" />
         ) : (
           <ModelFields form={form} onChange={patch} errors={errors} />
         )}
@@ -147,8 +139,55 @@ export function ModelStep({
           models={models}
           errors={errors}
           machine={machine}
-          codingToggle={codingToggle}
-          savedCoding={savedCoding}
+        />
+      </Group>
+      <details className="flex flex-col gap-4">
+        <summary className="cursor-pointer text-sm font-semibold text-fg-2">Run limits</summary>
+        <div className="mt-4 flex flex-col gap-4">
+          <LimitFields form={form} onChange={patch} errors={errors} />
+          <div className="grid gap-4 md:grid-cols-2">
+            <MaxScriptsField form={form} onChange={patch} errors={errors} />
+          </div>
+        </div>
+      </details>
+    </>
+  );
+}
+
+type SubscriptionStepProps = StepProps & {
+  models: OrgModels | undefined;
+  /** The existing agent whose credentials and readiness the harness shows; undefined while creating one. */
+  agent?: SettingsAgent | undefined;
+  carried?: readonly Harness[] | null | undefined;
+};
+
+/**
+ * A subscription agent's step: the choice of model source, the harness it runs on with that
+ * harness's model and effort (and, for an existing agent, its credential and readiness), its
+ * capabilities, and the run limits its harness keeps.
+ */
+export function SubscriptionStep({ models, agent, carried, ...step }: SubscriptionStepProps) {
+  const { form, setConfig, errors, machine } = step;
+  const patch = (next: Partial<ConfigForm>) => setConfig({ ...form, ...next });
+  return (
+    <>
+      <Group title="Harness">
+        <ModelSourceField form={form} onChange={setConfig} />
+        <HarnessField
+          form={form}
+          onChange={setConfig}
+          errors={errors}
+          agent={agent}
+          carried={carried}
+        />
+      </Group>
+      <Group title="Agent capabilities">
+        <CapabilitiesFields
+          form={form}
+          onChange={setConfig}
+          models={models}
+          errors={errors}
+          machine={machine}
         />
       </Group>
       <details className="flex flex-col gap-4">

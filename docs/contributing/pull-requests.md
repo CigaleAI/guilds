@@ -103,7 +103,8 @@ commits are what the reviewer reads.
   updated in the same commit, and describes the new state only
   ([Documentation](development.md#documentation)).
 - **Changelog**: a user-visible change has a paragraph under
-  `Unreleased` in `CHANGELOG.md` that opens with its effect
+  `Unreleased` in `CHANGELOG.md` that opens with its kind, and a
+  breaking one states its migration
   ([Versions](../CONTRIBUTING.md#versions)).
 - **Security register**: a change that fixes or introduces a
   security issue adds or updates its entry in the

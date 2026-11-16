@@ -15,7 +15,7 @@ import type {
   MachineInput,
   AgentHarness,
   Harness,
-  HarnessCatalog,
+  HarnessOffer,
   HarnessCheck,
   MachineUpdate,
   NewAgent,
@@ -71,14 +71,18 @@ export function useAgent(agentId: string) {
   });
 }
 
-/** The models each harness offers, and the efforts they run at; fixed while the server runs. */
-export function useHarnessCatalog() {
-  return useQuery({
+/** What the box offers of harnesses: each one's models and efforts; fixed while the server runs. */
+function harnessOfferQuery() {
+  return {
     queryKey: agentKeys.harnesses,
-    queryFn: () => api<{ harnesses: HarnessCatalog[] }>("/api/harnesses"),
-    select: (data) => data.harnesses,
+    queryFn: () => api<HarnessOffer>("/api/harnesses"),
     staleTime: Infinity,
-  });
+  };
+}
+
+/** The models each harness offers, and the efforts they run at. */
+export function useHarnessCatalog() {
+  return useQuery({ ...harnessOfferQuery(), select: (data: HarnessOffer) => data.harnesses });
 }
 
 /** Each harness's credentials for the agent; read fresh, since grants and logins change elsewhere. */
@@ -155,6 +159,17 @@ const machinesPath = (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/
  * Refreshes every read that shows machines or the memory their agents plan to use: the machine
  * lists and the recipe apply previews.
  */
+/**
+ * Refetches each agent's config and harness view, which a change to the repositories it can use
+ * changes: a repository gone from them leaves its picks.
+ */
+export function refreshAgentRepositories(client: QueryClient) {
+  void client.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] === "agent" && (query.queryKey.length === 2 || query.queryKey[2] === "harness"),
+  });
+}
+
 export function refreshMachines(client: QueryClient) {
   void client.invalidateQueries({ queryKey: agentKeys.machinesAll });
   void client.invalidateQueries({

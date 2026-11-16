@@ -193,7 +193,7 @@ function captureDeps(options: {
 test("portable role config carries every setting but the browser mode in the order of the config keys", () => {
   const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
   const config = portableRoleConfig(stored);
-  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model"]);
+  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model", "repositories"]);
   assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && !left.has(key)));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);
@@ -215,10 +215,9 @@ test("portable role config carries the agent's own tool-result turns and leaves 
   assert.equal("keep_tool_result_generations" in inherited, false);
 });
 
-test("portable role config keeps a coding role's harness and its aliases but its harness tokens", () => {
+test("portable role config keeps a subscription role's harness and its aliases but its harness tokens", () => {
   const stored = validateAgentConfig({
-    model: TEST_MODEL,
-    coding: true,
+    model: null,
     harness: "claude-code",
     harness_model: "opus",
     secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN", GH_PAT: "BOB_GH" },
@@ -229,7 +228,7 @@ test("portable role config keeps a coding role's harness and its aliases but its
   assert.deepEqual(config.secret_aliases, { GH_PAT: "BOB_GH" });
 });
 
-test("portable role config of a role without coding keeps every secret alias", () => {
+test("portable role config of a role on a key keeps every secret alias", () => {
   const aliases = { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" };
   const config = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL, secret_aliases: aliases }));
   assert.deepEqual(config.secret_aliases, aliases);
@@ -374,6 +373,27 @@ test("captureGuild carries what each note's access list gives the guild and its 
   assert.deepEqual(orgModes, { "glossary.md": "read", "open.md": "read", "rules.md": null, "map.md": null, "own.md": null });
 });
 
+test("captureGuild gives each role the repositories its agent picks, and lists one only a login picks", async () => {
+  const recipe = await captureGuild(
+    captureDeps({
+      agents: [
+        { id: "a_coder", name: "coder", focus: "Code", config: { model: null, harness: "codex", repositories: ["site", "api"] } },
+        { id: "a_writer", name: "writer", focus: "Write", config: { model: TEST_MODEL } },
+      ],
+      repositories: [{ name: "api", url: "https://github.com/acme/api", default_branch: "main", connection_id: null }],
+    }),
+    ACTOR,
+    GUILD,
+    [],
+  );
+  assert.deepEqual(recipe.roles.find((role) => role.role === "coder")?.config.repositories, ["site", "api"]);
+  assert.equal("repositories" in (recipe.roles.find((role) => role.role === "writer")?.config ?? {}), false);
+  assert.deepEqual(recipe.repositories, [
+    { name: "api", purpose: "" },
+    { name: "site", purpose: "" },
+  ]);
+});
+
 test("captureGuild lists the guild's repositories by name, without their URLs", async () => {
   const recipe = await captureGuild(
     captureDeps({
@@ -483,7 +503,7 @@ test("captureGuild takes each secret's scope from how the role gets it", async (
   assert.equal(JSON.stringify(recipe.secrets).includes("sec_"), false);
 });
 
-test("captureGuild leaves a coding role's harness tokens and their aliases behind", async () => {
+test("captureGuild leaves a subscription role's harness tokens and their aliases behind", async () => {
   const grant = (agentId: string) => ({ guild_id: null, agent_id: agentId, name: "", in_guild_id: GUILD.id });
   const recipe = await captureGuild(
     captureDeps({
@@ -493,8 +513,7 @@ test("captureGuild leaves a coding role's harness tokens and their aliases behin
           name: "coder",
           focus: "Code",
           config: {
-            model: TEST_MODEL,
-            coding: true,
+            model: null,
             harness: "claude-code",
             secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "CLAUDE_CODE_OAUTH_TOKEN_CODER", DEPLOY_KEY: "PROD_DEPLOY" },
           },
@@ -523,7 +542,7 @@ test("captureGuild leaves a coding role's harness tokens and their aliases behin
   );
 });
 
-test("captureGuild keeps a coding role's harness model and effort, and leaves them out while unset", async () => {
+test("captureGuild keeps a subscription role's harness model and effort, and leaves them out while unset", async () => {
   const recipe = await captureGuild(
     captureDeps({
       agents: [
@@ -531,9 +550,9 @@ test("captureGuild keeps a coding role's harness model and effort, and leaves th
           id: "a_coder",
           name: "coder",
           focus: "Code",
-          config: { model: TEST_MODEL, coding: true, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "high" },
+          config: { model: null, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "high" },
         },
-        { id: "a_plain", name: "plain", focus: "Code", config: { model: TEST_MODEL, coding: true, harness: "codex" } },
+        { id: "a_plain", name: "plain", focus: "Code", config: { model: null, harness: "codex" } },
       ],
     }),
     ACTOR,

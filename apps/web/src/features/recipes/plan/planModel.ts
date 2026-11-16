@@ -158,7 +158,7 @@ export function planFromRecipe(
     actions: [
       ...connections.map(connectionAction),
       ...secrets.map(secretAction),
-      ...repositoryActions(repositories, connections),
+      ...repositoryActions(repositories),
       ...browserActions(agents, browserSites),
       ...externalActions(external),
     ],

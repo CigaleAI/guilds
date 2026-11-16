@@ -25,26 +25,12 @@ const feed = {
       "whisper": { id: "whisper", tool_call: true, modalities: { input: ["audio"], output: ["text"] } },
     },
   },
-  "kimi-code-plan-global": {
-    id: "kimi-code-plan-global",
-    models: {
-      k3: {
-        id: "k3",
-        name: "Kimi K3",
-        reasoning: true,
-        temperature: false,
-        tool_call: true,
-        modalities: { input: ["text", "image"], output: ["text"] },
-        cost: { input: 0, output: 0 },
-      },
-    },
-  },
   someone: { id: "someone", models: { x: { id: "x", tool_call: true, modalities: { input: ["text"], output: ["text"] } } } },
 };
 
 function catalog(options: { fetch?: typeof fetch; now?: () => number; ttlMs?: number; retryMs?: number } = {}) {
   return new ModelCatalog({
-    snapshot: { fetched_at: "2026-01-01", providers: projectModelsDevFeed(feed, ["openai", "kimi-code-plan-global"]) },
+    snapshot: { fetched_at: "2026-01-01", providers: projectModelsDevFeed(feed, ["openai"]) },
     ...options,
   });
 }
@@ -58,7 +44,7 @@ test("a row is kept when it calls tools, is not deprecated, and takes text in an
   assert.equal("extra" in rows["gpt-5"]!, false, "only the fields the catalog reads are kept");
 });
 
-test("the catalog maps each kept row to an entry, with rates for a billed provider only", () => {
+test("the catalog maps each kept row to an entry, with its rates", () => {
   const entries = catalog();
   assert.deepEqual(entries.listed("openai").map((entry) => entry.id), ["openai/gpt-5"]);
   const gpt5 = entries.entry("openai/gpt-5");
@@ -72,14 +58,8 @@ test("the catalog maps each kept row to an entry, with rates for a billed provid
     attachments: true,
     context: 400000,
     rates: { input: 1.25e-6, output: 1e-5, cacheRead: 1.25e-7 },
-    kind: "marketplace",
-    coding_only: false,
     listed: true,
   });
-  const k3 = entries.entry("kimi/k3");
-  assert.equal(k3?.rates, null, "an unbilled provider has no rates");
-  assert.equal(k3?.coding_only, true);
-  assert.equal(k3?.attachments, true);
   assert.equal(entries.entry("openai/gpt-5-dated")?.listed, false);
   assert.equal(entries.entry("someone/x"), null, "a models.dev provider that is not one of ours is not a prefix");
   assert.equal(entries.pricingVersion(), "models.dev 2026-01-01");

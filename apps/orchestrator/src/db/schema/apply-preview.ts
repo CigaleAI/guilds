@@ -23,7 +23,7 @@ export type NameDecision = { role: string; name: string };
 /** A role's model on the preview: what the recipe recommends, and what apply will create it with. */
 export type RoleModel = { role: string; recommended: string | null; model: string | null };
 
-/** A coding role's harness on the preview: what the recipe names, and what apply will create it with. */
+/** A subscription role's harness on the preview: what the recipe names, and what apply will create it with. */
 export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null };
 
 /**
@@ -69,7 +69,6 @@ export type ApplyInventory = {
     focus: string;
     model: string;
     browser: boolean;
-    coding: boolean;
     task: string;
     native_tools: string[];
   }>;
@@ -112,6 +111,6 @@ export type ApplyPreview = {
   findings: RecipeFinding[];
   errors: RecipeFinding[];
   unreviewed: string[];
-  remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
+  remaining: { agents: number | null; browser_agents: number | null; subscription_agents: number | null };
   creates: ApplyInventory;
 };

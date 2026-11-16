@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { modelSourceOf } from "../../src/db/schema/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   INTERRUPTED_CONTENT,
@@ -121,6 +122,36 @@ test("configSnapshot offers each connection tool's schema and keeps the connecti
   }, "schedule");
   assert.equal(snapshot.tools.includes(schema), true);
   assert.deepEqual(snapshot.mcp[0]?.tools, [{ name: "ok", remote_name: "r" }]);
+});
+
+test("configSnapshot keeps the model that states the run's model source, and stores no source apart", () => {
+  const access = { tools: [], secrets: [], mcp: [] };
+  assert.equal(modelSourceOf(configSnapshot(AGENT_CONFIG, access, "schedule")).kind, "key");
+  const subscription = configSnapshot({ ...AGENT_CONFIG, model: null, harness: "codex" }, access, "schedule");
+  assert.equal(subscription.model, null);
+  assert.equal(modelSourceOf(subscription).kind, "subscription");
+  assert.equal("model_source" in subscription, false);
+});
+
+test("a subscription agent's run offers what a key agent's with its access and switches would, and its connections", () => {
+  const schema = { type: "function" as const, function: { name: "ok", description: "", parameters: { type: "object" } } };
+  const access = {
+    tools: ["note_find", "group_post", "memory_write", "schedule_list", "secret_request", "script_run", "wake_after"],
+    secrets: [{ id: "sec_1", name: "CLAUDE_CODE_OAUTH_TOKEN", description: "" }],
+    mcp: [{ connection_id: "conn_1", server_id: "srv_notion", slug: "notion", tools: [{ name: "ok", remote_name: "r", schema }] }],
+  };
+  const subscriber = { ...AGENT_CONFIG, model: null, harness: "claude-code" as const, browser: true };
+  for (const kind of ["direct", "schedule"] as const) {
+    const subscription = configSnapshot(subscriber, access, kind);
+    const keyed = configSnapshot({ ...subscriber, model: "openai/gpt-5", harness: null }, access, kind);
+    assert.deepEqual(subscription.tools, keyed.tools, kind);
+    assert.deepEqual(subscription.mcp, keyed.mcp);
+  }
+  const direct = configSnapshot(subscriber, access, "direct");
+  assert.ok(direct.tools.some((tool) => tool.function.name === "report_issue"));
+  assert.ok(direct.tools.some((tool) => tool.function.name === "browser_navigate"), "the browser tools run in the orchestrator");
+  assert.ok(direct.tools.some((tool) => tool.function.name === "ok"), "and the connection's tools");
+  assert.deepEqual(direct.secrets, access.secrets, "its secrets still reach its environment");
 });
 
 test("mcpRedactions skips missing connections and decrypt failures", async () => {

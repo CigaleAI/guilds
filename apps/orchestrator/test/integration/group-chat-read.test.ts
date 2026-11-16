@@ -40,6 +40,7 @@ test(
       mcp: mcpPool(db),
       notes,
       workspaceRoot,
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes: new ExportSandboxes(workspaceRoot),
     });
     const app = await buildApp(database, {

@@ -20,7 +20,6 @@ import {
   providerById,
   providerLabel,
   type ProviderDef,
-  type ProviderKind,
 } from "./providers.js";
 import {
   deleteOrgModelProvider,
@@ -82,7 +81,6 @@ export type ProviderSource = "own" | "platform";
 export type ProviderItem = {
   id: string;
   label: string;
-  kind: ProviderKind;
   connected: boolean;
   /** Null while the provider is not connected. */
   source: ProviderSource | null;
@@ -239,7 +237,6 @@ export class ModelsService {
       providers.push({
         id: provider.id,
         label: provider.label,
-        kind: provider.kind,
         connected: state.connected,
         source: state.connected ? (row?.own_key === true ? "own" : "platform") : null,
         key_hint: row?.key_hint || null,
@@ -311,7 +308,6 @@ export class ModelsService {
     return {
       id: provider.id,
       label: provider.label,
-      kind: provider.kind,
       connected: true,
       source: "own",
       key_hint: row.key_hint || null,
@@ -338,9 +334,6 @@ export class ModelsService {
     const parsed = parseModelId(id);
     if (!parsed) {
       throw new ModelsError(422, "model must be {provider}/{model}");
-    }
-    if (parsed.provider.kind !== "marketplace") {
-      throw new ModelsError(422, "the default must be a marketplace model");
     }
     const row = await this.deps.db.getOrgModelProvider(orgId, parsed.provider.id);
     const chosen = row?.models ?? [];

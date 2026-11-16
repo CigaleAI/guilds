@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
 import { agentHome } from "../../src/lib/agent-file.js";
 import { slotPorts } from "../../src/machines/index.js";
@@ -163,7 +161,7 @@ test("two agents on one machine each run their own Chrome, on their own ports an
   }
 });
 
-test("coding tools run through execd in the runtime image", { skip: imageMissing }, async () => {
+test("the runtime image carries Node, the harness list, git's commit trailers and its credential helper", { skip: imageMissing }, async () => {
   process.env.SECRETS_MASTER_KEY ??= HEX_MASTER_KEY;
   const server = await startOpenSandboxServer();
   const sandboxes = new RunSandboxes({
@@ -179,73 +177,29 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
   try {
     prepareWorkspace(server.workspaceRoot, MACHINE.id, agentId);
     const machine = await sandboxes.ensure(MACHINE);
-    const secrets = { CONTRACT_TOKEN: "tok-contract-1234" };
-    const sandbox = view(machine, coder, secrets);
-    const ctx = toolFixture({ run_id: "r_contract", agent_id: agentId, guild_id: "g_1", sandbox, secrets });
-    let count = 0;
-    const call = async (name: string, args: Record<string, unknown>) => {
-      count += 1;
-      const [payload, metadata] = await invokeTool(
-        ctx.services, ctx.run, ctx.hooks,
-        { id: `call_${count}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
-      );
-      return { text: String(payload.content), metadata };
-    };
+    const sandbox = view(machine, coder, { CONTRACT_TOKEN: "tok-contract-1234" });
+    const sh = async (command: string) => stdoutOf(await sandbox.commands.run(command, { timeoutSeconds: 60 })).trim();
 
-    const shellHome = await call("shell", { command: "echo $HOME; node --version; echo $CONTRACT_TOKEN; mkdir -p repos/demo && cd repos/demo" });
-    assert.equal(shellHome.text.split("\n")[0], home);
-    assert.match(shellHome.text, /\nv24\.\d+\.\d+\n\[REDACTED:CONTRACT_TOKEN\]$/);
-    assert.equal(shellHome.metadata.cwd, `${home}/repos/demo`);
-
-    const long = await call("shell", { command: "seq 1 20000" });
-    assert.ok(Buffer.byteLength(long.text) <= 8192);
-    assert.match(long.text, /^1\n2\n/);
-    assert.match(long.text, /\n20000$/);
-    assert.equal(long.metadata.log_path, `${home}/.runs/r_contract/call_2.log`);
-
-    // Past the inline limit, under Linux's 128 KiB for one argument: the request goes through the file API.
-    const content = `${"x".repeat(100 * 1024)}\n`;
-    const wrote = await call("shell", { command: `printf '%s\\n' ${"x".repeat(100 * 1024)} > big.txt && wc -c < big.txt` });
-    assert.equal(wrote.text.trim(), String(content.length));
-    const onHost = path.join(server.workspaceRoot, MACHINE.id, agentId, "repos/demo/big.txt");
-    assert.equal(readFileSync(onHost, "utf8"), content);
-
-    await call("shell", { command: "printf 'export const a = 2;\\n' > a.ts" });
-    const read = await call("file_read", { path: "a.ts" });
-    assert.equal(read.text, "a.ts · lines 1–1 of 1\n1  export const a = 2;");
-
-    await call("shell", {
-      command:
-        `mkdir -p ${home}/repos/shop/src && cd ${home}/repos/shop && ` +
-        "printf 'export function cents(amount: number): number {\\n  return Math.round(amount * 100);\\n}\\n' > src/money.ts && " +
-        "printf 'import { cents } from \"./money\";\\n\\n// validate the refund amount\\nexport function validateRefund(amount: number): number {\\n  if (amount <= 0) throw new Error(\"refund must be positive\");\\n  return cents(amount);\\n}\\n' > src/refund.ts && " +
-        "git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init",
-    });
-
-    const files = await call("code_search", { pattern: "refund" });
-    assert.equal(files.text, "src/refund.ts: 2\n2 matches in 1 files");
-    const lines = await call("code_search", { pattern: "cents\\(", mode: "content" });
-    assert.match(lines.text, /src\/refund\.ts:6: {3}return cents\(amount\);/);
+    const shellHome = await sh("echo $HOME; node --version; echo $CONTRACT_TOKEN");
+    assert.match(shellHome, new RegExp(`^${home}\\nv24\\.\\d+\\.\\d+\\ntok-contract-1234$`));
     for (const removed of ["graft", "ast-grep"]) {
-      const missing = await call("shell", { command: `command -v ${removed} || echo none` });
-      assert.equal(missing.text, "none", `${removed} is not in the image`);
+      assert.equal(await sh(`command -v ${removed} || echo none`), "none", `${removed} is not in the image`);
     }
-    const carried = await call("shell", { command: "cat /usr/local/share/guilds/harnesses; command -v codex >/dev/null && echo codex-cli" });
-    assert.match(carried.text, /^codex\n/);
-    assert.ok(carried.text.endsWith("codex-cli"));
-    assert.deepEqual(sandboxes.harnessesOf(MACHINE.id), carried.text.split("\n").slice(0, -1));
-    const clean = await call("shell", { command: "git status --porcelain" });
-    assert.equal(clean.text, "(no output)");
+    const carried = await sh("cat /usr/local/share/guilds/harnesses; command -v codex >/dev/null && echo codex-cli");
+    assert.match(carried, /^codex\n/);
+    assert.ok(carried.endsWith("codex-cli"));
+    assert.deepEqual(sandboxes.harnessesOf(MACHINE.id), carried.split("\n").slice(0, -1));
 
-    // A commit made through shell names the run and the agent; the checkpoints leave the index alone.
-    const identity = await call("shell", {
-      command:
+    // A commit made in a run names the run and the agent.
+    const identity = await sh(
+      `mkdir -p ${home}/repos/shop && cd ${home}/repos/shop && git init -q && ` +
         "git config --global user.name coder && git config --global user.email coder@agents.guilds.invalid && " +
-        "echo more >> src/refund.ts && git add src/refund.ts && git commit -qm 'Refund rule' && git log -1 --format=%B",
-    });
-    assert.match(identity.text, /^Refund rule\n\nGuild-Run: r_contract\nGuild-Agent: a_contract_coder$/);
+        "echo rule > refund.ts && git add refund.ts && " +
+        "GUILD_RUN_ID=r_contract GUILD_AGENT_ID=a_contract_coder git commit -qm 'Refund rule' && git log -1 --format=%B",
+    );
+    assert.match(identity, /^Refund rule\n\nGuild-Run: r_contract\nGuild-Agent: a_contract_coder$/);
 
-    // git asks the credential helper for the repository's own token; gh gets it as GH_TOKEN.
+    // git asks the credential helper for the repository's own token.
     await sandbox.files!.writeFiles([
       {
         path: `/run/guilds/${agentId}/git-tokens.json`,
@@ -254,30 +208,18 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
         }),
       },
     ]);
-    const fill = await call("shell", {
-      command: "printf 'protocol=https\\nhost=github.com\\npath=acme/shop.git\\n\\n' | git credential fill",
-    });
-    assert.match(fill.text, /username=x-access-token\npassword=ghs_contract/);
-    const other = await call("shell", {
-      command: "printf 'protocol=https\\nhost=github.com\\npath=acme/else.git\\n\\n' | git credential fill 2>&1; true",
-    });
-    assert.doesNotMatch(other.text, /ghs_contract/);
+    const fill = await sh("printf 'protocol=https\\nhost=github.com\\npath=acme/shop.git\\n\\n' | git credential fill");
+    assert.match(fill, /username=x-access-token\npassword=ghs_contract/);
+    const other = await sh("printf 'protocol=https\\nhost=github.com\\npath=acme/else.git\\n\\n' | git credential fill 2>&1; true");
+    assert.doesNotMatch(other, /ghs_contract/);
     // What `gh auth setup-git` writes into the agent's home drops every helper before it; the
-    // platform's still answers, and without GH_TOKEN the CLI's helper has nothing to give.
-    const overridden = await call("shell", {
-      command:
-        "git config --global credential.https://github.com.helper '' && " +
+    // platform's still answers.
+    const overridden = await sh(
+      "git config --global credential.https://github.com.helper '' && " +
         "git config --global --add credential.https://github.com.helper '!gh auth git-credential' && " +
         "printf 'protocol=https\\nhost=github.com\\npath=acme/shop.git\\n\\n' | env -u GH_TOKEN git credential fill 2>&1; true",
-    });
-    assert.match(overridden.text, /username=x-access-token\npassword=ghs_contract/);
-    const gh = await call("shell", { command: "echo \"$GH_TOKEN\"" });
-    assert.equal(gh.text, "ghs_contract");
-
-    const started = await call("shell", { command: "echo up; sleep 60", background: true });
-    assert.equal(started.metadata.background_id, "b1");
-    const status = await call("shell_status", { id: "b1", stop: true });
-    assert.match(status.text, /^b1 {2}stopped /);
+    );
+    assert.match(overridden, /username=x-access-token\npassword=ghs_contract/);
   } finally {
     await sandboxes.destroy(MACHINE.id).catch(() => undefined);
     await sandboxes.close();

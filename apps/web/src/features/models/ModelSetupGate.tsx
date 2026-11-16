@@ -155,10 +155,7 @@ function SetupSteps({ providers, walk, onWalk, onFinished }: SetupStepsProps) {
             chosen={walk.ticked}
             saveLabel="Continue"
             requireOne
-            onSaved={(saved) => {
-              if (provider.kind === "marketplace") onWalk({ ...walk, step: "default", ticked: saved });
-              else onFinished();
-            }}
+            onSaved={(saved) => onWalk({ ...walk, step: "default", ticked: saved })}
           />
         </DialogBody>
       </>
@@ -205,8 +202,6 @@ type PickProviderProps = {
 };
 
 function PickProvider({ providers, onPick }: PickProviderProps) {
-  const marketplace = providers.filter((item) => item.kind === "marketplace");
-  const coding = providers.filter((item) => item.kind === "coding");
   const tile = (provider: OrgModelProvider) => (
     <button
       key={provider.id}
@@ -233,14 +228,8 @@ function PickProvider({ providers, onPick }: PickProviderProps) {
       <DialogBody className="gap-5">
         <section className="flex flex-col gap-2">
           <h3 className="type-label text-muted">Pick a provider</h3>
-          <div className="grid gap-3 sm:grid-cols-2">{marketplace.map(tile)}</div>
+          <div className="grid gap-3 sm:grid-cols-2">{providers.map(tile)}</div>
         </section>
-        {coding.length ? (
-          <section className="flex flex-col gap-2">
-            <h3 className="type-label text-muted">For coding agents only</h3>
-            <div className="grid gap-3 sm:grid-cols-2">{coding.map(tile)}</div>
-          </section>
-        ) : null}
       </DialogBody>
     </>
   );

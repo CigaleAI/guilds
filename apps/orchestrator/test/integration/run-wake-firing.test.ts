@@ -4,9 +4,9 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
-import { getRun, listMessages, mergeRunMetadata } from "../../src/db/runs.js";
+import { getRun, listMessages } from "../../src/db/runs.js";
 import type { RunError } from "../../src/db/schema/index.js";
-import { getPendingRunWake, setRunWake } from "../../src/db/wakes.js";
+import { setRunWake } from "../../src/db/wakes.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { RunRequestError } from "../../src/generation/errors.js";
 import { generationLoop, type GenerationLoop } from "../../src/generation/index.js";
@@ -56,6 +56,7 @@ function loopOn(notes: NotesStore, root: string, schedulerTickMs?: number): Gene
     mcp: mcpPool(database.pool),
     notes,
     workspaceRoot: root,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(root),
     artifacts: artifactStore(database.pool, notes.templates),
   };
@@ -140,14 +141,13 @@ function capError(operation: string): RunError {
 }
 
 /** A pending wake-up of the run, due `minutes` from now (in the past when negative). */
-async function setWake(runId: string, minutes: number, rootRunId = runId): Promise<string> {
+async function setWake(runId: string, minutes: number): Promise<string> {
   const wakeId = newId("wk");
   await setRunWake(
     database.pool,
     {
       wakeId,
       runId,
-      rootRunId,
       agentId,
       dueAt: new Date(Date.now() + minutes * MINUTE),
       message: "check deploy 4812",
@@ -285,7 +285,6 @@ describe("firing run wake-ups", { concurrency: 1 }, () => {
     for (const cap of [
       "generation.max_tool_calls",
       "generation.max_input_tokens",
-      "generation.max_chain",
     ]) {
       const runId = await seedRun("direct", "completed", [capError(cap)]);
       const wakeId = await setWake(runId, -1);
@@ -333,50 +332,6 @@ describe("firing run wake-ups", { concurrency: 1 }, () => {
     }
     loop.events.unsubscribe(runId, events);
     assert.deepEqual(published, ["generation.max_tool_calls", "wake.cancelled"]);
-  });
-
-  test("a wake-up left on a run that continued moves to the last run of the chain and fires there", async () => {
-    const first = await seedRun("direct", "completed");
-    const second = await seedRun("direct", "completed");
-    const third = await seedRun("direct", "active");
-    await mergeRunMetadata(database.pool, first, { continued_by_run_id: second }, new Date());
-    await mergeRunMetadata(database.pool, second, { continued_by_run_id: third }, new Date());
-    const wakeId = await setWake(first, -1);
-    await fire(third);
-    assert.equal((await wakeState(wakeId)).run_id, third);
-    assert.equal((await wakeState(wakeId)).state, "fired");
-    assert.equal((await wakeMessages(first)).length, 0);
-    assert.equal((await wakeMessages(third))[0]?.metadata.wake_id, wakeId);
-  });
-
-  test("a wake-up left on a run that continued is replaced by the pending one of the chain's last run", async () => {
-    const first = await seedRun("direct", "completed");
-    const second = await seedRun("direct", "active");
-    await mergeRunMetadata(database.pool, first, { continued_by_run_id: second }, new Date());
-    const stale = await setWake(first, -2);
-    const own = await setWake(second, 20, first);
-    await loop.runWakes.fireDueWakes();
-    assert.deepEqual(await wakeState(stale), {
-      run_id: first,
-      state: "cancelled",
-      cancel_reason: "replaced",
-    });
-    assert.equal((await getPendingRunWake(database.pool, second))?.id, own);
-  });
-
-  test("the count of wake-ups left is taken across the chain against the run's own cap", async () => {
-    const first = await seedRun("direct", "active");
-    await setWake(first, -1);
-    await fire(first);
-    const second = await seedRun("direct", "active");
-    await database.pool.query(
-      "UPDATE runs SET config_snapshot = jsonb_set(config_snapshot, '{max_wake_ups}', '2') WHERE id = $1",
-      [second],
-    );
-    await setWake(second, -1, first);
-    await fire(second);
-    const [message] = await wakeMessages(second);
-    assert.match(message?.payload.content ?? "", /"wake_ups_left": 0/);
   });
 
   test("a loop that starts after a wake-up came due fires it on its first tick, before the due routines", async () => {

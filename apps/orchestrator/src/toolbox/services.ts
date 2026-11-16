@@ -60,15 +60,11 @@ export function toolServices(db: Queryable, services: ToolServicesBesideDatabase
   return { ...services, db: toolboxDatabase(db) };
 }
 
-/**
- * A running tool call's newest output lines, as its run's stream sends them; a coding harness's
- * also names the harness session, null until the harness reports one.
- */
+/** A running tool call's newest output lines, as its run's stream sends them. */
 export type ToolProgress = {
   run_id: string;
   tool_call_id: string;
   lines: string[];
-  session_id?: string | null;
 };
 
 /** The stream a run's subscribers read, which a running tool call publishes its progress on. */

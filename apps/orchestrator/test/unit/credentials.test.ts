@@ -53,7 +53,6 @@ test("core's credentials are the organisation's row: its key, and a local endpoi
     baseURL: "http://127.0.0.1:11434/v1",
   });
   assert.equal(await credentials.modelCredentials("org_1", "xai"), null, "a row without a key is not connected");
-  assert.equal(await credentials.modelCredentials("org_1", "kimi"), null);
   assert.equal(await credentials.modelCredentials("org_2", "openrouter"), null);
 });
 
@@ -62,12 +61,12 @@ test("a model is connected when its provider's credentials resolve", async () =>
   const none = { modelCredentials: async () => null };
   await assertModelConnected(connected, "org_1", "openrouter/openai/gpt-5.6-luna");
   await assert.rejects(
-    () => assertModelConnected(none, "org_1", "kimi/kimi-for-coding"),
+    () => assertModelConnected(none, "org_1", "xai/grok-5"),
     (error: unknown) =>
       error instanceof ModelNotConnectedError &&
       error.status === 422 &&
-      error.provider === "kimi" &&
-      error.message === "connect a Kimi Code key on Model keys",
+      error.provider === "xai" &&
+      error.message === "connect a xAI key on Model keys",
   );
   await assert.rejects(
     () => resolveModelCredentials(connected, "org_1", "gpt-5"),

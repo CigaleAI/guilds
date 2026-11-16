@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  codeTaskStatus,
   formatDuration,
   formatReturnedData,
   formatTokens,
@@ -190,30 +189,9 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
 });
 
 test("a known tool's call whose arguments do not fit its schema reads as its name", () => {
-  assert.equal(friendlyToolCall(callWith("file_read", { path: 7 })), "");
-  assert.equal(friendlyToolCall(callWith("shell", { command: "ls", background: "yes" })), "");
+  assert.equal(friendlyToolCall(callWith("Read", { file_path: 7 })), "");
+  assert.equal(friendlyToolCall(callWith("Bash", { command: ["ls"] })), "");
   assert.equal(summarizeCalls([callWith("record_update", { id: "42" })]), "record_update");
-});
-
-test("code tools read as the command, the file, or the background job they touch", () => {
-  const call = (name: string, args: Record<string, unknown>) =>
-    friendlyToolCall(callWith(name, args));
-  assert.equal(
-    call("shell", { command: "npm test -- --watch=false\necho done" }),
-    "Run npm test -- --watch=false",
-  );
-  assert.equal(call("shell", { command: "npm run dev", background: true }), "Start npm run dev");
-  assert.equal(call("shell_status", {}), "List background commands");
-  assert.equal(call("shell_status", { id: "b2", stop: true }), "Stop b2");
-  assert.equal(
-    call("file_read", { path: "src/app.ts", offset: 120 }),
-    "Read src/app.ts from line 120",
-  );
-  assert.equal(
-    call("code_search", { pattern: "refund", mode: "content", path: "src" }),
-    'Search lines "refund" in src',
-  );
-  assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
 });
 
 test("browse reads as where the delegated web task starts", () => {
@@ -227,12 +205,12 @@ test("browse reads as where the delegated web task starts", () => {
 
 test("summarizeCalls names what a batch did, merging calls that share a verb", () => {
   const call = callWith;
-  assert.equal(summarizeCalls([call("file_read", { path: "a.md" })]), "Read a.md");
+  assert.equal(summarizeCalls([call("Read", { file_path: "a.md" })]), "Read a.md");
   assert.equal(
     summarizeCalls([
-      call("file_read", { path: "a.md" }),
-      call("file_read", { path: "b.md" }),
-      call("shell", { command: "ls" }),
+      call("Read", { file_path: "a.md" }),
+      call("Read", { file_path: "b.md" }),
+      call("Bash", { command: "ls" }),
     ]),
     "Read a.md, b.md · Run ls",
   );
@@ -240,7 +218,7 @@ test("summarizeCalls names what a batch did, merging calls that share a verb", (
     summarizeCalls([
       call("note_write", {}),
       call("note_write", {}),
-      call("file_read", { path: "a.md" }),
+      call("Read", { file_path: "a.md" }),
     ]),
     "Wrote note · Read a.md",
   );
@@ -259,11 +237,8 @@ test("summarizeCalls names what a batch did, merging calls that share a verb", (
   assert.equal(summarizeCalls([]), "");
 });
 
-test("toolOutcome names a failing exit and a repeated read", () => {
-  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 0 }), "");
-  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 2 }), "exit 2");
-  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 124, timed_out: true }), "timed out");
-  assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
+test("toolOutcome says nothing of a tool other than browse", () => {
+  assert.equal(toolOutcome({ tool_name: "script_run", exit_code: 2 }), "");
   assert.equal(toolOutcome(undefined), "");
 });
 
@@ -279,27 +254,63 @@ test("a browse call ends with its status when it did not complete, and its cost"
   assert.equal(toolOutcome({ tool_name: "browse", status: "cancelled" }), "cancelled");
 });
 
-test("a code task reads by its repository and session, and ends with its status and diffstat", () => {
-  const call = (args: Record<string, unknown>) => callWith("code_task", args);
-  assert.equal(friendlyToolCall(call({ brief: "Fix greet", repo: "app" })), "Code task in app");
+test("an old code_task call reads as its tool name, with no outcome of its own", () => {
+  assert.equal(friendlyToolCall(callWith("code_task", { brief: "Fix greet", repo: "app" })), "");
+  const done = { tool_name: "code_task", status: "completed", files_changed: 2, insertions: 14, deletions: 3 };
+  assert.equal(toolOutcome(done), "");
+});
+
+test("a call of Codex's own tool reads as what it did, in the platform's verbs", () => {
+  const friendly = (name: string, args: Record<string, unknown>) =>
+    friendlyToolCall(callWith(name, args));
+  assert.equal(friendly("command_execution", { command: "bash -lc 'cat greet.py'" }), "Run bash -lc 'cat greet.py'");
+  assert.equal(friendly("command_execution", {}), "Run command");
+  assert.equal(friendly("file_change", { changes: [{ path: "greet.py", kind: "update" }] }), "Change greet.py");
   assert.equal(
-    friendlyToolCall(call({ brief: "Go on", repo: "app", session_id: "s1" })),
-    "Resume code task in app",
+    friendly("file_change", { changes: [{ path: "a.py", kind: "add" }, { path: "b.py" }] }),
+    "Change 2 files",
   );
-  assert.equal(friendlyToolCall(call({ brief: "Fix greet" })), "Code task");
-  const done = {
-    tool_name: "code_task",
-    status: "completed",
-    files_changed: 2,
-    insertions: 14,
-    deletions: 3,
-  };
-  assert.equal(toolOutcome(done), "2 files · +14 −3");
+  assert.equal(friendly("file_change", { changes: [] }), "Change files");
+  assert.equal(friendly("file_change", { changes: [{ kind: "add" }] }), "", "arguments of another shape read as nothing");
+  assert.equal(friendly("web_search", { query: "guilds" }), 'Search web "guilds"');
+  assert.equal(friendly("web_search", {}), "Search web");
+});
+
+test("a call of Claude Code's own tool reads as what it did, in the platform's verbs", () => {
+  const friendly = (name: string, args: Record<string, unknown>) =>
+    friendlyToolCall(callWith(name, args));
   assert.equal(
-    toolOutcome({ ...done, status: "timed_out", files_changed: 0 }),
-    "timed out · no changes",
+    friendly("Bash", { command: "python3 greet.py\nmore", description: "Run the script" }),
+    "Run python3 greet.py",
   );
-  assert.equal(toolOutcome({ tool_name: "code_task", status: "failed" }), "failed");
-  assert.equal(codeTaskStatus("interrupted"), "interrupted");
-  assert.equal(codeTaskStatus("other"), "");
+  assert.equal(
+    friendly("Read", { file_path: "/home/a_1/repos/app/greet.py" }),
+    "Read /home/a_1/repos/app/greet.py",
+  );
+  assert.equal(
+    friendly("Edit", { file_path: "greet.py", old_string: "a", new_string: "b" }),
+    "Edit greet.py",
+  );
+  assert.equal(friendly("Write", { file_path: "notes.md", content: "x" }), "Write notes.md");
+  assert.equal(friendly("Grep", { pattern: "TODO" }), 'Search lines "TODO"');
+  assert.equal(friendly("Glob", { pattern: "**/*.ts" }), 'Search files "**/*.ts"');
+  assert.equal(
+    friendly("WebFetch", { url: "https://example.com", prompt: "x" }),
+    "Fetch https://example.com",
+  );
+  assert.equal(friendly("WebSearch", { query: "guilds" }), 'Search web "guilds"');
+  assert.equal(
+    friendly("Task", { description: "Find the bug", prompt: "x" }),
+    "Delegate Find the bug",
+  );
+  assert.equal(friendly("TodoWrite", { todos: [] }), "Update todos");
+  assert.equal(friendly("Bash", { command: 3 }), "", "arguments of another shape read as nothing");
+  assert.equal(
+    summarizeCalls([
+      callWith("Read", { file_path: "a.md" }),
+      callWith("Read", { file_path: "b.md" }),
+      callWith("Bash", { command: "ls" }),
+    ]),
+    "Read a.md, b.md · Run ls",
+  );
 });

@@ -1,5 +1,5 @@
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
-import type { AgentConfig } from "../db/schema/index.js";
+import { modelSourceOf, type AgentConfig, type ModelSource } from "../db/schema/index.js";
 
 /** A machine as an agent payload names it. */
 export type MachineRef = {
@@ -9,14 +9,15 @@ export type MachineRef = {
 };
 
 /**
- * An agent as its guild's list shows it: its profile, whether it browses and codes, the machine
- * it runs on, and whether a run is generating for it right now.
+ * An agent as its guild's list shows it: its profile, its model source, whether it browses, the
+ * machine it runs on, and whether a run is generating for it right now.
  */
 export type AgentItem = Pick<
   GuildAgentRow,
   "id" | "guild_id" | "name" | "focus" | "avatar_shape" | "avatar_color" | "machine_id"
 > &
-  Pick<AgentConfig, "browser" | "coding"> & {
+  Pick<AgentConfig, "browser"> & {
+    model_source: ModelSource["kind"];
     machine: MachineRef;
     generating: boolean;
   };
@@ -32,8 +33,8 @@ export function agentItem(row: GuildAgentRow, generating = false): AgentItem {
     focus: row.focus,
     avatar_shape: row.avatar_shape || "teardrop",
     avatar_color: row.avatar_color || "#7c5cff",
+    model_source: modelSourceOf(row.config).kind,
     browser: row.config.browser,
-    coding: row.config.coding,
     machine_id: row.machine_id,
     machine: { id: row.machine_id, name: row.machine_name, box: row.machine_box },
     generating,

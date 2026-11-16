@@ -35,7 +35,7 @@ import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
 import { ApplyUndoError, RecipeConflictError, RecipeError } from "./errors.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap } from "./plan.js";
-import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
+import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleRunsOnSubscription, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
 import { undoApply } from "./undo.js";
 
@@ -105,7 +105,7 @@ async function assertAllowed(
   await assertCanCreateAgents(apply.policy, apply.db, target.orgId, {
     agents: recipe.roles.length,
     browserAgents: recipe.roles.filter(roleBrowses).length,
-    codingAgents: recipe.roles.filter(roleCodes).length,
+    subscriptionAgents: recipe.roles.filter(roleRunsOnSubscription).length,
   });
   try {
     await assertGuildAgentRoom(apply.db, target.guildId || null, recipe.roles.length);
@@ -192,7 +192,8 @@ async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeD
     agentId,
     guildId: skeleton.guildId,
     name: skeleton.names.get(role.role) ?? role.name_suggestion,
-    config: validateAgentConfig(role.config),
+    // The guild has none of the role's repositories yet: each reaches the agent when its checklist step passes.
+    config: validateAgentConfig({ ...role.config, repositories: [] }),
     focus: role.focus,
     wakeTriggers: role.wake_triggers,
     avatarShape: role.avatar_shape,

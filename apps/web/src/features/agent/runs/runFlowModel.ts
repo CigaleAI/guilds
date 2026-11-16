@@ -1,4 +1,5 @@
-import type { ToolKind } from "@guildsrun/ui";
+import type { StepFact, ToolKind } from "@guildsrun/ui";
+import { formatCost } from "../../../app/format";
 import type {
   MessagePayload,
   Run,
@@ -7,7 +8,7 @@ import type {
   TokenUsage,
   ToolCall,
 } from "../../../api/types/runs";
-import { toolResultError } from "./toolFormat";
+import { formatTokens, toolResultError } from "./toolFormat";
 import { classifyToolCall, kindBreakdown } from "./toolKinds";
 import type { RunWithTools, ToolCallInfo } from "./toolKinds";
 
@@ -230,6 +231,32 @@ export function turnUsage(msg: StepMessage | null | undefined): Partial<TokenUsa
   return msg?.metadata.usage ?? {};
 }
 
+/** Tokens read out: in, out, then the cache's reads and writes when there are any. */
+export function usageTitle(usage: Partial<TokenUsage>): string {
+  return [
+    `${(usage.input_tokens ?? 0).toLocaleString()} in`,
+    `${(usage.output_tokens ?? 0).toLocaleString()} out`,
+    usage.cache_read_tokens ? `${usage.cache_read_tokens.toLocaleString()} cached` : "",
+    usage.cache_write_tokens ? `${usage.cache_write_tokens.toLocaleString()} cache writes` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * What a reply's call, or a harness's whole turn, spent, as the reply notes it: its tokens, then
+ * its price, or that it ran on the subscription; null for a reply that records no usage.
+ */
+export function replyUsage(msg: StepMessage): StepFact | null {
+  const usage = msg.metadata.usage;
+  if (!usage) return null;
+  const usd = msg.cost_usd ?? null;
+  const price = usd === null ? "" : formatCost(usd);
+  const cost = isPriced(msg) ? price : "on the subscription";
+  const tokens = `${formatTokens(usage.input_tokens + usage.output_tokens)} tok`;
+  return { label: [tokens, cost].filter(Boolean).join(" · "), title: usageTitle(usage) };
+}
+
 /** How long the model took to write an assistant message, in ms; 0 when it is not recorded. */
 function turnLatencyMs(msg: StepMessage): number {
   return msg.metadata.latency_ms ?? 0;
@@ -240,12 +267,18 @@ function resultDurationMs(result: StepMessage | null): number {
   return result?.metadata.duration_ms ?? 0;
 }
 
+/** Whether a message's cost is a price: one a harness's turn on the subscription records is not. */
+function isPriced(msg: StepMessage | null): boolean {
+  return msg?.metadata.cost_source !== "subscription";
+}
+
 /**
  * What a step cost: its model reply's and its calls' results' stored costs, so a tool that records
- * spend, such as `browse`, counts with the model; null when none of them records a cost.
+ * spend, such as `browse`, counts with the model; null when none of them records a price.
  */
 export function stepCostUsd(step: FlowStep): number | null {
   const costs = [step.turn, ...step.calls.map((item) => item.result)]
+    .filter(isPriced)
     .map((msg) => msg?.cost_usd)
     .filter((cost): cost is number => typeof cost === "number");
   return costs.length ? costs.reduce((total, cost) => total + cost, 0) : null;

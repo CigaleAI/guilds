@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConfigError, decodeMasterKey, loadConfig, loadToolConfig, parseHarnessesOff } from "../../src/config/index.js";
+import {
+  ConfigError,
+  decodeMasterKey,
+  loadConfig,
+  loadToolConfig,
+  parseHarnessesOff,
+} from "../../src/config/index.js";
 import { HEX_MASTER_KEY, tempDir, testEnv } from "../helpers/env.js";
 
 test("loadConfig requires env, existing dirs, and a 32-byte master key", () => {
@@ -181,4 +187,36 @@ test("a name in HARNESSES_OFF that is not a harness fails the configuration", ()
     () => loadConfig(testEnv("postgresql://example", { HARNESSES_OFF: "claude" })),
     /HARNESSES_OFF names an unknown harness claude/,
   );
+});
+
+/** The configuration of a box whose environment adds `extra`. */
+function configWith(extra: Record<string, string>) {
+  return loadConfig(
+    testEnv("postgresql://example", { NOTES_ROOT: tempDir("guilds-notes-"), WORKSPACE_ROOT: tempDir("guilds-workspaces-"), ...extra }),
+  );
+}
+
+test("the MCP listener listens on loopback port 8090, reached from a sandbox through host.docker.internal, by default", () => {
+  const config = configWith({});
+  assert.equal(config.harnessMcpHost, "127.0.0.1");
+  assert.equal(config.harnessMcpPort, 8090);
+  assert.equal(config.harnessMcpUrl, "http://host.docker.internal:8090");
+});
+
+test("the MCP listener's address, port, and the URL a sandbox reaches it at are set apart", () => {
+  const config = configWith({ HARNESS_MCP_HOST: "0.0.0.0", HARNESS_MCP_PORT: "9100", HARNESS_MCP_URL: " http://172.17.0.1:9100/ " });
+  assert.equal(config.harnessMcpHost, "0.0.0.0");
+  assert.equal(config.harnessMcpPort, 9100);
+  assert.equal(config.harnessMcpUrl, "http://172.17.0.1:9100", "without its trailing slash");
+  assert.equal(configWith({ HARNESS_MCP_PORT: "9100" }).harnessMcpUrl, "http://host.docker.internal:9100", "the default follows the port");
+  assert.equal(configWith({ HARNESS_MCP_URL: "https://tools.internal/guilds" }).harnessMcpUrl, "https://tools.internal/guilds");
+});
+
+test("an MCP port that is not a TCP port, and an MCP URL a harness could not take, fail the configuration", () => {
+  for (const port of ["0", "65536", "80.5", "eighty"]) {
+    assert.throws(() => configWith({ HARNESS_MCP_PORT: port }), (error: unknown) => error instanceof ConfigError && error.setting === "HARNESS_MCP_PORT", port);
+  }
+  for (const url of ["ftp://host/x", "http://user:pass@host", "http://host/x?token=1", "http://host/#x", "host:8090", "http://host/a b"]) {
+    assert.throws(() => configWith({ HARNESS_MCP_URL: url }), (error: unknown) => error instanceof ConfigError && error.setting === "HARNESS_MCP_URL", url);
+  }
 });

@@ -17,7 +17,7 @@ export const MEMORY_ARCHIVE_KEEP = 50;
 export const MEMORY_INTRO = `
 ### Your Memory
 Memory is a private place for what your future runs should know and could not
-easily find again. Rewrite it with memory_write. The Task above is the
+easily find again. Rewrite it with <tool>memory_write</tool>. The Task above is the
 operator's standing purpose and stays as written.
 
 Most runs do not need to write. Before you finish, ask whether the next run

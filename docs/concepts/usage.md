@@ -1,9 +1,10 @@
 # Usage
 
-Usage is what the model calls and browse calls of a guild's agents
-have consumed: tokens, cost in US dollars, and the number of calls.
-Every model reply in a [run](runs.md) records its own tokens and cost,
-and so does every browse call. Those numbers are
+Usage is what the model calls, harness turns, and browse calls of a
+guild's agents have consumed: tokens, cost in US dollars, and the
+number of calls. Every model reply in a [run](runs.md) records its own
+tokens and cost, every subscription agent's turn its tokens on its
+reply, and every browse call its own. Those numbers are
 also added to running totals for the [agent](agents.md), its
 [guild](guilds.md), its [organisation](organisations.md), and the
 whole instance.
@@ -27,8 +28,19 @@ reads (the part of the input the provider served from its cache). Its
 cost comes from the provider when the provider reports one. Otherwise
 it is computed from the model catalog's prices, with cache reads at
 the cache-read rate. A model with no catalog price records a cost of
-0, marked unavailable. A provider that is not billed, such as a local
-endpoint or Kimi Code, has no catalog price.
+0, marked unavailable. A provider that is not billed, the local
+endpoint, has no catalog price.
+
+### Cost of a harness turn
+
+A [subscription agent](agents.md#model-source)'s turn runs on the
+operator's own subscription, which charges no price per token. Its
+harness reports the tokens the turn spent over every model call it
+made, and the turn's reply records them, a cost of 0, marked
+`subscription` ([Harness turns](runs.md#harness-turns)). A turn whose
+CLI reports no tokens, as Cursor's may not, records none. The reply
+counts in the totals as one call. No price is computed and the usage
+callback is not called.
 
 ### Running totals
 
@@ -91,14 +103,15 @@ logged and never fails the run
   agents**: what the organisation's total holds beyond the rows
   listed.
 - The **run flow** in a run's transcript shows the tokens and cost of
-  each step and of the whole generation ([Run transcript](run-transcript.md#run-flows)).
+  each step and of the whole generation, and a reply its own
+  ([Run transcript](run-transcript.md#run-flows)).
 
 ## Rules and limits
 
 | Rule | Value or behaviour |
 | --- | --- |
 | Spend gate in core | none |
-| Cost source | the provider's reported cost, else the catalog price, else 0 marked `unavailable` |
+| Cost source | the provider's reported cost, else the catalog price, else 0 marked `unavailable`; a harness turn 0 marked `subscription` |
 | Browse calls | counted apart from model calls; their cost is part of the total cost |
 | Cache reads | priced at the cache-read rate; part of input tokens |
 | Total tokens | input plus output |
@@ -115,9 +128,12 @@ logged and never fails the run
 Each assistant row with usage stores:
 
 - `metadata.usage`: `input_tokens`, `output_tokens`,
-  `cache_read_tokens`;
+  `cache_read_tokens`, and `cache_write_tokens` where the source
+  reports cache writes, which the counters do not keep; the cache's
+  reads and writes are part of `input_tokens`;
 - `metadata.cost_usd`;
-- `metadata.cost_source`: `provider`, `catalog`, or `unavailable`;
+- `metadata.cost_source`: `provider`, `catalog`, `unavailable`, or
+  `subscription` for a harness turn;
 - `metadata.pricing_version`, the catalog's date, whenever the
   provider reported no cost;
 - `messages.cost_usd`, a column for accounting queries.

@@ -165,6 +165,7 @@ test("a run whose opening and replies hold a NUL or an unpaired surrogate stores
     mcp: mcpPool(db),
     notes,
     workspaceRoot,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(workspaceRoot),
     artifacts,
   });

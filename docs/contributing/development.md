@@ -162,7 +162,7 @@ log.
 | --- | --- |
 | orchestrator | `typecheck`, `suppressions`, `lint`, `lint-rules`, `import-cycles`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `import-cycles-web`, `build-web`, `build-storybook` |
-| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the stack asks for `./setup.sh` first, that `.env` is private and unchanged by a second `./setup.sh`, and that the box is healthy, serves the app on loopback alone, holds one operator and no hosted table, creates a guild, and refuses a request from another web origin |
+| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, ports (`SMOKE_PORT`, 18080 by default, and `SMOKE_MCP_PORT`, the one after it), image tag, and state directory. It checks that the stack asks for `./setup.sh` first, that `.env` is private and unchanged by a second `./setup.sh`, and that the box is healthy, serves the app on loopback alone, publishes the MCP listener at `HARNESS_MCP_PUBLISH` alone, holds one operator and no hosted table, creates a guild, and refuses a request from another web origin. From a container on the default bridge, where sandboxes run, it checks that the MCP listener answers at the URL sandboxes are given, refuses a request without a token, and serves no API route, and, outside Docker Desktop, that the operator app's port is not reached at that host |
 
 `scripts/check.sh <commit>` (or `make check COMMIT=<rev>`)
 checks that commit the way CI does: a clean worktree of it and
@@ -233,8 +233,9 @@ and `PREVIEW_MODEL_KEY` and the variable `PREVIEW_MODEL`.
 locally (`make preview`), and prints one line: its URL. It runs a
 copy of the checkout under its own Compose project, port, image tag
 and state directory, all named by `PREVIEW_PORT` (18090 by
-default). The state directory is `guilds-preview-<port>` under
-`$TMPDIR`, or `/tmp` when it is unset. It adds
+default); its MCP listener is on the port after it. The state
+directory is `guilds-preview-<port>` under `$TMPDIR`, or `/tmp` when
+it is unset. It adds
 `docker-compose.preview.yml` to the product stack: Caddy, which asks
 for the password and proxies to the orchestrator with the request's
 `Host` header, and `cloudflared`, a quick tunnel to Caddy. Neither
@@ -271,7 +272,7 @@ The orchestrator's tests run on Node's test runner through `tsx`
 | `coding.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1`, and the runtime image exists: `CONTRACT_RUNTIME_IMAGE`, `agent-runtime:0.4` by default (`make runtime-image`) |
 | `model.test.ts` | `RUN_MODEL_CONTRACT=1`, `MODEL_CONTRACT_MODEL` (a `{provider}/{model}` id), and `MODEL_CONTRACT_API_KEY`. `MODEL_CONTRACT_BASE_URL` points it at a local endpoint |
 | `typesafe.test.ts` | `RUN_TYPESAFE_CONTRACT=1` or `RUN_MODEL_CONTRACT=1`, and `TYPESAFE_API_KEY` |
-| `harness.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1` and the runtime image, as for `coding.test.ts`. One live turn per harness whose credential is set: `CLAUDE_CODE_OAUTH_TOKEN`, `CURSOR_API_KEY`, or `CODEX_AUTH_JSON` (the path of a Codex `auth.json`) |
+| `harness.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1` and the runtime image, as for `coding.test.ts`. A subscription agent's turns on each harness whose credential is set: `CLAUDE_CODE_OAUTH_TOKEN`, `CURSOR_API_KEY`, `CODEX_AUTH_JSON` (the path of a Codex `auth.json`), or `ANTIGRAVITY_OAUTH_TOKEN` (the path of the `antigravity-oauth-token` a sign-in with `agy` writes), calling a Guilds tool on the orchestrator's MCP server: on Claude Code and Codex under a system prompt of its own, on Cursor and Antigravity in a repository under the run's prompt as a rule |
 
 The operator app's and the design system's tests run on Node's
 test runner too. They sit beside their modules as

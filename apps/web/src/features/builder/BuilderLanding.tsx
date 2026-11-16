@@ -50,7 +50,7 @@ export function BuilderLanding() {
   const start = useStartBuilder();
   const [model, setModel] = useState("");
   const [brief, setBrief] = useState("");
-  const chosenModel = model || preselectedModel(models.data, { marketplaceOnly: true });
+  const chosenModel = model || preselectedModel(models.data);
   const noProvider = hasConnectedProvider(models.data) === false;
 
   const submit = (event: FormEvent) => {
@@ -103,7 +103,7 @@ export function BuilderLanding() {
               className="min-w-56"
               value={chosenModel}
               onValueChange={setModel}
-              options={modelOptions(models.data, { current: chosenModel, marketplaceOnly: true })}
+              options={modelOptions(models.data, { current: chosenModel })}
             />
             <span className="flex-1" />
             <Button

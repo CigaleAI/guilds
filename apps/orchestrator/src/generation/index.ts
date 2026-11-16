@@ -31,17 +31,19 @@ import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { agentSchedules, type Schedules } from "../schedules/service.js";
 import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/group.js";
+import { getPendingRunWake } from "../db/wakes.js";
 import { pendingWakeItem, type PendingWakeView } from "../wakes/item.js";
 import { agentWakes, type Wakes } from "../wakes/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
-import { continuedBy, latestInChain, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
 import { isAdmissionRefusal, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import { RunEventBus, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase } from "./generate.js";
+import { HarnessLoop, harnessLoopDatabase } from "./harness-loop.js";
+import { HarnessMcpServer, harnessMcpDatabase } from "./harness-mcp.js";
 import { runWasResumed } from "./lifecycle.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
 import {
@@ -81,6 +83,7 @@ function loopDatabase(db: Queryable) {
     completeGroupDelivery: bindQuery(db, completeGroupDelivery),
     deleteAgent: bindQuery(db, deleteAgent),
     deleteGuild: bindQuery(db, deleteGuild),
+    getPendingRunWake: bindQuery(db, getPendingRunWake),
   };
 }
 
@@ -97,8 +100,9 @@ function generationDatabase(db: Queryable) {
     ...toolCallsDatabase(db),
     ...runSecretsDatabase(db),
     ...runsDatabase(db),
-    ...runChainsDatabase(db),
     ...runWakesDatabase(db),
+    ...harnessLoopDatabase(db),
+    ...harnessMcpDatabase(db),
     ...runGeneratorDatabase(db),
     ...loopDatabase(db),
   };
@@ -117,6 +121,8 @@ export type GenerationLoopServices = {
   notes: NotesStore;
   /** Where machine directories are kept when the provider names no host for a machine. */
   workspaceRoot: string;
+  /** The URL a sandbox reaches the orchestrator's MCP server at, which subscription agents' turns are given. */
+  harnessMcpUrl: string;
   sandboxes: GenerationSandboxes;
   /** The pool runs list and call connection tools through. */
   mcp: ConnectorPool;
@@ -178,11 +184,13 @@ export class GenerationLoop implements GroupRunner {
   machines: AgentMachines;
   preparation: RunPreparation;
   completion: ModelCompletion;
+  harness: HarnessLoop;
+  /** The MCP server subscription agents' harness turns call their Guilds tools on. */
+  harnessMcp: HarnessMcpServer;
   coding: CodingRuns;
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
   secrets: RunSecrets;
-  chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
   wakes: Wakes;
@@ -240,8 +248,15 @@ export class GenerationLoop implements GroupRunner {
       events: this.events,
       generations: this.generations,
       machines: this.machines,
-      coding: this.coding,
       tools,
+    });
+    this.harnessMcp = new HarnessMcpServer({ db, toolCalls: this.toolCalls }, services.harnessMcpUrl);
+    this.harness = new HarnessLoop({
+      db,
+      events: this.events,
+      machines: this.machines,
+      mcp: this.harnessMcp,
+      attachments: this.attachments,
     });
     this.wakes = services.wakes;
     this.runWakes = new RunWakes({
@@ -262,13 +277,6 @@ export class GenerationLoop implements GroupRunner {
       },
       timings.schedulerTickMs,
     );
-    this.chains = new RunChains({
-      db,
-      events: this.events,
-      completion: this.completion,
-      runs: this.runs,
-      wakes: this.wakes,
-    });
     this.generator = new RunGenerator({
       db,
       scripts: this.scripts,
@@ -276,11 +284,11 @@ export class GenerationLoop implements GroupRunner {
       generations: this.generations,
       machines: this.machines,
       completion: this.completion,
+      harness: this.harness,
       coding: this.coding,
       workspace: this.workspace,
       toolCalls: this.toolCalls,
       secrets: this.secrets,
-      chains: this.chains,
       starter: this,
       wakes: this.runWakes,
     });
@@ -423,12 +431,8 @@ export class GenerationLoop implements GroupRunner {
     if (run.status !== "completed") {
       throw new RunRequestError(409, "run cannot be resumed");
     }
-    const next = continuedBy(run);
-    if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}`);
-    }
     if (terminalCapOf(run) !== null) {
-      throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
+      throw new RunRequestError(409, "this run hit its tool or token cap; start a new run");
     }
     if ((await this.db.getAgent(run.agent_id)) === null) {
       throw new RunRequestError(404, "agent not found");
@@ -463,7 +467,7 @@ export class GenerationLoop implements GroupRunner {
     return this.currentRunView(runId);
   }
 
-  /** The run, refused unless it takes an operator's message: active, direct or resumed, and not continued. */
+  /** The run, refused unless it takes an operator's message: active, and direct or resumed. */
   private async runTakingMessages(runId: string): Promise<RunRow> {
     const run = await this.db.getRun(runId);
     if (run === null) {
@@ -471,10 +475,6 @@ export class GenerationLoop implements GroupRunner {
     }
     if (run.kind !== "direct" && !runWasResumed(run)) {
       throw new RunRequestError(409, `${run.kind}-triggered runs do not accept later messages`);
-    }
-    const next = continuedBy(run);
-    if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}; send the message there`);
     }
     if (run.status !== "active") {
       throw new RunRequestError(409, "this run has ended; resume it to continue");
@@ -537,6 +537,7 @@ export class GenerationLoop implements GroupRunner {
   async reconcile(): Promise<void> {
     const now = new Date();
     for (const run of await this.db.listActiveRuns()) {
+      await this.harness.endLostTurn(run);
       await this.toolCalls.resolveUnresolved(run.id, null);
       if (run.kind === "direct" || runWasResumed(run)) {
         continue;

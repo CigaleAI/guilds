@@ -1,8 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blockingApplySteps, browserLoginAgentIds, checklistFromPlan, deferLaunchSteps, skipApplyChecklistStep } from "../../src/recipes/checklist.js";
+import {
+  addRoleRepository,
+  blockingApplySteps,
+  browserLoginAgentIds,
+  checklistFromPlan,
+  deferLaunchSteps,
+  skipApplyChecklistStep,
+} from "../../src/recipes/checklist.js";
 import { parseRecipe } from "../../src/recipes/parse.js";
-import { configFromRecipeRole, prepareRecipeForApply } from "../../src/recipes/prepare.js";
+import {
+  configFromRecipeRole,
+  prepareRecipeForApply,
+  roleRunsOnSubscription,
+  subscriptionLoopSettings,
+} from "../../src/recipes/prepare.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import {
   DEFAULT_MAX_STEPS,
@@ -111,7 +123,7 @@ test("apply fills sparse builder config so the browser can start", () => {
   assert.equal(prepared.roles[0]!.config.browser, true);
 });
 
-test("a recipe's repositories add a GitHub login and a check per repository", () => {
+test("a recipe's repositories add a check per repository, each asking for its URL and credential, and no GitHub login", () => {
   const recipe = parseRecipe({
     ...huskLeadMatcherRecipe(operatorAuthor()),
     repositories: [
@@ -120,70 +132,98 @@ test("a recipe's repositories add a GitHub login and a check per repository", ()
     ],
   });
   const steps = checklistFromPlan(recipe, applyPlan());
-  const github = steps.find((item) => item.id === "conn:github");
-  assert.equal(github?.kind, "connection");
-  assert.equal(github?.closure, "verified");
-  assert.match(String(github?.setup), /Commit author email/);
+  assert.equal(steps.find((item) => item.id === "conn:github"), undefined);
   const api = steps.find((item) => item.id === "repo:api");
   assert.equal(api?.kind, "repository");
   assert.equal(api?.closure, "verified");
   assert.match(
     String(api?.setup),
-    /^The HTTP service\. Add it in the guild's Settings under Repositories, named api\./,
+    /^The HTTP service\. Add it in the guild's Settings under Repositories, named api, with its HTTPS URL, on any git host, and a credential: a GitHub login for a GitHub repository, an access token kept as a secret for any host, or none for a public repository/,
   );
+  assert.match(String(api?.setup), /Commit author email/);
   assert.match(
     String(steps.find((item) => item.id === "repo:web")?.setup),
     /^Add it in the guild's Settings/,
   );
   assert.deepEqual(
     blockingApplySteps(steps).map((item) => item.id),
-    ["conn:github", "repo:api", "repo:web"],
+    ["repo:api", "repo:web"],
   );
   const skipped = skipApplyChecklistStep(steps, "repo:api");
   assert.equal(skipped.checklist.find((item) => item.id === "repo:api")?.status, "skipped");
 
-  // A recipe that already lists GitHub among its connections keeps that one step, which also
-  // says what the repositories need.
+  // A recipe that lists GitHub among its connections keeps that step as its connection says it.
   const listed = checklistFromPlan(recipe, applyPlan({ connections: [plannedConnection("github", "Install the App.")] }));
   assert.equal(listed.filter((item) => item.id === "conn:github").length, 1);
-  assert.match(String(listed.find((item) => item.id === "conn:github")?.setup), /^Install the App\. .*Commit author email/);
+  assert.equal(listed.find((item) => item.id === "conn:github")?.setup, "Install the App.");
 });
 
-test("apply carries the coding flag and turns a missing one off", () => {
-  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
-  recipe.roles[0]!.config = { coding: true };
-  assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, true);
-  recipe.roles[0]!.config = {};
-  assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, false);
-});
-
-test("apply gives a coding role the harness chosen, else the recipe's, and no other role one", () => {
+test("apply gives a subscription role its repositories, and no other role, nor a list that does not validate, any", () => {
   const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
   const role = recipe.roles[0]!;
-  role.config = { coding: true, harness: "codex" };
+  role.config = { harness: "codex", repositories: ["web", "api"] };
+  assert.deepEqual(configFromRecipeRole(role).repositories, ["web", "api"]);
+  role.config = { model: TEST_MODEL, repositories: ["web"] };
+  assert.deepEqual(configFromRecipeRole(role).repositories, []);
+  role.config = { harness: "codex", repositories: ["web", "web"] };
+  assert.deepEqual(configFromRecipeRole(role).repositories, []);
+  role.config = { harness: "codex" };
+  assert.deepEqual(configFromRecipeRole(role).repositories, []);
+});
+
+test("a repository whose step passes joins an agent's picks at its place in the role's list", () => {
+  assert.deepEqual(addRoleRepository([], ["web", "api"], "api"), ["api"]);
+  assert.deepEqual(addRoleRepository(["api"], ["web", "api"], "web"), ["web", "api"]);
+  assert.deepEqual(addRoleRepository(["docs", "api"], ["web", "api"], "web"), ["web", "api", "docs"], "the agent's other picks follow");
+});
+
+test("a subscription role applies with no model, its harness, and none of the model loop's settings", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  role.config = { harness: "codex", harness_model: "gpt-6-luna", temperature: 0.2, max_tokens: 8192, max_steps: 5 };
+  assert.equal(roleRunsOnSubscription(role), true);
+  assert.deepEqual(subscriptionLoopSettings(role), ["temperature"]);
+  const config = configFromRecipeRole(role, { model: "deepinfra/zai-org/GLM-5.3-Flash" });
+  assert.equal(config.model, null, "a chosen model does not apply to a subscription role");
+  assert.equal(config.harness, "codex");
+  assert.equal(config.harness_model, "gpt-6-luna");
+  assert.equal("temperature" in config, false);
+  assert.equal(config.max_steps, 5);
+  assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness, "claude-code");
+  role.config = { model: "deepinfra/zai-org/GLM-5.3-Flash", harness: "codex" };
+  assert.equal(roleRunsOnSubscription(role), false, "a role with a model is on a key");
+  assert.deepEqual(subscriptionLoopSettings(role), []);
+  role.config = { harness: "opencode" };
+  assert.equal(roleRunsOnSubscription(role), false, "an unknown harness is no subscription");
+});
+
+test("apply gives a subscription role the harness chosen, else the recipe's, and no other role one", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  role.config = { harness: "codex" };
   assert.equal(configFromRecipeRole(role).harness, "codex");
   assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, "cursor");
-  role.config = { coding: true };
-  assert.equal(configFromRecipeRole(role).harness, null);
-  role.config = { coding: false, harness: "codex" };
+  role.config = {};
+  assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, null, "a role with neither a model nor a harness is on a key");
+  role.config = { model: "deepinfra/zai-org/GLM-5.3-Flash", harness: "codex" };
   assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, null);
-  role.config = { coding: true, harness: "claude-code", harness_model: "opus" };
+  role.config = { harness: "claude-code", harness_model: "opus" };
   assert.equal(configFromRecipeRole(role).harness_model, "opus");
   assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_model, "opus");
   assert.equal(configFromRecipeRole(role, { harness: "codex" }).harness_model, null, "another harness takes its default");
-  role.config = { coding: true, harness: "codex", harness_model: "gpt-5.6-terra", harness_effort: "ultra" };
+  role.config = { harness: "codex", harness_model: "gpt-5.6-terra", harness_effort: "ultra" };
   assert.equal(configFromRecipeRole(role).harness_effort, "ultra");
   assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_effort, null, "another harness takes its default");
-  role.config = { coding: true, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "ultra" };
+  role.config = { harness: "codex", harness_model: "gpt-6-luna", harness_effort: "ultra" };
   assert.equal(configFromRecipeRole(role).harness_effort, null, "an effort its model does not run at");
-  role.config = { coding: true, harness: "codex", harness_effort: "turbo" };
+  role.config = { harness: "codex", harness_effort: "turbo" };
   assert.equal(configFromRecipeRole(role).harness_effort, null);
-  role.config = { coding: true, harness: "claude-code", harness_model: "--bad" };
+  role.config = { harness: "claude-code", harness_model: "--bad" };
   assert.equal(configFromRecipeRole(role).harness_model, null);
-  role.config = { coding: true };
+  role.config = { harness_model: "opus" };
   assert.equal(configFromRecipeRole(role).harness_model, null);
-  role.config = { coding: true, harness: "codex" };
-  assert.equal(configFromRecipeRole(role).browser, false, "a coding role has the browser only when it asks for it");
+  role.config = { harness: "codex" };
+  assert.equal(configFromRecipeRole(role).browser, false, "a subscription role has the browser only when it asks for it");
   role.config = { browser: true, browser_optimized: true, browser_model: TEST_MODEL };
   assert.equal(configFromRecipeRole(role).browser_optimized, false, "a role browses with the step-by-step browser tools");
   assert.equal(configFromRecipeRole(role).browser_model, null);
@@ -195,20 +235,62 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const findings = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx).filter((item) => item.code.startsWith("harness."));
   };
-  const credential = findings({ coding: true, harness: "claude-code" });
+  const credential = findings({ harness: "claude-code" });
   assert.deepEqual(credential.map((item) => [item.code, item.severity]), [["harness.credential", "warning"]]);
   assert.match(credential[0]!.message, /grant the secret CLAUDE_CODE_OAUTH_TOKEN/);
-  assert.match(findings({ coding: true })[0]!.message, /apply asks for its harness/);
-  assert.deepEqual(findings({ coding: true, harness: "pi" }).map((item) => item.code), ["harness.unknown", "harness.credential"]);
-  assert.deepEqual(findings({ coding: false, harness: "codex" }).map((item) => item.code), ["harness.coding"]);
-  assert.ok(findings({ coding: true, harness: "codex" }).every((item) => item.severity === "warning"));
+  assert.deepEqual(findings({ harness: "pi" }).map((item) => item.code), ["harness.unknown"]);
+  assert.deepEqual(findings({ model: TEST_MODEL, harness: "codex" }).map((item) => item.code), ["harness.model"]);
+  assert.ok(findings({ harness: "codex" }).every((item) => item.severity === "warning"));
+});
+
+test("a subscription role is refused while the box turns them off, warned on Cursor or a model-loop setting", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  const ctx = {
+    publishedServers: new Set<string>(),
+    remainingAgents: 20,
+    remainingBrowserAgents: 5,
+    remainingSubscriptionAgents: 5,
+    groupLimit: 20,
+  };
+  const findings = (config: RecipeRole["config"]) => {
+    role.config = config;
+    return validateRecipe(recipe, ctx)
+      .filter((item) => item.code.startsWith("subscription."))
+      .map((item) => [item.code, item.severity, item.path, item.message]);
+  };
+  assert.deepEqual(findings({ harness: "codex" }), []);
+  assert.deepEqual(findings({ harness: "cursor" }), [
+    [
+      "subscription.repository",
+      "warning",
+      `roles.${role.role}.config.harness`,
+      "Cursor runs a subscription agent only with a repository, since it keeps its own system prompt: pick a repository, or another harness; apply asks for another harness",
+    ],
+  ]);
+  assert.deepEqual(findings({ harness: "antigravity", repositories: ["app"] }), [], "a role that lists a repository runs on it");
+  assert.deepEqual(findings({ harness: "codex", temperature: 1, thinking_level: "high" }), [
+    [
+      "subscription.setting",
+      "warning",
+      `roles.${role.role}.config.thinking_level`,
+      "config.thinking_level sets the model loop, which a subscription role's harness replaces; apply leaves it out",
+    ],
+  ]);
+  assert.deepEqual(findings({ model: TEST_MODEL, harness: "cursor", thinking_level: "high" }), [], "a role on a key is no subscription");
+  const capacity = (config: RecipeRole["config"]) => {
+    role.config = config;
+    return validateRecipe(recipe, { ...ctx, remainingSubscriptionAgents: 0 }).filter((item) => item.code === "capacity.subscription");
+  };
+  assert.equal(capacity({ harness: "codex" }).length, 1, "a subscription role takes a subscription agent");
+  assert.equal(capacity({ model: TEST_MODEL }).length, 0);
 });
 
 test("a recipe's harness model that apply cannot use is a warning", () => {
@@ -218,7 +300,7 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const codes = (config: RecipeRole["config"]) => {
@@ -227,20 +309,20 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
       .filter((item) => item.code.startsWith("harness_model."))
       .map((item) => [item.code, item.severity]);
   };
-  assert.deepEqual(codes({ coding: true, harness: "claude-code", harness_model: "opus" }), []);
-  assert.deepEqual(codes({ coding: true, harness: "claude-code" }), []);
-  assert.deepEqual(codes({ coding: true, harness: "claude-code", harness_model: "--bad" }), [["harness_model.invalid", "warning"]]);
-  assert.deepEqual(codes({ coding: true, harness_model: "opus" }), [["harness_model.harness", "warning"]]);
+  assert.deepEqual(codes({ harness: "claude-code", harness_model: "opus" }), []);
+  assert.deepEqual(codes({ harness: "claude-code" }), []);
+  assert.deepEqual(codes({ harness: "claude-code", harness_model: "--bad" }), [["harness_model.invalid", "warning"]]);
+  assert.deepEqual(codes({ harness_model: "opus" }), [["harness_model.harness", "warning"]]);
   const effortCodes = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx)
       .filter((item) => item.code.startsWith("harness_effort."))
       .map((item) => [item.code, item.severity]);
   };
-  assert.deepEqual(effortCodes({ coding: true, harness: "claude-code", harness_model: "opus", harness_effort: "high" }), []);
-  assert.deepEqual(effortCodes({ coding: true, harness: "claude-code", harness_effort: "turbo" }), [["harness_effort.invalid", "warning"]]);
-  assert.deepEqual(effortCodes({ coding: true, harness_effort: "high" }), [["harness_effort.harness", "warning"]]);
-  assert.deepEqual(effortCodes({ coding: true, harness: "cursor", harness_model: "composer-2.5", harness_effort: "low" }), [
+  assert.deepEqual(effortCodes({ harness: "claude-code", harness_model: "opus", harness_effort: "high" }), []);
+  assert.deepEqual(effortCodes({ harness: "claude-code", harness_effort: "turbo" }), [["harness_effort.invalid", "warning"]]);
+  assert.deepEqual(effortCodes({ harness_effort: "high" }), [["harness_effort.harness", "warning"]]);
+  assert.deepEqual(effortCodes({ harness: "cursor", harness_model: "composer-2.5", harness_effort: "low" }), [
     ["harness_effort.model", "warning"],
   ]);
   const aliasCodes = (config: RecipeRole["config"]) => {
@@ -260,7 +342,7 @@ test("a connector the box lacks is installable from the registry or the recipe, 
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
     registryConnectors: new Map([["notion", { version: "1.2.0", verified: true }]]),
   };
@@ -325,7 +407,7 @@ test("a role config with a key an agent config does not have is an error", () =>
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const unknown = () => validateRecipe(recipe, ctx).filter((item) => item.code === "config.unknown");

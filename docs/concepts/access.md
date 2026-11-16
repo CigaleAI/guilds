@@ -99,8 +99,6 @@ Some tools have no switch:
 - `report_issue` is always offered.
 - The browser tools follow the agent's **browser** capability
   ([Browser](browser.md)).
-- The code tools follow the agent's **coding** capability
-  ([Coding agents](coding/index.md)).
 
 Some switched tools are also left out of a run, whatever the
 switches say:
@@ -252,11 +250,11 @@ Every scope's **Tools** has two sub-tabs:
   there is one, its login, a switch for the server, and its listed
   tools behind a toggle with **All**, **Active**, and **Disabled**
   counts. GitHub shows its connected account without a switch, and
-  the repositories that login's coding agents clone, at organisation,
+  the repositories that login's subscription agents clone, at organisation,
   guild, or agent.
 - **Native tools**: grouped by family (**Notes**, **Tables** for the
   record tools, **Files**, **Memory**, **Scripts**, **Routines**, **Group chat**,
-  **Wake-ups**, **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
+  **Wake-ups**, **Secrets**, **Browser**, **Issues**, and **Other**),
   each family collapsible.
 
 Each switchable item is an on/off switch captioned with where its
@@ -268,9 +266,7 @@ offers a reset that removes it, so the value is inherited again. A
 server card offers **Reset to inherit** for its tools set at this
 scope.
 
-Browser and coding tools show without a switch. The coding tools
-listed are `code_task`, `shell`, `shell_status`, `file_read`, and
-`code_search`.
+Browser tools show without a switch.
 
 A server shows **Connect** at the current scope, or **Use own login**
 when it already uses an inherited one. It shows **Disconnect** when
@@ -370,7 +366,7 @@ Each item opens where its access is changed:
 | Instance defaults | Seeded by the box; no access view changes them |
 | A connector's tools | Follow the server until set one by one; server off keeps them all off |
 | Logins | One per connector per owner; usable at the owner's scope and below |
-| Never a switch | `report_issue`, the browser tools, the code tools |
+| Never a switch | `report_issue`, the browser tools |
 | Who writes an organisation's switch | Any member of the organisation |
 | Who writes a guild's or an agent's switch | Any member of the organisation who can see the guild |
 | An agent's mode on a note, a collection, or a file | Its own row when it has one; otherwise the better of its guild's row and the organisation's row; no row is no access |
@@ -469,9 +465,9 @@ absent, enable:
 - the wake-up tools (`wake_after`, `wake_cancel`)
 
 `report_issue` and the browser tools, `browse` among them, are never
-bindings; a binding on one is 422 `NAME is not a binding`. The code tools are not
-in the native registry's bindable set either (422 `unknown native
-tool: NAME`). Deleting a connection, agent, or guild cascades the
+bindings; a binding on one is 422 `NAME is not a binding`. A name
+outside the native registry is 422 `unknown native tool: NAME`.
+Deleting a connection, agent, or guild cascades the
 bindings that point at it. Deleting an organisation's own MCP server
 removes the bindings that name it.
 

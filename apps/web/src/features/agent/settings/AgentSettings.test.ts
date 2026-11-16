@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentHarness, Machine } from "../../../api/types/agents";
+import type { AgentHarness, HarnessCatalog, Machine } from "../../../api/types/agents";
 import { handleHint } from "../../../app/names";
 import {
   carriedHarnesses,
   machineHint,
   machineMove,
+  missingRepositoriesNote,
   readinessProblems,
   settingsNameError,
 } from "./AgentSettings";
-import { defaultAgentConfig } from "./configForm";
+import { configFormOf, defaultAgentConfig } from "./configForm";
 
 const machine: Machine = {
   id: "m_2",
@@ -34,6 +35,7 @@ const status: AgentHarness = {
   harnesses: [],
   machine_harnesses: ["claude-code"],
   repositories: [],
+  usable_repositories: [],
 };
 
 test("an empty name reads as the rule a name follows", () => {
@@ -53,18 +55,27 @@ test("the harnesses carried are the new machine's on a move, else the harness ch
   assert.deepEqual(carriedHarnesses(machine, undefined, undefined), ["codex"]);
 });
 
-test("the machine's hint says a move happens on save, or what a coding agent needs", () => {
-  assert.match(machineHint("m_2", true) ?? "", /^Saving moves the agent/);
-  assert.equal(machineHint(undefined, true), "Coding agents need a Code machine.");
-  assert.equal(machineHint(undefined, false), undefined);
+test("the machine's hint says a move happens on save, or what a subscription agent needs", () => {
+  assert.match(machineHint("m_2", "subscription") ?? "", /^Saving moves the agent/);
+  assert.equal(machineHint(undefined, "subscription"), "Subscription agents need a Code machine.");
+  assert.equal(machineHint(undefined, "key"), undefined);
 });
 
-test("only a saved coding agent has readiness problems", () => {
-  const coding = { ...defaultAgentConfig, coding: true };
-  assert.deepEqual(readinessProblems(coding, status), [
-    { kind: "harness" },
-    { kind: "repositories" },
-  ]);
-  assert.deepEqual(readinessProblems(defaultAgentConfig, status), []);
-  assert.deepEqual(readinessProblems(coding, undefined), []);
+test("a saved subscription agent's readiness is its harness's; an agent on a key has none", () => {
+  assert.deepEqual(readinessProblems("subscription", status), [{ kind: "harness" }]);
+  assert.deepEqual(readinessProblems("key", status), []);
+  assert.deepEqual(readinessProblems("subscription", undefined), []);
+});
+
+test("the Repositories section says what picking none does: home turns, or a harness that cannot run", () => {
+  const catalog: HarnessCatalog[] = [
+    { harness: "antigravity", label: "Antigravity", enabled: true, needs_repository: true, models: [], unlisted_efforts: [] },
+  ];
+  const onCodex = configFormOf({ ...defaultAgentConfig, model: null, harness: "codex" }, "subscription");
+  const onAntigravity = { ...onCodex, harness: "antigravity" as const };
+  assert.equal(missingRepositoriesNote(onCodex, catalog), "No repository picked, so this agent's turns run in its home.");
+  assert.equal(
+    missingRepositoriesNote(onAntigravity, catalog),
+    "No repository picked. Antigravity keeps its own system prompt, so it runs a subscription agent only with a repository.",
+  );
 });

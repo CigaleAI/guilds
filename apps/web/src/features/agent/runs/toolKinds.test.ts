@@ -127,8 +127,8 @@ test("fixed-level tools ignore arguments", () => {
   assert.equal(classifyToolCall(call("browser_snapshot")).kind, "read");
   assert.deepEqual(classifyToolCall(call("code_task", { brief: "Fix greet", repo: "app" })), {
     name: "code_task",
-    kind: "execute",
-    level: "local",
+    kind: "unknown",
+    level: null,
     server: null,
   });
 });
@@ -143,10 +143,9 @@ test("only changes to tracked state are mutations", () => {
     "record_add",
     "studio_edit_collection",
     "script_create",
-    "code_task",
   ];
   for (const name of tracked) assert.equal(mutates(name), true, name);
-  const untracked = ["shell", "script_run", "group_post", "schedule_create_cron", "browser_click"];
+  const untracked = ["code_task", "script_run", "group_post", "schedule_create_cron", "browser_click"];
   for (const name of untracked) assert.equal(mutates(name), false, name);
   assert.equal(mutates("note_get", { path: "org/o1/agents/a1/memory.md" }), false);
   assert.equal(mutates("studio_list_memory_revisions"), false);
@@ -156,7 +155,7 @@ test("only changes to tracked state are mutations", () => {
 
 test("a script run is told apart from other commands", () => {
   assert.equal(isScriptRun(classifyToolCall(call("script_run", { name: "one" }))), true);
-  assert.equal(isScriptRun(classifyToolCall(call("shell", { command: "ls" }))), false);
+  assert.equal(isScriptRun(classifyToolCall(call("Bash", { command: "ls" }))), false);
 });
 
 test("connected tools resolve from the run snapshot with their server slug", () => {
@@ -198,4 +197,43 @@ test("kindBreakdown lists kinds in table order with counts", () => {
   );
   assert.equal(kindBreakdown(infos), "memory · read × 2 · write · post");
   assert.equal(kindBreakdown([]), "");
+});
+
+test("a call of Claude Code's own tool reads by its kind on the agent's home, or the web", () => {
+  const harnessResult = result("ok", { tool_name: "Bash", from_harness: "claude-code" });
+  assert.deepEqual(classifyToolCall(call("Bash", { command: "ls" }), harnessResult), {
+    name: "Bash",
+    kind: "execute",
+    level: "local",
+    server: null,
+  });
+  assert.equal(classifyToolCall(call("Read", { file_path: "/home/a_1/a.md" })).kind, "read");
+  assert.equal(classifyToolCall(call("Edit", { file_path: "/home/a_1/a.md" })).kind, "write");
+  assert.deepEqual(classifyToolCall(call("WebFetch", { url: "https://example.com" })), {
+    name: "WebFetch",
+    kind: "read",
+    level: null,
+    server: null,
+  });
+  assert.equal(
+    isMutation(classifyToolCall(call("Edit"))),
+    false,
+    "an edit in the home is no tracked state",
+  );
+});
+
+test("a call of Codex's own tool reads by the kind of item its log reports", () => {
+  assert.deepEqual(classifyToolCall(call("command_execution", { command: "ls" })), {
+    name: "command_execution",
+    kind: "execute",
+    level: "local",
+    server: null,
+  });
+  assert.equal(classifyToolCall(call("file_change", { changes: [{ path: "a.py" }] })).kind, "write");
+  assert.deepEqual(classifyToolCall(call("web_search", { query: "guilds" })), {
+    name: "web_search",
+    kind: "read",
+    level: null,
+    server: null,
+  });
 });

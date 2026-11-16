@@ -11,8 +11,6 @@ function modelsWith(attachments: boolean): OrgModels {
       {
         id: "openai/gpt-5",
         model: "gpt-5",
-        kind: "marketplace",
-        coding_only: false,
         label: "GPT-5",
         provider: "openai",
         thinking: true,
@@ -39,6 +37,11 @@ test("the composer says why it takes no images", () => {
     attachmentsNote(undefined, "openai/gpt-5"),
     "Checking whether this model accepts images",
   );
+});
+
+test("a subscription agent's composer takes images, whatever the organisation's models take", () => {
+  assert.equal(attachmentsNote(modelsWith(false), null), undefined);
+  assert.equal(attachmentsNote(undefined, null), undefined);
 });
 
 test("a chat link opens at the call or message sequence it names", () => {

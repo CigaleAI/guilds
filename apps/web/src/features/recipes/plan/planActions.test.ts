@@ -38,7 +38,7 @@ test("browser and external actions name the site and fall back on generic titles
   assert.deepEqual(externalCard(plan.external[0]!), { title: "dns", setup: "Add a TXT record" });
 });
 
-test("a recipe's repositories become a section and steps to connect GitHub and add each", () => {
+test("a recipe's repositories become a section and a step to add each with its URL and credential, and no GitHub step", () => {
   const plan = planFromRecipe({
     ...deskRecipe(),
     roles: [
@@ -46,25 +46,29 @@ test("a recipe's repositories become a section and steps to connect GitHub and a
         role: "dev",
         name_suggestion: "dev",
         focus: "",
-        config: { model: "m", coding: true },
+        config: { harness: "codex", repositories: ["api"] },
         task: { body: "Fix bugs.", embeds: [], author: null },
       },
     ],
     repositories: [{ name: "api", purpose: "The HTTP service." }],
   });
-  assert.equal(plan.agents[0]?.coding, true);
+  assert.equal(plan.agents[0]?.model_source, "subscription");
   assert.deepEqual(plan.repositories, [{ name: "api", purpose: "The HTTP service." }]);
   assert.deepEqual(
     plan.actions
       .filter((action) => action.kind === "repository" || action.server === "github")
       .map((action) => action.title),
-    ["Connect GitHub", "Add the api repository"],
+    ["Add the api repository"],
+  );
+  assert.match(
+    String(plan.actions.find((action) => action.kind === "repository")?.detail),
+    /^The HTTP service\. Add it in the guild's Settings under Repositories, with its HTTPS URL and a credential/,
   );
   const sections = filledPlanSections(plan).map((section) => section.id);
   assert.ok(sections.includes("repositories"));
 });
 
-test("a recipe that connects GitHub itself gets no separate GitHub step", () => {
+test("a recipe that connects GitHub keeps that connection step beside each repository's", () => {
   const plan = planFromRecipe({
     connections: [{ server: "github", setup: "Install the app" }],
     repositories: [{ name: "api" }],

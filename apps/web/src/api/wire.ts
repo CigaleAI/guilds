@@ -16,17 +16,14 @@ import type {
   BrowseArguments,
   BrowserToolArguments,
   BuilderToolArguments,
-  CodeSearchArguments,
-  CodeTaskArguments,
   ConnectorToolArguments,
-  FileReadArguments,
+  FileChangeArguments,
   FileToolArguments,
+  HarnessToolArguments,
   NamedToolArguments,
   NoteToolArguments,
   RecordToolArguments,
   ReportIssueArguments,
-  ShellArguments,
-  ShellStatusArguments,
   StudioToolArguments,
   PendingWake,
   WakeAfterArguments,
@@ -219,29 +216,28 @@ export function isFileToolArguments(value: unknown): value is FileToolArguments 
   return hasTextParameters(value, ["query", "path", "home_path"]);
 }
 
-/** Whether a tool call's arguments are a `shell` call's: its command as text, `background` true or false. */
-export function isShellArguments(value: unknown): value is ShellArguments {
-  return hasTextParameters(value, ["command"]) && isOptionalBoolean(value.background);
+/** Whether a tool call's arguments are those a call of a harness's own tool gives as text, or leaves out. */
+export function isHarnessToolArguments(value: unknown): value is HarnessToolArguments {
+  return hasTextParameters(value, [
+    "command",
+    "file_path",
+    "path",
+    "pattern",
+    "url",
+    "query",
+    "description",
+  ]);
 }
 
-/** Whether a tool call's arguments are a `shell_status` call's: its id as text, `stop` true or false. */
-export function isShellStatusArguments(value: unknown): value is ShellStatusArguments {
-  return hasTextParameters(value, ["id"]) && isOptionalBoolean(value.stop);
-}
-
-/** Whether a tool call's arguments are a `file_read` call's: its path as text, its offset a number. */
-export function isFileReadArguments(value: unknown): value is FileReadArguments {
-  return hasTextParameters(value, ["path"]) && isOptionalNumber(value.offset);
-}
-
-/** Whether a tool call's arguments are a `code_search` call's: its pattern, mode and path, as text. */
-export function isCodeSearchArguments(value: unknown): value is CodeSearchArguments {
-  return hasTextParameters(value, ["pattern", "mode", "path"]);
-}
-
-/** Whether a tool call's arguments are a `code_task` call's: its brief, repository and session, as text. */
-export function isCodeTaskArguments(value: unknown): value is CodeTaskArguments {
-  return hasTextParameters(value, ["brief", "repo", "session_id"]);
+/** Whether a tool call's arguments are a Codex patch's: the files it changed, each a path and how, as text. */
+export function isFileChangeArguments(value: unknown): value is FileChangeArguments {
+  return (
+    isJsonObject(value) &&
+    Array.isArray(value.changes) &&
+    value.changes.every(
+      (change) => hasTextParameters(change, ["path", "kind"]) && isString(change.path),
+    )
+  );
 }
 
 /** Whether a tool call's arguments name its script or secret as text. */

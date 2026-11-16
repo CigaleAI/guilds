@@ -6,15 +6,14 @@ import {
 import { attachmentIdsOf } from "../attachments";
 import { api } from "../client";
 import { agentKeys } from "./agents";
-import type { Run, RunDiff, HarnessLog, RunMessage, NewRun, RunMessageInput } from "../types/runs";
+import type { Run, RunDiff, RunMessage, NewRun, RunMessageInput } from "../types/runs";
 
 /** Query keys of runs. Identity is fixed for the page's life, so keys carry no user or org. */
 export const runKeys = {
   agentRuns: (agentId: string) => ["agent", agentId, "runs"] as const,
   run: (runId: string) => ["run", runId] as const,
-  runDiff: (runId: string, repository: string) => ["run", runId, "diff", repository] as const,
-  taskDiff: (runId: string, callId: string) => ["run", runId, "task-diff", callId] as const,
-  taskLog: (runId: string, callId: string) => ["run", runId, "task-log", callId] as const,
+  turnDiff: (runId: string, callId: string, repository: string) =>
+    ["run", runId, "turn-diff", callId, repository] as const,
   runMessages: (runId: string) => ["run", runId, "messages"] as const,
 };
 
@@ -143,35 +142,15 @@ export function useCancelWake() {
   });
 }
 
-/** The diff a run made in one repository, fetched from the agent's home on demand. */
-export function useRunDiff(runId: string, repository: string | null) {
+/** The diff one turn of a subscription agent's run made in one repository, fetched on demand. */
+export function useTurnDiff(runId: string, callId: string, repository: string | null) {
   return useQuery({
-    queryKey: runKeys.runDiff(runId, repository ?? ""),
+    queryKey: runKeys.turnDiff(runId, callId, repository ?? ""),
     enabled: Boolean(repository),
     staleTime: Infinity,
     queryFn: () =>
-      api<RunDiff>(`${runPath(runId)}/changes/${encodeURIComponent(repository ?? "")}/diff`),
-  });
-}
-
-/** The diff one code task made, between its start and end checkpoints, fetched on demand. */
-export function useTaskDiff(runId: string, callId: string | null) {
-  return useQuery({
-    queryKey: runKeys.taskDiff(runId, callId ?? ""),
-    enabled: Boolean(callId),
-    staleTime: Infinity,
-    queryFn: () => api<RunDiff>(`${runPath(runId)}/tasks/${encodeURIComponent(callId ?? "")}/diff`),
-  });
-}
-
-/** A code task's kept harness log, read from the agent's machine on demand. */
-export function useTaskLog(runId: string, callId: string | null) {
-  return useQuery({
-    queryKey: runKeys.taskLog(runId, callId ?? ""),
-    enabled: Boolean(callId),
-    staleTime: Infinity,
-    retry: false,
-    queryFn: () =>
-      api<HarnessLog>(`${runPath(runId)}/tasks/${encodeURIComponent(callId ?? "")}/log`),
+      api<RunDiff>(
+        `${runPath(runId)}/turns/${encodeURIComponent(callId)}/changes/${encodeURIComponent(repository ?? "")}/diff`,
+      ),
   });
 }

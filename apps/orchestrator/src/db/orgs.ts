@@ -280,13 +280,14 @@ export async function countOrgBrowserAgents(pool: Queryable, orgId: string): Pro
   return result.rows[0]?.count ?? 0;
 }
 
-export async function countOrgCodingAgents(pool: Queryable, orgId: string): Promise<number> {
+/** How many of the organisation's agents run on a subscription: they hold a harness and no model. */
+export async function countOrgSubscriptionAgents(pool: Queryable, orgId: string): Promise<number> {
   const result = await pool.query<{ count: number }>(
     `SELECT COUNT(*)::int AS count
      FROM agents a
      JOIN guilds p ON p.id = a.guild_id
      WHERE p.org_id = $1
-       AND COALESCE((a.config->>'coding')::boolean, FALSE)`,
+       AND a.config->'model' = 'null'::jsonb`,
     [orgId],
   );
   return result.rows[0]?.count ?? 0;

@@ -56,6 +56,11 @@ in the Task show as their inlined bodies, the nested hop included.
   block collapses when the reply starts.
 - A reply cut by `finish_reason: length` says the output token limit
   was reached.
+- A reply that records usage ends with a line of its tokens and its
+  cost, such as **120 tok · $0.0020**, with input, output, and the
+  cache's reads and writes on hover. A subscription agent's reply
+  records its whole turn's tokens and reads **on the subscription** in
+  place of a cost.
 - While the agent generates and nothing has streamed yet, the
   transcript shows the agent's avatar, three pulsing dots, and
   **`<name>` is thinking…**. Once text streams, three pulsing dots sit
@@ -71,13 +76,13 @@ per generation. Its header shows:
   count
 - its time (model and tool time on hover), steps, tool calls, failed
   calls, tokens, and cost: the model replies' cost and the spend of
-  any tool result that records one, such as a `browse` call's
+  any tool result that records one, such as a `browse` call's; a
+  harness turn on the subscription has no price, so it shows none
 - a toolbar
 
 Below the header, the generation reads down a rail as one block per
 model step. Each block sits on a dot. The dot is plum when a call
-failed, pulses while a call runs, and shows the harness's logo for a
-step that ran a code task. A step is reasoning, then calls, and
+failed, and pulses while a call runs. A step is reasoning, then calls, and
 sometimes text the model wrote alongside them. The model's final reply
 has no calls, so it is a bubble after the flow, not a step.
 
@@ -103,8 +108,7 @@ results' spend included. A step cut by
 other than stopping or calling tools is tagged too.
 
 Under the header sits the text the model wrote alongside the calls,
-as muted lines. A folded step shows two lines of plain text and its
-code tasks. An open step adds its name, **Step N**, and shows in
+as muted lines. A folded step shows two lines of plain text. An open step adds its name, **Step N**, and shows in
 order:
 
 - a **thinking** line for its reasoning, folded to its opening line;
@@ -113,9 +117,8 @@ order:
   from one model turn are a batch: their cards, numbered in the order
   they ran, held by one bracket. The calls of a batch run one after
   another, with no model turn between them.
-- its code tasks
 
-Two or more steps in a row with no text and no code task compact into
+Two or more steps in a row with no text compact into
 one block on a stack: **N steps**, with the same cues over all their
 calls. Opening it shows them as step blocks on a rail of their own.
 
@@ -134,8 +137,7 @@ on, starts open.
   flow.
 
 Tracked state is a note, memory, record, collection, or script that a
-call created, edited, or deleted, or source code changed through
-`code_task`. Commands, script runs, posts, schedules, and browser
+call created, edited, or deleted. Commands, script runs, posts, schedules, and browser
 actions are not writes.
 
 ### Tool calls
@@ -149,10 +151,6 @@ place of its result mark.
 - A `note_write`, `memory_write`, or `script_create` call carries a
   chip naming the note, memory, or script it wrote. The chip opens it
   in the agent's State tab.
-- A `shell` call reads **Run**, or **Start** for a background command,
-  and the command's first line, then its exit code when it is not 0.
-- A `file_read` call reads **Read** and the path. A repeated read
-  names the step it points to.
 - A `secret_store` call reads **Stored NAME**. A `secret_request` call
   reads **Asked for NAME**.
 - A `browse` call reads **Browse**, or **Browse from** and its start
@@ -163,27 +161,53 @@ card, such as each step of a `browse` call.
 
 Opening a call expands its card onto its arguments and result. Each
 shows as a folding JSON tree or raw text, with a copy button. Its
-metadata follows: call id, duration, output filter, exit code, the
-full-output log path, the working directory, the file and its lines,
-the step a repeated read points to, stored bytes, and tool calls
-left. The call's kind and level sit beside the views.
-
-### Code tasks
-
-A `code_task` call is its own block in its step. It shows even while
-the step is folded. While it runs, its latest progress lines show
-under its brief. Opening it shows its result, its metadata (status,
-harness, repository, session, diffstat, and log path), and its
-**Diff** ([Code tools](coding/code-tools.md#in-the-app)).
+metadata follows: call id, the harness that called it, duration,
+output filter, exit code, stored bytes, and tool calls left. The call's kind and level sit beside the views.
 
 Progress lines are live only. They stream while the run view is open
 and are not stored, so a reload shows the call without them until the
 result lands.
 
-A run with repository changes ends with a **Changes** panel: each
-repository with its branch and diffstat, and **Show diff**, which
-fetches the run's diff from the agent's machine
+### Changes
+
+A run whose turns changed a repository ends with a **Changes** panel:
+each turn's repositories with their branch and diffstat, and **Show
+diff**, which fetches that turn's diff from the agent's machine
 ([Reviewing changes](coding/reviewing-changes.md)).
+
+### Harness turns
+
+A [subscription agent](agents.md#model-source)'s generation is a turn
+of its harness, and reads like any other: each message the harness
+wrote while it called its own tools is a step, each of those calls is
+a call card with its input and result, and its last message is the
+reply bubble ([Runs](runs.md#harness-turns)). Its rows carry
+`from_harness`. A call of the run's Guilds tools, which the harness
+makes on the orchestrator's MCP server, reads as a model's call of
+that tool does. The run's error banner names a turn that did not end
+cleanly, such as `harness.failed` or `harness.timed_out`.
+
+A call of the harness's own tool reads as what it did, coloured by its
+kind:
+
+| Tool | Reads | Kind |
+| --- | --- | --- |
+| Codex's `command_execution` | **Run** and the command's first line | execute |
+| Codex's `file_change` | **Change** and the file, or the number of files | write |
+| Codex's `web_search` | **Search web** and the query | read |
+| `Bash` | **Run** and the command's first line | execute |
+| `Read` | **Read** and the file | read |
+| `Write`, `Edit`, `MultiEdit` | **Write** or **Edit** and the file | write |
+| `Grep`, `Glob` | **Search lines** or **Search files** and the pattern | read |
+| `LS` | **List** and the path | read |
+| `WebFetch`, `WebSearch` | **Fetch** and the address, or **Search web** and the query | read |
+| `Task` | **Delegate** and its description | execute |
+| `TodoWrite` | **Update todos** | write |
+
+Any other tool reads as its name. A write in the agent's home is not
+tracked state, so it carries no **wrote** tag. Opening the call shows
+its input and its output, which the platform redacted and capped as
+any tool's, and its Metadata names the harness under **Called by**.
 
 ### Errors outside a flow
 
@@ -235,8 +259,7 @@ opens that run and step in Studio's **History**
 ### Live updates
 
 The transcript renders committed rows. Reasoning, text deltas, and
-the progress lines of a running call, such as `code_task` or
-`browse`, stream over the run's SSE stream before
+the progress lines of a running `browse` call stream over the run's SSE stream before
 their row lands ([Runs](runs.md#streaming)). On reconnect the view
 reloads the ordered history, then consumes new events.
 

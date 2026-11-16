@@ -13,7 +13,7 @@ import {
 import { useOrgModels } from "../../../api/queries/models";
 import { useRunStream } from "../../../api/streams";
 import { progressLineCount } from "../../../api/toolProgress";
-import type { AgentDetail } from "../../../api/types/agents";
+import type { AgentConfig, AgentDetail } from "../../../api/types/agents";
 import type { OrgModels } from "../../../api/types/models";
 import type { LiveTurn } from "../../../api/liveTurn";
 import type { ToolProgress } from "../../../api/toolProgress";
@@ -43,8 +43,15 @@ import { runIsCapped, runTitle } from "../runState";
 
 const bottomSlack = 64;
 
-/** Why the composer takes no images with this model; undefined when the model takes them. */
-export function attachmentsNote(models: OrgModels | undefined, model: string): string | undefined {
+/**
+ * Why the composer takes no images with this model; undefined when the model takes them. A
+ * subscription agent, with no model, takes them: its harness reads each one as a file.
+ */
+export function attachmentsNote(
+  models: OrgModels | undefined,
+  model: AgentConfig["model"],
+): string | undefined {
+  if (model === null) return undefined;
   const listed = models?.models.find((item) => item.id === model);
   if (listed?.attachments === true) return undefined;
   if (!models) return "Checking whether this model accepts images";
@@ -156,28 +163,11 @@ type SessionEndProps = {
 };
 
 /**
- * How an ended session goes on: in the run it handed over to, by resuming it, or in a new
- * session once it reached its limit; nothing while it is active.
+ * How an ended session goes on: by resuming it, or in a new session once it reached its limit;
+ * nothing while it is active.
  */
 function SessionEnd({ run, resuming, onResume, onSelect }: SessionEndProps) {
   if (run.status === "active") return null;
-  const continuedIn = run.continued_by_run_id ?? null;
-  if (continuedIn) {
-    return (
-      <Banner
-        tone="info"
-        title="This session continued in a new run"
-        className="mx-auto w-full max-w-240"
-        action={
-          <Button variant="outline" size="sm" onClick={() => onSelect(continuedIn)}>
-            Open it
-          </Button>
-        }
-      >
-        The agent handed its work over near its input limit; the next run picks it up.
-      </Banner>
-    );
-  }
   const canResume = !runIsCapped(run);
   return (
     <Banner
@@ -295,7 +285,7 @@ export function AgentChat() {
   const log = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
-  const { live, progress } = useRunStream(agentId, runId, (next) => selectRun(next));
+  const { live, progress } = useRunStream(agentId, runId);
   const progressLines = progressLineCount(progress);
 
   useLayoutEffect(() => {

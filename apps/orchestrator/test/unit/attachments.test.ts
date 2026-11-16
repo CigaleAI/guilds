@@ -70,7 +70,7 @@ test("hydrateMessages turns stored refs into image_url parts without writing byt
   assert.equal(JSON.stringify(rows[0]?.payload), JSON.stringify({ role: "user", content: "look" }));
 });
 
-test("hydrateMessages inlines images when the provider refuses public URLs", async () => {
+test("hydrateMessages signs each image's URL, and inlines the image when the store signs none", async () => {
   const store: BlobStore = {
     async put() {},
     async get() {
@@ -93,7 +93,7 @@ test("hydrateMessages inlines images when the provider refuses public URLs", asy
   const signedUrl = ((signed?.content as Array<Record<string, unknown>>)[1]?.image_url as { url: string })
     .url;
   assert.equal(signedUrl, "https://signed.example/shot.png");
-  const [inline] = await hydrateMessages(rows, store, "org_1", { inlineImages: true });
+  const [inline] = await hydrateMessages(rows, { ...store, signedReadUrl: async () => null }, "org_1");
   const inlineUrl = ((inline?.content as Array<Record<string, unknown>>)[1]?.image_url as { url: string })
     .url;
   assert.match(inlineUrl, /^data:image\/png;base64,/);
@@ -156,22 +156,22 @@ test("AttachmentService uploads and resolves only for models that accept images"
     bytes: PNG,
   });
   assert.equal(uploaded.mime, "image/png");
-  const refs = await service.resolveForMessage({
-    orgId: "org_1",
-    model: "deepinfra/zai-org/GLM-5.3-Flash",
-    ids: [uploaded.id],
-  });
+  const refs = await service.resolveForModel("org_1", "deepinfra/zai-org/GLM-5.3-Flash", [uploaded.id]);
   assert.deepEqual(refs, [
     { id: uploaded.id, filename: "shot.png", mime: "image/png", kind: "image" },
   ]);
   await assert.rejects(
-    () =>
-      service.resolveForMessage({
-        orgId: "org_1",
-        model: "deepinfra/Qwen/Qwen3.8-2.4T-A95B",
-        ids: [uploaded.id],
-      }),
+    () => service.resolveForModel("org_1", "deepinfra/Qwen/Qwen3.8-2.4T-A95B", [uploaded.id]),
     (error: unknown) =>
       error instanceof AttachmentError && /does not accept attachments/.test(error.message),
+  );
+  assert.deepEqual(await service.resolveUploads("org_1", [uploaded.id]), refs, "uploads resolve without a model");
+  await assert.rejects(
+    () => service.resolveUploads("org_1", [uploaded.id, uploaded.id]),
+    (error: unknown) => error instanceof AttachmentError && /must not repeat/.test(error.message),
+  );
+  await assert.rejects(
+    () => service.resolveUploads("org_2", [uploaded.id]),
+    (error: unknown) => error instanceof AttachmentError && error.status === 404,
   );
 });

@@ -130,8 +130,7 @@ test("a local endpoint without an address is refused", () => {
   assert.throws(() => fastbrowseEnv("ts-key", "local/qwen3", { apiKey: "" }), BrowseModelError);
 });
 
-test("a coding-only model and an id without a known provider are refused", () => {
-  assert.throws(() => fastbrowseEnv("ts-key", "kimi/kimi-for-coding", { apiKey: "k" }), /Kimi Code models cannot run/);
+test("an id without a known provider is refused", () => {
   assert.throws(() => fastbrowseEnv("ts-key", "acme/model", { apiKey: "k" }), BrowseModelError);
   assert.throws(() => fastbrowseEnv("ts-key", "no-provider", { apiKey: "k" }), BrowseModelError);
 });

@@ -106,7 +106,7 @@ function NewSessionForm({ guilds, models, guildId, link, onGuildChange }: NewSes
   const [temperature, setTemperature] = useState("0.2");
 
   const chosenGuild = guildId || guilds?.[0]?.id || "";
-  const chosenModel = model || preselectedModel(models, { marketplaceOnly: true });
+  const chosenModel = model || preselectedModel(models);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -145,7 +145,7 @@ function NewSessionForm({ guilds, models, guildId, link, onGuildChange }: NewSes
           placeholder="Choose a model"
           value={chosenModel}
           onValueChange={setModel}
-          options={modelOptions(models, { current: chosenModel, marketplaceOnly: true })}
+          options={modelOptions(models, { current: chosenModel })}
         />
         <TextField
           tone="paper"

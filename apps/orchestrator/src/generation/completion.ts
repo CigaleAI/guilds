@@ -62,6 +62,9 @@ export type ModelCompletionServices = {
   attachments: AttachmentService | null;
 };
 
+/** A run's snapshot as the model loop reads it: the snapshot of a run on a model on a key, with that model. */
+export type KeyRunConfigSnapshot = RunConfigSnapshot & { model: string };
+
 /** One call of the model: the history it is sent, the tools it is offered, and the settings from the run's snapshot. */
 export type CompletionRequest = Omit<ModelRequest, "tools" | "tool_choice"> & { tools: FunctionTool[] | null };
 
@@ -72,13 +75,13 @@ export type ModelHistory = {
 };
 
 /** The input tokens the run's history takes with the schemas it is offered. */
-export function historyTokens(snapshot: RunConfigSnapshot, history: ModelHistory, schemas: FunctionTool[]): number {
+export function historyTokens(snapshot: KeyRunConfigSnapshot, history: ModelHistory, schemas: FunctionTool[]): number {
   return countRunInputTokens(snapshot.model, history.rows, schemas.length ? schemas : null, countInputTokensImpl);
 }
 
 /** A model call with the settings of the run's snapshot. */
 export function completionRequest(
-  snapshot: RunConfigSnapshot,
+  snapshot: KeyRunConfigSnapshot,
   messages: ModelMessage[],
   schemas: FunctionTool[],
 ): CompletionRequest {
@@ -152,7 +155,7 @@ export class ModelCompletion {
   async modelHistory(
     turn: RunGeneration,
     agent: AgentRow | null,
-    snapshot: RunConfigSnapshot,
+    snapshot: KeyRunConfigSnapshot,
     schemas: FunctionTool[],
   ): Promise<ModelHistory> {
     const listed = await this.services.db.listMessages(turn.runId);
@@ -181,7 +184,7 @@ export class ModelCompletion {
     }
     return {
       rows,
-      payloads: await attachments.projectMessages(agent?.org_id ?? "", rows, agent?.config.model ?? ""),
+      payloads: await attachments.projectMessages(agent?.org_id ?? "", rows),
     };
   }
 

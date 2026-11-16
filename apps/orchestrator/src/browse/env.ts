@@ -89,9 +89,6 @@ export function fastbrowseEnv(jevKey: string, model: string, credentials: ModelC
     throw new BrowseModelError("browser_model must be {provider}/{model}");
   }
   const { provider } = parsed;
-  if (provider.kind === "coding") {
-    throw new BrowseModelError(`${provider.label} models cannot run the agent-optimized browser`);
-  }
   const env: FastbrowseEnv = {
     ...FASTBROWSE_PINNED_ENV,
     TYPESAFE_API_KEY: jevKey,

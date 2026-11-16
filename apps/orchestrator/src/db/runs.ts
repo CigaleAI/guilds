@@ -55,7 +55,6 @@ export type NewDirectRun = {
   systemPromptHash: string;
   taskPromptHash: string;
   memoryPromptHash: string;
-  extraMessages?: RunMessage[] | undefined;
   runMetadata?: Run["metadata"] | undefined;
   userMetadata?: MessageMetadata | undefined;
   startedByUserId?: string | null | undefined;
@@ -284,7 +283,7 @@ export async function insertRun(pool: Queryable, run: NewRun, now: Date): Promis
 }
 
 export async function createRun(pool: Queryable, run: NewDirectRun, now: Date): Promise<void> {
-  const opening = [...(run.extraMessages ?? [])];
+  const opening: RunMessage[] = [];
   if (run.userContent !== null) {
     opening.push([
       { role: "user", content: run.userContent },
@@ -414,21 +413,6 @@ export async function listMessages(pool: Queryable, runId: string): Promise<Mess
     [runId],
   );
   return result.rows;
-}
-
-/** The metadata of a run's result for one tool call, or null when the call has no result. */
-export async function getToolResultMetadata(
-  pool: Queryable,
-  runId: string,
-  toolCallId: string,
-): Promise<MessageMetadata | null> {
-  const result = await pool.query<Pick<MessageRow, "metadata">>(
-    `SELECT metadata FROM messages
-     WHERE run_id = $1 AND payload->>'role' = 'tool' AND metadata->>'tool_call_id' = $2
-     ORDER BY seq LIMIT 1`,
-    [runId, toolCallId],
-  );
-  return result.rows[0]?.metadata ?? null;
 }
 
 export async function listPayloads(pool: Queryable, runId: string): Promise<MessagePayload[]> {

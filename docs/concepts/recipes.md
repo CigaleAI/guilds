@@ -59,7 +59,7 @@ A recipe carries the design of a guild:
 - seed notes the Tasks rely on, with who may read and write them
 - the tools and connectors each role may use
 - the secrets each role needs, by name only
-- the repositories coding roles work in, by name only
+- the repositories subscription roles work in, by name only
 - setup steps the operator does outside the platform
 
 It never carries credentials, Memory, collection records, browser
@@ -142,8 +142,8 @@ Below the header is the plan: everything the recipe creates and needs.
   icon when the checks flag the agent's routines; its hover gives the
   coach's advice.
 - A **Capabilities** row lists **Browser**, whose hover gives the
-  login step and notes, and **Coding**, with the
-  [harness](coding/harnesses.md) the role names, or *no harness yet*.
+  login step and notes, and **Subscription** for a subscription role,
+  with the [harness](coding/harnesses.md) the role names.
 - Each agent's **Task** folds open. It has a copy button and
   **Edit Task**, which lets you rewrite it and **Save Task**. Each
   script folds open under it.
@@ -202,16 +202,16 @@ What capture writes:
   `max_scripts`, `max_scripts` is raised to the number of scripts.
 - `config.browser` travels, plus empty login instructions. The
   Chromium profile does not.
-- `config.coding` travels. `config.harness` travels as it is; an agent
-  without one leaves the key out. `config.harness_model` travels the
+- `config.harness` travels as it is; an agent without one leaves the
+  key out, and a subscription agent's role carries no `config.model`. `config.harness_model` travels the
   same way; an agent on its harness's default model leaves the key
   out, and `config.harness_effort` likewise on the default effort.
   `config.secret_aliases` travels the same way; an agent without
   an alias leaves the key out. `config.keep_tool_result_generations`
   travels the same way; an agent that takes its guild's leaves the key
   out, and the applied agent takes its new guild's.
-- A harness subscription token stays behind. On a coding agent, the
-  aliases of the harness token variables (`CLAUDE_CODE_OAUTH_TOKEN`,
+- A harness subscription token stays behind. On a subscription agent,
+  the aliases of the harness token variables (`CLAUDE_CODE_OAUTH_TOKEN`,
   `CURSOR_API_KEY`) are left out, and so are the secrets those
   variables read, unless another role gets the same secret for its
   own use. The `harness.credential` finding names the token to set up
@@ -232,8 +232,10 @@ What capture writes:
   `agent`. A server the organisation added of its own carries its
   manifest whole, so a box that lacks it can add it.
 - The guild's repositories are captured by name with an empty
-  `purpose`. Their URLs, branches, and GitHub connections stay with
-  the guild.
+  `purpose`, followed by each other repository an agent picks, such as
+  one picked on a GitHub login. Their URLs, branches, and GitHub
+  connections stay with the guild. Each subscription role's
+  `config.repositories` is the list its agent picks, in its order.
 - The guild's own collections are written as `scope: "guild"`.
 - Every organisation collection the guild reaches is written as
   `scope: "org"`: the organisation's row, the guild's row, or a row of

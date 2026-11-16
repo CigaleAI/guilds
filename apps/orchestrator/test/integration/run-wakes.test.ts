@@ -10,7 +10,6 @@ import {
   getPendingRunWake,
   listDueRunWakes,
   markRunWakeFired,
-  movePendingRunWake,
   setRunWake,
   type NewRunWake,
 } from "../../src/db/wakes.js";
@@ -65,11 +64,10 @@ async function addRun(): Promise<string> {
   return runId;
 }
 
-function wakeFor(runId: string, minutes: number, rootRunId = runId): NewRunWake {
+function wakeFor(runId: string, minutes: number): NewRunWake {
   return {
     wakeId: newId("wk"),
     runId,
-    rootRunId,
     agentId: "a_waker",
     dueAt: new Date(NOW.getTime() + minutes * MINUTE),
     message: `check after ${minutes} minutes`,
@@ -121,8 +119,8 @@ describe("run wakes", { concurrency: 1 }, () => {
     await setRunWake(database.pool, wakeFor(runId, 10), NOW);
     await assert.rejects(
       database.pool.query(
-        `INSERT INTO run_wakes (id, run_id, root_run_id, agent_id, due_at, state, set_tool_call_id, created_at)
-         VALUES ($1, $2, $2, 'a_waker', $3, 'pending', 'call_x', $3)`,
+        `INSERT INTO run_wakes (id, run_id, agent_id, due_at, state, set_tool_call_id, created_at)
+         VALUES ($1, $2, 'a_waker', $3, 'pending', 'call_x', $3)`,
         [newId("wk"), runId, NOW.toISOString()],
       ),
       isUniqueViolation,
@@ -133,8 +131,8 @@ describe("run wakes", { concurrency: 1 }, () => {
     const runId = await addRun();
     const insert = (state: string, reason: string | null, firedAt: string | null) =>
       database.pool.query(
-        `INSERT INTO run_wakes (id, run_id, root_run_id, agent_id, due_at, state, cancel_reason, set_tool_call_id, created_at, fired_at)
-         VALUES ($1, $2, $2, 'a_waker', $3, $4, $5, 'call_x', $3, $6)`,
+        `INSERT INTO run_wakes (id, run_id, agent_id, due_at, state, cancel_reason, set_tool_call_id, created_at, fired_at)
+         VALUES ($1, $2, 'a_waker', $3, $4, $5, 'call_x', $3, $6)`,
         [newId("wk"), runId, NOW.toISOString(), state, reason, firedAt],
       );
     await assert.rejects(insert("pending", "agent", null), /run_wakes_cancelled_has_reason/);
@@ -193,33 +191,18 @@ describe("run wakes", { concurrency: 1 }, () => {
     assert.equal(await markRunWakeFired(database.pool, set.wake.id, NOW), null);
   });
 
-  test("moves the pending wake-up to the continuation keeping its chain", async () => {
-    const [previous, continuation] = [await addRun(), await addRun()];
-    const set = await setRunWake(database.pool, wakeFor(previous, 10), NOW);
-    const moved = await movePendingRunWake(database.pool, previous, continuation);
-    assert.equal(moved?.id, set.wake.id);
-    assert.equal(moved?.run_id, continuation);
-    assert.equal(moved?.root_run_id, previous);
-    assert.equal(await getPendingRunWake(database.pool, previous), null);
-    assert.equal((await getPendingRunWake(database.pool, continuation))?.id, set.wake.id);
-    assert.equal(await movePendingRunWake(database.pool, previous, continuation), null);
-  });
-
-  test("counts fired wake-ups across a chain and not replaced or cancelled ones", async () => {
-    const [root, continuation, other] = [await addRun(), await addRun(), await addRun()];
-    const first = await setRunWake(database.pool, wakeFor(root, 0), NOW);
+  test("counts the run's fired wake-ups and not replaced or cancelled ones", async () => {
+    const [runId, other] = [await addRun(), await addRun()];
+    const first = await setRunWake(database.pool, wakeFor(runId, 0), NOW);
     await markRunWakeFired(database.pool, first.wake.id, NOW);
-    await setRunWake(database.pool, wakeFor(root, 5), NOW);
-    await setRunWake(database.pool, wakeFor(root, 6), NOW);
-    await movePendingRunWake(database.pool, root, continuation);
-    const moved = await getPendingRunWake(database.pool, continuation);
-    assert.ok(moved);
-    await markRunWakeFired(database.pool, moved.id, NOW);
-    await setRunWake(database.pool, wakeFor(continuation, 9, root), NOW);
-    await cancelRunWake(database.pool, continuation, "agent");
+    await setRunWake(database.pool, wakeFor(runId, 5), NOW);
+    const second = await setRunWake(database.pool, wakeFor(runId, 6), NOW);
+    await markRunWakeFired(database.pool, second.wake.id, NOW);
+    await setRunWake(database.pool, wakeFor(runId, 9), NOW);
+    await cancelRunWake(database.pool, runId, "agent");
     const elsewhere = await setRunWake(database.pool, wakeFor(other, 0), NOW);
     await markRunWakeFired(database.pool, elsewhere.wake.id, NOW);
-    assert.equal(await countFiredRunWakes(database.pool, root), 2);
+    assert.equal(await countFiredRunWakes(database.pool, runId), 2);
     assert.equal(await countFiredRunWakes(database.pool, newId("run")), 0);
   });
 

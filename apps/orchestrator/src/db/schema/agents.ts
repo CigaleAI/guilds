@@ -36,7 +36,7 @@ export type WakeWindow = {
   max_wakes: number;
 };
 
-/** The coding harnesses a coding agent delegates code work to. */
+/** The coding harnesses a subscription agent runs every turn on. */
 export const HARNESSES = ["claude-code", "codex", "cursor", "antigravity"] as const;
 export type Harness = (typeof HARNESSES)[number];
 
@@ -53,7 +53,8 @@ export type HarnessLogins = Partial<Record<Harness, HarnessLogin>>;
 
 /** An agent's settings, as `agents.config` stores them: every key present. */
 export type AgentConfig = {
-  model: string;
+  /** The `{provider}/{model}` the agent's turns run on, on a key of its organisation; null for a subscription agent. */
+  model: string | null;
   temperature: number;
   max_tokens: number;
   max_steps: number;
@@ -61,6 +62,8 @@ export type AgentConfig = {
   max_input_tokens: number;
   /** The most wake-ups a run may fire. */
   max_wake_ups: number;
+  /** How many minutes one turn of a subscription agent's harness runs before it is stopped. */
+  max_turn_minutes: number;
   /**
    * How many user turns, including the current one, keep full tool results in the model prompt;
    * null takes the guild's `keep_tool_result_generations`.
@@ -74,12 +77,18 @@ export type AgentConfig = {
   browser_optimized: boolean;
   /** The `{provider}/{model}` the agent-optimized browser plans and reads with; null unless `browser_optimized`. */
   browser_model: string | null;
-  coding: boolean;
+  /** The harness a subscription agent runs every turn on; null for an agent on a key. */
   harness: Harness | null;
   /** The model the harness runs; null leaves it to the harness's subscription. */
   harness_model: string | null;
   /** The effort the harness runs its model at; null leaves it to the harness. */
   harness_effort: Effort | null;
+  /**
+   * The repositories a subscription agent works on, by name, in this order: each one the agent
+   * can use (its guild's, or one picked on the GitHub login it clones with). Empty on an agent on a
+   * key.
+   */
+  repositories: string[];
   /**
    * Variable names the agent's commands see beside the secrets reaching it, each holding the
    * value of the secret it names: `{ CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" }`. An alias wins over
@@ -90,6 +99,17 @@ export type AgentConfig = {
   memory: boolean;
   thinking_level: ThinkingLevel;
 };
+
+/**
+ * Where an agent's turns run: a model on one of its organisation's keys, or its harness on the
+ * operator's own subscription. A subscription agent stores no model.
+ */
+export type ModelSource = { kind: "key"; model: string } | { kind: "subscription" };
+
+/** The model source an agent's config, or a run's snapshot of it, states: a subscription when it has no model. */
+export function modelSourceOf(config: Pick<AgentConfig, "model">): ModelSource {
+  return config.model === null ? { kind: "subscription" } : { kind: "key", model: config.model };
+}
 
 /** The settings an agent's runs take: its config with every setting it leaves to its guild taken from the guild. */
 export type ResolvedAgentConfig = Omit<AgentConfig, "keep_tool_result_generations"> & {
@@ -116,11 +136,13 @@ export type RunScriptSnapshot = {
 };
 
 /**
- * `runs.config_snapshot`: the settings a run is created with, the tools it is offered
- * (each an OpenAI function schema, passed to the model as is), the connections and secrets it
- * reaches, and the scripts it pins.
+ * `runs.config_snapshot`: the settings a run is created with, whose `model` states its model
+ * source as `modelSourceOf` reads it, the tools it is offered (each an OpenAI function schema,
+ * passed to the model as is), the connections and secrets it reaches, and the scripts it pins.
+ * A subscription agent's turn reads its repositories from its agent when it starts, as it reads
+ * the guild's.
  */
-export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib"> & {
+export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib" | "repositories"> & {
   projection_policy_version: number;
   database: boolean;
   tools: FunctionTool[];
@@ -138,12 +160,12 @@ export type RunError = {
   message: string;
 };
 
-/** Where a run sits in a chain of hand-offs: the chain's first run, its index, and the run it continues. */
-export type RunChain = { root_run_id: string; index: number; previous_run_id: string };
-
 const NullableString = Type.Union([Type.String(), Type.Null()]);
 
-/** One repository's change over a coding run, as the end checkpoint reports it: its checkpoints and their diffstat. */
+/**
+ * One repository's change over one turn of a subscription agent's run, as the turn's end
+ * checkpoint reports it: its checkpoints and their diffstat.
+ */
 export const RunRepositoryChangeSchema = Type.Object({
   name: Type.String(),
   branch: NullableString,
@@ -156,11 +178,19 @@ export const RunRepositoryChangeSchema = Type.Object({
 });
 export type RunRepositoryChange = Static<typeof RunRepositoryChangeSchema>;
 
-/** The `code_task` call a run last started a harness turn for, to recover it when the call is lost. */
-export type RunHarnessTask = {
+/**
+ * What one turn of a subscription agent's run changed in its repositories: the call id its
+ * checkpoints are kept under, its generation, and each repository it changed.
+ */
+export type RunTurnChange = { call_id: string; generation: number; repos: RunRepositoryChange[] };
+
+/**
+ * A subscription agent's run's latest turn on its harness: the call id its state and log are
+ * kept under, the harness, the session the run's next turn resumes, and the log.
+ */
+export type RunHarnessTurn = {
   call_id: string;
   harness: Harness;
-  repository: string;
   session_id: string | null;
   log_path: string;
 };
@@ -219,11 +249,10 @@ export type RunMetadata = {
   task_source?: RunTaskSource;
   typesafe?: RunTypesafe;
   instruction_hash?: string;
-  chain?: RunChain;
-  continued_by_run_id?: string;
-  repos?: RunRepositoryChange[];
+  /** What each turn of a subscription agent's run changed, in order; a turn that changed nothing has no entry. */
+  turn_changes?: RunTurnChange[];
   host_id?: string;
-  harness_task?: RunHarnessTask;
+  harness_turn?: RunHarnessTurn;
   resumed_at?: string;
   /** The generation a wake-up reopened the completed run for; the run completes again when it ends. */
   wake_reopened_generation?: number;
@@ -468,7 +497,6 @@ export const runWakes = pgTable(
   {
     id: text("id").primaryKey(),
     run_id: text("run_id").notNull(),
-    root_run_id: text("root_run_id").notNull(),
     agent_id: text("agent_id").notNull(),
     due_at: timestamptz("due_at").notNull(),
     message: text("message"),
@@ -506,7 +534,7 @@ export const runWakes = pgTable(
       .on(table.run_id)
       .where(sql`${table.state} = 'pending'`),
     index("run_wakes_due").on(table.due_at).where(sql`${table.state} = 'pending'`),
-    index("run_wakes_by_root").on(table.root_run_id, table.state),
+    index("run_wakes_by_run").on(table.run_id, table.state),
   ],
 );
 

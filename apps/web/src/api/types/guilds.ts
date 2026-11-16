@@ -33,24 +33,48 @@ export type Guild = {
   keep_tool_result_generations: number;
 };
 
-/** A git repository of a guild, cloned into each coding agent's workspace. */
+/**
+ * How a repository's token is minted: through its GitHub login, or from the secret that holds its
+ * access token; null clones it without credentials.
+ */
+export type RepositoryProvider = "github" | "access_token" | null;
+
+/** A git repository of a guild, cloned into the workspace of each coding agent that picks it. */
 export type GuildRepository = {
   id: string;
   guild_id: string;
   name: string;
   url: string;
   default_branch: string;
+  provider: RepositoryProvider;
   connection_id: string | null;
   connection: { id: string; status: McpConnectionStatus | null; account_hint: string } | null;
+  /** The secret holding an access-token repository's token, and the username git sends with it. */
+  secret_id: string | null;
+  username: string | null;
+  secret: { id: string; name: string } | null;
   created_at: string;
   updated_at: string;
 };
 
+/**
+ * `GET /api/guilds/:id/repositories`: the guild's repositories, the GitHub logins they may be added
+ * with, and the names of the repositories a new coding agent of the guild can use.
+ */
+export type GuildRepositoryView = {
+  repositories: GuildRepository[];
+  github_connections: GithubLogin[];
+  usable: string[];
+};
+
+/** A repository to add: its URL and at most one credential, a GitHub login or an access token's secret and username. */
 export type RepositoryInput = {
   name: string;
   url: string;
   default_branch?: string;
   connection_id?: string;
+  secret_id?: string;
+  username?: string;
 };
 
 /** A GitHub login a guild may use when adding repositories. */

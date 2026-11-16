@@ -5,10 +5,12 @@ import { test } from "node:test";
 import { EMPTY_MEMORY } from "../../src/artifacts/memory.js";
 import { renderMemorySection } from "../../src/memory/index.js";
 import {
+  OWN_TOOL_NAMES,
   PromptError,
   STATE_INTRO,
   TASK_INTRO,
   composeSystemPrompt,
+  nameTools,
   formatStateRoster,
   hydratePrompts,
   promptHash,
@@ -140,7 +142,7 @@ test("hydrate compose is exact against the R0 fixture", () => {
   assert.equal(task, "Do the work.\n");
   assert.equal(composed, loadTextFixture("prompts/compose.txt"));
   assert.equal(promptHash(composed), hashes.composed);
-  assert.equal(hashes.task_intro_present, composed.includes(TASK_INTRO));
+  assert.equal(hashes.task_intro_present, composed.includes(nameTools(TASK_INTRO, OWN_TOOL_NAMES)));
   assert.equal(hashes.state_intro_present, composed.includes(STATE_INTRO));
 });
 
@@ -157,7 +159,7 @@ test("system template explains special messages", () => {
   assert.ok(text.includes("asking another agent for help"));
   assert.ok(text.includes("asking another agent a question"));
   assert.ok(text.includes("talking with an operator"));
-  assert.ok(text.includes("Call `report_issue` when"));
+  assert.ok(text.includes("Call `<tool>report_issue</tool>` when"));
   assert.ok(text.includes("compare the requested action with your Task"));
   assert.ok(text.includes("Work products stay in their canonical artifact"));
   assert.ok(text.includes("ELI5"));
@@ -204,7 +206,6 @@ test("standing omits script and note guides when those capabilities are off", ()
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
   });
   assert.ok(!off.includes("A script is the only way to execute code"));
   assert.ok(!off.includes("display paths returned by note tools"));
@@ -213,37 +214,11 @@ test("standing omits script and note guides when those capabilities are off", ()
     scripts: true,
     notes: true,
     browser: true,
-    coding: false,
   });
   assert.ok(on.includes("A script is the only way to execute code"));
   assert.ok(on.includes("display paths returned by note tools"));
   assert.ok(!on.includes("code_task"));
   assert.ok(!on.includes("<capability"));
-});
-
-test("the coding block replaces the scripts-only line for coding agents", () => {
-  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
-  const coding = standingForCapabilities(text, {
-    scripts: true,
-    notes: true,
-    browser: false,
-    coding: true,
-  });
-  assert.ok(coding.includes("code_task"));
-  assert.ok(coding.includes("agent/<your name>/<topic>"));
-  assert.ok(!coding.includes("file_edit"));
-  assert.ok(coding.includes("run one-off commands with `shell`"));
-  assert.ok(!coding.includes("A script is the only way to execute code"));
-  assert.ok(!coding.includes("<capability"));
-  const noScripts = standingForCapabilities(text, {
-    scripts: false,
-    notes: false,
-    browser: false,
-    coding: true,
-  });
-  assert.ok(noScripts.includes("code_task"));
-  assert.ok(!noScripts.includes("A script is reusable Python"));
-  assert.ok(!noScripts.includes("<capability"));
 });
 
 test("standing omits memory guides when memory is off", () => {
@@ -252,7 +227,6 @@ test("standing omits memory guides when memory is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     memory: false,
   });
   assert.ok(!off.includes("memory_write"));
@@ -264,7 +238,6 @@ test("standing omits memory guides when memory is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     memory: true,
   });
   assert.ok(on.includes("memory_write"));
@@ -274,7 +247,6 @@ test("standing omits memory guides when memory is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     memory: true,
     memoryWrite: false,
   });
@@ -289,7 +261,6 @@ test("compose omits the memory section when memory is off", () => {
     scripts: true,
     notes: true,
     browser: false,
-    coding: false,
     memory: false,
   };
   const composed = composeSystemPrompt(
@@ -304,7 +275,7 @@ test("compose omits the memory section when memory is off", () => {
   assert.ok(composed.includes("<task>"));
   assert.equal(
     taskIntroForCapabilities(caps),
-    TASK_INTRO.replace("; it is not yours to edit with memory_write", ""),
+    TASK_INTRO.replace("; it is not yours to edit with <tool>memory_write</tool>", ""),
   );
   assert.equal(taskIntroForCapabilities({ ...caps, memory: true }), TASK_INTRO);
 });
@@ -314,7 +285,6 @@ test("compose keeps memory but omits memory_write when the write tool is off", (
     scripts: true,
     notes: true,
     browser: false,
-    coding: false,
     memory: true,
     memoryWrite: false,
   };
@@ -330,7 +300,7 @@ test("compose keeps memory but omits memory_write when the write tool is off", (
   assert.ok(composed.includes("private place for whatever"));
   assert.equal(
     taskIntroForCapabilities(caps),
-    TASK_INTRO.replace("; it is not yours to edit with memory_write", ""),
+    TASK_INTRO.replace("; it is not yours to edit with <tool>memory_write</tool>", ""),
   );
 });
 
@@ -339,7 +309,6 @@ test("state intro omits the scripts line when scripting is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
   });
   assert.ok(off.includes("Call listing tools later"));
   assert.ok(!off.includes("note_find"));
@@ -350,9 +319,123 @@ test("state intro omits the scripts line when scripting is off", () => {
     notes: true,
     files: true,
     browser: true,
-    coding: false,
   });
   assert.equal(on, STATE_INTRO);
+});
+
+test("a run that offers no tool drops the tool budget and every part on a tool it does not offer", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const bare = standingForCapabilities(text, {
+    scripts: false,
+    notes: false,
+    browser: false,
+    memory: true,
+    memoryWrite: false,
+    tools: false,
+    artifacts: false,
+    groupPost: false,
+    schedules: false,
+    issues: false,
+  });
+  for (const gone of [
+    "remaining_tool_calls",
+    "max_tool_calls",
+    "listing tools",
+    "Call only the tools",
+    "memory_write",
+    "one canonical home",
+    "Use collections for structured records",
+    "It is only for coordination",
+    "decide who to tag",
+    "tag the agent",
+    "Schedule wake-up:",
+    "report_issue",
+    "`shell`",
+    "A script",
+    "code_task",
+    "<capability",
+  ]) {
+    assert.ok(!bare.includes(gone), gone);
+  }
+  assert.ok(bare.includes("Use it as your initial context."));
+  assert.ok(bare.includes("do the part your domain owns. When those fields are empty"));
+  assert.ok(bare.includes("Group Chat info:"), "a group run's opening message is still explained");
+  assert.ok(!bare.includes("$GUILDS_PORTS"), "the harness part is for a subscription agent");
+});
+
+test("a key agent without group_post, schedules, or report_issue loses only those parts", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const caps = { scripts: false, notes: true, browser: false };
+  const all = standingForCapabilities(text, caps);
+  const without = standingForCapabilities(text, { ...caps, groupPost: false, schedules: false, issues: false });
+  assert.ok(all.includes("It is only for coordination") && !without.includes("It is only for coordination"));
+  assert.ok(all.includes("Schedule wake-up:") && !without.includes("Schedule wake-up:"));
+  assert.ok(all.includes("Call `<tool>report_issue</tool>`") && !without.includes("report_issue"));
+  assert.ok(without.includes("remaining_tool_calls: N"));
+  assert.ok(without.includes("one canonical home"));
+});
+
+test("a subscription agent's harness reads where it runs, its home, and its ports", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const harness = standingForCapabilities(text, {
+    scripts: false,
+    notes: false,
+    browser: false,
+    tools: false,
+    artifacts: false,
+    groupPost: false,
+    schedules: false,
+    issues: false,
+    harness: true,
+  });
+  assert.ok(harness.includes("in your own Linux container, as root, with\nyour own tools"));
+  assert.ok(harness.includes("Your home (`$HOME`) stays between runs"));
+  assert.ok(harness.includes("Your turn\n  starts in it."), "without repositories the turn starts in the home");
+  assert.ok(harness.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
+  assert.ok(harness.includes("Never print their values"));
+  assert.ok(!harness.includes("code_task"));
+  assert.ok(!harness.includes("State `repositories` lists"), "the repositories part is for an agent that has some");
+  assert.ok(!harness.includes("<capability"));
+});
+
+const HARNESS_CAPS = {
+  scripts: false,
+  notes: false,
+  browser: false,
+  tools: true,
+  harness: true,
+  repositories: true,
+  toolNaming: { prefix: "mcp__guilds__" },
+};
+
+test("a subscription agent with repositories reads where they are, how it branches, commits and pushes, and the tool that opens a pull request", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const standing = standingForCapabilities(text, { ...HARNESS_CAPS, pullRequestTool: "github_create_pull_request" });
+  assert.ok(standing.includes("You work in the git repositories State `repositories` lists"));
+  assert.ok(standing.includes("named `agent/<your name>/<topic>`"));
+  assert.ok(standing.includes("Push the branch with `git push origin <branch>`"));
+  assert.ok(standing.includes("no `gh` login, and no\n  API token"));
+  assert.ok(!standing.includes("Your turn\n  starts in it."), "the repositories part says where the turn starts");
+  assert.ok(!standing.includes("<pull_request_tool/>") && !standing.includes("<capability"));
+  const composed = composeSystemPrompt(standing, "Ship it.\n", emptyRunState(), EMPTY_MEMORY, HARNESS_CAPS);
+  assert.ok(composed.includes("Open the branch's pull request with `mcp__guilds__github_create_pull_request`"), "named as the harness calls it");
+  assert.ok(!composed.includes("You have no tool that opens a pull request"));
+});
+
+test("a subscription agent with repositories and no pull request tool is told its part ends with the pushed branch, and names no tool", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const standing = standingForCapabilities(text, { ...HARNESS_CAPS, pullRequestTool: null });
+  assert.ok(standing.includes("You have no tool that opens a pull request: your part ends with the\n  pushed branch."));
+  assert.ok(!standing.includes("Open the branch's pull request"));
+  assert.ok(!standing.includes("<pull_request_tool/>") && !standing.includes("<capability"));
+});
+
+test("the state intro of a run that offers no tool says nothing of listing tools or a tool budget", () => {
+  const intro = stateIntroForCapabilities({ scripts: false, notes: false, browser: false, tools: false });
+  assert.ok(!intro.includes("listing tools"));
+  assert.ok(!intro.includes("tool-invocation budget"));
+  assert.ok(intro.startsWith("A snapshot of the guild at the start of this run. Use it as your initial context.\n"));
+  assert.ok(intro.includes("`utc_now` is the UTC instant"));
 });
 
 test("the State section lists each agent and its purpose", () => {
@@ -406,4 +489,32 @@ test("compose_system_prompt has four parts", () => {
   assert.ok(!composed.includes("## Facts"));
   assert.ok(!composed.includes("## Pending"));
   assert.ok(renderMemorySection(EMPTY_MEMORY).includes("<memory>"));
+});
+
+test("a key run's prompt names each tool by its own name, and a subscription run's as its harness calls it", () => {
+  const standing = "Call `<tool>report_issue</tool>` when a tool fails.\n";
+  const caps = { scripts: false, notes: false, browser: false, memory: true };
+  const own = composeSystemPrompt(standing, "Assist.\n", emptyRunState(), EMPTY_MEMORY, caps, ["Use `<tool>tavily_search</tool>`."]);
+  assert.ok(own.includes("Call `report_issue` when"));
+  assert.ok(own.includes("Use `tavily_search`."));
+  assert.ok(own.includes("edit with memory_write."), "the Task's intro");
+  assert.ok(own.includes("Rewrite it with memory_write."), "the Memory section's");
+  assert.ok(!own.includes("<tool>"));
+  const harness = composeSystemPrompt(standing, "Assist.\n", emptyRunState(), EMPTY_MEMORY, {
+    ...caps,
+    toolNaming: { prefix: "mcp__guilds__" },
+  }, ["Use `<tool>tavily_search</tool>`."]);
+  assert.ok(harness.includes("Call `mcp__guilds__report_issue` when"));
+  assert.ok(harness.includes("Use `mcp__guilds__tavily_search`."));
+  assert.ok(harness.includes("edit with mcp__guilds__memory_write."));
+  assert.ok(harness.includes("Rewrite it with mcp__guilds__memory_write."));
+  assert.ok(!harness.includes("<tool>"));
+});
+
+test("a tool tag names one tool; other text is left as it is", () => {
+  const naming = { prefix: "mcp__guilds__" };
+  assert.equal(nameTools("`<tool>note_write</tool>` and <tool>group_post</tool>", naming), "`mcp__guilds__note_write` and mcp__guilds__group_post");
+  assert.equal(nameTools("<tool>not a name</tool> <tool></tool>", naming), "<tool>not a name</tool> <tool></tool>");
+  assert.equal(nameTools("<tool>my-server_open-pr</tool>", naming), "mcp__guilds__my-server_open-pr", "a connection tool's name keeps its dashes");
+  assert.equal(nameTools("`<tool>note_write</tool>`", OWN_TOOL_NAMES), "`note_write`");
 });

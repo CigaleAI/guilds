@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import { useRunDiff } from "../../../api/queries/runs";
+import { useTurnDiff } from "../../../api/queries/runs";
 import type { Run, RunDiff, RunRepositoryChange } from "../../../api/types/runs";
 import { Button, CopyButton, Banner, cn, Icon } from "@guildsrun/ui";
 import { diffLineTone, diffstat } from "./changes";
@@ -46,11 +46,31 @@ export function DiffView({ diff, className }: DiffViewProps) {
   );
 }
 
-type RepositoryChangeProps = { runId: string; change: RunRepositoryChange };
+type TurnRepositoryChangeProps = { runId: string; callId: string; change: RunRepositoryChange };
 
-function RepositoryChange({ runId, change }: RepositoryChangeProps) {
+/** What one turn of a subscription agent's run changed in one repository, between the turn's checkpoints. */
+function TurnRepositoryChange({ runId, callId, change }: TurnRepositoryChangeProps) {
   const [open, setOpen] = useState(false);
-  const diff = useRunDiff(runId, open ? change.name : null);
+  const diff = useTurnDiff(runId, callId, open ? change.name : null);
+  return (
+    <ChangeRow
+      change={change}
+      diff={diff}
+      open={open}
+      onToggle={() => setOpen((value) => !value)}
+    />
+  );
+}
+
+type ChangeRowProps = {
+  change: RunRepositoryChange;
+  diff: UseQueryResult<RunDiff>;
+  open: boolean;
+  onToggle: () => void;
+};
+
+/** A repository's change: its name, branch, and diffstat, and its diff once opened. */
+function ChangeRow({ change, diff, open, onToggle }: ChangeRowProps) {
   return (
     <div className="flex flex-col gap-2 border-b border-line px-3.5 py-2.5 last:border-b-0">
       <div className="flex flex-wrap items-center gap-3">
@@ -66,7 +86,7 @@ function RepositoryChange({ runId, change }: RepositoryChangeProps) {
           variant="ghost"
           size="sm"
           className="ml-auto"
-          onClick={() => setOpen((value) => !value)}
+          onClick={onToggle}
           disabled={change.files_changed === 0}
         >
           {open ? "Hide diff" : "Show diff"}
@@ -80,20 +100,30 @@ function RepositoryChange({ runId, change }: RepositoryChangeProps) {
 type ChangesPanelProps = { run: Run };
 
 /**
- * What a coding run changed in each repository, between the working tree at its first
- * generation and at its last: a diffstat per repository, and the diff on demand.
+ * What each turn of a subscription agent's run changed, under the turn's number: a diffstat per
+ * repository, and the diff on demand.
  */
 export function ChangesPanel({ run }: ChangesPanelProps) {
-  const repos = run.repos ?? [];
-  if (!repos.length) return null;
+  const turns = run.turn_changes ?? [];
+  if (!turns.length) return null;
   return (
     <section aria-label="Changes" className="flex flex-col gap-2">
       <h3 className="type-label text-muted">Changes</h3>
-      <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
-        {repos.map((change) => (
-          <RepositoryChange key={change.name} runId={run.id} change={change} />
-        ))}
-      </div>
+      {turns.map((turn) => (
+        <div key={turn.call_id} className="flex flex-col gap-1">
+          <h4 className="text-xs text-muted">Turn {turn.generation}</h4>
+          <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
+            {turn.repos.map((change) => (
+              <TurnRepositoryChange
+                key={change.name}
+                runId={run.id}
+                callId={turn.call_id}
+                change={change}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </section>
   );
 }

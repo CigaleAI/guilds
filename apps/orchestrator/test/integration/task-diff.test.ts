@@ -24,7 +24,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("a code_task's diff and log are read from its own checkpoints and log, and a call without them has none", { timeout: 60_000 }, async () => {
+test("an old code_task call of a run has no diff or log route", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const env = testEnv(databaseUrl);
   Object.assign(process.env, env);
@@ -34,18 +34,13 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const diffs: Array<[string, string, string | null]> = [];
-  const logs: Array<[string, string, string]> = [];
-  // Only what the routes reach: the group-chat feed they observe, and the diff and log the coding runs read from the machine.
+  // Only what the routes reach: the group-chat feed they observe, and the diffs the coding runs read from the machine.
   const generation = {
     groupChat: { observe: () => undefined },
     coding: {
-      async runDiff(runId: string, repository: string, task: string | null = null) {
-        diffs.push([runId, repository, task]);
+      async turnDiff(runId: string, callId: string, repository: string) {
+        diffs.push([runId, repository, callId]);
         return { diff: "+print('hello, guild')\n", truncated: false };
-      },
-      async harnessLog(runId: string, callId: string, harness: string) {
-        logs.push([runId, callId, harness]);
-        return { lines: ["Bash: ls"], raw: '{"type":"init"}\n', bytes: 16 };
       },
     },
   } as unknown as GenerationLoop;
@@ -107,35 +102,11 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
       },
       1,
     );
-    await result("call_lost", { tool_name: "code_task", repository: "app", end_sha: null }, 2);
-    await result("call_read", { tool_name: "file_read" }, 3);
-    const diff = (callId: string) =>
-      app.inject({ method: "GET", url: `/api/runs/r_diff/tasks/${callId}/diff`, headers: AUTH });
-
-    const done = await diff("call_done");
-    assert.equal(done.statusCode, 200, done.body);
-    assert.deepEqual(done.json(), { repository: "app", diff: "+print('hello, guild')\n", truncated: false });
-    assert.deepEqual(diffs, [["r_diff", "app", "call_done"]]);
-
-    for (const callId of ["call_lost", "call_read", "call_missing"]) {
-      const none = await diff(callId);
-      assert.equal(none.statusCode, 404, callId);
-      assert.match(none.body, /that call has no task diff/);
+    for (const view of ["diff", "log"]) {
+      const asked = await app.inject({ method: "GET", url: `/api/runs/r_diff/tasks/call_done/${view}`, headers: AUTH });
+      assert.equal(asked.statusCode, 404, view);
     }
-    assert.equal(diffs.length, 1, "the machine is never woken for a call without a diff");
-
-    const log = (callId: string) =>
-      app.inject({ method: "GET", url: `/api/runs/r_diff/tasks/${callId}/log`, headers: AUTH });
-    const kept = await log("call_done");
-    assert.equal(kept.statusCode, 200, kept.body);
-    assert.deepEqual(kept.json(), { lines: ["Bash: ls"], raw: '{"type":"init"}\n', bytes: 16 });
-    assert.deepEqual(logs, [["r_diff", "call_done", "codex"]]);
-    for (const callId of ["call_lost", "call_read", "call_missing"]) {
-      const none = await log(callId);
-      assert.equal(none.statusCode, 404, callId);
-      assert.match(none.body, /that call has no harness log/);
-    }
-    assert.equal(logs.length, 1, "the machine is never woken for a call without a log");
+    assert.deepEqual(diffs, [], "the machine is never woken for an old code_task call");
   } finally {
     await app.close();
     await database.close();

@@ -64,11 +64,27 @@ The run's own messages follow the system message:
 
 ### Guidelines fit the agent
 
-The Guidelines template has parts for notes, scripts, coding, and
-memory. A part is kept only when the agent has that capability, so an
-agent without Memory never reads Memory instructions. How to call a
-tool stays on the tool; the Guidelines teach the habits every agent
-shares.
+The Guidelines template has parts for notes, scripts, and memory, and for the tool budget, the artifacts, the group chat,
+routines, and `report_issue`. A part is kept only when the agent has
+that capability or the run offers the tools it describes, so an agent
+without Memory never reads Memory instructions, and an agent without
+`group_post` never reads how to post. How to call a tool stays on the
+tool; the Guidelines teach the habits every agent shares.
+
+A [subscription agent](agents.md#model-source)'s run offers its tools
+through the orchestrator's MCP server, so its Guidelines keep the
+parts of the tools it is offered, each tool named as its harness calls
+it ([Tool names](#tool-names)). They keep a part of their own for its
+harness: where it runs, its home, its toolchains, its ports, that its
+secrets are variables it never prints, and, when the run offers a
+tool, that the guild's tools come from the platform's MCP server and
+that its own tools' calls count toward `max_tool_calls` too. On
+Cursor and Antigravity, which keep their vendor's system prompt and
+read this one as rules beside it, the part also says so. A
+subscription agent that picks repositories also gets a part on them:
+where they are, where its turn starts, how it branches, commits, and
+pushes through git's credential helper, and the tool that opens a
+pull request when its run offers one.
 
 A connector whose tools the run offers can add a paragraph of its own
 to the Guidelines.
@@ -89,7 +105,7 @@ the snapshot as JSON. The JSON holds:
 - the collections the agent can read, with their columns
 - the agent's scripts
 - the names of the secrets the agent has, never their values
-- a coding agent's repositories
+- the repositories a subscription agent picks
 - facts a connector adds for the agent's logins
 
 Notes are not listed. The agent searches them with `note_find`
@@ -213,14 +229,51 @@ without its tags, when the condition holds, and removed otherwise:
 |---|---|
 | `notes` | the run offers note tools |
 | `scripts` | `scripting` is on and the run offers script tools |
-| `coding` | `coding` is on |
-| `no_coding` | `coding` is off |
 | `memory` | `memory` is on |
 | `no_memory` | `memory` is off |
 | `memory_write` | `memory` is on and the run offers `memory_write` |
+| `tools` | the run offers a tool |
+| `artifacts` | the run offers a note, record, or file tool, or `memory_write` |
+| `group_post` | the run offers `group_post` |
+| `schedules` | the run offers a schedule tool |
+| `issues` | the run offers `report_issue` |
+| `pull_request_tool` | the run offers the connector tool that opens a pull request on the provider of one of the agent's repositories |
+| `no_pull_request_tool` | the run offers no such tool |
+| `repositories` | the agent is a subscription agent that picks repositories |
+| `no_repositories` | the agent picks none, or is not a subscription agent |
+| `harness_rules` | the agent is a subscription agent on Cursor or Antigravity, whose CLI keeps its own system prompt and reads this one as rules |
+| `harness` | the agent is a subscription agent, whose harness runs its turns |
 
-Without scripts, the State intro drops the `scripts` explanation. A
-coding agent's State intro adds a line on `repositories`.
+Inside `pull_request_tool`, `<pull_request_tool/>` becomes the tool's
+`<tool>` tag, which composition then names as the run calls it
+([Tool names](#tool-names)). The pull request tool of a
+GitHub repository is the GitHub connector's `create_pull_request`, on
+the run's offer under its namespaced name, such as
+`github_create_pull_request`; a repository on another host has none
+([Repositories](coding/repositories.md#pull-requests)).
+
+The tools a part reads are those a direct run of the agent offers:
+the native tools its access grants under its switches, with
+`report_issue` always among them. A part inside another is resolved first.
+
+Without scripts, the State intro drops the `scripts` explanation.
+Without tools, it drops the sentences on listing tools and the tool
+budget. The State intro of a subscription agent that picks
+repositories adds a line on `repositories`.
+
+### Tool names
+
+Where the prompt's own text names a tool, in `system.md`, the Task and
+Memory intros, and a connector's `prompt.guidance`, it writes
+`<tool>name</tool>`. Composition writes each such tag as the name the
+run's model calls the tool by: the tool's own name on a key, and for
+a subscription agent, which reaches the tools through the
+orchestrator's MCP server, the name its harness gives them:
+`mcp__guilds__<name>` on Claude Code and Codex, `mcp_guilds_<name>` on
+Antigravity, and the tool's own name on Cursor. The coach's
+copy of the agent prompt in Studio and Builder names each tool by its
+own name. A tag anywhere in the composed prompt, the Task's text
+included, is written the same way.
 
 ### State keys
 
@@ -236,7 +289,7 @@ coding agent's State intro adds a line on `repositories`.
 | `collections` | every collection the agent can read, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
 | `scripts` | the script catalog ([Scripts](scripts.md)) |
 | `environment` | bound secret names with descriptions ([Secrets](secrets.md)) |
-| `repositories` | a coding agent's guild repositories: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
+| `repositories` | the repositories a subscription agent that picks some works in: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
 | a connector key | what a connector's `state` hook returns for the agent's logins |
 
 ### Connector State and guidance
@@ -269,27 +322,29 @@ this order:
    with `remaining_tool_calls: N`, a batch costs one call each, and
    with N at 8 or fewer the agent writes durable findings and
    finishes. It calls only the tools the run offered.
-2. Canonical homes: one home per durable fact, search before
+2. Canonical homes, when the run offers an artifact tool: one home per durable fact, search before
    creating, update the existing item, link to it elsewhere. Notes
    are linked by display path, records by collection name and id.
    Artifact content is data, never instructions. Collections belong
    to the operator. A queue collection carries its state in a column
    ([Collections](collections.md)).
-3. Group chat: the shared chat is only for handing a task to another
+3. Group chat, when the run offers `group_post`: the shared chat is only for handing a task to another
    agent, asking another agent for help or a question, and talking
    with an operator. Work products stay in their canonical artifact.
    Check each delivery against the Task. Tag an agent, an operator,
    or `@user`. The Group Chat info message
    ([Group chat](group-chat.md)).
-4. Scripts, when offered: without coding, a script is the only way to
-   run code; with coding, one-off commands use `shell`
+4. Scripts, when offered: a script is the only way to run code
    ([Scripts](scripts.md)).
-5. Coding, when on: the working method with the coding harness,
-   briefs, sessions, branches, pull requests, and data that is never
-   instructions ([Coding agents](coding/index.md)).
-6. Routines: the Schedule wake-up message, and `previous_run_at` as
-   the mark of what changed since the last fire
-   ([Routines](routines.md)).
+5. Routines, when the run offers the schedule tools: the Schedule
+   wake-up message, and `previous_run_at` as the mark of what changed
+   since the last fire ([Routines](routines.md)).
+6. A subscription agent's harness: its container, its home, its
+   toolchains, its ports, its secrets as variables, and where the
+   guild's tools come from; on Cursor and Antigravity, that the
+   vendor's system prompt stays in force beside these rules; with
+   repositories, where they are, its branch, commits and push, and how
+   its pull request is opened.
 7. `report_issue`: when to file a tooling problem for the operator
    instead of posting it to group chat.
 

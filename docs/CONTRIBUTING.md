@@ -66,28 +66,44 @@ Security issues never go through this path ([Security](#security)).
 ## Versions
 
 A release is a git tag `vMAJOR.MINOR.PATCH` and an entry at the
-top of the [changelog](../CHANGELOG.md).
+top of the [changelog](../CHANGELOG.md). Versions follow
+[Semantic Versioning](https://semver.org/).
 
-Move one digit. It names the effect on a running box:
+| Digit | A version moves it when |
+|---|---|
+| Major (`1.2.3` to `2.0.0`) | It is breaking: a box, an API client, a recipe, or an extension that works on the previous version needs a change to work on this one, or a migration removes stored data |
+| Minor (`1.2.3` to `1.3.0`) | It adds behaviour and breaks nothing |
+| Patch (`1.2.3` to `1.2.4`) | It only fixes |
 
-| Digit | Effect | The box |
-|---|---|---|
-| Patch (`1.2.3` to `1.2.4`) | `no impact` | Stays as it is. Docs, tooling, or anything the images do not run changed |
-| Minor (`1.2.3` to `1.3.0`) | `rebuild` | Rebuilds its images. State, `.env`, recipes, and the API stay valid. Migrations apply at boot |
-| Major (`1.2.3` to `2.0.0`) | `breaking` | Cannot run this tree unchanged. The entry leads with the steps |
+While the major digit is 0, a breaking version moves the minor
+digit and every other version moves the patch digit. Several
+changes in one release take the highest digit.
 
-A fix that changes an image is a minor version. Several changes
-in one release take the highest digit.
+An entry is the version and, in this order:
 
-The entry is the version, the effect, and what an operator can
-see. Changes not yet tagged sit under **Unreleased** at the top.
-There each change is one paragraph that opens with its effect in
-bold: **No impact.**, **Rebuild.**, or **Breaking.** A break that
-does not reach every box names whom it reaches, such as
-**Breaking for extensions.**
+- A first paragraph that opens with **Breaking.** or **Not
+  breaking.** and says what the version is.
+- **Upgrade**: the numbered steps that take a box from the previous
+  version to this one. A breaking version starts with the backup and
+  names every step past the update commands
+  ([Maintain](operations/maintain.md#update)): a setting to add, a
+  port to open, a choice to make again in the app.
+- **Breaking changes**, in a breaking version: each break, as what
+  holds now, what its migration does to stored data, and what its
+  reader changes: an operator, an API client, a recipe, an extension.
+- **Added**, **Changed**, and **Fixed**: what an operator can see.
+- **Security**: the [Security register](architecture/security-register.md)
+  entries the version adds or closes.
 
-The commands a box runs for each effect are in
-[Maintain](operations/maintain.md#update).
+Changes not yet tagged sit under `## Unreleased` at the top, a
+heading the first of them adds. There each change is one paragraph
+that opens with its kind in bold: **Breaking.**, **Added.**,
+**Changed.**, or **Fixed.** A breaking paragraph states its
+migration: what the box does to stored data at boot, and what an
+operator, an API client, a recipe, or an extension changes. A break
+that does not reach every box names whom it reaches, such as
+**Breaking for extensions.** Cutting a version writes the entry from
+these paragraphs and removes the heading.
 
 Pushing the tag publishes the images
 ([Development](contributing/development.md#ci)).

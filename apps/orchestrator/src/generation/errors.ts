@@ -42,6 +42,21 @@ export class GenerationBlocked extends Error {
   }
 }
 
+/**
+ * How a subscription agent's turn on its harness failed: the CLI did not start, it failed, its
+ * state was lost, it stopped answering, or it ran past its time.
+ */
+export class HarnessTurnError extends Error {
+  constructor(
+    readonly code: "harness.start" | "harness.failed" | "harness.lost" | "harness.unresponsive" | "harness.timed_out",
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "HarnessTurnError";
+  }
+}
+
 export class RunRequestError extends Error {
   status: number;
   detail: string;
@@ -73,6 +88,23 @@ export class GenerationCancelled extends Error {
     this.name = "GenerationCancelled";
   }
 }
+
+/**
+ * A request to the orchestrator's MCP server that holds no grant: no token, or one that is not
+ * the token of the running generation of the agent its path names. It says nothing more.
+ */
+export class HarnessMcpRefused extends Error {
+  constructor() {
+    super("unauthorized");
+    this.name = "HarnessMcpRefused";
+  }
+}
+
+/** What a generation that made its last model call records as its run error. */
+export const STEP_LIMIT_MESSAGE = "max_steps reached";
+
+/** What a run that made its last tool call tells its model, and records as its run error. */
+export const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 
 export class RunLimitError extends Error {
   operation: string;

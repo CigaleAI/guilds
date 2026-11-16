@@ -19,7 +19,6 @@ export function AgentToolsTab() {
       capabilities={{
         browser: capabilityOn(agent.data?.config, "browser"),
         browser_optimized: offersOptimizedBrowser(agent.data?.config, instance.data),
-        coding: capabilityOn(agent.data?.config, "coding"),
       }}
     />
   );

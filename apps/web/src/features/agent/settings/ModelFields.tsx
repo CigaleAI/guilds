@@ -31,9 +31,6 @@ export function ModelFields({ form, onChange, errors }: FieldsProps) {
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
   const { thinkingOff, temperatureOff } = modelLimits(models.data, form.model);
-  const codingConnected = models.data?.providers.some(
-    (item) => item.kind === "coding" && item.connected,
-  );
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Select
@@ -42,14 +39,7 @@ export function ModelFields({ form, onChange, errors }: FieldsProps) {
         placeholder="Choose a model"
         value={form.model}
         onValueChange={(value) => onChange({ model: value })}
-        options={modelOptions(models.data, { current: form.model, coding: form.coding })}
-        hint={
-          form.coding && !codingConnected ? (
-            <>
-              Coding APIs appear here once a key is connected on <ModelKeysLink />.
-            </>
-          ) : undefined
-        }
+        options={modelOptions(models.data, { current: form.model })}
         {...(errors.model
           ? { error: modelFieldMessage(errors.model) }
           : models.isError

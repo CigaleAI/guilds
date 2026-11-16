@@ -2,17 +2,155 @@
 """A harness CLI for tests: replays a recorded event stream.
 
 Installed under each harness's binary name on PATH. It writes its argv, working directory,
-stdin, and the variables named in HARNESS_STUB_SHOW to HARNESS_STUB_RECORD, then prints the
+stdin, its system prompt (the file `--system-prompt-file` names, the file of Codex's
+`model_instructions_file` override, or the rules file Cursor and Antigravity read in the home),
+the MCP server it is given (the content and mode of the file `--mcp-config` names or of the MCP
+configuration Cursor and Antigravity read in the home, or for Codex its `mcp_servers.guilds`
+overrides with the token of the variable they name, in Claude Code's shape), the variables
+named in HARNESS_STUB_SHOW, and the names of
+the variables whose value holds HARNESS_STUB_SEEK to HARNESS_STUB_RECORD, then prints the
 events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
 `{"stub": "edit", "path": ..., "text": ...}` writes that file instead of printing;
-`{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
-until it is killed. It exits with HARNESS_STUB_EXIT.
+`{"stub": "run", "argv": [...]}` runs that command in the working directory and prints its exit code
+and output as a message; `{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
+until it is killed. `{"stub": "mcp", "method": ..., "params": ...}` posts that JSON-RPC request to
+the `guilds` server it was given, with its headers, appends the status and the answer to
+HARNESS_STUB_MCP_RECORD, and for a `tools/call` prints the events its CLI prints for an MCP call;
+`{"stub": "show_mcp_config"}` prints that server as a message. It exits with HARNESS_STUB_EXIT.
 """
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+
+
+BINARY = os.path.basename(sys.argv[0])
+CODEX = BINARY == "codex"
+CURSOR = BINARY == "agent"
+ANTIGRAVITY = BINARY == "agy"
+# Where Cursor and Antigravity read the rules file and the MCP configuration in the home.
+HOME_RULES = {"agent": ".cursor/rules/guilds.mdc", "agy": ".gemini/GEMINI.md"}
+HOME_MCP = {"agent": ".cursor/mcp.json", "agy": ".gemini/config/mcp_config.json"}
+
+
+def codex_overrides():
+    """Codex's `-c key=value` overrides, each value read as the TOML string or list it is."""
+    found = {}
+    for at, arg in enumerate(sys.argv[:-1]):
+        if arg == "-c" and "=" in sys.argv[at + 1]:
+            key, value = sys.argv[at + 1].split("=", 1)
+            try:
+                found[key] = json.loads(value)
+            except ValueError:
+                found[key] = value
+    return found
+
+
+def home_file(names):
+    """The path of the file of this CLI in `names` under the home, when it is there; else None."""
+    relative = names.get(BINARY)
+    path = os.path.join(os.environ.get("HOME", ""), relative) if relative else None
+    return path if path and os.path.isfile(path) else None
+
+
+def system_prompt():
+    """The system prompt the CLI was given, in place of its own or as its rules file; None for none."""
+    if "--system-prompt-file" in sys.argv:
+        path = sys.argv[sys.argv.index("--system-prompt-file") + 1]
+    else:
+        path = codex_overrides().get("model_instructions_file") if CODEX else home_file(HOME_RULES)
+    if not path:
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def home_mcp_config(path):
+    """The MCP configuration Cursor or Antigravity reads in the home, in Claude Code's shape."""
+    with open(path, encoding="utf-8") as handle:
+        servers = json.load(handle)["mcpServers"]
+    shaped = {
+        name: {"type": "http", "url": server.get("url") or server.get("serverUrl"), "headers": server.get("headers", {})}
+        for name, server in servers.items()
+    }
+    return {"mcpServers": shaped}, os.stat(path).st_mode & 0o777
+
+
+def mcp_config():
+    """The MCP servers the CLI was given, in the shape of Claude Code's file, and that file's mode."""
+    if "--mcp-config" in sys.argv:
+        path = sys.argv[sys.argv.index("--mcp-config") + 1]
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle), os.stat(path).st_mode & 0o777
+    if home_file(HOME_MCP):
+        return home_mcp_config(home_file(HOME_MCP))
+    overrides = codex_overrides() if CODEX else {}
+    url = overrides.get("mcp_servers.guilds.url")
+    if not url:
+        return None, None
+    token = os.environ.get(overrides.get("mcp_servers.guilds.bearer_token_env_var", ""), "")
+    headers = {"Authorization": f"Bearer {token}"}
+    return {"mcpServers": {"guilds": {"type": "http", "url": url, "headers": headers}}}, None
+
+
+def print_event(event):
+    print(json.dumps(event), flush=True)
+
+
+def print_step(number, state, step_type, **fields):
+    """Prints a step update of Antigravity's."""
+    print_event({"event": "step_update", "step_update": {"conversation_id": "stub", "step_index": number, "state": state, "step_type": step_type, **fields}})
+
+
+def print_message(text):
+    """Prints a message of the CLI's own, as its CLI prints one."""
+    if CODEX:
+        print_event({"type": "item.completed", "item": {"id": "item_shown", "type": "agent_message", "text": text}})
+    elif ANTIGRAVITY:
+        print_step(900, "DONE", "agent_response", text_delta=text)
+    else:
+        print_event({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}, "session_id": "stub"})
+
+
+def print_mcp_call(params, number, text):
+    """Prints the events the CLI prints for an MCP call: before it with `text` None, after it with its result."""
+    if CODEX:
+        item = {"id": f"item_mcp_{number}", "type": "mcp_tool_call", "server": "guilds", "tool": params["name"], "arguments": params.get("arguments", {})}
+        if text is None:
+            print_event({"type": "item.started", "item": {**item, "result": None, "error": None, "status": "in_progress"}})
+        else:
+            result = {"content": [{"type": "text", "text": text}], "structured_content": None}
+            print_event({"type": "item.completed", "item": {**item, "result": result, "error": None, "status": "completed"}})
+    elif CURSOR:
+        args = {"name": params["name"], "args": params.get("arguments", {}), "providerIdentifier": "guilds", "toolName": params["name"]}
+        call = {"mcpToolCall": {"args": args, **({} if text is None else {"result": {"success": {"content": [{"text": {"text": text}}]}}})}}
+        print_event({"type": "tool_call", "subtype": "started" if text is None else "completed", "call_id": f"tool_mcp_{number}", "tool_call": call, "session_id": "stub"})
+    elif ANTIGRAVITY:
+        info = {"name": f"mcp_guilds_{params['name']}", "parameters": params.get("arguments", {}), **({} if text is None else {"output": text})}
+        print_step(800 + number, "ACTIVE" if text is None else "DONE", "tool", tool_name=info["name"], tool_info=info)
+    elif text is None:
+        use = {"type": "tool_use", "id": f"toolu_mcp_{number}", "name": f"mcp__guilds__{params['name']}", "input": params.get("arguments", {})}
+        print_event({"type": "assistant", "message": {"content": [use]}, "session_id": "stub"})
+    else:
+        result = {"type": "tool_result", "tool_use_id": f"toolu_mcp_{number}", "content": text}
+        print_event({"type": "user", "message": {"content": [result]}, "session_id": "stub"})
+
+
+def mcp_request(event, number):
+    """Posts the event's JSON-RPC request to the configured server; its status and answer."""
+    server = mcp_config()[0]["mcpServers"]["guilds"]
+    body = json.dumps({"jsonrpc": "2.0", "id": number, "method": event["method"], "params": event.get("params", {})})
+    headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream", **server["headers"]}
+    request = urllib.request.Request(server["url"], data=body.encode("utf-8"), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.status, json.loads(response.read() or b"null")
+    except urllib.error.HTTPError as error:
+        return error.code, None
 
 if len(sys.argv) > 1 and sys.argv[1] == "--version":
     print(os.environ.get("HARNESS_STUB_VERSION", "9.9.9 (stub)"))
@@ -21,8 +159,21 @@ stdin = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
 record = os.environ.get("HARNESS_STUB_RECORD")
 if record:
     shown = {name: os.environ.get(name) for name in os.environ.get("HARNESS_STUB_SHOW", "").split(",") if name}
+    configured, configured_mode = mcp_config()
+    seek = os.environ.get("HARNESS_STUB_SEEK", "")
+    holding = [name for name, value in os.environ.items() if seek and name != "HARNESS_STUB_SEEK" and seek in value]
     with open(record, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "stdin": stdin, "env": shown}) + "\n")
+        entry = {
+            "argv": sys.argv,
+            "cwd": os.getcwd(),
+            "stdin": stdin,
+            "system_prompt": system_prompt(),
+            "mcp_config": configured,
+            "mcp_config_mode": configured_mode,
+            "env": shown,
+            "env_holding_seek": holding,
+        }
+        handle.write(json.dumps(entry) + "\n")
 delay = float(os.environ.get("HARNESS_STUB_DELAY", "0"))
 with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
     for line in events:
@@ -37,6 +188,24 @@ with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
         if event.get("stub") == "edit":
             with open(event["path"], "w", encoding="utf-8") as target:
                 target.write(event["text"])
+            continue
+        if event.get("stub") == "run":
+            done = subprocess.run(event["argv"], capture_output=True, text=True, check=False)
+            print_message(f"exit={done.returncode}\n{done.stdout}{done.stderr}")
+            continue
+        if event.get("stub") == "show_mcp_config":
+            print_message(json.dumps(mcp_config()[0]))
+            continue
+        if event.get("stub") == "mcp":
+            number = event.get("id", 1)
+            if event["method"] == "tools/call":
+                print_mcp_call(event["params"], number, None)
+            status, answer = mcp_request(event, number)
+            with open(os.environ["HARNESS_STUB_MCP_RECORD"], "a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"method": event["method"], "status": status, "answer": answer}) + "\n")
+            if event["method"] == "tools/call":
+                text = "".join(part.get("text", "") for part in ((answer or {}).get("result") or {}).get("content", []))
+                print_mcp_call(event["params"], number, text)
             continue
         if event.get("stub") == "hang":
             if event.get("ignore_term"):

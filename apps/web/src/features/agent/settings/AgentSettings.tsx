@@ -3,18 +3,13 @@ import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   useAgent,
   useAgentHarness,
+  useHarnessCatalog,
   useOrgMachines,
   useSaveAgentSettings,
 } from "../../../api/queries/agents";
 import { useGuild } from "../../../api/queries/guilds";
 import { useOrgModels } from "../../../api/queries/models";
-import type {
-  AgentConfig,
-  AgentDetail,
-  AgentHarness,
-  Harness,
-  Machine,
-} from "../../../api/types/agents";
+import type { AgentDetail, AgentHarness, Harness, HarnessCatalog, Machine } from "../../../api/types/agents";
 import { hasConnectedProvider } from "../../../api/types/models";
 import { useIdentity } from "../../../app/identity";
 import {
@@ -26,24 +21,28 @@ import {
   Stepper,
   toast,
 } from "@guildsrun/ui";
-import { MachineGroup, ModelStep } from "../AgentSteps";
-import { CodingReadinessBanner } from "../CodingReadiness";
+import { MachineGroup, ModelStep, SubscriptionStep } from "../AgentSteps";
 import { CodingRepositories } from "../CodingRepositories";
-import { codingProblems, type CodingProblem } from "../harness";
+import {
+  harnessProblems,
+  harnessProblemsSentence,
+  missingRepositoryText,
+  type HarnessProblem,
+} from "../harness";
 import { focusMax } from "../IdentityFields";
 import { chosenMachine } from "../../machines/machines";
 import { agentHandleError, handleHint } from "../../../app/names";
 import { AvatarPicker } from "./AvatarPicker";
-import { configErrors, configFormOf, configOf, type ConfigForm } from "./configForm";
+import { configErrors, configFormOf, configOf, missesRepository, type ConfigForm } from "./configForm";
 import { Group } from "./Group";
-import { HarnessField } from "./HarnessFields";
 import {
   openSection,
-  problemSection,
-  sectionErrors,
+  sectionErrorKeys,
   sectionHasErrors,
   sectionLabel,
+  settingsKindOf,
   settingsSections,
+  type SettingsKind,
   type SettingsSection,
 } from "./sections";
 
@@ -60,7 +59,7 @@ type Form = ConfigForm & {
 
 function formOf(agent: AgentDetail): Form {
   return {
-    ...configFormOf(agent.config, agent.machine_id),
+    ...configFormOf(agent.config, agent.model_source, agent.machine_id),
     name: agent.name,
     focus: agent.focus,
     wakeTriggers: agent.wake_triggers,
@@ -157,19 +156,46 @@ export function carriedHarnesses(
   return status?.machine_harnesses ?? machine?.harnesses;
 }
 
-/** The hint under the machine: that saving moves the agent, or that a coding agent needs a Code machine. */
-export function machineHint(moveTo: string | undefined, coding: boolean): string | undefined {
+/** The hint under the machine: that saving moves the agent, or that a subscription agent needs a Code machine. */
+export function machineHint(moveTo: string | undefined, kind: SettingsKind): string | undefined {
   if (moveTo)
     return "Saving moves the agent and its home there. It can't move while it is generating.";
-  return coding ? "Coding agents need a Code machine." : undefined;
+  return kind === "subscription" ? "Subscription agents need a Code machine." : undefined;
 }
 
-/** What a saved coding agent still lacks to run code tasks; nothing for any other agent. */
+/** What a saved subscription agent still lacks for its harness to run; nothing for an agent on a key. */
 export function readinessProblems(
-  config: AgentConfig,
+  kind: SettingsKind,
   status: AgentHarness | undefined,
-): CodingProblem[] {
-  return config.coding && status ? codingProblems(status) : [];
+): HarnessProblem[] {
+  if (!status || kind === "key") return [];
+  return harnessProblems(status);
+}
+
+/**
+ * What the Repositories section says while the agent picks none: its turns run in its home,
+ * unless its harness needs a repository.
+ */
+export function missingRepositoriesNote(
+  form: ConfigForm,
+  catalog: readonly HarnessCatalog[] | undefined,
+): string {
+  if (form.harness && missesRepository(form, catalog)) {
+    return `No repository picked. ${missingRepositoryText([form.harness])}`;
+  }
+  return "No repository picked, so this agent's turns run in its home.";
+}
+
+type ReadinessBannerProps = { problems: readonly HarnessProblem[] };
+
+/** A banner at the top of a subscription agent's Settings while its saved harness would fail at start, naming every problem. */
+function ReadinessBanner({ problems }: ReadinessBannerProps) {
+  if (!problems.length) return null;
+  return (
+    <Banner tone="warning" title="The subscription isn't ready">
+      {harnessProblemsSentence(problems)}
+    </Banner>
+  );
 }
 
 type SettingsFooterProps = {
@@ -197,14 +223,16 @@ function SettingsFooter({ dirty, invalid, saving, onDiscard, onSave }: SettingsF
 
 /**
  * How the agent looks and runs, in the create dialog's steps as sections opened in any order by
- * `?section=`: an agent's Identity, Model, and Machine; a coding agent's Identity, Machine, Harness,
- * Lead model, and Repositories. Identity holds the name, focus, mascot, and wake triggers. Model holds
- * the model and reasoning, the capabilities (Browser and Coding greyed out on a machine below their minimum),
- * and the run limits. Machine holds the machine (a new one moves the agent there) and the disk
- * cap against what the machine's other agents reserve. Harness holds the coding harness with its
- * credentials and model. Repositories holds the guild's. The sections follow the form's Coding, and
- * one with an error or a coding-readiness problem is flagged. A coding agent whose saved setup is
- * not ready opens on a banner that lists what is missing. Save sends every section at once.
+ * `?section=`: an agent's Identity, Model, and Machine; a subscription agent's Identity, Harness,
+ * Machine, and Repositories. Identity holds the name, focus, mascot, and wake triggers. Model
+ * holds the model source, the model and reasoning, the capabilities (Browser greyed out on a
+ * machine below its minimum), and the run limits. Machine holds the machine (a new one moves the
+ * agent there) and the disk cap against what the machine's other agents reserve. Harness holds the
+ * harness with its credentials and model, the capabilities and the run limits. Repositories holds
+ * the ones the agent works on, picked among those it can use, over the guild's. The sections
+ * follow the form's model source, and one with an error or a readiness problem is flagged. A
+ * subscription agent whose saved harness is not ready opens on a banner that lists what is
+ * missing. Save sends every section at once.
  */
 export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -217,6 +245,7 @@ export function AgentSettings() {
   const machines = useOrgMachines(org.id);
   const save = useSaveAgentSettings(agentId, guildId);
   const harness = useAgentHarness(agentId);
+  const catalog = useHarnessCatalog();
   const [draft, setDraft] = useState<Form | null>(null);
 
   const saved = useMemo(() => (agent.data ? formOf(agent.data) : null), [agent.data]);
@@ -233,7 +262,7 @@ export function AgentSettings() {
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
   const set = (patch: Partial<Form>) => setDraft({ ...form, ...patch });
   const setConfig = (next: ConfigForm) => setDraft({ ...form, ...next });
-  const errors = configErrors(form, { models: models.data, machines: machines.data });
+  const errors = configErrors(form, { models: models.data, machines: machines.data, harnesses: catalog.data });
   const machine = chosenMachine(machines.data, form.machine_id);
   const moveTo = machineMove(machine, agent.data.machine_id);
   const nameError = settingsNameError(form.name);
@@ -241,12 +270,16 @@ export function AgentSettings() {
   const noProvider = hasConnectedProvider(models.data) === false;
   const step = { form, setConfig, errors, machine };
 
-  const sections = settingsSections(form.coding);
-  const section = openSection(search.section, form.coding);
-  const problems = readinessProblems(agent.data.config, harness.data);
+  const kind = settingsKindOf(form);
+  const savedKind = settingsKindOf(saved);
+  const sections = settingsSections(kind);
+  const section = openSection(search.section, kind);
+  const problems = readinessProblems(savedKind, harness.data);
   const needsAttention = (key: SettingsSection) =>
-    (key === "identity" ? Boolean(nameError) : sectionHasErrors(sectionErrors[key], errors)) ||
-    problems.some((problem) => problemSection(problem) === key);
+    (key === "identity"
+      ? Boolean(nameError)
+      : sectionHasErrors(sectionErrorKeys(key, kind), errors)) ||
+    (key === "harness" && problems.length > 0);
   const flagged = sections.flatMap((key, index) => (needsAttention(key) ? [index] : []));
   const open = (next: SettingsSection) =>
     void navigate({
@@ -296,9 +329,6 @@ export function AgentSettings() {
     model: fields(
       <ModelStep
         {...step}
-        lead={form.coding}
-        codingToggle
-        savedCoding={saved.coding}
         models={models.data}
         noProvider={noProvider}
       />,
@@ -307,30 +337,29 @@ export function AgentSettings() {
       <MachineGroup
         {...step}
         machines={machines}
-        coding={form.coding}
         placed={{
           id: agent.data.id,
           machineId: agent.data.machine_id,
           diskMib: agent.data.config.max_workspace_mib,
         }}
-        hint={machineHint(moveTo, form.coding)}
+        hint={machineHint(moveTo, kind)}
       />,
     ),
     harness: fields(
-      <Group title="Harness">
-        <HarnessField
-          form={form}
-          onChange={setConfig}
-          errors={errors}
-          agent={{ guildId, agentId }}
-          carried={carriedHarnesses(machine, moveTo, harness.data)}
-        />
-      </Group>,
+      <SubscriptionStep
+        {...step}
+        models={models.data}
+        agent={{ guildId, agentId }}
+        carried={carriedHarnesses(machine, moveTo, harness.data)}
+      />,
     ),
     repositories: (
       <CodingRepositories
         guild={{ id: guildId, name: guild.data?.name ?? "this guild" }}
-        missingNote="No repository yet, so this agent's coding runs fail at start."
+        usable={harness.data?.usable_repositories}
+        picked={form.repositories}
+        onPick={(repositories) => set({ repositories })}
+        missingNote={missingRepositoriesNote(form, catalog.data)}
       />
     ),
   };
@@ -339,10 +368,10 @@ export function AgentSettings() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
         <div className="mx-auto flex max-w-240 flex-col gap-7">
-          {agent.data.config.coding ? <CodingReadinessBanner agentId={agentId} /> : null}
+          <ReadinessBanner problems={problems} />
           <Stepper
             aria-label="Settings sections"
-            steps={sections.map((key) => sectionLabel(key, form.coding))}
+            steps={sections.map(sectionLabel)}
             current={sections.indexOf(section)}
             onSelect={(index) => {
               const next = sections[index];

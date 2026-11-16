@@ -2,18 +2,21 @@
 # Starts the core stack the way a new self-hoster does, from a copy of this checkout, and checks
 # what the stack promises: ./setup.sh then `docker compose up` gives a healthy box that serves the
 # operator app on loopback only, holds one operator and no hosted table, and refuses a request
-# from another web origin.
+# from another web origin; and a container on the default bridge, where OpenSandbox starts every
+# sandbox, reaches the MCP server's port at the URL sandboxes are given, is refused there without a
+# token, and does not reach the operator app's port by the same host.
 #
-# It runs under its own Compose project, port, image tag and state directory, and removes them
+# It runs under its own Compose project, ports, image tag and state directory, and removes them
 # when it ends, so it never touches a stack or an .env of yours. The agent runtime images are not
-# built: nothing here starts a sandbox.
+# built: no sandbox starts, and a PostgreSQL container on the bridge stands in for one.
 #
 #   scripts/smoke-core-stack.sh
 set -euo pipefail
 
 # A new self-hoster's shell sets nothing the stack reads, and neither does this test's: the stack
 # takes its values from the .env setup writes, and its state from the copy's own directory.
-unset STATE_ROOT POSTGRES_PASSWORD OPENSANDBOX_API_KEY SECRETS_MASTER_KEY SANDBOX_IMAGE AUTH_MODE SENTRY_ENVIRONMENT
+unset STATE_ROOT POSTGRES_PASSWORD OPENSANDBOX_API_KEY SECRETS_MASTER_KEY SANDBOX_IMAGE AUTH_MODE SENTRY_ENVIRONMENT \
+  HARNESS_MCP_PUBLISH HARNESS_MCP_SANDBOX_HOST HARNESS_MCP_URL
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/guilds-smoke.XXXXXX")"
@@ -21,6 +24,7 @@ work="$(cd "$work" && pwd -P)"
 project="guilds-smoke-$$"
 export ORCHESTRATOR_IMAGE="guilds-smoke-$$:local"
 export ORCHESTRATOR_PORT="${SMOKE_PORT:-18080}"
+export HARNESS_MCP_PORT="${SMOKE_MCP_PORT:-$((ORCHESTRATOR_PORT + 1))}"
 base="http://127.0.0.1:${ORCHESTRATOR_PORT}"
 compose=(docker compose --project-name "$project")
 
@@ -82,8 +86,37 @@ created="$(curl -fsS -H "Content-Type: application/json" -d '{"name":"smoke"}' "
 refused="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "Origin: https://elsewhere.example" -H "Content-Type: application/json" -d '{"name":"x"}' "$base/api/guilds")"
 [[ "$refused" == "403" ]] || fail "a request from another origin answered $refused, not 403"
 
+publish="$(grep -E '^HARNESS_MCP_PUBLISH=' .env | cut -d= -f2-)"
+[[ -n "$publish" ]] || fail "./setup.sh wrote no HARNESS_MCP_PUBLISH"
 ports="$("${compose[@]}" ps --format '{{.Ports}}' | grep -o '[0-9.:]*->[0-9]*' | sort -u | tr '\n' ' ')"
-[[ "$ports" == "127.0.0.1:${ORCHESTRATOR_PORT}->8080 " ]] || fail "published ports are '$ports', not the orchestrator on loopback alone"
+expected="$(printf '%s\n' "127.0.0.1:${ORCHESTRATOR_PORT}->8080" "${publish}:${HARNESS_MCP_PORT}->${HARNESS_MCP_PORT}" | sort -u | tr '\n' ' ')"
+[[ "$ports" == "$expected" ]] || fail "published ports are '$ports', not the operator app on loopback and the MCP port on $publish alone"
+
+# A container on the default bridge, as OpenSandbox starts a sandbox, sends one request to
+# host:port and prints the status line of the answer, or `refused` when nothing answers there.
+from_sandbox() { # host, port, method, path, body
+  docker run --rm --network bridge postgres:17 bash -c '
+    exec 3<>"/dev/tcp/$1/$2" 2>/dev/null || { echo refused; exit 0; }
+    printf "%s %s HTTP/1.1\r\nHost: %s:%s\r\nContent-Type: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s" \
+      "$3" "$4" "$1" "$2" "${#5}" "$5" >&3
+    timeout 5 head -n 1 <&3 | tr -d "\r"' probe "$@"
+}
+mcp_url="$("${compose[@]}" exec -T orchestrator printenv HARNESS_MCP_URL)"
+[[ "$mcp_url" =~ ^http://([^/:]+):([0-9]+)$ ]] || fail "the URL sandboxes are given is '$mcp_url'"
+mcp_host="${BASH_REMATCH[1]}"
+[[ "${BASH_REMATCH[2]}" == "$HARNESS_MCP_PORT" ]] || fail "the URL sandboxes are given, $mcp_url, is not on the published port"
+initialize='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+[[ "$(from_sandbox "$mcp_host" "$HARNESS_MCP_PORT" GET /health "")" == "HTTP/1.1 200 OK" ]] || fail "a sandbox does not reach the MCP port at $mcp_url"
+[[ "$(from_sandbox "$mcp_host" "$HARNESS_MCP_PORT" POST /mcp/agent_smoke "$initialize")" == "HTTP/1.1 401 Unauthorized" ]] || fail "the MCP server answered a sandbox without a token"
+[[ "$(from_sandbox "$mcp_host" "$HARNESS_MCP_PORT" GET /api/guilds "")" == "HTTP/1.1 404 Not Found" ]] || fail "the MCP port serves the API"
+api="$(from_sandbox "$mcp_host" "$ORCHESTRATOR_PORT" GET /health "")"
+if [[ "$(docker info --format '{{.OperatingSystem}}')" == "Docker Desktop" ]]; then
+  # Docker Desktop forwards host.docker.internal to the host's loopback, where the operator app is
+  # published (SEC-63).
+  echo "smoke: on Docker Desktop a sandbox reaches the operator app's port by the same host: $api" >&2
+else
+  [[ "$api" == "refused" ]] || fail "a sandbox reaches the operator app's port at $mcp_host: $api"
+fi
 tables="$("${compose[@]}" exec -T postgres psql -U agent_platform -d agent_platform -At -c "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('plans', 'sessions', 'org_subscriptions', 'sandbox_hosts', '__hosted_migrations')")"
 [[ "$tables" == "0" ]] || fail "the core database holds $tables hosted tables"
 mounts="$(docker inspect "$("${compose[@]}" ps --quiet orchestrator)" --format '{{range .Mounts}}{{.Destination}} {{end}}')"

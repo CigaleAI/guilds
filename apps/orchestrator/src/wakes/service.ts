@@ -2,7 +2,6 @@ import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import {
   cancelRunWake,
   countFiredRunWakes,
-  movePendingRunWake,
   setRunWake,
   type RunWakeCancelReason,
   type RunWakeRow,
@@ -14,8 +13,8 @@ import { WakeError } from "./validation.js";
 
 const MINUTE_MS = 60_000;
 
-/** The run a wake-up is set on: the run, the first run of its chain, its agent, and its snapshot's cap on wake-ups. */
-export type WakingRun = { runId: string; rootRunId: string; agentId: string; maxWakeUps: number };
+/** The run a wake-up is set on: the run, its agent, and its snapshot's cap on wake-ups. */
+export type WakingRun = { runId: string; agentId: string; maxWakeUps: number };
 
 /** The wake-up a tool call asks for, validated: its delay, the agent's note, and the call. */
 export type WakeRequest = { minutes: number; message: string | null; toolCallId: string };
@@ -23,11 +22,10 @@ export type WakeRequest = { minutes: number; message: string | null; toolCallId:
 /** A wake-up just set: it, the pending one it replaced, and the wake-ups the run has left once it fires. */
 export type WakeSet = { wake: RunWakeRow; replaced: RunWakeRow | null; wakeUpsLeft: number };
 
-/** The db/ functions a run's pending wake-up is set, cancelled, and moved through. */
+/** The db/ functions a run's pending wake-up is set and cancelled through. */
 export type WakesDatabase = {
   setRunWake: BoundQuery<typeof setRunWake>;
   cancelRunWake: BoundQuery<typeof cancelRunWake>;
-  movePendingRunWake: BoundQuery<typeof movePendingRunWake>;
   countFiredRunWakes: BoundQuery<typeof countFiredRunWakes>;
 };
 
@@ -41,7 +39,7 @@ export type WakesDependencies = { db: WakesDatabase; events: WakeEvents };
 
 /**
  * A run's pending wake-up: set by its agent, cancelled by its agent, the operator, or the run's
- * end, moved to a continuation, and fired. Every change is published on the run's stream as
+ * end, and fired. Every change is published on the run's stream as
  * `run.wake.changed`, with the pending wake-up it leaves, or null.
  */
 export class Wakes {
@@ -49,11 +47,11 @@ export class Wakes {
 
   /**
    * Sets the run's wake-up `request.minutes` after `now`, replacing its pending one. Refused with
-   * `WakeError` when the wake-ups fired across the run's chain reached its cap.
+   * `WakeError` when the run's fired wake-ups reached its cap.
    */
   async set(run: WakingRun, request: WakeRequest, now: Date): Promise<WakeSet> {
     const { db } = this.deps;
-    const left = wakeUpsLeft(run.maxWakeUps, await db.countFiredRunWakes(run.rootRunId));
+    const left = wakeUpsLeft(run.maxWakeUps, await db.countFiredRunWakes(run.runId));
     if (left === 0) {
       throw new WakeError(`this run has no wake-ups left: it fired the ${run.maxWakeUps} it may`);
     }
@@ -61,7 +59,6 @@ export class Wakes {
       {
         wakeId: newId("wk"),
         runId: run.runId,
-        rootRunId: run.rootRunId,
         agentId: run.agentId,
         dueAt: new Date(now.getTime() + request.minutes * MINUTE_MS),
         message: request.message,
@@ -80,16 +77,6 @@ export class Wakes {
       await this.publishPending(runId, null);
     }
     return cancelled;
-  }
-
-  /** Moves the pending wake-up of `fromRunId` to `toRunId`, the run that continues it; null when there is none. */
-  async move(fromRunId: string, toRunId: string): Promise<RunWakeRow | null> {
-    const moved = await this.deps.db.movePendingRunWake(fromRunId, toRunId);
-    if (moved !== null) {
-      await this.publishPending(fromRunId, null);
-      await this.publishPending(toRunId, moved);
-    }
-    return moved;
   }
 
   /** Tells the run's subscribers its wake-up fired, once the firing committed: it has none pending. */
@@ -111,7 +98,6 @@ export function agentWakes(db: Queryable, events: WakeEvents): Wakes {
     db: {
       setRunWake: bindQuery(db, setRunWake),
       cancelRunWake: bindQuery(db, cancelRunWake),
-      movePendingRunWake: bindQuery(db, movePendingRunWake),
       countFiredRunWakes: bindQuery(db, countFiredRunWakes),
     },
     events,

@@ -6,7 +6,6 @@ import {
   Banner,
   FlowBatch,
   FlowEntry,
-  FlowHarnessTask,
   FlowStepBlock,
   FlowStepRun,
   FlowThought,
@@ -14,7 +13,6 @@ import {
   GenerationHeader,
   ToolCall,
   ToolCallLink,
-  cn,
 } from "@guildsrun/ui";
 import type {
   FlowCallTone,
@@ -32,14 +30,13 @@ import {
   turnReasoning,
   turnText,
   turnUsage,
+  usageTitle,
   type FlowCall,
   type FlowSegment,
   type FlowStats,
   type FlowStep,
 } from "../runs/runFlowModel";
 import {
-  codeTaskChanges,
-  codeTaskStatus,
   formatDuration,
   formatTokens,
   friendlyToolCall,
@@ -50,13 +47,10 @@ import {
 } from "../runs/toolFormat";
 import { TOOL_KINDS, isMutation, isScriptRun } from "../runs/toolKinds";
 import type { ToolProgress } from "../../../api/toolProgress";
-import type { Harness } from "../../../api/types/agents";
-import type { CodeTaskArguments, StepMetadata } from "../../../api/types/runs";
-import { isCodeTaskArguments, isNamedToolArguments } from "../../../api/wire";
+import type { StepMetadata } from "../../../api/types/runs";
+import { isNamedToolArguments } from "../../../api/wire";
 import { formatCost } from "../../../app/format";
-import { harnessLabels } from "../harness";
-import { HarnessLogo } from "../HarnessLogo";
-import { callHarness, callMetadata } from "./callDetail";
+import { callMetadata } from "./callDetail";
 import { ProgressLines, ToolCallDetail } from "./ToolCallDetail";
 
 const CallLink = createLink(ToolCallLink);
@@ -95,19 +89,6 @@ function callsTone(calls: readonly FlowCall[], generating: boolean): FlowCallTon
   const statuses = calls.map((call) => callStatus(call, generating));
   if (statuses.includes("failed")) return "failed";
   return statuses.includes("running") ? "running" : "ok";
-}
-
-/** A task delegated to the coding harness, which shows as its own block even while its step is folded. */
-function isCodeTask(call: FlowCall): boolean {
-  return call.info.name === "code_task";
-}
-
-/** How a code task's status reads on its block: "Running…", "Done", "Failed", or how it ended. */
-function taskStatusLabel(call: FlowCall, status: ToolCallStatus): string {
-  if (status === "running") return "Running…";
-  const word = codeTaskStatus(callMetadata(call).status);
-  if (word && word !== "completed") return word.charAt(0).toUpperCase() + word.slice(1);
-  return status === "failed" ? "Failed" : "Done";
 }
 
 function totalDuration(calls: readonly FlowCall[]): number {
@@ -159,19 +140,19 @@ function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues
   const input = sum(usages.map((usage) => usage.input_tokens));
   const output = sum(usages.map((usage) => usage.output_tokens));
   const cached = sum(usages.map((usage) => usage.cache_read_tokens));
+  const written = sum(usages.map((usage) => usage.cache_write_tokens));
   const costs = steps.map(stepCostUsd).filter((cost) => cost !== null);
   const kinds = new Set(calls.map((call) => call.info.kind));
   const facts: StepFact[] = [];
   if (input + output) {
     facts.push({
       label: `${formatTokens(input + output)} tok`,
-      title: [
-        `${input.toLocaleString()} in`,
-        `${output.toLocaleString()} out`,
-        cached ? `${cached.toLocaleString()} cached` : "",
-      ]
-        .filter(Boolean)
-        .join(" · "),
+      title: usageTitle({
+        input_tokens: input,
+        output_tokens: output,
+        cache_read_tokens: cached,
+        cache_write_tokens: written,
+      }),
     });
   }
   if (costs.length) facts.push({ label: formatCost(sum(costs)) });
@@ -329,42 +310,14 @@ function generationStats(stats: FlowStats, failedCalls: number): GenerationStat[
 }
 
 /** What a call's card says beside its name: that its harness is generating, what it did, and how it came out. */
-export function callHint(call: FlowCall, runsOn: Harness | null, status: ToolCallStatus): string {
-  return [
-    runsOn && status === "running" ? `${harnessLabels[runsOn]} is generating…` : "",
-    friendlyToolCall(call.call),
-    toolOutcome(call.result?.metadata),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+export function callHint(call: FlowCall): string {
+  return [friendlyToolCall(call.call), toolOutcome(call.result?.metadata)].filter(Boolean).join(" · ");
 }
 
 /** The connected server a call's card names; none when the tool's own name already carries it. */
 export function cardServer(call: FlowCall): string | null {
   const { name, server } = call.info;
   return server && !name.startsWith(`${server}_`) ? server : null;
-}
-
-/** The repository a code task works in: the one its result names, else the one it was asked for. */
-export function taskRepository(call: FlowCall): string {
-  return callMetadata(call).repository ?? taskArguments(call)?.repo ?? "";
-}
-
-/** The arguments a code task was called with; none when they are not a code task's. */
-function taskArguments(call: FlowCall): CodeTaskArguments | null {
-  const args = parseToolArgs(call.call.function.arguments);
-  return isCodeTaskArguments(args) ? args : null;
-}
-
-/** The prompt a code task was given; empty when its arguments carry none. */
-export function taskPrompt(call: FlowCall): string {
-  return taskArguments(call)?.brief ?? "";
-}
-
-/** A call's status as a code task's block shows it. */
-export function taskStatus(status: ToolCallStatus): "running" | "failed" | "done" {
-  if (status === "ok") return "done";
-  return status;
 }
 
 type StepReasoningProps = { text: string; defaultOpen: boolean };
@@ -382,8 +335,6 @@ function StepReasoning({ text, defaultOpen }: StepReasoningProps) {
 
 type FlowViewProps = {
   flow: FlowSegment;
-  /** The run the flow belongs to; without it, calls offer nothing fetched from the run. */
-  runId?: string;
   /** The run is generating, so calls without a result are still waiting on it. */
   generating: boolean;
   /** Opens this flow at that step's call and scrolls to it, when the flow holds it. */
@@ -394,20 +345,16 @@ type FlowViewProps = {
   onAskCall?: ((call: FlowCall) => void) | undefined;
   /** What running calls have reported so far, by call id. */
   progress?: ToolProgress;
-  /** The harness the agent codes through; marks code tasks that have not named theirs yet. */
-  harness?: Harness | null;
 };
 
 /** One generation: its header, then one block per step on a rail, folded to what its calls did and what the model said until opened, expanded or filtered. */
 export function FlowView({
   flow,
-  runId,
   generating,
   reveal,
   inspector,
   onAskCall,
   progress,
-  harness,
 }: FlowViewProps) {
   const [revealed] = useState(() => revealedCall(flow, reveal));
   const [filter, setFilter] = useState<GenerationFilter | null>(null);
@@ -461,40 +408,22 @@ export function FlowView({
   const runningProgress = (call: FlowCall) =>
     callStatus(call, generating) === "running" ? progress?.get(call.id) : undefined;
 
-  /** A code task's harness logo, pulsing while the call runs. */
-  const harnessMark = (call: FlowCall): ReactNode => {
-    const runsOn = callHarness(call, harness);
-    if (!runsOn) return null;
-    return (
-      <HarnessLogo
-        harness={runsOn}
-        size={24}
-        className={cn(
-          "shrink-0",
-          callStatus(call, generating) === "running" && "motion-safe:animate-pulse",
-        )}
-      />
-    );
-  };
-
   /** A call's card. */
   const renderCall = (call: FlowCall, index?: number) => {
     const error = callError(call, generating);
     const expanded = openCall === callKey(call);
     const status = callStatus(call, generating);
     const reported = runningProgress(call);
-    const runsOn = callHarness(call, harness);
     const card = (
       <ToolCall
         key={callKey(call)}
         {...(isRevealed(call) ? { "data-revealed": "", className: "ring-2 ring-signal" } : {})}
         name={call.info.name}
-        {...(runsOn ? { icon: harnessMark(call) } : {})}
         kind={call.info.kind}
         effect={callEffect(call)}
         server={cardServer(call)}
         {...(index !== undefined ? { index } : {})}
-        hint={callHint(call, runsOn, status)}
+        hint={callHint(call)}
         status={status}
         {...(error ? { error: previewText(error, 160) } : {})}
         duration={formatDuration(callDuration(call))}
@@ -522,48 +451,9 @@ export function FlowView({
         call={call}
         run={{
           generating,
-          ...(runId ? { id: runId } : {}),
           ...(reported ? { progress: reported } : {}),
         }}
         onAsk={onAskCall}
-      />
-    );
-  };
-
-  /** A code task as its own block: the harness, the prompt it was given, and how it went. */
-  const taskCard = (call: FlowCall): ReactNode => {
-    const status = callStatus(call, generating);
-    const runsOn = callHarness(call, harness);
-    const reported = runningProgress(call);
-    const open = openCall === callKey(call);
-    const error = callError(call, generating);
-    const repository = taskRepository(call);
-    return (
-      <FlowHarnessTask
-        key={`task:${callKey(call)}`}
-        {...(isRevealed(call) ? { "data-revealed": "", className: "ring-2 ring-signal" } : {})}
-        harness={runsOn ? harnessLabels[runsOn] : "Harness"}
-        prompt={taskPrompt(call)}
-        {...(repository ? { repository } : {})}
-        status={taskStatus(status)}
-        statusLabel={taskStatusLabel(call, status)}
-        changes={codeTaskChanges(callMetadata(call))}
-        effect={callEffect(call)}
-        duration={formatDuration(callDuration(call))}
-        {...(error ? { error: previewText(error, 160) } : {})}
-        {...(reported?.lines.length
-          ? {
-              progress: (
-                <ProgressLines
-                  lines={reported.lines.slice(-PROGRESS_TAIL)}
-                  className="bg-surface"
-                />
-              ),
-            }
-          : {})}
-        detail={open ? detailFor(call) : undefined}
-        open={open}
-        onOpenChange={(next) => setOpenCall(next ? callKey(call) : null)}
       />
     );
   };
@@ -607,7 +497,7 @@ export function FlowView({
 
   /**
    * A step as one block: its header names what its calls did, and what the model said sits under it.
-   * Folded, its code tasks show below; open, its reasoning, calls and code tasks.
+   * Open, its reasoning and calls.
    */
   const stepBlock = (step: FlowStep, index: number): ReactNode => {
     const key = `step:${stepKey(step, index)}`;
@@ -615,16 +505,11 @@ export function FlowView({
     const reasoning = step.turn && !thinkingHidden ? turnReasoning(step.turn).trim() : "";
     const note = stepNote(step, open);
     const stop = stopTag(turnMeta(step).finish_reason);
-    const tasks = step.calls.filter(isCodeTask);
-    const outputs = tasks.map(taskCard);
-    const [task] = tasks;
-    const harnessIcon = task ? harnessMark(task) : null;
     return (
       <FlowEntry
         key={key}
         marker="step"
         tone={callsTone(step.calls, generating)}
-        {...(harnessIcon ? { icon: harnessIcon } : {})}
         dimmed={filter !== null && step.calls.every(dimCall)}
       >
         <FlowStepBlock
@@ -635,14 +520,9 @@ export function FlowView({
           {...(stop ? { stop } : {})}
           open={open}
           onOpenChange={(next) => toggle(key, next)}
-          {...(outputs.length ? { outputs } : {})}
         >
           <StepReasoning key={`${key}:thinking:${view}`} text={reasoning} defaultOpen={expanded} />
-          {callCards(
-            step.calls.filter((call) => !isCodeTask(call)),
-            key,
-          )}
-          {outputs}
+          {callCards(step.calls, key)}
         </FlowStepBlock>
       </FlowEntry>
     );
@@ -674,8 +554,8 @@ export function FlowView({
     );
   };
 
-  /** Whether a step produced something to read on its own: something the model said, or a code task. */
-  const produced = (step: FlowStep) => Boolean(stepText(step)) || step.calls.some(isCodeTask);
+  /** Whether a step produced something to read on its own: something the model said. */
+  const produced = (step: FlowStep) => Boolean(stepText(step));
 
   /** The rail: one block per step, and runs of two or more steps that produced nothing compacted into one. */
   const timeline = (): ReactNode[] => {

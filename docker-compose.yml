@@ -1,7 +1,9 @@
 # The core stack: PostgreSQL, OpenSandbox, and the orchestrator serving the operator app on
 # http://127.0.0.1:8080. ./setup.sh writes the secrets and the state path it needs into .env and
 # builds the OpenSandbox server and agent runtime images; then `docker compose up --detach` builds
-# the orchestrator image and starts it. Only the orchestrator is published, and only on loopback.
+# the orchestrator image and starts it. Only the orchestrator is published: the operator app on
+# loopback, and the MCP server subscription agents' harnesses call their tools on where a sandbox
+# on the Docker bridge reaches it and nothing wider (docs/architecture/deployment.md).
 name: guilds
 
 configs:
@@ -85,6 +87,7 @@ services:
     stop_grace_period: 20s
     ports:
       - "127.0.0.1:${ORCHESTRATOR_PORT:-8080}:8080"
+      - "${HARNESS_MCP_PUBLISH:-127.0.0.1}:${HARNESS_MCP_PORT:-8090}:${HARNESS_MCP_PORT:-8090}"
     volumes:
       - ${STATE_ROOT}/notes:${STATE_ROOT}/notes
       - ${STATE_ROOT}/workspaces:${STATE_ROOT}/workspaces
@@ -105,6 +108,9 @@ services:
       AUTH_MODE: ${AUTH_MODE:-compat-cookie}
       HOST: 0.0.0.0
       PORT: "8080"
+      HARNESS_MCP_HOST: 0.0.0.0
+      HARNESS_MCP_PORT: "${HARNESS_MCP_PORT:-8090}"
+      HARNESS_MCP_URL: "${HARNESS_MCP_URL:-http://${HARNESS_MCP_SANDBOX_HOST:-host.docker.internal}:${HARNESS_MCP_PORT:-8090}}"
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     depends_on:
       postgres:

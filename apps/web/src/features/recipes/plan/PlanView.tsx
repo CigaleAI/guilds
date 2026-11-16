@@ -428,7 +428,8 @@ function SectionBody({ id, plan, findings, catalog, hooks }: SectionBodyProps) {
             </li>
           ))}
           <li className="px-1 text-xs text-muted">
-            After apply, connect GitHub and add each repository in the guild&apos;s Settings.
+            After apply, add each repository in the guild&apos;s Settings with its URL and a
+            credential.
           </li>
         </ul>
       );

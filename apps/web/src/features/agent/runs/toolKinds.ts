@@ -73,11 +73,6 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   browser_scroll: { kind: "act" },
   browser_screenshot: { kind: "read" },
   browser_eval: { kind: "act" },
-  shell: { kind: "execute", level: "local" },
-  shell_status: { kind: "read", level: "local" },
-  code_task: { kind: "execute", level: "local", mutates: true },
-  file_read: { kind: "read", level: "local" },
-  code_search: { kind: "read", level: "local" },
   secret_store: { kind: "write", level: "org" },
   secret_request: { kind: "post", level: "local" },
   studio_get_guidelines: { kind: "read" },
@@ -113,6 +108,28 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   builder_ask_org_connection: { kind: "post" },
   builder_ask_connection: { kind: "post" },
   builder_ask_question: { kind: "post" },
+});
+
+// The tools of the harness's own, which a subscription agent's harness calls: Claude Code's by
+// their names, Codex's by the items its log reports them as. They touch the agent's own home, or
+// the web.
+const HARNESS_TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
+  Bash: { kind: "execute", level: "local" },
+  Read: { kind: "read", level: "local" },
+  Glob: { kind: "read", level: "local" },
+  Grep: { kind: "read", level: "local" },
+  LS: { kind: "read", level: "local" },
+  Write: { kind: "write", level: "local" },
+  Edit: { kind: "write", level: "local" },
+  MultiEdit: { kind: "write", level: "local" },
+  NotebookEdit: { kind: "write", level: "local" },
+  TodoWrite: { kind: "write", level: "local" },
+  Task: { kind: "execute", level: "local" },
+  WebFetch: { kind: "read" },
+  WebSearch: { kind: "read" },
+  command_execution: { kind: "execute", level: "local" },
+  file_change: { kind: "write", level: "local" },
+  web_search: { kind: "read" },
 });
 
 /** An agent's Memory, `org/<org>/agents/<agent>/memory.md`. */
@@ -161,7 +178,11 @@ function calledToolName(call: ToolCall, resultMsg: StepMessage | null | undefine
   return call.function.name || resultMsg?.metadata.tool_name || "";
 }
 
-/** Classifies a recorded tool call by effect, level, and serving connected server, using the tool name its result records and the run's snapshot. */
+/**
+ * Classifies a recorded tool call by effect, level, and serving connected server, using the tool
+ * name its result records and the run's snapshot; a tool neither the platform nor the run offers
+ * reads as one of a harness's own when it is.
+ */
 export function classifyToolCall(
   call: ToolCall,
   resultMsg?: StepMessage | null,
@@ -177,6 +198,8 @@ export function classifyToolCall(
   if (offeredToolNames(run).has(name)) {
     return { name, kind: "execute", level: "local", server: null };
   }
+  const harness = lookup(HARNESS_TABLE, name);
+  if (harness) return { name, kind: harness.kind, level: harness.level ?? null, server: null };
   return { name, kind: "unknown", level: null, server: null };
 }
 

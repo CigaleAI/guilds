@@ -56,6 +56,7 @@ before(async () => {
     mcp: mcpPool(database.pool),
     notes,
     workspaceRoot: root,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(root),
     artifacts: artifactStore(database.pool, notes.templates),
   });

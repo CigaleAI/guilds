@@ -28,7 +28,7 @@ import {
 
 /**
  * The organisation's machines and the sizing rules: each one's tier and size, the agents on it with
- * their browser and coding flags, its planned load against its capacity, and its disk against its
+ * their browser and subscription flags, its planned load against its capacity, and its disk against its
  * cap. Owners and admins add, resize and delete them; members see them.
  */
 export function MachinesTab() {
@@ -237,9 +237,9 @@ function MachineAgentRow({ agent }: MachineAgentRowProps) {
           Browser
         </Tag>
       ) : null}
-      {agent.coding ? (
+      {agent.model_source === "subscription" ? (
         <Tag tone="signal" font="sans">
-          Coding
+          Subscription
         </Tag>
       ) : null}
     </li>

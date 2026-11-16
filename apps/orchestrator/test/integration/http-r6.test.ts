@@ -96,6 +96,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const generation = generationLoop(db, {
     notes,
     workspaceRoot: env.WORKSPACE_ROOT ?? "",
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes,
     mcp: mcpPool(db),
     artifacts,

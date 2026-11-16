@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Machine } from "../../api/types/agents";
+import type { Machine, ModelSource } from "../../api/types/agents";
 import {
   agentMinimum,
   agentMinimums,
@@ -43,47 +43,70 @@ function machine(patch: Partial<Machine> = {}): Machine {
   };
 }
 
-const agent = (id: string, browser: boolean, coding: boolean) => ({
+const agent = (id: string, browser: boolean, model_source: ModelSource = "key") => ({
   id,
   name: id,
   guild_id: "g",
   guild_name: "guild",
   browser,
-  coding,
+  model_source,
 });
 
 test("an agent's minimum is the largest of its capabilities' minimums, not their sum", () => {
-  assert.deepEqual(agentMinimum({ browser: false, coding: false }), agentMinimums.base);
-  assert.deepEqual(agentMinimum({ browser: true, coding: false }), agentMinimums.browser);
-  assert.deepEqual(agentMinimum({ browser: true, coding: true }), agentMinimums.coding);
   assert.deepEqual(
-    agentsMinimum([agent("a", true, false), agent("b", false, false)]),
+    agentMinimum({ browser: false, model_source: "key" }),
+    agentMinimums.base,
+  );
+  assert.deepEqual(
+    agentMinimum({ browser: true, model_source: "key" }),
     agentMinimums.browser,
   );
+  assert.deepEqual(
+    agentMinimum({ browser: true, model_source: "subscription" }),
+    agentMinimums.harness,
+  );
+  assert.deepEqual(
+    agentsMinimum([agent("a", true), agent("b", false)]),
+    agentMinimums.browser,
+  );
+  assert.deepEqual(
+    agentMinimum({ browser: false, model_source: "subscription" }),
+    agentMinimums.harness,
+  );
+  assert.deepEqual(
+    agentsMinimum([agent("a", true), agent("b", false, "subscription")]),
+    agentMinimums.harness,
+    "a subscription agent's harness sets its minimum",
+  );
+  assert.deepEqual(agentsMinimum([]), agentMinimums.base);
   assert.equal(sizeMeets(machine(), agentMinimums.browser), true);
-  assert.equal(sizeMeets(machine(), agentMinimums.coding), false);
+  assert.equal(sizeMeets(machine(), agentMinimums.harness), false);
 });
 
 test("a placement starts from the server's plan, counts an agent already there once, and adds this agent's minimum", () => {
   const host = machine({
     planned_cpu: 2,
     planned_mib: 4096,
-    agents: [agent("a", true, false), agent("b", true, false)],
+    agents: [agent("a", true), agent("b", true)],
   });
-  assert.deepEqual(placementBudget(host, { browser: true, coding: false }), {
+  assert.deepEqual(placementBudget(host, { browser: true, model_source: "key" }), {
     fits: true,
     minimum: agentMinimums.browser,
     planned: { cpu: 2, memory_mib: 4096 },
     adds: agentMinimums.browser,
   });
   // An agent already on the machine is not counted twice, and its new needs count.
-  const moved = placementBudget(host, { id: "a", browser: true, coding: true });
+  const moved = placementBudget(host, {
+    id: "a",
+    browser: true,
+    model_source: "subscription",
+  });
   assert.deepEqual(moved.planned, { cpu: 1, memory_mib: 2048 });
   assert.equal(moved.fits, false);
   // Agents of guilds the viewer cannot see are in the server's plan though not listed.
   const shared = placementBudget(machine({ planned_cpu: 1.5, hidden_agents: 1 }), {
     browser: false,
-    coding: false,
+    model_source: "key",
   });
   assert.equal(shared.planned.cpu, 1.5);
 });
@@ -104,7 +127,7 @@ test("a machine's capacity is its size times the overcommit, and the load warns 
 
 test("a machine's agent count includes those of guilds the viewer cannot see", () => {
   assert.equal(
-    machineAgentCount(machine({ agents: [agent("a", false, false)], hidden_agents: 2 })),
+    machineAgentCount(machine({ agents: [agent("a", false)], hidden_agents: 2 })),
     3,
   );
   assert.equal(machineAgentCount(machine()), 0);
@@ -200,7 +223,7 @@ test("a machine name and disk cap follow the server's rules", () => {
       /1 or more/,
     );
   }
-  // A tier is never refused here: the server refuses a standard tier under a coding agent.
+  // A tier is never refused here: the server refuses a standard tier under a subscription agent.
   assert.equal(machineFormErrors({ ...form, box: "standard" }).box, undefined);
 });
 

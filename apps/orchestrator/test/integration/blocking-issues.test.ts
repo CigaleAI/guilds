@@ -44,6 +44,7 @@ test("an open blocking issue disables its agent until it is resolved", { timeout
     mcp: mcpPool(db),
     notes,
     workspaceRoot,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(workspaceRoot),
     artifacts: artifactStore(db, notes.templates),
   });
@@ -133,8 +134,8 @@ test("an open blocking issue disables its agent until it is resolved", { timeout
     });
     assert.equal(idle.statusCode, 201, idle.body);
     await db.query(
-      `INSERT INTO run_wakes (id, run_id, root_run_id, agent_id, due_at, state, set_tool_call_id, created_at)
-       VALUES ('wake_blocked', $1, $1, $2, '2020-01-01T00:00:00.000Z', 'pending', 'call_1', now())`,
+      `INSERT INTO run_wakes (id, run_id, agent_id, due_at, state, set_tool_call_id, created_at)
+       VALUES ('wake_blocked', $1, $2, '2020-01-01T00:00:00.000Z', 'pending', 'call_1', now())`,
       [String(idle.json().id), blockedId],
     );
     assert.deepEqual(await listDueRunWakes(db, new Date()), []);

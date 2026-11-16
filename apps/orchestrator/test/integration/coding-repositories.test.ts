@@ -169,6 +169,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.deepEqual((await app.inject({ method: "GET", url: base, headers: OWNER })).json(), {
       repositories: [],
       github_connections: [],
+      usable: [],
     });
     const plain = await app.inject({
       method: "POST",
@@ -252,7 +253,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       payload: { mcp_server_id: "mcp_github", owner_scope: "org", owner_id: "org_home" },
     });
     const retryState = String(new URL(String(retry.json().authorization_url)).searchParams.get("state"));
-    const githubId = String(retry.json().id);
+    const remoteId = String(retry.json().id);
     const setup = await app.inject({
       method: "GET",
       url: `/api/mcp/oauth/callback?installation_id=77&setup_action=install&state=${retryState}`,
@@ -266,17 +267,17 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       url: `/api/mcp/oauth/callback?code=good-code&state=${retryState}`,
     });
     assert.equal(callback.statusCode, 200, callback.body);
-    const connected = await getMcpConnection(db, githubId);
+    const connected = await getMcpConnection(db, remoteId);
     assert.equal(connected?.status, "connected");
     assert.equal(connected?.account_hint, "acme");
     assert.equal(connected?.oauth_state, null);
     const stored = decryptPayload(connected?.ciphertext as Buffer, connected?.nonce as Buffer);
     assert.deepEqual(stored, { installation_id: 77, account: "acme" });
-    assert.equal((await listBindingsForConnection(db, githubId)).length, 1);
+    assert.equal((await listBindingsForConnection(db, remoteId)).length, 1);
 
     const picker = await app.inject({
       method: "GET",
-      url: `/api/mcp/connections/${githubId}/github/repositories`,
+      url: `/api/mcp/connections/${remoteId}/github/repositories`,
       headers: OWNER,
     });
     assert.equal(picker.statusCode, 200, picker.body);
@@ -292,7 +293,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       method: "POST",
       url: base,
       headers: JSON_HEADERS,
-      payload: { name: "infra", url: "https://github.com/acme/infra", connection_id: githubId },
+      payload: { name: "infra", url: "https://github.com/acme/infra", connection_id: remoteId },
     });
     assert.equal(unreachable.statusCode, 422);
     assert.equal(unreachable.json().detail, "the GitHub connection does not reach acme/infra");
@@ -300,35 +301,36 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       method: "POST",
       url: base,
       headers: JSON_HEADERS,
-      payload: { name: "shop", url: "https://github.com/acme/shop.git", connection_id: githubId },
+      payload: { name: "shop", url: "https://github.com/acme/shop.git", connection_id: remoteId },
     });
     assert.equal(shop.statusCode, 201, shop.body);
     assert.equal(shop.json().default_branch, "trunk");
-    assert.deepEqual(shop.json().connection, { id: githubId, status: "connected", account_hint: "acme" });
+    assert.deepEqual(shop.json().connection, { id: remoteId, status: "connected", account_hint: "acme" });
     const shopRow = (await listGuildRepositories(db, guildId)).find((row) => row.name === "shop");
-    assert.equal(Number(shopRow?.github_id), 101, "GitHub's id is recorded with the repository");
+    assert.equal(Number(shopRow?.remote_id), 101, "GitHub's id is recorded with the repository");
     const afterConnect = await app.inject({ method: "GET", url: base, headers: OWNER });
     assert.deepEqual(
       afterConnect.json().github_connections.map((row: { id: string; account_hint: string }) => [row.id, row.account_hint]),
-      [[githubId, "acme"]],
+      [[remoteId, "acme"]],
     );
+    assert.deepEqual([...afterConnect.json().usable].sort(), ["docs", "shop"], "a new subscription agent can use every repository of the guild");
 
     // GitHub refusing the installation while the picker lists it disconnects the login.
     installationGone = true;
     const refused = await app.inject({
       method: "GET",
-      url: `/api/mcp/connections/${githubId}/github/repositories`,
+      url: `/api/mcp/connections/${remoteId}/github/repositories`,
       headers: OWNER,
     });
     installationGone = false;
     assert.equal(refused.statusCode, 422, refused.body);
     assert.equal(refused.json().detail, "GitHub refused the installation; the connection is now disconnected");
-    assert.equal((await getMcpConnection(db, githubId))?.status, "disconnected");
-    assert.deepEqual(retired, [[githubId, "installation_gone"]], "the route retires through the composed service");
+    assert.equal((await getMcpConnection(db, remoteId))?.status, "disconnected");
+    assert.deepEqual(retired, [[remoteId, "installation_gone"]], "the route retires through the composed service");
 
     // Deleting the connection removes the repositories added through it, and leaves the anonymous one.
     assert.equal(
-      (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${githubId}`, headers: OWNER })).statusCode,
+      (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${remoteId}`, headers: OWNER })).statusCode,
       204,
     );
     const listed = (await app.inject({ method: "GET", url: base, headers: OWNER })).json().repositories;
@@ -561,7 +563,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     });
     assert.equal(picked.statusCode, 200, picked.body);
     assert.deepEqual(picked.json().repositories, [
-      { name: "site", url: "https://github.com/acme/site", default_branch: "main", github_id: 102 },
+      { name: "site", url: "https://github.com/acme/site", default_branch: "main", remote_id: 102 },
     ]);
     assert.deepEqual(dropped.slice(droppedBefore), [retryId], "the login's tool session is reopened for the new selection");
     const guildAccess = await app.inject({
@@ -573,7 +575,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       (item) => item.slug === "github",
     );
     assert.deepEqual(github?.settings.repositories, [
-      { name: "site", url: "https://github.com/acme/site", default_branch: "main", github_id: 102 },
+      { name: "site", url: "https://github.com/acme/site", default_branch: "main", remote_id: 102 },
     ]);
 
     await codeDefaultMachine(app, OWNER);
@@ -581,9 +583,13 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       method: "POST",
       url: `/api/guilds/${backendId}/agents`,
       headers: JSON_HEADERS,
-      payload: { name: "coder", config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code" } },
+      payload: {
+        name: "coder",
+        config: { model: null, browser: false, harness: "claude-code", repositories: ["site"] },
+      },
     });
     assert.equal(agent.statusCode, 201, agent.body);
+    const coderId = String(agent.json().id);
     const agentConnect = await app.inject({
       method: "POST",
       url: "/api/mcp/connections",
@@ -607,6 +613,27 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     });
     assert.equal(agentPicked.statusCode, 200, agentPicked.body);
     assert.equal(agentPicked.json().repositories[0]?.default_branch, "trunk");
+
+    // The coder picks the shop its own login reaches beside the site its guild's login picks.
+    const repicked = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_HEADERS,
+      payload: {
+        config: { model: null, browser: false, harness: "claude-code", repositories: ["site", "shop"] },
+      },
+    });
+    assert.equal(repicked.statusCode, 200, repicked.body);
+    // Unselecting the site on the guild's login unpicks it from the coder, which keeps the shop.
+    const unselected = await app.inject({
+      method: "PUT",
+      url: `/api/mcp/connections/${retryId}/github/selected`,
+      headers: JSON_HEADERS,
+      payload: { repositories: [] },
+    });
+    assert.equal(unselected.statusCode, 200, unselected.body);
+    const coder = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: OWNER });
+    assert.deepEqual(coder.json().config.repositories, ["shop"]);
   } finally {
     globalThis.fetch = realFetch;
     setInstanceKeys({});

@@ -21,7 +21,6 @@ function wakeRow(overrides: Partial<RunWakeRow> = {}): RunWakeRow {
   return {
     id: "wk_1",
     run_id: "r_1",
-    root_run_id: "r_1",
     agent_id: "a_1",
     due_at: "2026-11-05T14:12:11.000Z",
     message: "check deploy 4812",
@@ -88,7 +87,6 @@ function fakeWakes(due: RunWakeRow[], fired: (wakeId: string) => RunWakeRow | nu
     generations: { isAgentBusy: () => false } as unknown as ActiveGenerations,
     wakes: {
       cancel: async () => null,
-      move: async () => null,
       announceFired: async (runId: string) => {
         calls.push(`fired ${runId}`);
       },
@@ -218,7 +216,6 @@ function publishingWakes(row: RunWakeRow | null) {
     db: {
       setRunWake: async () => ({ wake: wakeRow({ id: "wk_new" }), replaced: row }),
       cancelRunWake: async () => row,
-      movePendingRunWake: async () => row,
       countFiredRunWakes: async () => 0,
     },
     events: {
@@ -234,25 +231,21 @@ function publishingWakes(row: RunWakeRow | null) {
 test("each change of a run's pending wake-up is published with what it leaves", async () => {
   const { wakes, published } = publishingWakes(wakeRow());
   await wakes.set(
-    { runId: "r_1", rootRunId: "r_1", agentId: "a_1", maxWakeUps: 10 },
+    { runId: "r_1", agentId: "a_1", maxWakeUps: 10 },
     { minutes: 5, message: null, toolCallId: "call_1" },
     new Date(NOW),
   );
   await wakes.cancel("r_1", "operator");
-  await wakes.move("r_1", "r_2");
-  await wakes.announceFired("r_2");
+  await wakes.announceFired("r_1");
   assert.deepEqual(published, [
     ["r_1", "wk_new"],
     ["r_1", null],
     ["r_1", null],
-    ["r_2", "wk_1"],
-    ["r_2", null],
   ]);
 });
 
-test("a cancel or a move that finds no pending wake-up publishes nothing", async () => {
+test("a cancel that finds no pending wake-up publishes nothing", async () => {
   const { wakes, published } = publishingWakes(null);
   assert.equal(await wakes.cancel("r_1", "agent"), null);
-  assert.equal(await wakes.move("r_1", "r_2"), null);
   assert.deepEqual(published, []);
 });

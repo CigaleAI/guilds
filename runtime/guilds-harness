@@ -9,15 +9,22 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
   run on.
 - `start`: removes the harness's local configuration and memory from the agent's home, then
   forks a supervisor in its own session and returns at once. The supervisor starts
-  the CLI in its own process group in the repository directory, writes the CLI's raw events
-  to the log, waits for it, and records its exit code.
-- `poll`: the normalised progress lines after a byte offset into the log, the new offset,
-  the session id once the harness has reported one, and whether the CLI has exited.
+  the CLI in its own process group in the repository directory, or in the home when the
+  request names no repository, writes the CLI's raw events to the log, waits for it, and
+  records its exit code. A request with a `system_prompt` starts the CLI with that system
+  prompt: Claude Code and Codex in place of their own, Cursor and Antigravity as a rules file in
+  the home that they read beside their own. A request with an `mcp_url` and its `mcp_token`
+  starts the CLI with that one MCP server, the token sent as its bearer. The token reaches the
+  CLI through a private file: Claude Code reads it there, Cursor and Antigravity read it from
+  their MCP configuration in the home, and the supervisor sets it in Codex's own environment
+  alone. A request with a `max_turns` starts a CLI that takes a limit on its model calls with
+  that limit; any other CLI refuses it.
+- `poll`: the raw events after a byte offset into the log, their normalised progress lines,
+  the new offset, the session id once the harness has reported one, and whether the CLI has
+  exited.
 - `result`: the final message, the session id, and how the turn ended, read from the log.
 - `stop`: SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the
   supervisor to record the exit.
-- `log`: a call's event log as it is kept in `.runs/`, for the app: every normalised progress
-  line, and the raw JSONL from its start, both within `max_bytes`.
 
 A large request arrives as a file under /run/guilds/requests, which this helper reads and
 deletes. The helper prints one base64 JSON envelope: {"ok": true, "text": ..., "meta":
@@ -26,7 +33,12 @@ deletes. The helper prints one base64 JSON envelope: {"ok": true, "text": ..., "
 A call's state lives in /run/guilds/<agent id>/harness/: `<call id>.json` (what was started),
 `<call id>.pid` (the CLI's pid, its process group), `<call id>.exit` (its exit code),
 `<call id>.session` (the session id once seen), `<call id>.stderr`. The raw event log is
-`.runs/<run id>/<call id>.harness.jsonl` in the agent's home.
+`.runs/<run id>/<call id>.harness.jsonl` in the agent's home, beside the call's private files,
+`<call id>.prompt.md`, `<call id>.system.md` and `<call id>.mcp.json`, which go with its state.
+Cursor's and Antigravity's system prompt and MCP configuration are where each CLI reads its own,
+in the home and outside every repository: `.cursor/rules/guilds.mdc` and `.cursor/mcp.json`,
+`.gemini/GEMINI.md` and `.gemini/config/mcp_config.json`. They go with the call's state too, and
+every call's reset removes whatever is left there.
 """
 from __future__ import annotations
 
@@ -55,7 +67,6 @@ STOP_GRACE = 10.0
 EXIT_WAIT = 5.0
 POLL_MAX_BYTES = 256 * 1024
 POLL_MAX_LINES = 60
-LOG_MAX_LINES = 2000
 STDERR_TAIL_BYTES = 2000
 CHILD_ENV = {
     "PAGER": "cat",
@@ -73,6 +84,15 @@ EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max",
 ANTIGRAVITY_TOKEN = Path(".gemini/antigravity-cli/antigravity-oauth-token")
 # Never in a harness's environment: the harness does not open pull requests.
 DROPPED_ENV = ("GUILDS_RUN_DIR", "GH_TOKEN", "GITHUB_TOKEN")
+# The name the orchestrator's MCP server is configured under: the orchestrator names its tools in
+# the prompt by it.
+MCP_SERVER = "guilds"
+# The orchestrator's MCP server, as the start request names it: its URL and the turn's token.
+MCP_URL_RE = re.compile(r"https?://[A-Za-z0-9.:\[\]_-]+(/[A-Za-z0-9._~/-]*)?")
+MCP_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43,128}")
+# The variable a Codex turn reads its MCP token from: set in the CLI's own environment alone, and
+# kept out of the commands its model runs.
+CODEX_MCP_TOKEN_ENV = "GUILDS_MCP_TOKEN"
 
 
 class ToolError(Exception):
@@ -80,10 +100,28 @@ class ToolError(Exception):
 
 
 class Launch(NamedTuple):
-    """The model and effort a call starts the CLI with; empty leaves each to the harness."""
+    """The model and effort a call starts the CLI with, empty to leave each to the harness, and
+    the most model calls its turn may make, 0 for no limit."""
 
     model: str
     effort: str
+    max_turns: int
+
+
+class McpServer(NamedTuple):
+    """The orchestrator's MCP server a call starts the CLI with: its URL, and the token it takes."""
+
+    url: str
+    token: str
+
+
+class TurnFiles(NamedTuple):
+    """A call's private files the CLI reads: its prompt, and its system prompt and MCP
+    configuration when the call has them."""
+
+    prompt: Path
+    system: Path | None
+    mcp: Path | None
 
 
 # --- request and envelope -------------------------------------------------
@@ -160,18 +198,60 @@ class Driver:
                 removed.append(str(found.relative_to(HOME)))
         return removed
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
-        """The CLI's command line; an empty model leaves the model to the subscription."""
+    def command(self, session_id: str, files: TurnFiles, launch: Launch) -> list[str]:
+        """The CLI's command line; an empty model leaves the model to the subscription, a system
+        prompt file replaces the CLI's own system prompt, and an MCP configuration file is the
+        only MCP server it uses."""
         raise NotImplementedError
 
     def effort_args(self, effort: str) -> list[str]:
         """The arguments that set the model's effort."""
         raise ToolError(f"{self.name} takes its effort in the model name")
 
+    def prompt_text(self, prompt: str) -> str:
+        """What the call's prompt file holds: the prompt as the CLI reads it."""
+        return prompt
+
+    def system_prompt_file(self, run_id: str, call_id: str) -> Path:
+        """Where the call's system prompt file goes: a private file in the run folder, which the
+        command line names."""
+        return RUNS / run_id / f"{call_id}.system.md"
+
+    def system_prompt_text(self, system_prompt: str) -> str:
+        """What the call's system prompt file holds."""
+        return system_prompt
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        """The arguments that give the CLI the system prompt of the file at `path`."""
+        raise NotImplementedError
+
+    def mcp_config_file(self, run_id: str, call_id: str) -> Path:
+        """Where the call's MCP configuration file goes: a private file in the run folder."""
+        return RUNS / run_id / f"{call_id}.mcp.json"
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        """The MCP configuration file's content that gives the CLI `server`, and no other."""
+        raise NotImplementedError
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        """The arguments that give the CLI the MCP servers of the configuration file at `path`."""
+        raise NotImplementedError
+
+    def mcp_env(self, path: Path) -> dict[str, str]:
+        """The variables the CLI alone is started with for the MCP configuration file at `path`;
+        none for a CLI that reads the file itself."""
+        return {}
+
+    def max_turns_args(self, max_turns: int) -> list[str]:
+        """The arguments that end the turn after `max_turns` model calls."""
+        raise ToolError(f"{self.name} takes no turn limit")
+
     def model_args(self, launch: Launch) -> list[str]:
-        """`--model` with the model, then the effort's arguments; nothing for what is empty."""
+        """`--model` with the model, then the effort's arguments, then the turn limit's; nothing
+        for what is empty."""
         argv = ["--model", launch.model] if launch.model else []
-        return argv + (self.effort_args(launch.effort) if launch.effort else [])
+        argv += self.effort_args(launch.effort) if launch.effort else []
+        return argv + (self.max_turns_args(launch.max_turns) if launch.max_turns else [])
 
     def credential(self, env: dict[str, str]) -> str | None:
         """`secret` or `login` when the harness has a credential to run on, else None."""
@@ -246,7 +326,7 @@ class ClaudeCode(Driver):
         ".claude/projects/*/memory",
     )
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    def command(self, session_id: str, files: TurnFiles, launch: Launch) -> list[str]:
         argv = [
             self.binary,
             "-p",
@@ -261,6 +341,8 @@ class ClaudeCode(Driver):
             "--settings",
             json.dumps(self.settings),
         ]
+        argv += self.system_prompt_args(files.system) if files.system else []
+        argv += self.mcp_config_args(files.mcp) if files.mcp else []
         argv += self.model_args(launch)
         if session_id:
             argv += ["--resume", session_id]
@@ -268,6 +350,27 @@ class ClaudeCode(Driver):
 
     def effort_args(self, effort: str) -> list[str]:
         return ["--effort", effort]
+
+    def max_turns_args(self, max_turns: int) -> list[str]:
+        return ["--max-turns", str(max_turns)]
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        return ["--system-prompt-file", str(path)]
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        return {
+            "mcpServers": {
+                MCP_SERVER: {
+                    "type": "http",
+                    "url": server.url,
+                    "headers": {"Authorization": f"Bearer {server.token}"},
+                }
+            }
+        }
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        # `--strict-mcp-config` keeps every other MCP configuration out.
+        return ["--mcp-config", str(path)]
 
     def credential(self, env: dict[str, str]) -> str | None:
         if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
@@ -312,6 +415,7 @@ class ClaudeCode(Driver):
                     "message": text or last_text,
                     "is_error": is_error,
                     "error": (text or str(event.get("subtype") or "")) if is_error else "",
+                    "max_turns": event.get("subtype") == "error_max_turns",
                 }
             if event.get("type") == "assistant":
                 texts = [
@@ -366,11 +470,13 @@ class Codex(Driver):
         ".codex/hooks.json",
     )
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    def command(self, session_id: str, files: TurnFiles, launch: Launch) -> list[str]:
         argv = [self.binary, "exec"]
         if session_id:
             argv.append("resume")
         argv += ["--json", "--dangerously-bypass-approvals-and-sandbox", *self.managed]
+        argv += self.system_prompt_args(files.system) if files.system else []
+        argv += self.mcp_config_args(files.mcp) if files.mcp else []
         argv += self.model_args(launch)
         if session_id:
             argv.append(session_id)
@@ -380,6 +486,32 @@ class Codex(Driver):
 
     def effort_args(self, effort: str) -> list[str]:
         return ["-c", f'model_reasoning_effort="{effort}"']
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        # Codex's own base instructions give way to the file; a rule file would only add to them.
+        return ["-c", f"model_instructions_file={_toml_string(str(path))}"]
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        # Codex takes an MCP server from its configuration alone, so the file holds what the
+        # call's overrides and the CLI's environment give it.
+        return {"url": server.url, "token": server.token}
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        # `mcp_servers={}` among the managed overrides drops every other server first.
+        server = f"mcp_servers.{MCP_SERVER}"
+        return [
+            "-c",
+            f"{server}.url={_toml_string(str(_json_file(path).get('url') or ''))}",
+            "-c",
+            f"{server}.bearer_token_env_var={_toml_string(CODEX_MCP_TOKEN_ENV)}",
+            # Codex hands its whole environment to the commands its model runs unless told otherwise.
+            "-c",
+            f"shell_environment_policy.exclude=[{_toml_string(CODEX_MCP_TOKEN_ENV)}]",
+        ]
+
+    def mcp_env(self, path: Path) -> dict[str, str]:
+        token = _json_file(path).get("token")
+        return {CODEX_MCP_TOKEN_ENV: token} if isinstance(token, str) and token else {}
 
     def credential(self, env: dict[str, str]) -> str | None:
         """A ChatGPT login: auth.json holding tokens, not only an API key."""
@@ -458,7 +590,8 @@ class Cursor(Driver):
     # The Cursor CLI takes no prompt on stdin: its argument names the prompt file.
     prompt_on_stdin = False
     # It has no switch to ignore the configuration in the home; a repository's own `.cursor/`,
-    # hooks included, still loads.
+    # hooks included, still loads. Besides its own folder, it reads the rules of every folder
+    # from the one it runs in up to the root: the home's and `repos/`'s too.
     local_state = (
         ".cursor/hooks.json",
         ".cursor/hooks",
@@ -468,15 +601,48 @@ class Cursor(Driver):
         ".cursor/commands",
         ".cursor/agents",
         ".cursor/plugins",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CLAUDE.local.md",
+        "repos/.cursor/rules",
+        "repos/AGENTS.md",
+        "repos/CLAUDE.md",
+        "repos/CLAUDE.local.md",
     )
+    # Where it reads a user rule and a user MCP server, which apply wherever it runs: the call's
+    # system prompt as a rule that always applies, and the call's MCP server, which a user
+    # configuration gives without the approval a repository's own `.cursor/mcp.json` needs.
+    rules_file = Path(".cursor/rules/guilds.mdc")
+    mcp_file = Path(".cursor/mcp.json")
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    def command(self, session_id: str, files: TurnFiles, launch: Launch) -> list[str]:
         argv = [self.binary, "-p", "--force", "--trust", "--output-format", "stream-json"]
         argv += self.model_args(launch)
         if session_id:
             argv.append(f"--resume={session_id}")
-        argv.append(f"Read your task in {prompt_path} and follow it.")
+        argv.append(f"Read your task in {files.prompt} and follow it.")
         return argv
+
+    def system_prompt_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.rules_file
+
+    def system_prompt_text(self, system_prompt: str) -> str:
+        return f"---\ndescription: The guild's instructions for this turn\nalwaysApply: true\n---\n\n{system_prompt}"
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        # The CLI reads the rule where it lies, on top of its own system prompt.
+        return []
+
+    def mcp_config_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.mcp_file
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        # The reset removed any other server of the home's configuration first.
+        headers = {"Authorization": f"Bearer {server.token}"}
+        return {"mcpServers": {MCP_SERVER: {"url": server.url, "headers": headers}}}
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        return []
 
     def credential(self, env: dict[str, str]) -> str | None:
         if env.get("CURSOR_API_KEY"):
@@ -548,8 +714,10 @@ def _payload(event: dict[str, Any]) -> dict[str, Any]:
 class Antigravity(Driver):
     name = "antigravity"
     binary = "agy"
-    # Its `-p` takes the prompt itself; the prompt names the prompt file instead.
-    prompt_on_stdin = False
+    # The prompt is one stream-json user message on stdin, which keeps it off the command line
+    # and needs no workspace beside the repository: a directory added to the workspace becomes
+    # the one its commands run in.
+    prompt_on_stdin = True
     # Each would move it off the Google sign-in: a Gemini API key, Cloud credentials, or another endpoint.
     removed_env = (
         "GEMINI_API_KEY",
@@ -576,6 +744,9 @@ class Antigravity(Driver):
     local_state = (
         ".gemini/GEMINI.md",
         ".gemini/AGENTS.md",
+        ".gemini/config/GEMINI.md",
+        ".gemini/config/AGENTS.md",
+        ".gemini/config/rules",
         ".gemini/config/hooks.json",
         ".gemini/config/mcp_config.json",
         ".gemini/config/skills",
@@ -595,22 +766,46 @@ class Antigravity(Driver):
         path.write_text(json.dumps(self.settings), encoding="utf-8")
         return removed
 
-    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+    # Where it reads its global rules and its MCP servers, which apply wherever it runs: the call's
+    # system prompt as a global rule, and the call's MCP server.
+    rules_file = Path(".gemini/GEMINI.md")
+    mcp_file = Path(".gemini/config/mcp_config.json")
+
+    def command(self, session_id: str, files: TurnFiles, launch: Launch) -> list[str]:
         argv = [
             self.binary,
             "--output-format",
             "stream-json",
+            "--input-format",
+            "stream-json",
             "--dangerously-skip-permissions",
             "--disable-slash-commands",
-            # The prompt file sits outside the repository, the workspace the CLI's tools reach.
-            "--add-dir",
-            str(prompt_path.parent),
         ]
         argv += self.model_args(launch)
         if session_id:
             argv += ["--conversation", session_id]
-        argv += ["-p", f"Read your task in {prompt_path} and follow it."]
         return argv
+
+    def prompt_text(self, prompt: str) -> str:
+        return json.dumps({"event": "user", "message": {"content": prompt}}, ensure_ascii=False) + "\n"
+
+    def system_prompt_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.rules_file
+
+    def system_prompt_args(self, path: Path) -> list[str]:
+        # The CLI reads the rule where it lies, on top of its own system prompt.
+        return []
+
+    def mcp_config_file(self, run_id: str, call_id: str) -> Path:
+        return HOME / self.mcp_file
+
+    def mcp_config(self, server: McpServer) -> dict[str, Any]:
+        # The reset removed any other server of the home's configuration first.
+        headers = {"Authorization": f"Bearer {server.token}"}
+        return {"mcpServers": {MCP_SERVER: {"serverUrl": server.url, "headers": headers}}}
+
+    def mcp_config_args(self, path: Path) -> list[str]:
+        return []
 
     def effort_args(self, effort: str) -> list[str]:
         return ["--effort", effort]
@@ -619,7 +814,8 @@ class Antigravity(Driver):
         return "login" if (HOME / ANTIGRAVITY_TOKEN).is_file() else None
 
     def session(self, event: dict[str, Any]) -> str:
-        value = _payload(event).get("conversation_id")
+        # `init` carries the conversation beside its payload; every step update, inside its own.
+        value = event.get("conversation_id") or _payload(event).get("conversation_id")
         return value if isinstance(value, str) else ""
 
     def progress(self, event: dict[str, Any]) -> list[str]:
@@ -682,6 +878,11 @@ def _jwt_claims(token: str) -> dict[str, Any]:
 
 def _text(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _toml_string(value: str) -> str:
+    """A TOML basic string of `value`, as a `-c` override's value takes it."""
+    return json.dumps(value)
 
 
 def _driver(spec: dict[str, Any]) -> Driver:
@@ -836,29 +1037,63 @@ def op_check(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _launch(spec: dict[str, Any]) -> Launch:
-    """The model the harness runs and its effort, each empty for the harness's default."""
+    """The model the harness runs and its effort, each empty for the harness's default, and its
+    turn's limit on model calls, 0 for none."""
     model = spec.get("model") or ""
     if not isinstance(model, str) or (model and not MODEL_RE.fullmatch(model)):
         raise ToolError("model is invalid")
     effort = spec.get("effort") or ""
     if not isinstance(effort, str) or (effort and effort not in EFFORTS):
         raise ToolError("effort is invalid")
-    return Launch(model, effort)
+    max_turns = spec.get("max_turns") or 0
+    if not isinstance(max_turns, int) or isinstance(max_turns, bool) or max_turns < 0:
+        raise ToolError("max_turns is invalid")
+    return Launch(model, effort, max_turns)
 
 
 def _start_request(spec: dict[str, Any]) -> tuple[Driver, str, str, Path, str, str]:
-    """The validated start request: driver, call id, run id, repository directory, prompt, session id."""
+    """The validated start request: driver, call id, run id, working directory, prompt, session id."""
     driver = _driver(spec)
     call_id = _safe_segment(spec.get("call_id"), "call_id")
     run_id = _safe_segment(spec.get("run_id"), "run_id")
-    repository = _safe_segment(spec.get("repository"), "repository")
-    cwd = REPOS / repository
-    if not cwd.is_dir():
-        raise ToolError(f"no repository {repository} under {REPOS}")
+    cwd = _working_dir(spec)
     prompt = spec.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         raise ToolError("prompt is required")
     return driver, call_id, run_id, cwd, prompt, _session_id(spec)
+
+
+def _working_dir(spec: dict[str, Any]) -> Path:
+    """The directory of the repository the request names, or the agent's home when it names none."""
+    if not spec.get("repository"):
+        return HOME
+    repository = _safe_segment(spec.get("repository"), "repository")
+    cwd = REPOS / repository
+    if not cwd.is_dir():
+        raise ToolError(f"no repository {repository} under {REPOS}")
+    return cwd
+
+
+def _system_prompt(spec: dict[str, Any]) -> str:
+    """The system prompt the request starts the CLI with in place of its own; empty for none."""
+    system_prompt = spec.get("system_prompt") or ""
+    if not isinstance(system_prompt, str):
+        raise ToolError("system_prompt is invalid")
+    return system_prompt
+
+
+def _mcp_server(spec: dict[str, Any]) -> McpServer | None:
+    """The orchestrator's MCP server the request starts the CLI with; None when it names none.
+    A URL comes with its token, and a token with its URL."""
+    url = spec.get("mcp_url") or ""
+    token = spec.get("mcp_token") or ""
+    if not isinstance(url, str) or (url and not MCP_URL_RE.fullmatch(url)):
+        raise ToolError("mcp_url is invalid")
+    if not isinstance(token, str) or (token and not MCP_TOKEN_RE.fullmatch(token)):
+        raise ToolError("mcp_token is invalid")
+    if bool(url) != bool(token):
+        raise ToolError("mcp_url and mcp_token go together")
+    return McpServer(url, token) if url else None
 
 
 def _session_id(spec: dict[str, Any]) -> str:
@@ -881,10 +1116,13 @@ def _claim_call(call_id: str) -> dict[str, Path]:
     return paths
 
 
-def _write_prompt(path: Path, prompt: str) -> None:
+def _write_private(path: Path, text: str) -> None:
+    """Writes one of a call's private files, readable by its owner alone, in a folder made for it
+    when it is missing."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(prompt)
+        handle.write(text)
 
 
 def _launch_supervisor(spec: dict[str, Any], driver: Driver, call_id: str) -> int:
@@ -914,24 +1152,37 @@ def _wait_for_pid(paths: dict[str, Path]) -> int | None:
 def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     driver, call_id, run_id, cwd, prompt, session_id = _start_request(spec)
     launch = _launch(spec)
-    # Refuses an effort the harness cannot take before anything is claimed or reset.
+    system_prompt = _system_prompt(spec)
+    mcp = _mcp_server(spec)
+    files = TurnFiles(
+        RUNS / run_id / f"{call_id}.prompt.md",
+        driver.system_prompt_file(run_id, call_id) if system_prompt else None,
+        driver.mcp_config_file(run_id, call_id) if mcp else None,
+    )
+    # Refuses an effort or a turn limit the harness cannot take before anything is claimed or reset.
     driver.model_args(launch)
     if shutil.which(driver.binary) is None:
         raise ToolError(f"{driver.binary} is not installed in this image")
     paths = _claim_call(call_id)
+    # The reset comes first: it removes what an earlier call left where this one writes.
     reset = driver.reset()
     run_dir = _run_dir(run_id)
-    prompt_path = run_dir / f"{call_id}.prompt.md"
-    _write_prompt(prompt_path, prompt)
+    _write_private(files.prompt, driver.prompt_text(prompt))
+    if files.system:
+        _write_private(files.system, driver.system_prompt_text(system_prompt))
+    if files.mcp and mcp:
+        _write_private(files.mcp, json.dumps(driver.mcp_config(mcp)))
     state = {
         "call_id": call_id,
         "run_id": run_id,
         "harness": driver.name,
-        "repository": cwd.name,
+        "repository": cwd.name if cwd != HOME else None,
         "cwd": str(cwd),
-        "argv": driver.command(session_id, prompt_path, launch),
-        "stdin": str(prompt_path) if driver.prompt_on_stdin else None,
-        "prompt_path": str(prompt_path),
+        "argv": driver.command(session_id, files, launch),
+        "stdin": str(files.prompt) if driver.prompt_on_stdin else None,
+        "prompt_path": str(files.prompt),
+        "system_prompt_path": str(files.system) if files.system else None,
+        "mcp_config_path": str(files.mcp) if files.mcp else None,
         "log_path": str(run_dir / f"{call_id}.harness.jsonl"),
         "started_at": time.time(),
         "supervisor_pid": None,
@@ -941,7 +1192,7 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     _write(paths["state"], json.dumps(state))
     pid = _wait_for_pid(paths)
     exited, code = _exit_code(call_id, state)
-    text = f"started {driver.name} in {cwd.name}" + (f" (pid {pid})" if pid else "")
+    text = f"started {driver.name} in {cwd}" + (f" (pid {pid})" if pid else "")
     meta = {"pid": pid, "log_path": state["log_path"], "exited": exited and pid is None, "exit_code": code, "reset": reset}
     return {"text": text, "meta": meta}
 
@@ -949,12 +1200,15 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
 def _run_cli(state: dict[str, Any], out: Any, err: Any) -> int:
     """Starts the CLI in its own process group with its output in the log; returns its exit code."""
     stdin_path = state.get("stdin")
+    env = {key: value for key, value in os.environ.items() if key not in DROPPED_ENV}
+    if state.get("mcp_config_path"):
+        env.update(_driver(state).mcp_env(Path(state["mcp_config_path"])))
     stdin = open(stdin_path, "rb") if stdin_path else subprocess.DEVNULL
     try:
         child = subprocess.Popen(
             state["argv"],
             cwd=state["cwd"],
-            env={key: value for key, value in os.environ.items() if key not in DROPPED_ENV},
+            env=env,
             stdin=stdin,
             stdout=out,
             stderr=err,
@@ -1063,9 +1317,12 @@ def op_poll(spec: dict[str, Any]) -> dict[str, Any]:
     if state is None:
         return {"text": f"no harness call {call_id}", "meta": {"missing": True}}
     offset = spec.get("offset")
+    start = offset if isinstance(offset, int) and offset >= 0 else 0
     exited, code = _exit_code(call_id, state)
     log = Path(state["log_path"])
-    events, new_offset, _ = _events(log, exited, offset if isinstance(offset, int) and offset >= 0 else 0)
+    data = _read_log(log, start, exited)
+    events, _ = _parse_events(data)
+    new_offset = start + len(data)
     lines = _progress_lines(driver, events)
     meta = {
         "missing": False,
@@ -1076,7 +1333,7 @@ def op_poll(spec: dict[str, Any]) -> dict[str, Any]:
         "exited": exited and _log_read_through(log, new_offset),
         "exit_code": code,
     }
-    return {"text": "\n".join(lines), "meta": meta}
+    return {"text": data.decode("utf-8", errors="replace"), "meta": meta}
 
 
 def _stderr_tail(path: Path) -> str:
@@ -1090,8 +1347,10 @@ def _stderr_tail(path: Path) -> str:
 
 
 def _clear_call(state: dict[str, Any], paths: dict[str, Path]) -> None:
-    """Removes the call's state files and its prompt file."""
-    Path(state["prompt_path"]).unlink(missing_ok=True)
+    """Removes the call's state files and its private files."""
+    for private in (state.get("prompt_path"), state.get("system_prompt_path"), state.get("mcp_config_path")):
+        if private:
+            Path(private).unlink(missing_ok=True)
     for path in paths.values():
         path.unlink(missing_ok=True)
 
@@ -1114,6 +1373,7 @@ def op_result(spec: dict[str, Any]) -> dict[str, Any]:
         "message": outcome.get("message") or "",
         "is_error": bool(outcome.get("is_error")),
         "error": outcome.get("error") or "",
+        "max_turns": bool(outcome.get("max_turns")),
         "events": len(events),
         "unparsed": unparsed,
         "stderr": _stderr_tail(paths["stderr"]),
@@ -1171,46 +1431,12 @@ def op_stop(spec: dict[str, Any]) -> dict[str, Any]:
     return {"text": f"stopped {call_id}" if exited else f"{call_id} did not stop", "meta": meta}
 
 
-def _head_lines(data: bytes, max_bytes: int) -> tuple[str, bool]:
-    """The whole lines of `data` within `max_bytes`, and whether any were left out."""
-    if len(data) <= max_bytes:
-        return data.decode("utf-8", errors="replace"), False
-    head = data[:max_bytes]
-    cut = head.rfind(b"\n")
-    return head[: cut + 1 if cut >= 0 else max_bytes].decode("utf-8", errors="replace"), True
-
-
-def op_log(spec: dict[str, Any]) -> dict[str, Any]:
-    driver = _driver(spec)
-    run_id = _safe_segment(spec.get("run_id"), "run_id")
-    call_id = _safe_segment(spec.get("call_id"), "call_id")
-    path = RUNS / run_id / f"{call_id}.harness.jsonl"
-    if path.is_symlink() or not path.is_file():
-        return {"text": f"no log for {call_id}", "meta": {"missing": True}}
-    data = path.read_bytes()
-    events, unparsed = _parse_events(data)
-    lines = [" ".join(line.split()) for event in events for line in driver.progress(event) if line.strip()]
-    max_bytes = spec.get("max_bytes")
-    raw, raw_truncated = _head_lines(data, max_bytes if isinstance(max_bytes, int) and max_bytes > 0 else len(data))
-    meta = {
-        "missing": False,
-        "lines": lines[:LOG_MAX_LINES],
-        "lines_truncated": len(lines) > LOG_MAX_LINES,
-        "events": len(events),
-        "unparsed": unparsed,
-        "bytes": len(data),
-        "raw_truncated": raw_truncated,
-    }
-    return {"text": raw, "meta": meta}
-
-
 OPS = {
     "check": op_check,
     "start": op_start,
     "poll": op_poll,
     "result": op_result,
     "stop": op_stop,
-    "log": op_log,
 }
 
 

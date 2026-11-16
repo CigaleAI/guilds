@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { builderWriteRecipe, builderWriteRejection, builderWriteToolResult } from "../../src/builder/tools.js";
+import { builderWriteRecipe, builderWriteRejection, builderWriteToolResult, recommendCoachModel } from "../../src/builder/tools.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
 import { parseRecipe } from "../../src/recipes/parse.js";
 import { huskLeadMatcherRecipe, linkedInNotionRecipe } from "../helpers/recipe-docs.js";
@@ -47,4 +47,15 @@ test("builderWriteRejection blocks empty-task probes and roster shrink", () => {
   const shrunk = parseRecipe({ ...full, roles: [full.roles[0]] });
   assert.match(String(builderWriteRejection(full, shrunk)), /drop roles/);
   assert.equal(builderWriteRejection(full, full), null);
+});
+
+test("a role written without a model is recommended the coach's, but a subscription role keeps none", () => {
+  const recipe = parseRecipe(linkedInNotionRecipe());
+  const [keyed, other] = recipe.roles;
+  assert.ok(keyed && other);
+  keyed.config = { browser: false };
+  other.config = { harness: "codex" };
+  recommendCoachModel(recipe, "deepinfra/zai-org/GLM-5.3-Flash");
+  assert.equal(keyed.config.model, "deepinfra/zai-org/GLM-5.3-Flash");
+  assert.equal("model" in other.config, false, "a subscription role runs on its harness");
 });

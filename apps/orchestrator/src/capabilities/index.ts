@@ -15,11 +15,11 @@ import { usageFields, type UsageTotals } from "../usage/index.js";
 import {
   ALWAYS_OFFERED_TOOLS,
   BROWSER_CAPABILITY,
-  CODING_CAPABILITY,
+  SUBSCRIPTION_CAPABILITY,
   NATIVE_CAPABILITY_GROUPS,
 } from "./native.js";
 import { listMcpConnections, listMcpTools, type ScopedMcpConnectionRow } from "../db/mcp.js";
-import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
+import { countOrgAgents, countOrgBrowserAgents, countOrgSubscriptionAgents } from "../db/orgs.js";
 import { getOrgMonthlyUsage, utcMonth } from "../db/usage.js";
 import type { Queryable } from "../db/pg.js";
 
@@ -113,18 +113,18 @@ export type BuilderCapabilities = {
   native: NativeCapabilityGroup[];
   always_offered: AlwaysOfferedTool[];
   browser: typeof BROWSER_CAPABILITY;
-  coding: typeof CODING_CAPABILITY;
+  subscription: typeof SUBSCRIPTION_CAPABILITY;
   catalog: CapabilityServer[];
   models: OrgModelsPayload;
   limits: {
     max_agents: OrgLimits["maxAgents"];
     max_browser_agents: OrgLimits["maxBrowserAgents"];
-    max_coding_agents: OrgLimits["maxCodingAgents"];
+    max_subscription_agents: OrgLimits["maxSubscriptionAgents"];
     max_concurrent_runs: OrgLimits["maxConcurrentRuns"];
     monthly_studio_builder_runs: OrgLimits["monthlyCoachRuns"];
   };
   /** How many more agents the organisation may hold, by kind; null where nothing caps it. */
-  remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
+  remaining: { agents: number | null; browser_agents: number | null; subscription_agents: number | null };
   usage: Pick<UsageTotals, "cost_usd" | "calls"> & { month: string };
 };
 
@@ -266,27 +266,27 @@ export class CapabilityService {
     const { limits } = await this.policy.standing(ctx.orgId);
     const agents = await countOrgAgents(this.db, ctx.orgId);
     const browsers = await countOrgBrowserAgents(this.db, ctx.orgId);
-    const coders = await countOrgCodingAgents(this.db, ctx.orgId);
+    const subscribers = await countOrgSubscriptionAgents(this.db, ctx.orgId);
     const month = utcMonth();
     const usage = usageFields(await getOrgMonthlyUsage(this.db, ctx.orgId, month));
     const payload: BuilderCapabilities = {
       native: NATIVE_CAPABILITY_GROUPS.map((group) => ({ ...group, tools: [...group.tools] })),
       always_offered: ALWAYS_OFFERED_TOOLS.map((tool) => ({ ...tool })),
       browser: BROWSER_CAPABILITY,
-      coding: CODING_CAPABILITY,
+      subscription: SUBSCRIPTION_CAPABILITY,
       catalog,
       models: await this.models.read(ctx.orgId),
       limits: {
         max_agents: limits.maxAgents,
         max_browser_agents: limits.maxBrowserAgents,
-        max_coding_agents: limits.maxCodingAgents,
+        max_subscription_agents: limits.maxSubscriptionAgents,
         max_concurrent_runs: limits.maxConcurrentRuns,
         monthly_studio_builder_runs: limits.monthlyCoachRuns,
       },
       remaining: {
         agents: remaining(limits.maxAgents, agents),
         browser_agents: remaining(limits.maxBrowserAgents, browsers),
-        coding_agents: remaining(limits.maxCodingAgents, coders),
+        subscription_agents: remaining(limits.maxSubscriptionAgents, subscribers),
       },
       usage: {
         month,

@@ -1,6 +1,4 @@
 import { BROWSER_TOOLS, OPTIMIZED_BROWSER_TOOLS } from "./browser.js";
-import { CODING_TOOLS } from "./code.js";
-import { HARNESS_TOOLS } from "./harness.js";
 import { SCHEDULE_TOOLS } from "./schedule.js";
 import { SCRIPT_TOOLS } from "./script.js";
 
@@ -14,20 +12,14 @@ export type ToolSwitches = {
   browser?: boolean;
   /** Whether the browser offers `browse` in place of the step-by-step tools; only read with `browser` on. */
   browserOptimized?: boolean;
-  coding?: boolean;
   scripting?: boolean;
   memory?: boolean;
   schedules?: boolean;
   direct?: boolean;
 };
 
-/** The tools the browser and coding switches offer, whatever the bindings say. */
-const BROWSER_AND_CODING_TOOLS: ReadonlySet<string> = new Set<string>([
-  ...BROWSER_TOOLS,
-  ...OPTIMIZED_BROWSER_TOOLS,
-  ...CODING_TOOLS,
-  ...HARNESS_TOOLS,
-]);
+/** The tools the browser switch offers, whatever the bindings say. */
+const BROWSER_SWITCH_TOOLS: ReadonlySet<string> = new Set<string>([...BROWSER_TOOLS, ...OPTIMIZED_BROWSER_TOOLS]);
 
 function isHiddenByOfferedFlag(name: string, options: ToolSwitches): boolean {
   const gates: Array<[boolean, readonly string[]]> = [
@@ -41,7 +33,7 @@ function isHiddenByOfferedFlag(name: string, options: ToolSwitches): boolean {
 
 function offeredNativeNames(names: string[], options: ToolSwitches): string[] {
   return names.filter((name) => {
-    if (name === "report_issue" || BROWSER_AND_CODING_TOOLS.has(name)) {
+    if (name === "report_issue" || BROWSER_SWITCH_TOOLS.has(name)) {
       return false;
     }
     return !isHiddenByOfferedFlag(name, options);
@@ -56,14 +48,10 @@ function browserToolNames(options: ToolSwitches): readonly string[] {
   return options.browserOptimized ? OPTIMIZED_BROWSER_TOOLS : BROWSER_TOOLS;
 }
 
-function capabilityToolNames(options: ToolSwitches): string[] {
-  return [...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []), ...browserToolNames(options)];
-}
-
-// The browser and code tools follow the agent's flags, not bindings.
+// The browser tools follow the agent's flags, not bindings.
 export function offeredToolNames(names: string[], options: ToolSwitches = {}): string[] {
   const offered = offeredNativeNames(names, options);
-  for (const name of capabilityToolNames(options)) {
+  for (const name of browserToolNames(options)) {
     if (!offered.includes(name)) {
       offered.push(name);
     }

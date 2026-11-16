@@ -41,7 +41,7 @@ export function modelFacts(model: CatalogModel): string {
 type ModelProvidersProps = { models: OrgModels; canManage: boolean };
 
 /**
- * The models the platform provides, then every provider split into marketplace and coding APIs.
+ * The models the platform provides, then every provider.
  * The organisation connects a provider with its own key, ticks the models it offers from the
  * provider's catalog, and marks one marketplace model, its own or the platform's, as its default.
  */
@@ -53,8 +53,6 @@ export function ModelProviders({ models, canManage }: ModelProvidersProps) {
   const platform = models.providers.filter(
     (item) => item.source === "platform" && models.models.some((model) => model.provider === item.id),
   );
-  const marketplace = models.providers.filter((item) => item.kind === "marketplace");
-  const coding = models.providers.filter((item) => item.kind === "coding");
   const removingMeta = models.providers.find((item) => item.id === removing);
   const onDefault = (model: string | null) =>
     setDefault.mutate(model, {
@@ -96,20 +94,11 @@ export function ModelProviders({ models, canManage }: ModelProvidersProps) {
       <ProviderSection
         title="Marketplace"
         intro="Agents, Studio and the Builder run on these. Connect a provider with the organisation's key, then choose the models to offer. Keys are encrypted at rest by the orchestrator; only their last characters are shown."
-        providers={marketplace}
+        providers={models.providers}
         models={models}
         canManage={canManage}
         onRemove={setRemoving}
         onDefault={onDefault}
-      />
-      <ProviderSection
-        title="Coding APIs"
-        intro="Coding agents can run on these instead of a marketplace model. Their models appear in a picker only for an agent with Coding on."
-        providers={coding}
-        models={models}
-        canManage={canManage}
-        onRemove={setRemoving}
-        onDefault={null}
       />
       <ConfirmDialog
         kind="destructive"
@@ -145,8 +134,8 @@ type ProviderSectionProps = {
   models: OrgModels;
   canManage: boolean;
   onRemove: (provider: ModelProvider) => void;
-  /** Marks a chosen model as the default, or clears it with null; absent for providers that cannot hold it. */
-  onDefault: ((model: string | null) => void) | null;
+  /** Marks a chosen model as the default, or clears it with null. */
+  onDefault: (model: string | null) => void;
 };
 
 function ProviderSection({
@@ -212,7 +201,7 @@ type ProviderCardProps = {
   models: OrgModels;
   canManage: boolean;
   onRemove: (provider: ModelProvider) => void;
-  onDefault: ((model: string | null) => void) | null;
+  onDefault: (model: string | null) => void;
 };
 
 /** One provider: its state, the connect form, and once connected the catalog to choose from. */
@@ -337,7 +326,7 @@ type ChosenModelsProps = {
   chosen: CatalogModel[];
   defaultModel: string | null;
   canManage: boolean;
-  onDefault: ((model: string | null) => void) | null;
+  onDefault: (model: string | null) => void;
 };
 
 /** The models a connected provider offers, with the default marked. */
@@ -367,7 +356,7 @@ function ChosenModels({ provider, chosen, defaultModel, canManage, onDefault }: 
               <span className="truncate font-mono text-xs text-muted">{model.id}</span>
               {modelFacts(model) ? <span className="text-xs text-muted">{modelFacts(model)}</span> : null}
             </span>
-            {onDefault && canManage ? (
+            {canManage ? (
               <Button variant="ghost" size="sm" onClick={() => onDefault(isDefault ? null : model.id)}>
                 {isDefault ? "Clear default" : "Make default"}
               </Button>

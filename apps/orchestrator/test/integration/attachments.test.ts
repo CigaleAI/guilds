@@ -51,6 +51,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     mcp: mcpPool(db),
     notes,
     workspaceRoot,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(workspaceRoot),
     attachments,
     artifacts,
@@ -146,6 +147,24 @@ test("operators upload images, attach them to a run, and cannot read another org
       payload: { message: "see this", attachment_ids: [row.id] },
     });
     assert.equal(blocked.statusCode, 422);
+
+    await db.query(
+      `UPDATE agents SET config = config || '{"model": null, "harness": "codex"}'::jsonb WHERE id = $1`,
+      [String(refused.json().id)],
+    );
+    const unmodelled = await app.inject({
+      method: "POST",
+      url: `/api/agents/${String(refused.json().id)}/runs`,
+      headers: { ...OWNER, "content-type": "application/json" },
+      payload: { message: "see this", attachment_ids: [row.id] },
+    });
+    assert.equal(unmodelled.statusCode, 202, unmodelled.body);
+    const unmodelledRows = await app.inject({ method: "GET", url: `/api/runs/${String(unmodelled.json().id)}/messages`, headers: OWNER });
+    assert.deepEqual(
+      unmodelledRows.json().at(-1).metadata.attachments,
+      [{ id: row.id, filename: "shot.png", mime: "image/png", kind: "image" }],
+      "a subscription agent's harness takes the image as a file, whatever a model would",
+    );
 
     const created = await app.inject({
       method: "POST",

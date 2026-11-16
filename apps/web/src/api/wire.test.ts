@@ -11,7 +11,6 @@ import {
   isNumberOrNull,
   isRecordToolArguments,
   isRfbConnection,
-  isShellArguments,
   isStudioToolArguments,
   isString,
   isStringList,
@@ -149,11 +148,6 @@ test("isStudioFocusRequest refuses a step or version written as digits", () => {
 });
 
 test("a tool call's arguments pass their tool's check when each parameter has its schema's type", () => {
-  assert.equal(isShellArguments({ command: "ls", background: true }), true);
-  assert.equal(isShellArguments({ command: "ls", timeout_seconds: 30 }), true);
-  assert.equal(isShellArguments({}), true);
-  assert.equal(isShellArguments({ command: ["ls"] }), false);
-  assert.equal(isShellArguments({ command: "ls", background: "yes" }), false);
   assert.equal(isRecordToolArguments({ collection: "deals", id: 42, body: {} }), true);
   assert.equal(isRecordToolArguments({ collection: "deals", id: "42" }), false);
   assert.equal(isStudioToolArguments({ action: "create", agent_id: "scout" }), true);

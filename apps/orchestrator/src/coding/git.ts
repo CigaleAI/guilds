@@ -1,27 +1,19 @@
 import { Type, type Static } from "typebox";
-import { GithubInstallationGoneError, parseGithubUrl, type TokenPermissions } from "../github/index.js";
-import {
-  loginAccount,
-  mintRepositoryToken,
-  RepositoryAccessError,
-  TOKEN_REFRESH_MS,
-  githubRepositoryRecorder,
-  type MintOptions,
-  type RepositoryToken,
-} from "../github/tokens.js";
-import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { parseGithubUrl } from "../github/index.js";
+import { TOKEN_REFRESH_MS } from "../github/tokens.js";
+import type { Queryable } from "../db/pg.js";
 import type { SandboxFiles } from "../sandbox/sdk.js";
 import type { AgentRow } from "../db/agents.js";
+import type { RunMcpConnection, RunMcpTool } from "../db/schema/index.js";
+import { GITHUB_SERVER_ID } from "../instance/integrations.js";
+import { accessTokenProvider } from "./access-token-provider.js";
+import { githubProvider } from "./github-provider.js";
 import type { CodingRepository } from "./repositories.js";
 
 /** Where an agent's repository tokens are kept in its machine, outside every home. */
 export function gitTokensPath(agentId: string): string {
   return `/run/guilds/${agentId}/git-tokens.json`;
 }
-
-/** What a coding agent's git and `gh` may do on its repositories. */
-const CODING_PERMISSIONS: TokenPermissions = { contents: "write", pull_requests: "write" };
 
 /** The author and committer an agent's git commits are made under. */
 export type GitIdentity = { name: string; email: string };
@@ -39,121 +31,108 @@ export function agentGitIdentity(
   return { name: agent.name, email: email || `${agent.id}@agents.guilds.run` };
 }
 
-export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
-
-/** The db/ functions a run's repository tokens are minted and stored through, on `db`. */
-function repositoryTokenDatabase(db: Queryable) {
-  return {
-    ...githubRepositoryRecorder(db),
-    getMcpConnection: bindQuery(db, getMcpConnection),
-  };
-}
-
-export type RepositoryTokenDb = ReturnType<typeof repositoryTokenDatabase>;
+/** The git provider a repository's token is minted through, as the repository names it. */
+export type GitProviderName = NonNullable<CodingRepository["provider"]>;
 
 /**
- * GitHub refused the installation behind `connection` while a run's repository token was minted.
- * Its caller retires the login with `retireInstallationGone`, as the message tells the run. The error keeps the name
- * `RepositoryAccessError`, the type a run's error record shows for every token failure.
+ * A repository's entry in the agent's tokens file: the token and the username git's credential
+ * helper answers with, only for this host and path, the provider that minted it, and when the
+ * token expires (null for one that never does).
  */
-export class RepositoryTokenInstallationGoneError extends RepositoryAccessError {
-  readonly connection: McpConnectionRow;
+export type TokenEntry = {
+  token: string;
+  expires_at: string | null;
+  host: string;
+  path: string;
+  username: string;
+  provider: GitProviderName;
+};
 
-  constructor(connection: McpConnectionRow) {
-    super(`GitHub refused the installation for ${loginAccount(connection)}; the connection is now disconnected`);
-    this.connection = connection;
+/**
+ * How a git provider gives its repositories their tokens: the entry of each of `repositories`, all
+ * its own, by repository name, each token limited to pushing branches where the provider mints
+ * it. A provider whose tokens the box does not mint carries what the host grants.
+ */
+export type GitProvider = {
+  mint(repositories: CodingRepository[]): Promise<Map<string, TokenEntry>>;
+};
+
+/** Every git provider, by the name a repository gives it. */
+export type GitProviders = Record<GitProviderName, GitProvider>;
+
+/** A connector's tool that opens a pull request: the connector's server, and the tool's own name on it. */
+type PullRequestTool = Pick<RunMcpConnection, "server_id"> & Pick<RunMcpTool, "remote_name">;
+
+/**
+ * The connector tool that opens a pull request on each provider's repositories, under that
+ * connector's login and bindings; none for a provider whose host has no connector.
+ */
+const PULL_REQUEST_TOOLS: Record<GitProviderName, PullRequestTool | null> = {
+  github: { server_id: GITHUB_SERVER_ID, remote_name: "create_pull_request" },
+  access_token: null,
+};
+
+/**
+ * The name the run offers, among its connections `mcp`, the tool that opens a pull request on the
+ * provider of one of `repositories`; null when the run is offered none.
+ */
+export function pullRequestToolOf(
+  repositories: CodingRepository[],
+  mcp: ReadonlyArray<Pick<RunMcpConnection, "server_id" | "tools">>,
+): string | null {
+  for (const repository of repositories) {
+    const wanted = repository.provider === null ? null : PULL_REQUEST_TOOLS[repository.provider];
+    const tool = mcp
+      .filter((connection) => connection.server_id === wanted?.server_id)
+      .flatMap((connection) => connection.tools)
+      .find((item) => item.remote_name === wanted?.remote_name);
+    if (tool !== undefined) {
+      return tool.name;
+    }
   }
+  return null;
 }
 
 /**
- * The installation tokens of a run's guild repositories, one per GitHub connection, each
- * limited to the repositories that use it. Knows when a token needs replacing.
+ * The tokens of a run's guild repositories, each minted through its repository's git provider;
+ * a repository without one gets none. Knows when a token needs replacing.
  */
 export class RepositoryTokens {
   entries: Record<string, TokenEntry> = {};
-  private expiries: number[] = [];
 
   constructor(
-    private db: RepositoryTokenDb,
+    private providers: GitProviders,
     private repositories: CodingRepository[],
-    private options: MintOptions = {},
   ) {}
-
-  /** The repositories that use a GitHub connection. */
-  get connected(): CodingRepository[] {
-    return this.repositories.filter((row) => row.connection_id !== null);
-  }
 
   get values(): string[] {
     return Object.values(this.entries).map((entry) => entry.token);
   }
 
-  needsRefresh(now = this.now()): boolean {
-    return this.expiries.some((expiry) => expiry - now.getTime() <= TOKEN_REFRESH_MS);
+  /** Whether a token expires, so the run replaces it before it does. */
+  get hasExpiringTokens(): boolean {
+    return Object.values(this.entries).some((entry) => entry.expires_at !== null);
   }
 
-  private now(): Date {
-    return this.options.now ? this.options.now() : new Date();
+  /** Whether a token expires within `TOKEN_REFRESH_MS` of `now`. */
+  needsRefresh(now: Date = new Date()): boolean {
+    return Object.values(this.entries).some(
+      (entry) => entry.expires_at !== null && Date.parse(entry.expires_at) - now.getTime() <= TOKEN_REFRESH_MS,
+    );
   }
 
-  /**
-   * Mints a token for every connection the repositories use, with what a coding agent's git
-   * and `gh` need, scoped to those repositories (`mintRepositoryToken`). A disconnected
-   * connection is refused.
-   */
+  /** Mints the tokens of every repository that names a provider, each provider for its own repositories. */
   async mint(): Promise<void> {
-    const byConnection = new Map<string, CodingRepository[]>();
-    for (const row of this.repositories) {
-      const id = row.connection_id;
-      if (id !== null) {
-        byConnection.set(id, [...(byConnection.get(id) ?? []), row]);
-      }
-    }
     const entries: Record<string, TokenEntry> = {};
-    const expiries: number[] = [];
-    for (const [connectionId, rows] of byConnection) {
-      const minted = await this.mintCodingToken(await this.connectedLogin(connectionId), rows);
-      expiries.push(Date.parse(minted.expiresAt));
-      for (const row of rows) {
-        entries[row.name] = {
-          token: minted.token,
-          expires_at: minted.expiresAt,
-          host: "github.com",
-          path: minted.paths.get(row.name)!,
-        };
+    for (const [provider, rows] of Map.groupBy(this.repositories, (row) => row.provider)) {
+      if (provider === null) {
+        continue;
+      }
+      for (const [name, entry] of await this.providers[provider].mint(rows)) {
+        entries[name] = entry;
       }
     }
     this.entries = entries;
-    this.expiries = expiries;
-  }
-
-  /** The connection a repository uses, refused unless it is connected. */
-  private async connectedLogin(connectionId: string): Promise<McpConnectionRow> {
-    const connection = await this.db.getMcpConnection(connectionId);
-    if (connection === null || connection.status !== "connected") {
-      const account = connection?.account_hint ?? "";
-      throw new RepositoryAccessError(`the GitHub connection${account ? ` for ${account}` : ""} is disconnected`);
-    }
-    return connection;
-  }
-
-  /** The login's token for its repositories here. GitHub refusing the installation throws a `RepositoryTokenInstallationGoneError`. */
-  private async mintCodingToken(
-    connection: McpConnectionRow,
-    rows: CodingRepository[],
-  ): Promise<RepositoryToken> {
-    try {
-      return await mintRepositoryToken(
-        this.db,
-        { connection, repositories: rows, permissions: CODING_PERMISSIONS },
-        this.options,
-      );
-    } catch (error) {
-      if (!(error instanceof GithubInstallationGoneError)) {
-        throw error;
-      }
-      throw new RepositoryTokenInstallationGoneError(connection);
-    }
   }
 
   /** Writes the agent's tokens under /run/guilds/<agent id> through the sandbox file API, outside every home. */
@@ -162,9 +141,14 @@ export class RepositoryTokens {
   }
 }
 
-/** The installation tokens of a run's `repositories`, minted and recorded on `db`. */
+/** Empties the agent's tokens file, so the credential helper answers for no repository until a run writes it again. */
+export async function eraseRepositoryTokens(files: SandboxFiles, agentId: string): Promise<void> {
+  await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: {} }) }]);
+}
+
+/** The tokens of a run's `repositories`, minted and recorded on `db` through each one's git provider. */
 export function repositoryTokens(db: Queryable, repositories: CodingRepository[]): RepositoryTokens {
-  return new RepositoryTokens(repositoryTokenDatabase(db), repositories);
+  return new RepositoryTokens({ github: githubProvider(db), access_token: accessTokenProvider(db) }, repositories);
 }
 
 const CREDENTIAL_FAILURE = /could not read (username|password)|authentication failed|terminal prompts disabled/i;
@@ -184,7 +168,7 @@ export function cloneFailures(
         return `${name}: ${error}`;
       }
       if (tokens[name]) {
-        return `${name}: git did not use the GitHub token issued for it (${error})`;
+        return `${name}: git did not use the token issued for it (${error})`;
       }
       const row = repositories.find((item) => item.name === name);
       if (row && parseGithubUrl(row.url) !== null) {

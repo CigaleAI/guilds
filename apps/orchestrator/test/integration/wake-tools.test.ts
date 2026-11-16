@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import type { Database } from "../../src/db/client.js";
-import { getRun, listMessages, mergeRunMetadata } from "../../src/db/runs.js";
+import { getRun, listMessages } from "../../src/db/runs.js";
 import { iso } from "../../src/db/views.js";
 import { getPendingRunWake, markRunWakeFired, setRunWake } from "../../src/db/wakes.js";
 import { generationLive } from "../../src/generation/completion.js";
@@ -74,6 +74,7 @@ before(async () => {
     mcp: mcpPool(database.pool),
     notes,
     workspaceRoot: root,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(root),
     artifacts: artifactStore(database.pool, notes.templates),
   });
@@ -134,16 +135,14 @@ async function callTool(
   return result.payload.content.replace(/\n\nremaining_tool_calls: \d+$/, "");
 }
 
-async function fireWakes(runIds: string[], count: number, rootRunId: string): Promise<void> {
+async function fireWakes(runId: string, count: number): Promise<void> {
   for (let index = 0; index < count; index += 1) {
-    const runId = runIds[index % runIds.length] ?? rootRunId;
     const wakeId = newId("wk");
     await setRunWake(
       database.pool,
       {
         wakeId,
         runId,
-        rootRunId,
         agentId,
         dueAt: new Date(),
         message: null,
@@ -186,7 +185,6 @@ describe("the wake-up tools", { concurrency: 1 }, () => {
       `set ${pending.id}, due ${iso(pending.due_at)}\nreplaced: none\nwake_ups_left: 9`,
     );
     assert.equal(pending.message, "check CI run 77 on the Actions tab");
-    assert.equal(pending.root_run_id, runId);
     const due = new Date(pending.due_at).getTime();
     assert.ok(due >= before + 10 * MINUTE && due <= Date.now() + 10 * MINUTE);
     const call = (await listMessages(database.pool, runId)).find(
@@ -244,7 +242,7 @@ describe("the wake-up tools", { concurrency: 1 }, () => {
 
   test("the eleventh wake_after of a run with the default cap is refused, and the tenth leaves none", async () => {
     const runId = await newRun();
-    await fireWakes([runId], 9, runId);
+    await fireWakes(runId, 9);
     assert.match(await callTool(runId, "wake_after", { minutes: 5 }), /\nwake_ups_left: 0$/);
     const tenth = await getPendingRunWake(database.pool, runId);
     assert.ok(tenth);
@@ -254,23 +252,6 @@ describe("the wake-up tools", { concurrency: 1 }, () => {
       "ERROR: this run has no wake-ups left: it fired the 10 it may",
     );
     assert.equal(await getPendingRunWake(database.pool, runId), null);
-  });
-
-  test("the count carries across a hand-off: a continuation counts the chain's fired wake-ups", async () => {
-    const first = await newRun();
-    const second = await newRun();
-    await mergeRunMetadata(database.pool, first, { continued_by_run_id: second }, new Date());
-    await mergeRunMetadata(
-      database.pool,
-      second,
-      { chain: { root_run_id: first, index: 2, previous_run_id: first } },
-      new Date(),
-    );
-    await fireWakes([first, second], 10, first);
-    assert.match(
-      await callTool(second, "wake_after", { minutes: 5 }),
-      /^ERROR: this run has no wake-ups left/,
-    );
   });
 
   test("a wake-up set by the tool fires on the tick and opens the run's next generation", async () => {

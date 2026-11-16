@@ -22,7 +22,7 @@ set -euo pipefail
 
 # The stack takes its values from the copy's .env, never from the caller's shell or a Makefile's exports.
 unset STATE_ROOT POSTGRES_PASSWORD OPENSANDBOX_API_KEY SECRETS_MASTER_KEY SANDBOX_IMAGE AUTH_MODE \
-  SENTRY_ENVIRONMENT PUBLIC_BASE_URL
+  SENTRY_ENVIRONMENT PUBLIC_BASE_URL HARNESS_MCP_PUBLISH HARNESS_MCP_SANDBOX_HOST HARNESS_MCP_URL
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 port="${PREVIEW_PORT:-18090}"
@@ -34,6 +34,8 @@ tree="$state/tree"
 hash_file="scripts/preview/.caddy-hash"
 export ORCHESTRATOR_IMAGE="$project:local"
 export ORCHESTRATOR_PORT="$port"
+# The MCP port subscription agents' harnesses reach, the one after the orchestrator's.
+export HARNESS_MCP_PORT="$((port + 1))"
 base="http://127.0.0.1:$port"
 compose=(docker compose --project-name "$project" -f docker-compose.yml -f docker-compose.preview.yml)
 

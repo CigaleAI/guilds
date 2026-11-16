@@ -46,14 +46,6 @@ const NATIVE_TOOL_SUMMARIES: ReadonlyMap<string, string> = new Map([
   ["browser_scroll", "Scrolls the current web page up, down, left or right."],
   ["browser_screenshot", "Takes a picture of the current web page."],
   ["browser_eval", "Runs a small piece of code in the current web page to read or change it."],
-  ["shell", "Runs a command on the agent's machine."],
-  ["shell_status", "Checks on, or stops, the commands left running on the agent's machine."],
-  ["file_read", "Reads a text file on the agent's machine."],
-  ["code_search", "Searches the files on the agent's machine for matching text."],
-  [
-    "code_task",
-    "Hands a coding job on one of the guild's repositories to the agent's coding assistant.",
-  ],
   [
     "secret_store",
     "Keeps a key or password the agent made, so it can use it later without showing it.",

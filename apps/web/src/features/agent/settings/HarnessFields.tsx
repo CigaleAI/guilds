@@ -15,6 +15,8 @@ import {
   harnessSubscriptionNote,
   isHarnessEffort,
   listedHarnessModel,
+  missingRepositoryText,
+  needsRepository,
   showsHarnessImageNote,
 } from "../harness";
 import { HarnessLogo } from "../HarnessLogo";
@@ -140,7 +142,8 @@ type HarnessCardProps = {
   label: string;
   subtitle: string;
   selected: boolean;
-  available: boolean;
+  /** Why it cannot be picked, as its badge says; null while it can. */
+  unavailable: string | null;
   /** The box turns it off; shown only while the agent is on it. */
   off: boolean;
   onPick: () => void;
@@ -151,10 +154,11 @@ function HarnessCard({
   label,
   subtitle,
   selected,
-  available,
+  unavailable,
   off,
   onPick,
 }: HarnessCardProps) {
+  const available = unavailable === null;
   return (
     <button
       type="button"
@@ -185,7 +189,7 @@ function HarnessCard({
       </div>
       {!available || off ? (
         <span className="rounded bg-well px-1.5 py-0.5 text-2xs font-medium text-muted">
-          {off ? "Turned off" : "Not on machine"}
+          {off ? "Turned off" : unavailable}
         </span>
       ) : null}
     </button>
@@ -201,8 +205,10 @@ type HarnessChoiceFieldsProps = {
 
 /**
  * A button with its logo for each harness the box offers and, once one is picked, its model and
- * effort. A harness the machine's image lacks is disabled with a note; one the box turns off shows
- * only while the agent is on it. Picking another harness clears the model and effort.
+ * effort. A harness the machine's image lacks is disabled with a note, and so is one a
+ * subscription agent that picks no repository cannot run on, with a line saying why; one the box
+ * turns off shows only while the agent is on it. Picking another harness clears the model and
+ * effort.
  */
 export function HarnessChoiceFields({ form, onChange, errors, carried }: HarnessChoiceFieldsProps) {
   const pick = (value: Harness) =>
@@ -213,9 +219,14 @@ export function HarnessChoiceFields({ form, onChange, errors, carried }: Harness
       harness_effort: value === form.harness ? form.harness_effort : "",
     });
   const catalog = useHarnessCatalog();
-  const items = HARNESS_ITEMS.filter((item) =>
-    harnessOffered(catalog.data, item.value, form.harness),
-  );
+  const items = HARNESS_ITEMS.filter((item) => harnessOffered(catalog.data, item.value, form.harness));
+  const lacksRepository = (value: Harness) =>
+    form.model_source === "subscription" && !form.repositories.length && needsRepository(catalog.data, value);
+  const unavailable = (value: Harness) => {
+    if (harnessCarried(carried, value) === false) return "Not on machine";
+    return lacksRepository(value) ? "Needs a repository" : null;
+  };
+  const needing = items.flatMap((item) => (lacksRepository(item.value) ? [item.value] : []));
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
@@ -223,7 +234,7 @@ export function HarnessChoiceFields({ form, onChange, errors, carried }: Harness
         <div
           className="grid grid-cols-2 gap-2 sm:grid-cols-4"
           role="radiogroup"
-          aria-label="Coding harness"
+          aria-label="Harness"
         >
           {items.map((item) => (
             <HarnessCard
@@ -232,13 +243,17 @@ export function HarnessChoiceFields({ form, onChange, errors, carried }: Harness
               label={item.label}
               subtitle={item.subtitle}
               selected={form.harness === item.value}
-              available={harnessCarried(carried, item.value) !== false}
+              unavailable={unavailable(item.value)}
               off={catalogFor(catalog.data, item.value)?.enabled === false}
               onPick={() => pick(item.value)}
             />
           ))}
         </div>
-        {errors.harness ? <span className="text-xs text-error">{errors.harness}</span> : null}
+        {errors.harness ? (
+          <span className="text-xs text-error">{errors.harness}</span>
+        ) : needing.length ? (
+          <span className="text-xs text-muted">{missingRepositoryText(needing)}</span>
+        ) : null}
       </div>
       {form.harness ? (
         <HarnessModelFields
@@ -262,8 +277,8 @@ type HarnessFieldProps = {
 };
 
 /**
- * The coding agent's harness and the model it runs, with a note that it runs on the operator's own
- * subscription; for an existing agent, what its code tasks still need under it.
+ * The harness of a subscription agent and the model it runs, with a note that it runs on
+ * the operator's own subscription; for an existing agent, what the harness still needs to run.
  */
 export function HarnessField({ form, onChange, errors, agent, carried }: HarnessFieldProps) {
   const missing = form.harness ? harnessCarried(carried, form.harness) === false : false;
@@ -272,8 +287,8 @@ export function HarnessField({ form, onChange, errors, agent, carried }: Harness
       <HarnessChoiceFields form={form} onChange={onChange} errors={errors} carried={carried} />
       {missing ? (
         <p className="text-sm text-t-ochre-fg">
-          This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness || null)}, so its
-          code tasks fail. Pick another harness, or move the agent to a machine that has it.
+          This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness || null)}, so it
+          can&apos;t run there. Pick another harness, or move the agent to a machine that has it.
         </p>
       ) : agent && form.harness ? (
         <HarnessReadiness

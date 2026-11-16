@@ -34,6 +34,7 @@ import { listSchedules } from "../db/schedules.js";
 import { listSecrets, type SecretRow } from "../db/secrets.js";
 import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import { countsAsSubscriptionAgent } from "../policy/index.js";
 
 /** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -93,18 +94,18 @@ const HARNESS_TOKEN_VARIABLES = new Set(
 );
 
 /**
- * The secrets a coding agent's harnesses read their subscription tokens from. They are the
- * operator's own subscription, so a recipe leaves them out: the applying operator sets one up
- * for the harness they pick.
+ * The secrets the harnesses of a subscription agent read their subscription tokens
+ * from. They are the operator's own subscription, so a recipe leaves them out: the applying
+ * operator sets one up for the harness they pick.
  */
 function harnessTokenSecrets(config: AgentConfig): Set<string> {
-  if (!config.coding) return new Set();
+  if (!countsAsSubscriptionAgent(config)) return new Set();
   return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, config.secret_aliases) ?? []));
 }
 
-/** The role's secret aliases a recipe carries: a coding role's harness token aliases stay behind. */
+/** The role's secret aliases a recipe carries: a subscription role's harness token aliases stay behind. */
 function portableSecretAliases(config: AgentConfig): Record<string, string> {
-  if (!config.coding) return config.secret_aliases;
+  if (!countsAsSubscriptionAgent(config)) return config.secret_aliases;
   return Object.fromEntries(
     Object.entries(config.secret_aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)),
   );
@@ -115,22 +116,24 @@ function clippedHint(value: string | null | undefined): string {
 }
 
 /**
- * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A harness,
- * harness model or harness effort left unset, tool-result turns left to the guild, and secret
- * aliases a recipe carries none of, leave their key out; apply settles them. The agent-optimized
+ * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A
+ * subscription agent's absent model, a harness, harness model or harness effort left unset,
+ * tool-result turns left to the guild, no repositories, and secret aliases a recipe carries none
+ * of, leave their key out; apply settles them. The agent-optimized
  * browser stays behind: it needs the applying instance's System One key and a model of the
  * applying organisation, so a role browses with the step-by-step browser tools.
  */
 export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
   const aliases = portableSecretAliases(config);
   return {
-    model: config.model,
+    ...(config.model === null ? {} : { model: config.model }),
     temperature: config.temperature,
     max_tokens: config.max_tokens,
     max_steps: config.max_steps,
     max_tool_calls: config.max_tool_calls,
     max_input_tokens: config.max_input_tokens,
     max_wake_ups: config.max_wake_ups,
+    max_turn_minutes: config.max_turn_minutes,
     ...(config.keep_tool_result_generations === null
       ? {}
       : { keep_tool_result_generations: config.keep_tool_result_generations }),
@@ -138,10 +141,10 @@ export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
     max_workspace_mib: config.max_workspace_mib,
     browser: config.browser,
     browser_language: config.browser_language,
-    coding: config.coding,
     ...(config.harness === null ? {} : { harness: config.harness }),
     ...(config.harness_model === null ? {} : { harness_model: config.harness_model }),
     ...(config.harness_effort === null ? {} : { harness_effort: config.harness_effort }),
+    ...(config.repositories.length ? { repositories: [...config.repositories] } : {}),
     ...(Object.keys(aliases).length ? { secret_aliases: aliases } : {}),
     scripting: config.scripting,
     memory: config.memory,
@@ -328,7 +331,7 @@ function captureSecret(capture: Capture, secret: SecretRow, role: string): void 
   }
 }
 
-/** The secrets an agent gets, but a coding agent's harness tokens: those are the operator's own subscription. */
+/** The secrets an agent gets, but a subscription agent's harness tokens: those are the operator's own subscription. */
 async function captureSecrets(capture: Capture, agent: GuildAgentRow): Promise<void> {
   const harnessTokens = harnessTokenSecrets(agent.config);
   for (const secret of await capture.deps.db.listSecrets(capture.orgId, { agentId: agent.id })) {
@@ -351,10 +354,14 @@ async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<voi
   await captureSecrets(capture, agent);
 }
 
-/** Repositories travel by name only: their URLs and connections stay with the guild. */
+/**
+ * Repositories travel by name only: their URLs and connections stay with the guild. The recipe
+ * lists the guild's, then each other one an agent picks, as one picked on a GitHub login.
+ */
 async function captureRepositories(capture: Capture): Promise<void> {
   const rows = await capture.deps.db.listGuildRepositories(capture.guildId);
-  capture.recipe.repositories = rows.map((row) => ({ name: row.name, purpose: "" }));
+  const names = new Set([...rows.map((row) => row.name), ...capture.agents.flatMap((agent) => agent.config.repositories)]);
+  capture.recipe.repositories = [...names].map((name) => ({ name, purpose: "" }));
 }
 
 /** The seed note a live note becomes. */

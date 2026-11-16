@@ -9,7 +9,6 @@ import {
   isIssueNotice,
   isLiveDelta,
   isMessageNotice,
-  isRunContinuation,
   isRunMessage,
   isSessionFailure,
   isStudioMessageCommit,
@@ -172,12 +171,9 @@ test("isLiveDelta admits a run's text and a coach's content, and refuses anythin
   assert.equal(isLiveDelta(null), false);
 });
 
-test("isToolProgressEvent admits a call's lines, with or without its session", () => {
+test("isToolProgressEvent admits a call's lines", () => {
   const progress = { run_id: "r1", tool_call_id: "c1", lines: ["read a.py"] };
   assert.equal(isToolProgressEvent(progress), true);
-  assert.equal(isToolProgressEvent({ ...progress, session_id: null }), true);
-  assert.equal(isToolProgressEvent({ ...progress, session_id: "s1" }), true);
-  assert.equal(isToolProgressEvent({ ...progress, session_id: 3 }), false);
 });
 
 test("isToolProgressEvent refuses an event that names no call or holds lines that are not text", () => {
@@ -188,11 +184,6 @@ test("isToolProgressEvent refuses an event that names no call or holds lines tha
   assert.equal(isToolProgressEvent({ ...progress, tool_call_id: 7 }), false);
   assert.equal(isToolProgressEvent({ ...progress, lines: ["a", 2, null, "b"] }), false);
   assert.equal(isToolProgressEvent({ ...progress, lines: "a" }), false);
-});
-
-test("isRunContinuation admits the run that carries on", () => {
-  assert.equal(isRunContinuation({ run_id: "r2" }), true);
-  assert.equal(isRunContinuation({ run_id: 2 }), false);
 });
 
 test("isStudioMessageCommit admits the committed coach row and refuses a bare row", () => {
@@ -269,7 +260,6 @@ function recordingHandlers(calls: string[]): LiveEventHandlers<RunEvents> {
     "tool.progress": record("tool.progress"),
     "run.error": record("run.error"),
     "generation.finished": record("generation.finished"),
-    "run.continued": record("run.continued"),
     "run.wake.changed": record("run.wake.changed"),
   };
 }
@@ -300,14 +290,14 @@ test("run.wake.changed carries the run's pending wake-up, or null when none is l
 
 test("dispatchLiveEvent hands a payload that passes its guard to the event's handler", () => {
   const calls: string[] = [];
-  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.continued", { run_id: "r2" });
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", { pending_wake: null });
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.error", undefined);
-  assert.deepEqual(calls, ['run.continued:{"run_id":"r2"}', "run.error:undefined"]);
+  assert.deepEqual(calls, ['run.wake.changed:{"pending_wake":null}', "run.error:undefined"]);
 });
 
 test("dispatchLiveEvent ignores a payload that fails its guard and an event it does not name", () => {
   const calls: string[] = [];
-  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.continued", {});
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", {});
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "message.committed", null);
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "draft.changed", {});
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "toString", {});

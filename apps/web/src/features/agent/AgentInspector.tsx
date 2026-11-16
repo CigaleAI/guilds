@@ -46,8 +46,6 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { BrowserLoginStrip } from "./BrowserLoginStrip";
-import { CodingNotReadyButton } from "./CodingReadiness";
-import { CodingStrip } from "./CodingStrip";
 import { ChatSessionChrome } from "./chat/SessionChrome";
 import { capabilityOn } from "./settings/configForm";
 
@@ -80,7 +78,6 @@ const tabs = [
 type AgentActionsProps = {
   guildId: string;
   agentId: string;
-  coding: boolean;
   /** The screen is wide enough for the inspector to fill the window. */
   wide: boolean;
   full: boolean;
@@ -89,13 +86,12 @@ type AgentActionsProps = {
 };
 
 /**
- * The header's actions: what the Task embeds that the agent cannot reach, a coding agent's
- * readiness, the sheet or full-window toggle, the agent's menu, and Close.
+ * The header's actions: what the Task embeds that the agent cannot reach, the sheet or
+ * full-window toggle, the agent's menu, and Close.
  */
 function AgentActions({
   guildId,
   agentId,
-  coding,
   wide,
   full,
   onToggleFull,
@@ -120,7 +116,6 @@ function AgentActions({
           }
         />
       ) : null}
-      {coding ? <CodingNotReadyButton guildId={guildId} agentId={agentId} /> : null}
       {wide ? (
         <IconButton
           icon={full ? Minimize2 : Maximize2}
@@ -227,7 +222,6 @@ export function AgentInspector() {
                 <AgentActions
                   guildId={guildId}
                   agentId={agentId}
-                  coding={agent.data.config.coding}
                   wide={wide}
                   full={full}
                   onToggleFull={toggleFull}
@@ -261,9 +255,6 @@ export function AgentInspector() {
               </TabsNav>
               {onChat ? <ChatSessionChrome /> : null}
             </div>
-            {onChat && agent.data.config.coding ? (
-              <CodingStrip guildId={guildId} agentId={agentId} />
-            ) : null}
             {agent.data.config.browser ? (
               <BrowserLoginStrip guildId={guildId} agentId={agentId} />
             ) : null}

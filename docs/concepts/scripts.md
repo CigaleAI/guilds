@@ -13,8 +13,8 @@ they execute.
 
 ## Why it exists
 
-For an agent without coding, running a script is the one way to
-execute code. A script turns a task the agent solved once (call an
+For an agent on a key, running a script is the one way to execute
+code. A script turns a task the agent solved once (call an
 API, transform a file, compute a figure) into a tool it can call
 again, without rewriting the code each time.
 
@@ -22,9 +22,9 @@ A script can also declare parameters. Then it becomes a tool of its
 own: the model sees it under its script name, with its arguments,
 like any other tool.
 
-A coding agent keeps scripts too, for reusable code. It also has
-`shell`, so turning scripting off does not stop it from running
-commands.
+A subscription agent keeps scripts too, for reusable code. Its
+harness also runs commands with its own tools, so turning scripting
+off does not stop it from running commands.
 
 ## How it works
 
@@ -123,7 +123,7 @@ has no scripting**.
 In chat, a `script_create` call carries a chip naming the script it
 wrote, which opens it.
 
-**Settings**, Model section (**Lead model** on a coding agent): the **Scripting** button under **Agent
+**Settings**, Model section (Harness on a subscription agent): the **Scripting** button under **Agent
 capabilities** turns it on and off, and **Max scripts** under **Run
 limits** sets the cap. The create dialog offers both, with scripting
 on by default.

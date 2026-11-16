@@ -1,6 +1,7 @@
 import { writeBinding } from "../access/bindings.js";
 import { loadAccessView } from "../access/view.js";
 import { getMcpServerBySlug } from "../connectors/servers.js";
+import { getAgent, setAgentRepositories } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listGuildRepositories } from "../db/guilds.js";
 import { listMcpTools } from "../db/mcp.js";
@@ -18,13 +19,12 @@ import type {
 } from "../db/schema/index.js";
 import { getSecretByName, listAgentSecrets, setSecretAccess } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
-import { GITHUB_SLUG } from "../github/index.js";
 import { type ChangeActor, userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
-import { prepareRecipeForApply, roleBrowses } from "./prepare.js";
+import { prepareRecipeForApply, roleBrowses, roleRepositories } from "./prepare.js";
 
 // An apply's checklist: the steps its skeleton leaves open, the server's checks of the steps it
 // verifies, and the operator's confirmations and skips of the rest.
@@ -36,9 +36,9 @@ export function browserLoginSetup(role: RecipeRole, site?: string): string {
   return `This role has no native connector. After apply, open the agent and take control of its Chromium to log into ${target}. Session cookies stay in the browser profile. Mark the reminder as done once you have — we cannot tell when you are finished.`;
 }
 
-/** What connecting GitHub takes for a recipe's repositories, beside whatever its GitHub connection says. */
-const REPOSITORIES_GITHUB_SETUP =
-  "Install the GitHub App on the account that owns the repositories (once per account; later logins reuse that install), so the coding agents clone, push, and open pull requests. Public repositories clone without it; pushing to them still needs it. On the GitHub card in Tools, pick this guild's or agent's repositories. In the guild's Settings, set Commit author email to a verified email on the GitHub account that owns any deploy project (Vercel, etc.).";
+/** What adding a recipe's repository takes, after its name: its URL and the credential it is cloned with. */
+const REPOSITORY_SETUP =
+  "with its HTTPS URL, on any git host, and a credential: a GitHub login for a GitHub repository, an access token kept as a secret for any host, or none for a public repository, which then cannot be pushed to. When a deploy service must recognise the commits' author, set the guild's Commit author email to a verified email of the account that owns the deploy project.";
 
 function connectionSteps(plan: ApplyPlan): ApplyStep[] {
   return plan.connections.flatMap((connection): ApplyStep[] => {
@@ -64,30 +64,14 @@ function connectionSteps(plan: ApplyPlan): ApplyStep[] {
   });
 }
 
-/** The GitHub connection the recipe's repositories need, joined to the recipe's own GitHub step when it has one. */
+/** A step per repository the recipe lists, each asking for the repository's URL and credential. */
 function addRepositorySteps(steps: ApplyStep[], recipe: RecipeDocument): void {
-  if (!recipe.repositories.length) {
-    return;
-  }
-  const github = steps.find((step) => step.id === `conn:${GITHUB_SLUG}`);
-  if (github) {
-    github.setup = [github.setup, REPOSITORIES_GITHUB_SETUP].filter(Boolean).join(" ");
-  } else {
-    steps.push({
-      id: `conn:${GITHUB_SLUG}`,
-      kind: "connection",
-      title: "Connect GitHub",
-      setup: REPOSITORIES_GITHUB_SETUP,
-      closure: "verified",
-      status: "open",
-    });
-  }
   for (const repository of recipe.repositories) {
     steps.push({
       id: `repo:${repository.name}`,
       kind: "repository",
       title: `Add the ${repository.name} repository`,
-      setup: `${repository.purpose ? `${repository.purpose} ` : ""}Add it in the guild's Settings under Repositories, named ${repository.name}.`,
+      setup: `${repository.purpose ? `${repository.purpose} ` : ""}Add it in the guild's Settings under Repositories, named ${repository.name}, ${REPOSITORY_SETUP}`,
       closure: "verified",
       status: "open",
     });
@@ -354,12 +338,37 @@ async function checkConnection(apply: RecipeApply, row: RecipeApplyRow, step: Ap
   return PASSED;
 }
 
+/**
+ * An agent's picks with `name` added at its place in its role's list `listed`: the role's names it
+ * picks, in the role's order, then its other picks.
+ */
+export function addRoleRepository(picked: readonly string[], listed: readonly string[], name: string): string[] {
+  const role = listed.filter((item) => item === name || picked.includes(item));
+  return [...role, ...picked.filter((item) => !listed.includes(item))];
+}
+
+/** Gives the guild's repository `name` to each agent of the apply whose role lists it. */
+async function pickRoleRepository(apply: RecipeApply, row: RecipeApplyRow, name: string): Promise<void> {
+  const recipe = await appliedRecipe(apply, row.recipe_id);
+  for (const role of recipe.roles) {
+    const listed = roleRepositories(role);
+    const agentId = row.plan.names.find((item) => item.role === role.role)?.agent_id;
+    const agent = agentId && listed.includes(name) ? await getAgent(apply.db, agentId) : null;
+    if (agent !== null && !agent.config.repositories.includes(name)) {
+      await setAgentRepositories(apply.db, agent.id, addRoleRepository(agent.config.repositories, listed, name), new Date());
+    }
+  }
+}
+
+/** A repository step passes once the guild has the repository; each agent whose role lists it then picks it. */
 async function checkRepository(apply: RecipeApply, row: RecipeApplyRow, step: ApplyStep): Promise<StepCheck> {
   const name = step.id.slice("repo:".length);
   const listed = await listGuildRepositories(apply.db, applyGuild(row));
-  return listed.some((item) => item.name === name)
-    ? PASSED
-    : { ok: false, reason: `The guild has no repository named ${name} yet. Add it in the guild's Settings, then check it.` };
+  if (!listed.some((item) => item.name === name)) {
+    return { ok: false, reason: `The guild has no repository named ${name} yet. Add it in the guild's Settings, then check it.` };
+  }
+  await pickRoleRepository(apply, row, name);
+  return PASSED;
 }
 
 /** Planned roles (the secret's roles, or every role) whose agent does not get the secret. */

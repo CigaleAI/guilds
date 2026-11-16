@@ -47,8 +47,9 @@ anything:
   renamed.
 - **Models.** A role's model in the recipe is a recommendation. Each
   agent gets the model the operator picks.
-- **Harnesses.** Each coding role needs a [harness](coding/harnesses.md).
-  There is no default.
+- **Harnesses.** Each subscription role needs a
+  [harness](coding/harnesses.md): the recipe's, or one the operator
+  picks.
 - **Machine.** Every agent of the apply goes on one
   [machine](machines.md). The machine must be big enough for the
   largest agent and have room for all of them.
@@ -62,7 +63,7 @@ anything:
   recipe's. Otherwise it is a conflict the operator resolves by
   renaming the recipe collection.
 - **Limits.** The organisation must have room for all the agents,
-  browser agents, and coding agents at once.
+  browser agents, and subscription agents at once.
 
 [Models and harnesses](#models-and-harnesses) says where each picker
 starts.
@@ -89,8 +90,9 @@ The checklist lists what the operator still has to do:
 - **Connect** each connector the recipe needs, unless a reused login
   already covers it.
 - **Add each secret** so it reaches every agent that needs it.
-- **Connect GitHub** and **add each repository** in the guild's
-  Settings, when the recipe lists repositories.
+- **Add each repository** in the guild's Settings, with its URL and a
+  credential, when the recipe lists repositories. When its step passes
+  **Check**, each agent whose role lists the repository picks it.
 - **Confirm** each external setup step.
 
 Steps the platform can check are verified, not just ticked: **Check**
@@ -126,9 +128,8 @@ it shows:
   admin installs a registry one there (**Install unverified** for an
   unverified one). An owner or admin adds one the recipe carries as
   the organisation's own server (**Add server**).
-- **Connectors to set up**: each connector the box has but a platform
-  admin has not set up, GitHub included when the recipe lists
-  repositories. A platform admin gets a **Set up** link. Anyone else
+- **Connectors to set up**: each connector the recipe connects that
+  the box has but a platform admin has not set up. A platform admin gets a **Set up** link. Anyone else
   reads that a platform admin sets it up under **Admin**,
   **Platform keys**.
 - the new guild's name (**Guild name**)
@@ -136,18 +137,20 @@ it shows:
   disabled. The chosen machine shows its planned load bars with what
   the recipe's agents add, and its `machine.*` findings.
 - the plan, as on the recipe's page, with only the sections that have
-  entries. Each agent's card adds its **Agent name**, its **Model**,
-  and for a coding agent its **Harness**. The model list is the
-  organisation's chosen models, with a hint naming the recipe's
-  recommendation. The agent's **Coding** chip names the harness
-  picked. A taken name says *An agent already has this name. Rename
+  entries. Each agent's card adds its **Agent name**, and its
+  **Model**, or on a subscription agent its **Harness**, Cursor and
+  Antigravity only for a role that lists a repository. The model list
+  is the organisation's chosen models, with a hint naming the recipe's
+  recommendation. A subscription agent's **Subscription** chip names
+  the harness picked. A taken name says *An agent already has this name. Rename
   it before creating.* Each connector card adds a **Login**: a live
   login to reuse, or **Connect after the guild exists**.
 
-**Create guild** waits until every agent has a model, every coding
-agent has a harness, and, with several machines, one is chosen. While
-no model provider is connected, a guide to
-[Model keys](model-keys.md) stands in for the model pickers. The
+**Create guild** waits until every agent on a key has a model, every
+subscription agent has a harness, and, with several
+machines, one is chosen. While no model provider is connected and an
+agent is on a key, a guide to [Model keys](model-keys.md) stands in
+for the model pickers. The
 preview leaves out `connection.missing`, which is a note on how the
 recipe is written.
 
@@ -205,9 +208,9 @@ created, and returns to the library.
 | One open checklist per guild | A guild has at most one open apply |
 | Agent names | Must be free on the whole box |
 | Model | Every agent needs one; none is picked for you when the organisation has no fitting model |
-| Harness | Every coding agent needs one; no default |
+| Harness | Every subscription agent needs one: the recipe's, else the operator's pick |
 | Machine | One machine for all agents; at least the largest agent's minimum; room for all of them, at most 32 agents per machine or the policy's lower cap |
-| Organisation limits | Checked once for the whole batch: agents, browser agents, coding agents, guilds |
+| Organisation limits | Checked once for the whole batch: agents, browser agents, subscription agents, guilds |
 | Routines | Created paused; start on Activate |
 | Secret values | Never written by apply |
 | Organisation-wide secrets and bindings | Never created by apply |
@@ -259,8 +262,7 @@ routine of the recipe.
 
 A role's `config.model` is a recommendation, kept exactly as written.
 Validation warns about one that is unknown, not connected for the
-organisation, or a coding-API model on a role without `coding`, and
-never refuses a recipe for a model reason. The apply preview shows a
+organisation, and never refuses a recipe for a model reason. The apply preview shows a
 picker per role, preselected with the recommendation when the
 organisation has its provider, else the organisation's default, else
 nothing.
@@ -269,14 +271,16 @@ and nothing is created while a role has none (`choose a model for …`).
 A chosen model must be `{provider}/{model}` and offered to that role,
 or it is refused. The Builder writes the coach's model into the roles
 it drafts without one. Capturing a guild keeps each agent's live
-model.
+model; a subscription agent's role carries its harness and no model.
 
-A coding role's `config.harness` works the same way, with no default.
-The preview shows a harness picker per coding role, preselected with
+A subscription role's `config.harness` works the same way. The
+preview shows a harness picker per subscription role, preselected with
 the role's harness unless the box turns that harness off. The apply
 request carries `harnesses` (`[{ role, harness }]`), and apply refuses
-with `choose a harness for …` while a coding role has none. A harness
-for a role without `coding`, or one the box turns off, is refused. Only a coding role keeps a harness. A role keeps
+with `choose a harness for …` while a subscription role has none. A
+harness for a role on a key is refused with `harnesses.<role>: only a
+subscription role takes a harness`, and one the box turns off is
+refused. Only a subscription role keeps a harness. A role keeps
 the recipe's `harness_model` only when it applies with the harness the
 recipe names; with another harness, its model is the subscription's
 default. It keeps the recipe's `harness_effort` under the same
@@ -284,8 +288,16 @@ condition, and only when its model runs at that effort; otherwise the
 model runs at its default effort. A role's `secret_aliases` apply as written when they
 validate; otherwise apply leaves them out.
 
-Agents from roles with `config.coding: true` are created with coding
-on.
+A subscription role ([Recipe format](recipe-format.md)) takes no
+model: the preview lists none for it, and a model chosen for it is
+refused with `models.<role>: a subscription role takes no model`.
+Cursor and Antigravity run it
+only when it lists a repository in `config.repositories`: for a role
+that lists none, a recipe's Cursor or Antigravity is not preselected,
+and a chosen one is refused with `harnesses.<role>: <Harness> runs a
+subscription agent only with a repository, since it keeps its own
+system prompt: pick a repository, or another harness`. Its agent is
+created with no model, its harness, and its repositories.
 
 ### Preview
 
@@ -296,16 +308,16 @@ on.
 - each role's name: the operator's, else `name_suggestion`, against the
   charset and reserved `user`. A name any agent on the box already
   holds is listed in `collisions`
-- each role's model and each coding role's harness, as
-  [Models and harnesses](#models-and-harnesses) describes. The
-  preview's `models` lists each role's `recommended` and resolved
-  `model`; its `harnesses` lists each coding role's `recommended` and
-  resolved `harness`
+- each role's model and each subscription role's harness,
+  as [Models and harnesses](#models-and-harnesses) describes. The
+  preview's `models` lists each role's but a subscription role's
+  `recommended` and resolved `model`; its `harnesses` lists each
+  subscription role's `recommended` and resolved `harness`
 - the organisation's remaining capacity for the whole batch: agents,
-  browser agents, and coding agents (roles with `config.coding: true`),
-  each against the organisation's limit, `null` where nothing caps it.
+  browser agents, and subscription agents (subscription roles), each
+  against the organisation's limit, `null` where nothing caps it.
   The preview's `remaining` carries `agents`, `browser_agents`, and
-  `coding_agents`
+  `subscription_agents`
 - the machine every role goes on: the operator's choice
   (`machine_id`), else the organisation's only machine, else null
   until the operator picks one. A recipe does not name a machine. It
@@ -316,8 +328,9 @@ on.
   `planned_mib`, number of `agents`, and `fits`, whether it meets that
   minimum. `adds_cpu` and `adds_mib` are the planned load the roles
   add. On the chosen machine it is a blocking finding when the machine
-  is below a role's minimum (`machine.size`, one per role), when the
-  roles would take the machine past 32 agents or the policy's agents
+  is below a role's minimum (`machine.size`, one per role), when its
+  image lacks the harness of a subscription role (`machine.harness`,
+  one per role), when the roles would take the machine past 32 agents or the policy's agents
   per machine (`machine.full`), and when the machine hosts an agent of
   a guild the operator cannot see (`machine.private`). An unknown
   `machine_id` is 404. Apply without a machine is refused
@@ -327,9 +340,8 @@ on.
   an instance admin installs, or from the recipe (`server`,
   `from: "recipe"`, `display_name`, `description`, `url`, `auth`),
   which an owner or admin adds as the organisation's own server
-- which of the connectors the recipe needs the box has but a platform
-  admin has not set up, GitHub included when the recipe lists
-  repositories. The preview's `setups` lists each one (`server`,
+- which of the connectors the recipe connects the box has but a
+  platform admin has not set up. The preview's `setups` lists each one (`server`,
   `integration`, `label`). The apply goes on; those connections cannot
   connect until the integration is filled under **Admin**,
   **Platform keys** (see
@@ -351,7 +363,7 @@ on.
 The answer also carries `recipe_id`, `recipe_name`, `guild_id`,
 `names`, `findings`, `errors` (the blocking ones), and `creates`, the
 inventory of everything the apply would create: the guild, each agent
-(name, focus, model, browser, coding, Task, enabled native tools),
+(name, focus, model, browser, Task, enabled native tools),
 collections, notes, scripts, routines, connections, secrets, and
 repositories.
 
@@ -394,7 +406,7 @@ applying `read` to a reused table the guild already writes leaves it at
 
 `POST /api/recipes/:id/apply` re-runs the preview, then requires
 `status=ready`, no blocking errors, a machine, no name collision, a
-model for every role, and a harness for every coding role. It answers
+model for every role, and a harness for every subscription role. It answers
 201 with the apply. The steps are ordered so no intermediate state is
 broken:
 
@@ -459,19 +471,23 @@ text, a `closure` (`verified` or `confirmed`), and a `status` (`open`,
 
 A step for a reused login, and its overlay step, start verified.
 
-A recipe with `repositories` adds a `conn:github` step (Connect
-GitHub) when its connections do not already name `github` (see
-[GitHub](../tools-and-connectors/github.md)). It adds one
-`repo:<name>` step per repository. That step's setup is the
-repository's purpose and where to add it (the guild's Settings, under
-Repositories, with that name).
-
-The Connect GitHub setup tells the operator to install the GitHub App
-on the account that owns the repositories, to pick the guild's or
-agent's repositories on the GitHub card in Tools, and to set Commit
-author email in the guild's Settings to a verified email on the
-GitHub account that owns any deploy project. Recipes do not store that
-email.
+A recipe with `repositories` adds one `repo:<name>` step per
+repository, and no connection step. Apply creates every agent with no
+repositories picked, since the new guild has none yet. When a
+repository's step passes, each agent whose role lists the repository
+in `config.repositories` picks it, at its place in the role's order
+([Recipe format](recipe-format.md#roles)). A skipped step gives it to
+no agent. That step's setup is the
+repository's purpose, where to add it (the guild's Settings, under
+Repositories, with that name), and what to add it with: its HTTPS
+URL, on any git host, and a credential, a GitHub login for a GitHub
+repository, an access token kept as a secret for any host, or none
+for a public repository, which then cannot be pushed to
+([Repositories](coding/repositories.md)). It also says to set the
+guild's Commit author email to a verified email of the account that
+owns a deploy project, when a deploy service must recognise the
+commits' author. Recipes do not store that email. A GitHub connection
+the recipe lists keeps its own step.
 
 A secret the operator chose to `skip` has no step.
 
@@ -480,7 +496,7 @@ A secret the operator chose to `skip` has no step.
 | Reuse or Connect server S | connection `status=connected` for the guild (verified), or operator skips with a warning |
 | Secret `NAME` | a secret of the destination name reaches every agent of the roles that need it, the recipe secret's `roles` or else every planned role (verified), or skipped |
 | Tool overlays for S | the server has a guild- or agent-scope binding (verified); a verified Connect step writes the overlays and closes it; skipped with the Connect step |
-| Repository `name` | the guild has a repository of that name (verified), or skipped |
+| Repository `name` | the guild has a repository of that name (verified), and each agent whose role lists it then picks it; or skipped |
 | Browser for role R | deferred until after activate; the live agent asks the operator to log in |
 | External item | operator attests (confirmed) |
 | Activate paused routines | Activate |

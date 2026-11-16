@@ -11,8 +11,11 @@ import {
   OVERCOMMIT,
   agentDirectory,
   agentMinimum,
+  agentNeedsOf,
   agentsMinimum,
   belowMinimumMessage,
+  carriesHarness,
+  harnessMissingMessage,
   lowestFreeSlot,
   machineCapacity,
   machineDirectory,
@@ -45,27 +48,46 @@ test("each tier has its size, and a custom machine its own", () => {
 });
 
 test("an agent's minimum is the largest of its capabilities' minimums, not their sum", () => {
-  assert.deepEqual(agentMinimum({ browser: false, coding: false }), AGENT_MINIMUMS.base);
-  assert.deepEqual(agentMinimum({ browser: true, coding: false }), AGENT_MINIMUMS.browser);
-  assert.deepEqual(agentMinimum({ browser: true, coding: true }), AGENT_MINIMUMS.coding);
+  assert.deepEqual(agentMinimum({ browser: false, harness: null }), AGENT_MINIMUMS.base);
+  assert.deepEqual(agentMinimum({ browser: true, harness: null }), AGENT_MINIMUMS.browser);
+  assert.deepEqual(agentMinimum({ browser: true, harness: "codex" }), AGENT_MINIMUMS.harness);
   assert.deepEqual(
     agentsMinimum([
-      { browser: true, coding: false },
-      { browser: false, coding: false },
+      { browser: true, harness: null },
+      { browser: false, harness: null },
     ]),
     AGENT_MINIMUMS.browser,
   );
 });
 
-test("a standard machine takes browser agents, a code machine coding ones, a custom one by its size", () => {
+test("a subscription agent needs its harness and the harness minimum; an agent on a key needs no harness", () => {
+  const subscription = agentNeedsOf({ browser: false, model: null, harness: "codex" });
+  assert.deepEqual(subscription, { browser: false, harness: "codex" });
+  assert.deepEqual(agentMinimum(subscription), AGENT_MINIMUMS.harness);
+  assert.deepEqual(agentNeedsOf({ browser: true, model: "deepinfra/zai-org/GLM-5.3-Flash", harness: null }), { browser: true, harness: null });
+  assert.deepEqual(agentsMinimum([{ browser: true, harness: null }, subscription]), AGENT_MINIMUMS.harness);
+  assert.deepEqual(agentsMinimum([]), AGENT_MINIMUMS.base);
+});
+
+test("a machine carries a harness its image lists, and any before its container first started", () => {
+  assert.equal(carriesHarness({ harnesses: null }, "claude-code"), true);
+  assert.equal(carriesHarness({ harnesses: ["codex"] }, "codex"), true);
+  assert.equal(carriesHarness({ harnesses: ["codex"] }, "claude-code"), false);
+  assert.equal(
+    harnessMissingMessage("a subscription agent", "claude-code", { name: "default" }),
+    "a subscription agent runs on Claude Code, which default's image does not carry",
+  );
+});
+
+test("a standard machine takes browser agents, a code machine subscription ones, a custom one by its size", () => {
   const standard = machineSize({ box: "standard", cpu: null, memory_mib: null });
   const code = machineSize({ box: "code", cpu: null, memory_mib: null });
-  assert.equal(sizeMeets(standard, agentMinimum({ browser: true, coding: false })), true);
-  assert.equal(sizeMeets(standard, agentMinimum({ browser: false, coding: true })), false);
-  assert.equal(sizeMeets(code, agentMinimum({ browser: true, coding: true })), true);
-  assert.equal(sizeMeets(machineSize(CUSTOM), agentMinimum({ browser: false, coding: true })), false);
+  assert.equal(sizeMeets(standard, agentMinimum({ browser: true, harness: null })), true);
+  assert.equal(sizeMeets(standard, agentMinimum({ browser: false, harness: "codex" })), false);
+  assert.equal(sizeMeets(code, agentMinimum({ browser: true, harness: "codex" })), true);
+  assert.equal(sizeMeets(machineSize(CUSTOM), agentMinimum({ browser: false, harness: "codex" })), false);
   assert.equal(
-    belowMinimumMessage("dev", { browser: false, coding: true }, CUSTOM),
+    belowMinimumMessage("dev", { browser: false, harness: "codex" }, CUSTOM),
     "dev needs a machine with at least 2 CPUs and 4 GiB; big has 2 CPUs and 3 GiB",
   );
 });
@@ -158,8 +180,8 @@ test("placement takes the lowest free slot, under the policy's cap and core's ce
 test("a machine's planned load sums its agents' minimums, against its size times the overcommit", () => {
   assert.deepEqual(
     plannedLoad([
-      { browser: true, coding: false },
-      { browser: false, coding: false },
+      { browser: true, harness: null },
+      { browser: false, harness: null },
     ]),
     { cpu: 1.5, memory_mib: 2048 + 256 },
   );

@@ -1,7 +1,7 @@
 /**
- * The coding harnesses a coding agent delegates code work to. Each runs headless in the
- * agent's sandbox on the user's own subscription: a token granted to the agent as a secret,
- * or a login stored in the agent's home.
+ * The coding harnesses a coding agent delegates code work to, and a subscription agent runs every
+ * turn on. Each runs headless in the agent's sandbox on the user's own subscription: a token
+ * granted to the agent as a secret, or a login stored in the agent's home.
  */
 import {
   HARNESSES,
@@ -19,6 +19,11 @@ export type HarnessInfo = {
   secret: string | null;
   /** What to run in the agent's CLI tab to log in. */
   login: string;
+  /**
+   * How a subscription agent's run's system prompt reaches the CLI: in place of the vendor's own
+   * system prompt, or as a rules file the CLI reads beside the vendor's own, which stays in force.
+   */
+  prompt: "system_prompt" | "rules";
 };
 
 export const HARNESS_INFO: Record<Harness, HarnessInfo> = {
@@ -27,24 +32,28 @@ export const HARNESS_INFO: Record<Harness, HarnessInfo> = {
     label: "Claude Code",
     secret: "CLAUDE_CODE_OAUTH_TOKEN",
     login: "claude, then /login",
+    prompt: "system_prompt",
   },
   codex: {
     harness: "codex",
     label: "Codex",
     secret: null,
     login: "codex login --device-auth",
+    prompt: "system_prompt",
   },
   cursor: {
     harness: "cursor",
     label: "Cursor",
     secret: "CURSOR_API_KEY",
     login: "NO_OPEN_BROWSER=1 agent login",
+    prompt: "rules",
   },
   antigravity: {
     harness: "antigravity",
     label: "Antigravity",
     secret: null,
     login: "agy, then sign in with Google",
+    prompt: "rules",
   },
 };
 
@@ -74,6 +83,48 @@ export function harnessesOn(): Harness[] {
   return HARNESSES.filter((harness) => !harnessesOff.has(harness));
 }
 
+/**
+ * Whether a subscription agent on the harness needs a repository: one whose CLI keeps its vendor's
+ * own system prompt, under the run's as rules, runs only an agent that does code work.
+ */
+export function harnessNeedsRepository(harness: Harness): boolean {
+  return HARNESS_INFO[harness].prompt === "rules";
+}
+
+/** Why a subscription agent on a harness that needs a repository cannot run, or be saved, without one. */
+export function subscriptionRepositoryMessage(harness: Harness): string {
+  const label = HARNESS_INFO[harness].label;
+  return `${label} runs a subscription agent only with a repository, since it keeps its own system prompt: pick a repository, or another harness`;
+}
+
+/**
+ * Whether the harness ends a subscription agent's turn after the run's `max_steps` model calls:
+ * Claude Code takes `--max-turns`; Codex, Cursor, and Antigravity have no limit of the kind.
+ */
+export const HARNESS_TAKES_MAX_TURNS: Record<Harness, boolean> = {
+  "claude-code": true,
+  codex: false,
+  cursor: false,
+  antigravity: false,
+};
+
+/** The name a subscription agent's harness is given the orchestrator's MCP server under (`runtime/guilds-harness`). */
+export const HARNESS_MCP_SERVER = "guilds";
+
+/**
+ * What each harness puts before a tool's own name when it offers its model a tool of the
+ * orchestrator's MCP server: Claude Code names an MCP tool `mcp__<server>__<tool>`, and so does
+ * Codex, whose model reaches it as `tools.mcp__<server>__<tool>` or in the tool namespace
+ * `mcp__<server>`; Antigravity names it `mcp_<server>_<tool>`; Cursor hands it to its model under
+ * its own name, beside the server's.
+ */
+export const HARNESS_MCP_TOOL_PREFIX: Record<Harness, string> = {
+  "claude-code": `mcp__${HARNESS_MCP_SERVER}__`,
+  codex: `mcp__${HARNESS_MCP_SERVER}__`,
+  cursor: "",
+  antigravity: `mcp_${HARNESS_MCP_SERVER}_`,
+};
+
 /** Why an agent cannot pick, or run on, a harness the box turns off. */
 export function harnessOffMessage(harness: Harness): string {
   return `${HARNESS_INFO[harness].label} is turned off on this box: pick another harness in the agent's Settings`;
@@ -102,12 +153,6 @@ export function isHarnessModel(value: unknown): value is string {
 export function harnessModelOf(config: AgentConfig | RecipeRole["config"] | null | undefined): string | null {
   return isHarnessModel(config?.harness_model) ? config.harness_model : null;
 }
-
-/** A coding run whose guild has no repository fails at start with this. */
-export const REPOSITORIES_MISSING = "coding.repositories_missing";
-
-export const REPOSITORIES_MISSING_MESSAGE =
-  "this guild has no repositories: add one in the guild's Repositories, then send again";
 
 /** The login record for a harness as stored, or none. */
 export function harnessLoginOf(logins: HarnessLogins, harness: Harness): HarnessLogin {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAddOrgServer } from "../../api/queries/access";
 import { useApplyRecipe, useRecipe, useRecipePreview } from "../../api/queries/recipes";
 import { useInstallRegistryConnector } from "../../api/queries/admin";
+import { useHarnessCatalog } from "../../api/queries/agents";
 import { useOrgModels } from "../../api/queries/models";
 import type { Harness } from "../../api/types/agents";
 import type { OrgModels } from "../../api/types/models";
@@ -16,7 +17,13 @@ import type {
 } from "../../api/types/recipes";
 import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
-import { harnessLabel, harnessOptions, harnessSubscriptionNote, isHarness } from "../agent/harness";
+import {
+  harnessLabel,
+  harnessOptions,
+  harnessSubscriptionNote,
+  isHarness,
+  needsRepository,
+} from "../agent/harness";
 import { setupSearch } from "../instance/instance";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { modelOptions } from "../models/models";
@@ -34,6 +41,7 @@ import {
 } from "@guildsrun/ui";
 import { ApplyMachinePicker } from "./ApplyMachinePicker";
 import { isRecipeApproved } from "./plan/recipeDraft";
+import type { PlanAgent } from "./plan/planAgents";
 import { planFromRecipe } from "./plan/planModel";
 import { PlanView } from "./plan/PlanView";
 import { filledPlanSections } from "./plan/planSections";
@@ -49,8 +57,8 @@ function defaultLogin(connection: PlannedConnection): string {
 
 /**
  * What apply checks before it creates the guild: whether the recipe is approved, whether no model
- * provider is connected, whether an agent lacks a model or a coding agent a harness, and the
- * preview with its machine and errors.
+ * provider is connected for an agent on a key, whether such an agent lacks a model or a
+ * subscription agent a harness, and the preview with its machine and errors.
  */
 type ApplyChecks = {
   approved: boolean;
@@ -66,7 +74,7 @@ function blockingReason(checks: ApplyChecks): string | null {
     [!checks.approved, "Approve this recipe before applying it."],
     [checks.noProvider, "Connect a model provider on Model keys before applying."],
     [checks.missingModel, "Choose a model for each agent."],
-    [checks.missingHarness, "Choose a harness for each coding agent."],
+    [checks.missingHarness, "Choose a harness for each subscription agent."],
     [
       checks.preview.machine_id === null && checks.preview.machines.length > 0,
       "Choose the machine the agents go on.",
@@ -89,7 +97,7 @@ function choiceOf(connection: PlannedConnection, login: string): ApplyConnection
 
 /**
  * What applying an approved recipe creates, before anything is written: the new guild's name, the
- * machine every agent goes on, each agent's name and model, each coding agent's harness, and for
+ * machine every agent goes on, each agent's name and model, each subscription agent's harness, and for
  * each connector a live login to reuse or one to connect afterwards.
  */
 export function ApplyPreviewPage() {
@@ -100,6 +108,7 @@ export function ApplyPreviewPage() {
   const [machineId, setMachineId] = useState<string | undefined>(undefined);
   const preview = useRecipePreview(recipeId, recipe.data?.body_version, machineId);
   const orgModels = useOrgModels(org.id);
+  const catalog = useHarnessCatalog();
   const applyRecipe = useApplyRecipe(recipeId);
   const [guildName, setGuildName] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -129,9 +138,16 @@ export function ApplyPreviewPage() {
   const approved = isRecipeApproved(recipe.data.status);
   const modelOf = (role: string) =>
     models[role] ?? data.models.find((item) => item.role === role)?.model ?? "";
-  const noProvider = hasConnectedProvider(orgModels.data) === false;
-  const missingModel = creates.agents.some((agent) => !modelOf(agent.role));
   const roleHarness = (role: string) => data.harnesses.find((item) => item.role === role);
+  const onSubscription = (role: string) => roleHarness(role) !== undefined;
+  const keyed = creates.agents.filter((agent) => !onSubscription(agent.role));
+  const noProvider = hasConnectedProvider(orgModels.data) === false && keyed.length > 0;
+  const missingModel = keyed.some((agent) => !modelOf(agent.role));
+  // A subscription role that lists no repository runs on no harness that needs one.
+  const harnessChoicesOf = (agent: PlanAgent) =>
+    onSubscription(agent.role) && !agent.repositories.length
+      ? harnessOptions.filter((option) => !needsRepository(catalog.data, option.value))
+      : harnessOptions;
   const harnessOf = (role: string): Harness | "" =>
     harnesses[role] ?? roleHarness(role)?.harness ?? "";
   const missingHarness = data.harnesses.some((item) => !harnessOf(item.role));
@@ -165,7 +181,7 @@ export function ApplyPreviewPage() {
           role: agent.role,
           name: nameOf(agent.role, agent.name).trim() || agent.name,
         })),
-        models: creates.agents.map((agent) => ({ role: agent.role, model: modelOf(agent.role) })),
+        models: keyed.map((agent) => ({ role: agent.role, model: modelOf(agent.role) })),
         harnesses: data.harnesses.flatMap((item) => {
           const harness = harnessOf(item.role);
           return harness ? [{ role: item.role, harness }] : [];
@@ -222,14 +238,14 @@ export function ApplyPreviewPage() {
               name={nameOf(agent.role, agent.name)}
               onName={(value) => setNames((current) => ({ ...current, [agent.role]: value }))}
               collides={data.collisions.includes(nameOf(agent.role, agent.name).trim())}
-              model={noProvider ? null : modelOf(agent.role)}
+              model={noProvider || onSubscription(agent.role) ? null : modelOf(agent.role)}
               onModel={(value) => setModels((current) => ({ ...current, [agent.role]: value }))}
               recommended={
                 data.models.find((item) => item.role === agent.role)?.recommended ?? null
               }
-              coding={agent.coding}
               orgModels={orgModels.data}
               harness={roleHarness(agent.role) ? harnessOf(agent.role) : null}
+              harnessChoices={harnessChoicesOf(agent)}
               onHarness={(value) =>
                 setHarnesses((current) => ({ ...current, [agent.role]: value }))
               }
@@ -361,17 +377,18 @@ type AgentChoicesProps = {
   model: string | null;
   onModel: (model: string) => void;
   recommended: string | null;
-  coding: boolean;
   orgModels: OrgModels | undefined;
-  /** Null hides the harness picker: the agent does not code. */
+  /** Null hides the harness picker: the agent runs on a key. */
   harness: Harness | "" | null;
+  /** The harnesses the picker offers: a subscription agent's only those that run one. */
+  harnessChoices: ReadonlyArray<{ value: Harness; label: string }>;
   onHarness: (harness: Harness) => void;
   recommendedHarness: Harness | null;
 };
 
 /**
- * An agent's name and model before apply, and a coding agent's harness; no model picker while no
- * provider is connected.
+ * An agent's name and model before apply, and a subscription agent's harness; no model
+ * picker while no provider is connected, nor for a subscription agent.
  */
 function AgentChoices({
   name,
@@ -380,9 +397,9 @@ function AgentChoices({
   model,
   onModel,
   recommended,
-  coding,
   orgModels,
   harness,
+  harnessChoices,
   onHarness,
   recommendedHarness,
 }: AgentChoicesProps) {
@@ -404,7 +421,7 @@ function AgentChoices({
           placeholder="Choose a model"
           value={model}
           onValueChange={onModel}
-          options={modelOptions(orgModels, { current: model, coding })}
+          options={modelOptions(orgModels, { current: model })}
           hint={recommended ? `The recipe recommends ${recommended}.` : undefined}
           {...(model ? {} : { error: "Choose a model." })}
         />
@@ -418,7 +435,7 @@ function AgentChoices({
           onValueChange={(value) => {
             if (isHarness(value)) onHarness(value);
           }}
-          options={harnessOptions}
+          options={[...harnessChoices]}
           hint={
             recommendedHarness
               ? `The recipe names ${harnessLabel(recommendedHarness)}. ${harnessSubscriptionNote}`
