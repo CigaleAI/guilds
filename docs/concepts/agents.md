@@ -27,9 +27,10 @@ There are three kinds of agent:
   repositories, delegated to a coding harness. See
   [Coding agents](coding/index.md);
 - a **subscription agent** has no model: its harness, Claude Code or
-  Codex, on the operator's own subscription, is its model source. Its
-  runs do not start yet: each fails at start
-  ([Model source](#model-source)).
+  Codex, on the operator's own subscription, is its model source. On
+  Claude Code, each generation of its run is one turn of the harness,
+  with the harness's own tools and none of the platform's; on Codex,
+  its runs fail at start ([Model source](#model-source)).
 
 ## How it works
 
