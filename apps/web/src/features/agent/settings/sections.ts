@@ -19,14 +19,14 @@ export function settingsKindOf(form: Pick<ConfigForm, "coding" | "model_source">
 /**
  * The sections in order, as the create dialog's steps run: an agent's identity, model, and
  * machine; a coding agent's identity, machine, harness, lead model, and repositories; a
- * subscription agent's identity, harness, and machine.
+ * subscription agent's identity, harness, machine, and repositories.
  */
 export function settingsSections(kind: SettingsKind): SettingsSection[] {
   switch (kind) {
     case "coding":
       return ["identity", "machine", "harness", "model", "repositories"];
     case "subscription":
-      return ["identity", "harness", "machine"];
+      return ["identity", "harness", "machine", "repositories"];
     case "key":
       return ["identity", "model", "machine"];
   }
@@ -56,7 +56,7 @@ export function openSection(asked: string | undefined, kind: SettingsKind): Sett
   const found = settingsSections(kind).find((section) => section === asked);
   if (found) return found;
   if (kind === "key" && (asked === "harness" || asked === "repositories")) return "model";
-  if (kind === "subscription" && (asked === "model" || asked === "repositories")) return "harness";
+  if (kind === "subscription" && asked === "model") return "harness";
   return "identity";
 }
 

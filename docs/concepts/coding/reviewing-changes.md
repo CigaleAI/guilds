@@ -94,6 +94,10 @@ repository shows its name, its branch, and its diffstat, such as
 diff from the agent's machine, and **Hide diff** folds it. It is
 disabled with no changes.
 
+A subscription agent's run shows the same panel once a turn has changed
+a repository: each turn that did is under **Turn `<n>`**, with a row per
+repository it changed, and **Show diff** fetches that turn's diff.
+
 ### The Diff of a code task
 
 Once a code task has an end checkpoint, its block in the run flow

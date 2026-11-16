@@ -299,13 +299,13 @@ keeps it as `?section=` (`identity`, `model`, `machine`, `harness`,
 or `repositories`), so a link can open Settings on one section.
 Without one, Settings opens on Identity. A section the agent's kind
 lacks opens where its content lives: `harness` or `repositories`
-opens Model on an agent on a key without Coding, and `model` or
-`repositories` opens Harness on a subscription agent.
+opens Model on an agent on a key without Coding, and `model` opens
+Harness on a subscription agent.
 
 An agent has **Identity**, **Model**, and **Machine**. A coding agent
 has **Identity**, **Machine**, **Harness**, **Lead model**, and
 **Repositories**. A subscription agent has **Identity**, **Harness**,
-and **Machine** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
+**Machine**, and **Repositories** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
 The sections follow the form's Coding button and its **Model source**,
 so turning Coding on or picking another source changes them before
 the save. **Model source** shows at the top of an agent's Model, and
@@ -336,8 +336,8 @@ saves.
   organisation's default.
 - **Machine**: the machine picker and **Disk**
   ([Machines](machines.md), [Agent home](agent-home.md)).
-- **Harness** and **Repositories**, on a coding agent:
-  [Harnesses](coding/harnesses.md) and
+- **Harness** and **Repositories**, on a coding agent and a
+  subscription agent: [Harnesses](coding/harnesses.md) and
   [Repositories](coding/repositories.md). **Repositories** ticks the
   repositories the agent works on, saved with the rest of Settings.
   Turning **Coding** off before the first save unticks them.

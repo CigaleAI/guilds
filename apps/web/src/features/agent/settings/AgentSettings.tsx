@@ -204,7 +204,8 @@ function SettingsFooter({ dirty, invalid, saving, onDiscard, onSave }: SettingsF
 /**
  * How the agent looks and runs, in the create dialog's steps as sections opened in any order by
  * `?section=`: an agent's Identity, Model, and Machine; a coding agent's Identity, Machine, Harness,
- * Lead model, and Repositories. Identity holds the name, focus, mascot, and wake triggers. Model holds
+ * Lead model, and Repositories; a subscription agent's Identity, Harness, Machine, and
+ * Repositories. Identity holds the name, focus, mascot, and wake triggers. Model holds
  * the model and reasoning, the capabilities (Browser and Coding greyed out on a machine below their minimum),
  * and the run limits. Machine holds the machine (a new one moves the agent there) and the disk
  * cap against what the machine's other agents reserve. Harness holds the coding harness with its
@@ -353,7 +354,11 @@ export function AgentSettings() {
         usable={harness.data?.usable_repositories}
         picked={form.repositories}
         onPick={(repositories) => set({ repositories })}
-        missingNote="No repository picked, so this agent's coding runs fail at start."
+        missingNote={
+          kind === "subscription"
+            ? "No repository picked, so this agent's turns run in its home."
+            : "No repository picked, so this agent's coding runs fail at start."
+        }
       />
     ),
   };

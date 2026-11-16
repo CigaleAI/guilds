@@ -214,15 +214,16 @@ The guild's **Settings** tab has two parts for coding:
 Any operator who sees the guild may add and remove repositories. They
 are not part of the Settings **Save**.
 
-### The coding agent's Repositories
+### The agent's Repositories
 
-The create dialog's **Repositories** step and the **Repositories**
-section of a coding agent's Settings pick the repositories the agent
-works on, then show the guild's repositories it picks from.
+The create dialog's **Repositories** step of a coding agent, and the
+**Repositories** section of a coding agent's or a subscription agent's
+Settings, pick the repositories the agent works on, then show the
+guild's repositories it picks from.
 
-A line reads "Code tasks run in the repositories this agent picks. The
-repositories of `<guild>` below are shared by its coding agents; each
-picks the ones it works on." Under **This agent works on**, a checkbox
+A line reads "This agent works in the repositories it picks. The
+repositories of `<guild>` below are shared by its agents; each picks
+the ones it works on." Under **This agent works on**, a checkbox
 per repository the agent can use, ticked when the agent picks it. A
 repository the agent picks and can no longer use follows, ticked and
 tagged "no longer in the guild", so it can be unticked. A repository
@@ -235,8 +236,10 @@ can use, which its own GitHub login may change.
 
 While the agent picks no repository it can use, an ochre line says so:
 in the create dialog, "No repository picked. You can create the agent
-and pick one later in its Settings."; in Settings, "No repository
-picked, so this agent's coding runs fail at start."
+and pick one later in its Settings."; in a coding agent's Settings,
+"No repository picked, so this agent's coding runs fail at start."; in
+a subscription agent's, "No repository picked, so this agent's turns
+run in its home."
 
 Then the guild's GitHub login, whose changes are the guild's, saved as
 they are made:
@@ -553,8 +556,8 @@ the app `apps/web/src/features/agent/GuildRepositories.tsx` (the
 guild's repositories and the add form),
 `apps/web/src/features/agent/repositories.ts` (the login a URL is
 added with, and the agent's repository checklist),
-`apps/web/src/features/agent/CodingRepositories.tsx` (the coding
-agent's Repositories),
+`apps/web/src/features/agent/CodingRepositories.tsx` (the agent's
+Repositories),
 `apps/web/src/features/access/GithubRepositories.tsx` (a login's
 repository picker), and
 `apps/web/src/features/guild/pages/GuildSettings.tsx` (the **Git**

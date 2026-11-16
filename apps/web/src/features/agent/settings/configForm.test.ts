@@ -224,6 +224,13 @@ test("max turn minutes starts at 30, round-trips, takes a whole number of 1 or m
   assert.ok(limitFieldsFor("key").some((field) => field.key === "max_input_tokens"));
 });
 
+test("a subscription agent's and a coding agent's repositories are sent; an agent on a key that does not code sends none", () => {
+  const picked = { ...defaultAgentConfig, repositories: ["shop", "site"] };
+  assert.deepEqual(configOf(configFormOf(picked, "subscription"), undefined).repositories, ["shop", "site"]);
+  assert.deepEqual(configOf(configFormOf({ ...picked, coding: true }, "key"), undefined).repositories, ["shop", "site"]);
+  assert.deepEqual(configOf(configFormOf(picked, "key"), undefined).repositories, []);
+});
+
 test("limits the operator already changed stay as typed", () => {
   const form = { ...configFormOf(defaultAgentConfig, "key"), max_steps: "80" };
   const coding = withCoding(form, true);
