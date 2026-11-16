@@ -271,7 +271,7 @@ The orchestrator's tests run on Node's test runner through `tsx`
 | `coding.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1`, and the runtime image exists: `CONTRACT_RUNTIME_IMAGE`, `agent-runtime:0.4` by default (`make runtime-image`) |
 | `model.test.ts` | `RUN_MODEL_CONTRACT=1`, `MODEL_CONTRACT_MODEL` (a `{provider}/{model}` id), and `MODEL_CONTRACT_API_KEY`. `MODEL_CONTRACT_BASE_URL` points it at a local endpoint |
 | `typesafe.test.ts` | `RUN_TYPESAFE_CONTRACT=1` or `RUN_MODEL_CONTRACT=1`, and `TYPESAFE_API_KEY` |
-| `harness.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1` and the runtime image, as for `coding.test.ts`. One live turn per harness whose credential is set: `CLAUDE_CODE_OAUTH_TOKEN`, `CURSOR_API_KEY`, or `CODEX_AUTH_JSON` (the path of a Codex `auth.json`) |
+| `harness.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1` and the runtime image, as for `coding.test.ts`. One live turn per harness whose credential is set: `CLAUDE_CODE_OAUTH_TOKEN`, `CURSOR_API_KEY`, or `CODEX_AUTH_JSON` (the path of a Codex `auth.json`); with `CLAUDE_CODE_OAUTH_TOKEN`, also a subscription agent's turn on Claude Code under a system prompt of its own |
 
 The operator app's and the design system's tests run on Node's
 test runner too. They sit beside their modules as
