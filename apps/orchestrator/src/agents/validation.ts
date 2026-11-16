@@ -320,11 +320,8 @@ export function isValidSecretAliases(value: unknown): value is AgentConfig["secr
   }
 }
 
-/**
- * The repositories a coding agent works on: a list of repository names, each once. Any other
- * agent works on none, so a list on it is refused.
- */
-function requireRepositories(value: unknown, coding: boolean): AgentConfig["repositories"] {
+/** The repositories an agent works on: a list of repository names, each once. */
+function requireRepositories(value: unknown): AgentConfig["repositories"] {
   if (!Array.isArray(value)) {
     throw new AgentValidationError("repositories must be a list of repository names");
   }
@@ -338,16 +335,20 @@ function requireRepositories(value: unknown, coding: boolean): AgentConfig["repo
     }
     names.push(name);
   }
-  if (names.length && !coding) {
+  return names;
+}
+
+/** Only a coding agent works on repositories: a list on any other agent is refused. */
+function rejectRepositoriesWithoutCoding(repositories: AgentConfig["repositories"], coding: boolean): void {
+  if (repositories.length && !coding) {
     throw new AgentValidationError("repositories are only for coding agents");
   }
-  return names;
 }
 
 /** Whether a value is repositories a coding agent's config takes, as `validateAgentConfig` checks them. */
 export function isValidRepositoryList(value: unknown): value is AgentConfig["repositories"] {
   try {
-    requireRepositories(value, true);
+    requireRepositories(value);
     return true;
   } catch (error) {
     if (error instanceof AgentValidationError) {
@@ -452,6 +453,8 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
   const harness = requireHarness(filled.harness);
   rejectUnsoundModelSource(model, coding, harness);
   const harnessModel = requireHarnessModel(filled.harness_model, harness);
+  const repositories = requireRepositories(filled.repositories);
+  rejectRepositoriesWithoutCoding(repositories, coding);
   const config: AgentConfig = {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),
@@ -474,7 +477,7 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     harness,
     harness_model: harnessModel,
     harness_effort: requireHarnessEffort(filled.harness_effort, harness, harnessModel),
-    repositories: requireRepositories(filled.repositories, coding),
+    repositories,
     secret_aliases: requireSecretAliases(filled.secret_aliases),
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),
