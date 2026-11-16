@@ -5,9 +5,8 @@ import type { ModelProvider, OrgModelProvider, OrgModels } from "../../api/types
 export type ModelPickerScope = { current?: string };
 
 /**
- * The picker's options: the organisation's chosen marketplace models grouped by provider; a coding
- * plan's models run no agent. A current value the organisation no longer offers stays listed as
- * it is.
+ * The picker's options: the organisation's chosen models grouped by provider. A current value
+ * the organisation no longer offers stays listed as it is.
  */
 export function modelOptions(
   models: OrgModels | undefined,
@@ -19,7 +18,6 @@ export function modelOptions(
   }
   const groups: SelectOptionGroup[] = models.providers
     .filter((provider) => provider.connected)
-    .filter((provider) => provider.kind !== "coding")
     .map((provider) => ({
       label: provider.label,
       options: models.models
@@ -137,9 +135,5 @@ export const PROVIDER_META: Record<ModelProvider, ProviderMeta> = {
     blurb: "Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run.",
     keyURL: null,
     urlPlaceholder: "http://127.0.0.1:11434/v1",
-  },
-  kimi: {
-    blurb: "Kimi models on a Kimi Code plan, for coding agents.",
-    keyURL: "https://www.kimi.com/code",
   },
 };

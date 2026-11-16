@@ -8,7 +8,6 @@ import type {
   ThinkingLevel,
 } from "../../../api/types/agents";
 import type { OrgModels } from "../../../api/types/models";
-import { isCodingOnlyModel } from "../../../api/types/models";
 import { chosenMachine } from "../../machines/machines";
 import { modelLimits, modelProviderConnected, providerLabel } from "../../models/models";
 import { catalogFor, harnessEffortsFor, isHarness, missingRepositoryText, needsRepository } from "../harness";
@@ -232,15 +231,12 @@ function harnessErrors(form: ConfigForm, catalog: readonly HarnessCatalog[] | un
 }
 
 /**
- * What is wrong with the agent's model on a key: none chosen, a coding plan's, which runs no
- * agent, or its provider not connected. A subscription sends no model.
+ * What is wrong with the agent's model on a key: none chosen, or its provider not connected. A
+ * subscription sends no model.
  */
 function modelError(form: ConfigForm, models: OrgModels | undefined): string | undefined {
   if (form.model_source === "subscription") return undefined;
   if (!form.model) return "Choose a model.";
-  if (isCodingOnlyModel(form.model, models)) {
-    return "A coding plan's model runs no agent. Pick another.";
-  }
   if (modelProviderConnected(models, form.model) === false) {
     return `Connect a ${providerLabel(models, form.model)} key on Model keys first.`;
   }
@@ -267,7 +263,6 @@ function browserModelError(form: ConfigForm, models: OrgModels | undefined): str
   if (!browserOptimizedOf(form)) return undefined;
   const model = form.browser_model.trim();
   if (!model) return "Choose a browser model.";
-  if (isCodingOnlyModel(model, models)) return "A coding plan's model can't browse. Pick another.";
   if (modelProviderConnected(models, model) === false) {
     return `Connect a ${providerLabel(models, model)} key on Model keys first.`;
   }

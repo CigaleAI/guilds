@@ -68,7 +68,7 @@ test("a config sent from the form carries no CLI flag", () => {
   assert.equal("cli" in configOf(configFormOf(defaultAgentConfig, "key"), undefined), false);
 });
 
-test("a model is required, is not a coding plan's, and must have its provider connected", () => {
+test("a model is required and must have its provider connected", () => {
   const form = configFormOf(defaultAgentConfig, "key");
   assert.equal(configErrors(form).model, "Choose a model.");
   const models = {
@@ -77,29 +77,15 @@ test("a model is required, is not a coding plan's, and must have its provider co
       {
         id: "openai" as const,
         label: "OpenAI",
-        kind: "marketplace" as const,
         connected: true,
         source: "own" as const,
         key_hint: "abcd",
-        base_url: null,
-      },
-      {
-        id: "kimi" as const,
-        label: "Kimi Code",
-        kind: "coding" as const,
-        connected: false,
-        source: null,
-        key_hint: null,
         base_url: null,
       },
     ],
     models: [],
   };
   assert.equal(configErrors({ ...form, model: "openai/gpt-5" }, { models }).model, undefined);
-  assert.equal(
-    configErrors({ ...form, model: "kimi/k3" }, { models }).model,
-    "A coding plan's model runs no agent. Pick another.",
-  );
   assert.equal(
     configErrors({ ...form, model: "xai/grok" }, { models }).model,
     "Connect a xai key on Model keys first.",
@@ -113,7 +99,6 @@ test("the agent-optimized browser needs a browser model the organisation's key r
       {
         id: "openai" as const,
         label: "OpenAI",
-        kind: "marketplace" as const,
         connected: true,
         source: "own" as const,
         key_hint: "abcd",
@@ -132,10 +117,6 @@ test("the agent-optimized browser needs a browser model the organisation's key r
   assert.equal(
     configErrors({ ...form, browser_model: "openai/gpt-5-mini" }, { models }).browser_model,
     undefined,
-  );
-  assert.equal(
-    configErrors({ ...form, browser_model: "kimi/k3" }, { models }).browser_model,
-    "A coding plan's model can't browse. Pick another.",
   );
   assert.equal(
     configErrors({ ...form, browser_model: "xai/grok" }, { models }).browser_model,

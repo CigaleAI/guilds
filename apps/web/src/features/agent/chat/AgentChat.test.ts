@@ -11,8 +11,6 @@ function modelsWith(attachments: boolean): OrgModels {
       {
         id: "openai/gpt-5",
         model: "gpt-5",
-        kind: "marketplace",
-        coding_only: false,
         label: "GPT-5",
         provider: "openai",
         thinking: true,
