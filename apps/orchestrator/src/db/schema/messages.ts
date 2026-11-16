@@ -163,13 +163,21 @@ export type RunInputMetadata = {
 };
 
 /**
+ * What a message a harness's CLI wrote records: the harness. A subscription agent's run keeps its
+ * harness's messages, and the calls of the harness's own tools with their results, under it.
+ */
+export type HarnessMessageMetadata = { from_harness: Harness };
+
+/**
  * The metadata of a run's message. Which fields it carries depends on the message: an
  * assistant message has the completion's, a tool result the call's, a system or user message
- * its source. `generation` numbers every message but the system prompt.
+ * its source, and a message of a harness's the harness. `generation` numbers every message but
+ * the system prompt.
  */
 export type MessageMetadata = { generation?: number } & Partial<RunInputMetadata> &
   Partial<CompletionMetadata> &
-  Partial<ToolResultMetadata>;
+  Partial<ToolResultMetadata> &
+  Partial<HarnessMessageMetadata>;
 
 export type StudioFocusKind = "run" | "memory_version" | "routine" | "file" | "issue" | "tool";
 
