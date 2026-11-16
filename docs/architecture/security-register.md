@@ -10,6 +10,10 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-71](#sec-71--a-sandbox-on-the-hosted-vm-reached-cloud-sqls-private-address-and-every-port-of-the-vm) | A sandbox on the hosted VM reached Cloud SQL's private address and every port of the VM | Fixed 2026-11-16 |
+| [SEC-70](#sec-70--customers-harness-logins-sit-in-their-agents-homes-on-the-hosted-vm-and-in-its-backups) | Customers' harness logins sit in their agents' homes on the hosted VM and in its backups | Open |
+| [SEC-69](#sec-69--a-subscription-agents-mcp-token-crosses-the-hosted-vms-docker-bridge-in-plain-http) | A subscription agent's MCP token crosses the hosted VM's Docker bridge in plain HTTP | Open, accepted |
+| [SEC-68](#sec-68--every-organisations-sandboxes-on-the-hosted-vm-reach-the-one-mcp-listener) | Every organisation's sandboxes on the hosted VM reach the one MCP listener | Open, accepted |
 | [SEC-67](#sec-67--cursor-and-antigravity-run-a-subscription-agents-turn-under-their-vendors-own-system-prompt) | Cursor and Antigravity run a subscription agent's turn under their vendor's own system prompt | Open, accepted |
 | [SEC-66](#sec-66--a-subscription-agents-harness-pushes-to-its-repositories-and-what-it-reads-can-steer-the-push) | A subscription agent's harness pushes to its repositories, and what it reads can steer the push | Open |
 | [SEC-65](#sec-65--an-image-attached-to-a-subscription-agents-message-is-a-file-every-process-on-its-machine-reads) | An image attached to a subscription agent's message is a file every process on its machine reads | Open |
@@ -77,6 +81,120 @@ its date (the code that held the issue is removed).
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-71 — A sandbox on the hosted VM reached Cloud SQL's private address and every port of the VM
+
+**Status:** fixed 2026-11-16.
+
+**Found:** 2026-11-16, opening the hosted VM's MCP listener to sandboxes.
+
+**Where:** hosted's `deploy/gcp-host-net.sh` and `infra/scripts/bootstrap-vm.sh`.
+
+**Exposure:** the release accepted forwarded traffic to Cloud SQL's
+private IP from any interface, above the RFC1918 drop, so a process in
+any organisation's sandbox could open a connection to the platform
+database, which then asked only for its password. Nothing filtered
+what a sandbox sent to the VM's own addresses: from `docker0` it
+reached Caddy at the bridge's gateway and the VM's subnet address,
+which is the operator app as the internet sees it, sshd, and any other
+port the VM listened on.
+
+**Fix:** the Cloud SQL accept matches only traffic that does not come
+from `docker0`, and the unscoped rule is removed. `INPUT` drops every
+new connection from `docker0`, except the MCP listener's port at the
+bridge's gateway, and keeps the answers to connections the VM opened.
+Each release checks from a container on the bridge that the listener
+answers and port 80 does not.
+
+**Residual risk:** the rules rely on Docker's userland proxy, its
+default, carrying a sandbox's connection to a published port through
+`INPUT`; a daemon run with `userland-proxy: false` would forward it
+through `FORWARD`, where the RFC1918 drop refuses it. A sandbox still
+reaches metadata DNS and the internet.
+
+## SEC-70 — Customers' harness logins sit in their agents' homes on the hosted VM and in its backups
+
+**Status:** open.
+
+**Found:** 2026-11-16, running subscription agents on the hosted VM.
+
+**Where:** each agent's home under
+`/srv/workspaces/<machine id>/<agent id>`
+(`~/.claude/.credentials.json`, `~/.codex/auth.json`, and the Cursor
+and Antigravity logins), and hosted's `deploy/backup.sh`, which tars
+`workspaces` into the backup bucket every night.
+
+**Exposure:** a customer who logs a harness in from an agent's CLI tab
+leaves that vendor login, a personal Claude, ChatGPT or Google
+sign-in, as a file in the agent's home on the platform's VM. Every
+process on the agent's machine reads it (SEC-24, SEC-27). Whoever
+holds root on the VM or the Docker socket, and whoever reads the
+backup bucket, reads every customer's login for the bucket's 30 days.
+With it they use the customer's subscription as the customer. A token
+granted as a secret is encrypted in the database, but its value sits
+in the environment of every turn's CLI.
+
+**Control in place:** a machine never spans organisations. SSH to the
+VM is IAP only. The backup bucket is private to the project, and only
+the VM's service account writes it.
+
+**Fix to make:** leave the harnesses' credential files out of the
+workspace backup, or encrypt the backup under a key the bucket's
+readers do not hold, and give customers a way to revoke a login the
+platform holds. Until then, prefer a vendor key granted as a secret
+over a CLI login on the hosted VM.
+
+## SEC-69 — A subscription agent's MCP token crosses the hosted VM's Docker bridge in plain HTTP
+
+**Status:** open, accepted.
+
+**Found:** 2026-11-16, publishing the MCP listener on the hosted VM's bridge.
+
+**Where:** `HARNESS_MCP_URL`, `http://<docker0 gateway>:8090`, written
+by hosted's `deploy/render-env.sh`, and the docker-proxy between
+`docker0` and the orchestrator's Compose network.
+
+**Exposure:** each harness call carries its generation's bearer token
+in plain HTTP from the sandbox to the bridge's gateway, and through
+docker-proxy to the orchestrator. Whoever can read traffic on the VM
+reads it: root on the VM, and a process with the Docker socket, such
+as OpenSandbox's server. With the token they call the agent's Guilds
+tools until the generation ends (SEC-64).
+
+**Control in place:** sandboxes run without `NET_RAW` and `NET_ADMIN`,
+so one sandbox cannot capture or redirect another's traffic on the
+bridge. The address is not routed off the VM. The token lasts one
+generation and is checked only at its agent's path.
+
+**Fix to make:** none while the listener and its callers share one VM:
+whoever can read the bridge already holds the VM.
+
+## SEC-68 — Every organisation's sandboxes on the hosted VM reach the one MCP listener
+
+**Status:** open, accepted.
+
+**Found:** 2026-11-16, publishing the MCP listener on the hosted VM's bridge.
+
+**Where:** the MCP port published on the `docker0` gateway by hosted's
+`compose/docker-compose.hosted.yml`, and its accept in
+`deploy/gcp-host-net.sh`.
+
+**Exposure:** every organisation's machines share the VM's `docker0`,
+so a process in any customer's sandbox reaches the listener that
+serves every subscription agent of every organisation. It can call
+`/mcp/<any agent id>`, where a request without that generation's token
+answers 401, and send requests that load the listener for every
+organisation's harness turns. A defect in the listener's request
+handling would be reachable from every tenant.
+
+**Control in place:** the listener serves only `/mcp/<agent id>` and
+`/health`. A request needs a running generation's 32-byte token, valid
+only at its own agent's path, and a body over 1 MiB is refused. The
+port is open only at the gateway, only from `docker0`, and no GCE
+firewall rule opens it. Hosted's routes are not on it.
+
+**Fix to make:** a dedicated sandbox host per organisation that needs
+isolation, and a rate limit per source address on the listener.
 
 ## SEC-67 — Cursor and Antigravity run a subscription agent's turn under their vendor's own system prompt
 

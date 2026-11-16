@@ -349,9 +349,9 @@ when it names another machine. Agent payloads carry `machine_id` and
   minimum that sets.
 - Moving an agent to a machine below its minimum is 422.
 - Creating, switching, or moving a subscription agent onto a machine
-  whose image lacks its harness is 422 `a subscription agent runs on
-  <Harness>, which <machine>'s image does not carry. Pick another
-  machine, or build the runtime image with it`.
+  whose image lacks its harness is 422, with a message that names the
+  harness and the machine and says to pick another machine or build
+  the runtime image with the harness.
 - Agent create, a `machine_id` in `PUT /api/agents/:id/config`, and a
   move are 403 on a machine that hosts an agent of a guild the caller
   cannot see
