@@ -243,6 +243,10 @@ describe("artifact store", { concurrency: 1 }, () => {
       () => addRecord(store, alpha, { collection: "papers", body: { title: "Bees" } }),
       (error: Error & { status?: number }) => error.message === "no write access to papers" && error.status === 403,
     );
+    await assert.rejects(
+      () => updateRecord(store, alpha, { collection: "papers", id: 1, body: { title: "Bees" } }),
+      (error: Error & { status?: number }) => error.message === "no write access to papers" && error.status === 403,
+    );
     assert.deepEqual(await listRecords(store, alpha, { collection: "papers" }), { total: 0, records: [], columns: papers.columns });
     const catalog = await collectionCatalog(store, alpha);
     assert.deepEqual(catalog, [
@@ -461,7 +465,16 @@ describe("artifact store", { concurrency: 1 }, () => {
     const patched = await updateRecord(store, searcher, { collection: "packets", id: "2", body: { handled: true, novelty: null } });
     assert.equal(patched.record.handled, true);
     assert.equal("novelty" in patched.record, false);
+    assert.deepEqual(
+      [patched.record.project, patched.record.chain, patched.record.status, patched.record.seen_at],
+      ["Zecord", "Solana", "open", "2025-03-14T08:00:00.000Z"],
+    );
     assert.deepEqual(patched.warnings, []);
+    await assert.rejects(
+      () => updateRecord(store, searcher, { collection: "packets", id: 2, body: { status: "new" } }),
+      (error: Error & { status?: number }) =>
+        error.status === 422 && error.message === 'record rejected\n- column "status": expected one of open, blocked, closed; got "new"',
+    );
     await assert.rejects(
       () => updateRecord(store, searcher, { collection: "packets", id: 2, body: { project: null } }),
       /column "project": required; cannot be cleared/,

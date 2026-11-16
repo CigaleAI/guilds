@@ -8,6 +8,28 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A table's **Records** selects several records at once in
+selection mode, which **Select records** turns on and **Exit
+selection mode** turns off, clearing the column and the selection. In
+the mode a row opens nothing and has no pencils, and **Column to
+edit** takes one of the table's columns before any record: the boxes
+stay off until it is chosen, and choosing another clears the
+selection. Each row then has a box that selects it, **Select this
+page** in the header selects every record of the page, and a bar shows
+how many are selected, **Clear selection**, and **Edit selected**.
+**Edit selected** names the column and the selected records' ids and
+sets that column to the same value on each, checked as the record
+dialog checks it; a unique column takes a value on one record only,
+and a column the table loses is named instead of saved. The records
+save one at a time, and the first save fixes the value: the field
+stays off while it runs and after. The dialog names every record saved
+so far and lists those the server refuses with its reasons, and **Retry
+failed** sends them the same value, to them only; the records re-read
+after every edit, refused ones included. Each change of the table, the
+search, the filters, the sort or the page clears the selection, and
+the boxes stay off until the new view's records arrive; fetching the
+same view again keeps it.
+
 **Rebuild.** A guild's or an agent's **State → Files** selects several
 files at once: each file has a box that selects it without opening
 it, and a bar shows how many are selected, **Clear selection**, and

@@ -1,0 +1,567 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { QueryClient } from "@tanstack/react-query";
+import { Window } from "happy-dom";
+import type { Root } from "react-dom/client";
+import type { Collection, CollectionRecord, Column } from "../../api/types/tables";
+
+function column(name: string, type: Column["type"], extra: Partial<Column> = {}): Column {
+  return { name, type, description: "", required: false, unique: false, ...extra };
+}
+
+const collection: Collection = {
+  id: "c1",
+  name: "Leads",
+  purpose: "",
+  columns: [
+    column("score", "number", { required: true }),
+    column("active", "boolean"),
+    column("tags", "array", { values: ["red", "blue"] }),
+    column("email", "text", { unique: true }),
+  ],
+  display_path: "org/o1/collections/leads",
+  scope: "org",
+  guild: null,
+  created_at: "2026-01-01T00:00:00.000Z",
+  updated_at: "2026-01-01T00:00:00.000Z",
+  count: 3,
+};
+
+function record(id: number): CollectionRecord {
+  return {
+    id,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    updated_by: null,
+    version: 1,
+    display_path: "",
+    score: id,
+    active: true,
+    tags: ["red"],
+  };
+}
+
+/** A PATCH the panel sent: its path and its JSON body. */
+type SentPatch = { path: string; body: string };
+
+test("selection mode takes a column before any record and selects the page's records apart from opening them, another column, table or view clears the selection, a view still loading selects none of the previous view's rows, and a bulk edit names its column and records, sends one typed PATCH of that column alone per record, in turn, sends the records after a refused or unanswered one, fixes its value from the first save, keeps the refused ones with the server's reason to retry alone with that value, once however often pressed, keeps listing the records saved across retries, refreshes after every save, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
+  const window = new Window({ url: "http://localhost/" });
+  const globals = {
+    window,
+    self: window,
+    document: window.document,
+    scrollTo: window.scrollTo.bind(window),
+    // The checkboxes, the select and the dialog measure, observe, focus and dispatch their own events through these.
+    getComputedStyle: window.getComputedStyle.bind(window),
+    MutationObserver: window.MutationObserver,
+    ResizeObserver: window.ResizeObserver,
+    requestAnimationFrame: window.requestAnimationFrame.bind(window),
+    cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    Node: window.Node,
+    NodeFilter: window.NodeFilter,
+    Element: window.Element,
+    HTMLElement: window.HTMLElement,
+    HTMLFormElement: window.HTMLFormElement,
+    DocumentFragment: window.DocumentFragment,
+    Event: window.Event,
+    CustomEvent: window.CustomEvent,
+    FocusEvent: window.FocusEvent,
+    KeyboardEvent: window.KeyboardEvent,
+    PointerEvent: window.PointerEvent,
+    fetch: globalThis.fetch,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  const nodeGlobals = Object.keys(globals).map(
+    (name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
+  );
+  const nodeEnv = process.env.NODE_ENV;
+  let root: Root | null = null;
+  let queries: QueryClient | null = null;
+  try {
+    for (const [name, value] of Object.entries(globals)) {
+      Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+    }
+    // The server: three records on every page of a listing of a hundred in either table, a search
+    // that finds the one whose id it names, the ids whose PATCH it refuses with a status and a
+    // reason or never answers, a gate that holds each PATCH while set, every PATCH it got, and how
+    // many it answered at once at most.
+    const stored = [record(1), record(2), record(3)];
+    const refused = new Map<number, { status: number; detail: string } | "unreachable">();
+    let gate: Promise<void> | null = null;
+    const patches: SentPatch[] = [];
+    let inFlight = 0;
+    let mostInFlight = 0;
+    let listFetches = 0;
+    // While set, a listing waits for it, and pages past the first send their own records.
+    let listGate: Promise<void> | null = null;
+    let pagesDiffer = false;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(String(input), "http://localhost");
+      if (init?.method === "PATCH") {
+        patches.push({ path: url.pathname, body: String(init.body) });
+        inFlight += 1;
+        mostInFlight = Math.max(mostInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (gate) await gate;
+        inFlight -= 1;
+        const recordId = Number(url.pathname.split("/").at(-1));
+        const refusal = refused.get(recordId);
+        if (refusal === "unreachable") throw new TypeError("Failed to fetch");
+        if (refusal) return Response.json({ detail: refusal.detail }, { status: refusal.status });
+        return Response.json({ record: record(recordId), warnings: [] });
+      }
+      if (/^\/api\/collections\/c[12]\/records$/.test(url.pathname)) {
+        listFetches += 1;
+        if (listGate) await listGate;
+        const query = url.searchParams.get("query");
+        const page =
+          pagesDiffer && Number(url.searchParams.get("offset")) > 0
+            ? [record(4), record(5), record(6)]
+            : stored;
+        const records = query ? stored.filter((item) => String(item.id) === query) : page;
+        // The listing claims more records than it sends, and sends the same ones for every page.
+        const total = query ? records.length : 100;
+        return Response.json({ total, records, columns: collection.columns });
+      }
+      return Response.json({ detail: "Not found" }, { status: 404 });
+    };
+
+    // The router renders for a browser under Node only in a test environment.
+    process.env.NODE_ENV = "test";
+    // React DOM, the query client, and the router tell browser from server when they load.
+    const React = await import("react");
+    const { act, createElement } = React;
+    // The design system's components are compiled here, outside Vite, with the classic JSX
+    // transform, so they reach React as a global.
+    Object.defineProperty(globalThis, "React", { value: React, configurable: true });
+    const { createRoot } = await import("react-dom/client");
+    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+    const { RouterProvider, createMemoryHistory, createRootRoute, createRouter } =
+      await import("@tanstack/react-router");
+    const { getToasts } = await import("@guildsrun/ui");
+    const { RecordsPanel } = await import("./RecordsPanel");
+    // The table as the page holds it, swapped below for another table and for one that lost columns.
+    let showCollection: (next: Collection) => void = () => undefined;
+    const Panel = () => {
+      const [shown, setShown] = React.useState(collection);
+      React.useEffect(() => {
+        showCollection = setShown;
+      }, []);
+      return createElement(RecordsPanel, { collection: shown });
+    };
+
+    // A finite gcTime leaves a timer after the panel unmounts that keeps the test running.
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: Infinity },
+        mutations: { gcTime: Infinity },
+      },
+    });
+    queries = client;
+    const router = createRouter({
+      routeTree: createRootRoute({ component: Panel }),
+      history: createMemoryHistory(),
+    });
+    const container = document.body.appendChild(document.createElement("div"));
+    const mounted = createRoot(container);
+    root = mounted;
+    const settle = (change: () => unknown) =>
+      act(async () => {
+        await change();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    // A fetch answers over several ticks; the view is read once it shows what it waits for.
+    const until = async (shown: () => boolean, what: string) => {
+      for (let tick = 0; tick < 40 && !shown(); tick++) await settle(() => undefined);
+      assert.ok(shown(), what);
+    };
+    const button = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (candidate) =>
+          candidate.getAttribute("aria-label") === label || candidate.textContent?.trim() === label,
+      );
+    const press = (label: string) =>
+      settle(() => {
+        const target = button(label);
+        assert.ok(target, `the ${label} button`);
+        target.click();
+      });
+    const rows = () => container.querySelectorAll("tbody tr").length;
+    const clickRow = () => settle(() => container.querySelector<HTMLElement>("tbody tr")?.click());
+    const idFilter = () => {
+      const label = [...container.querySelectorAll("label")].find(
+        (candidate) => candidate.textContent?.trim() === "id",
+      );
+      const input = label ? document.getElementById(label.htmlFor) : null;
+      assert.ok(input instanceof window.HTMLInputElement, "the id filter");
+      return input as unknown as HTMLInputElement;
+    };
+    const toolbar = () =>
+      [...container.querySelectorAll("span")].find((span) =>
+        / selected$/.test(span.textContent ?? ""),
+      )?.textContent ?? null;
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+    const toastTitles = () => getToasts().map((item) => item.title);
+    const setInput = (input: HTMLInputElement, text: string) =>
+      settle(() => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          text,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    const typeValue = (text: string) => {
+      const input = dialog()?.querySelector<HTMLInputElement>("input");
+      assert.ok(input, "the value's input");
+      return setInput(input, text);
+    };
+    const typeText = (text: string) =>
+      settle(() => {
+        const area = dialog()?.querySelector("textarea");
+        assert.ok(area, "the text's field");
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set?.call(
+          area,
+          text,
+        );
+        area.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    const search = async (text: string) => {
+      const input = container.querySelector<HTMLInputElement>('input[aria-label="Search records"]');
+      assert.ok(input, "the search field");
+      await setInput(input, text);
+      await settle(() =>
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+      );
+    };
+    const select = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="combobox"]')].find(
+        (candidate) =>
+          candidate.id &&
+          document
+            .querySelector(`label[for="${candidate.id}"]`)
+            ?.textContent?.replace(/ \*$/, "") === label,
+      );
+    const choose = async (label: string, option: string) => {
+      const trigger = select(label);
+      assert.ok(trigger, `the ${label} select`);
+      await settle(() => trigger.click());
+      const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (candidate) => candidate.textContent?.trim() === option,
+      );
+      assert.ok(item, `the ${option} option`);
+      await settle(() => item.click());
+    };
+
+    await settle(async () => {
+      await router.load();
+      mounted.render(
+        createElement(QueryClientProvider, { client }, createElement(RouterProvider, { router })),
+      );
+    });
+    await until(() => rows() === 3, "the records");
+    assert.equal(toolbar(), null, "nothing is selected at first");
+
+    // Outside selection mode a row has no box and opens its record, and its cells have pencils.
+    assert.equal(button("Select record #1"), undefined);
+    assert.ok(button("Edit score of record #1"), "a cell's pencil");
+    await clickRow();
+    assert.match(dialog()?.textContent ?? "", /Record #1/);
+    await press("Cancel");
+    assert.equal(dialog(), null);
+
+    // In selection mode a row opens nothing and has no pencils, and the boxes stay off until a
+    // column is chosen; then a box selects without opening the record, and the header box selects
+    // the page, then none.
+    await press("Select records");
+    assert.equal(button("Edit score of record #1"), undefined, "no pencil in selection mode");
+    assert.equal(button("Select record #1")?.disabled, true, "no box before a column");
+    assert.equal(button("Select this page")?.disabled, true, "no page box before a column");
+    await choose("Column to edit", "score");
+    assert.equal(button("Select record #1")?.disabled, false);
+    await press("Select record #1");
+    await press("Select record #3");
+    assert.equal(toolbar(), "2 selected");
+    assert.equal(dialog(), null, "selecting never opens the record");
+    await clickRow();
+    assert.equal(dialog(), null, "a row opens nothing in selection mode");
+    await press("Select this page");
+    assert.equal(toolbar(), "3 selected");
+    await press("Select this page");
+    assert.equal(toolbar(), null);
+
+    // Another column clears the selection.
+    await press("Select record #1");
+    await choose("Column to edit", "active");
+    assert.equal(toolbar(), null, "another column");
+    await choose("Column to edit", "score");
+
+    // Leaving the mode takes the boxes away and clears the selection and the column.
+    await press("Select record #1");
+    await press("Exit selection mode");
+    assert.equal(button("Select record #1"), undefined);
+    assert.equal(select("Column to edit"), undefined, "no column outside the mode");
+    await press("Select records");
+    assert.equal(toolbar(), null);
+    assert.equal(button("Select record #1")?.disabled, true, "the column is chosen again");
+    await choose("Column to edit", "score");
+
+    // Fetching the same view again keeps the selection; each change of the page, the sort, the
+    // filters, the search or the table clears it, even when the view shows the same records.
+    const fetchesBeforeRefresh = listFetches;
+    await press("Select record #1");
+    await press("Refresh the records");
+    await until(() => listFetches > fetchesBeforeRefresh, "the records fetched again");
+    assert.equal(toolbar(), "1 selected");
+    await press("Next");
+    assert.equal(toolbar(), null, "a new page");
+    await press("Select record #1");
+    await press("Previous");
+    assert.equal(toolbar(), null, "the previous page");
+    await press("Select record #1");
+    await press("#");
+    assert.equal(toolbar(), null, "a new sort");
+    await press("Filters");
+    await press("Select record #1");
+    await setInput(idFilter(), "1");
+    assert.equal(toolbar(), null, "a new filter");
+    await press("Select record #1");
+    await press("Clear filters");
+    assert.equal(toolbar(), null, "the filters cleared");
+    await press("Filters");
+    await press("Select record #1");
+    await search("1");
+    await until(() => rows() === 1, "the search's hit");
+    assert.equal(toolbar(), null, "a new search");
+    await press("Select record #1");
+    await search("");
+    await until(() => rows() === 3, "the listing again");
+    assert.equal(toolbar(), null, "the search cleared");
+    await press("Select record #1");
+    await settle(() => showCollection({ ...collection, id: "c2" }));
+    await until(() => rows() === 3, "the other table's records");
+    assert.equal(toolbar(), null, "another table");
+    await settle(() => showCollection(collection));
+    await until(() => rows() === 3, "the first table's records");
+
+    // While a new page loads, the previous page's rows stay shown and none can be selected; the
+    // new page's rows can once they arrive.
+    pagesDiffer = true;
+    let releaseList: () => void = () => undefined;
+    listGate = new Promise((resolve) => {
+      releaseList = resolve;
+    });
+    const fetchesBeforeNext = listFetches;
+    await press("Next");
+    await until(() => listFetches > fetchesBeforeNext, "the next page asked for");
+    assert.ok(button("Select record #1"), "the previous page still shown");
+    assert.equal(button("Select record #1")?.disabled, true, "no box on a previous page's row");
+    assert.equal(button("Select this page")?.disabled, true, "no page box while the page loads");
+    assert.equal(toolbar(), null);
+    listGate = null;
+    releaseList();
+    await until(() => button("Select record #4") !== undefined, "the next page's records");
+    assert.equal(button("Select record #1"), undefined);
+    await press("Select record #4");
+    assert.equal(toolbar(), "1 selected");
+    await press("Previous");
+    await until(() => button("Select record #1") !== undefined, "the first page again");
+    assert.equal(toolbar(), null, "the first page");
+    pagesDiffer = false;
+
+    // Cancel sends nothing; a value the column refuses is named and not sent.
+    await press("Select record #1");
+    await press("Select record #2");
+    await press("Edit selected");
+    assert.match(dialog()?.textContent ?? "", /Edit 2 records/);
+    assert.match(dialog()?.textContent ?? "", /Column score · Records #1, #2/);
+    assert.equal(
+      dialog()?.querySelector('[role="combobox"]'),
+      null,
+      "the dialog does not change the column",
+    );
+    await typeValue("5");
+    await press("Cancel");
+    assert.equal(dialog(), null);
+    await press("Edit selected");
+    await typeValue("");
+    await press("Save changes");
+    assert.match(dialog()?.textContent ?? "", /Required\./);
+    await press("Cancel");
+    assert.equal(patches.length, 0, "nothing is sent");
+
+    // Save pressed twice sends the typed value once to each record, one at a time, with the field
+    // off while it runs, then closes and the selection stays.
+    await press("Edit selected");
+    await typeValue("7");
+    let release: () => void = () => undefined;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    await settle(() => {
+      button("Save changes")?.click();
+      button("Save changes")?.click();
+    });
+    assert.ok(button("Saving…"), "the save runs");
+    assert.equal(dialog()?.querySelector("input")?.disabled, true, "no value while saving");
+    await settle(() => button("Saving…")?.click());
+    gate = null;
+    release();
+    await until(() => dialog() === null, "the dialog closes once every record is saved");
+    assert.deepEqual(patches, [
+      { path: "/api/collections/c1/records/1", body: JSON.stringify({ body: { score: 7 } }) },
+      { path: "/api/collections/c1/records/2", body: JSON.stringify({ body: { score: 7 } }) },
+    ]);
+    assert.equal(mostInFlight, 1, "one request in flight at most");
+    assert.equal(toastTitles().at(-1), "Saved score on 2 records");
+    assert.equal(toolbar(), "2 selected");
+
+    // Another column sends its own type: a boolean, and a list cleared to null.
+    patches.length = 0;
+    await choose("Column to edit", "active");
+    await press("Select record #1");
+    await press("Select record #2");
+    await press("Edit selected");
+    assert.match(dialog()?.textContent ?? "", /Column active · Records #1, #2/);
+    await choose("active", "false");
+    await press("Save changes");
+    await until(() => dialog() === null, "the boolean is saved");
+    await choose("Column to edit", "tags");
+    await press("Select record #1");
+    await press("Select record #2");
+    await press("Edit selected");
+    await press("Save changes");
+    await until(() => dialog() === null, "the list is cleared");
+    assert.deepEqual(
+      patches.map((patch) => patch.body),
+      [
+        JSON.stringify({ body: { active: false } }),
+        JSON.stringify({ body: { active: false } }),
+        JSON.stringify({ body: { tags: null } }),
+        JSON.stringify({ body: { tags: null } }),
+      ],
+    );
+
+    // A record the server refuses, or never answers, is listed with the reason and the dialog
+    // stays open, its value fixed; the records after it are still sent and saved, each PATCH holds
+    // the one column alone, and the records are fetched again all the same.
+    patches.length = 0;
+    const scoreOnly = (recordId: number) => ({
+      path: `/api/collections/c1/records/${recordId}`,
+      body: JSON.stringify({ body: { score: 9 } }),
+    });
+    const dialogText = () => dialog()?.textContent ?? "";
+    await choose("Column to edit", "score");
+    await press("Select this page");
+    assert.equal(toolbar(), "3 selected");
+    refused.set(1, { status: 403, detail: "no write access to Leads" });
+    refused.set(2, "unreachable");
+    let fetchesBefore = listFetches;
+    await press("Edit selected");
+    await typeValue("9");
+    await press("Save changes");
+    await until(() => /Couldn't save 2 records/.test(dialogText()), "the refused records");
+    assert.match(dialogText(), /#1: no write access to Leads/);
+    assert.match(dialogText(), /#2: Failed to fetch/);
+    assert.match(dialogText(), /Saved #3/);
+    assert.match(dialogText(), /Edit 2 records/);
+    assert.match(dialogText(), /Records #1, #2/);
+    assert.deepEqual(patches, [scoreOnly(1), scoreOnly(2), scoreOnly(3)]);
+    assert.equal(toastTitles().at(-1), "Saved score on 1 record");
+    await until(() => listFetches > fetchesBefore, "the records are fetched again after a refusal");
+    assert.equal(dialog()?.querySelector("input")?.disabled, true, "no value after a refusal");
+
+    // A retry sends the first save's value, whatever the field holds, to the refused records only,
+    // once however often it is pressed; records saved before stay listed while others are refused
+    // again, and the records are fetched again after each retry.
+    await typeValue("11");
+    refused.set(1, { status: 404, detail: "record 1 not found" });
+    refused.set(2, { status: 409, detail: "The record changed meanwhile." });
+    const toastsBefore = toastTitles().length;
+    fetchesBefore = listFetches;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    await settle(() => {
+      button("Retry failed")?.click();
+      button("Retry failed")?.click();
+    });
+    await settle(() => button("Saving…")?.click());
+    gate = null;
+    release();
+    await until(() => /#1: record 1 not found/.test(dialogText()), "the retry's refusals");
+    assert.match(dialogText(), /#2: The record changed meanwhile\./);
+    assert.match(dialogText(), /Couldn't save 2 records/);
+    assert.match(dialogText(), /Saved #3/);
+    assert.deepEqual(patches.slice(3), [scoreOnly(1), scoreOnly(2)]);
+    assert.equal(toastTitles().length, toastsBefore, "no toast when nothing is saved");
+    await until(() => listFetches > fetchesBefore, "the records are fetched again after a retry");
+
+    refused.delete(1);
+    fetchesBefore = listFetches;
+    await press("Retry failed");
+    await until(() => /Couldn't save 1 record/.test(dialogText()), "the record refused again");
+    assert.match(dialogText(), /Saved #3, #1/);
+    assert.match(dialogText(), /Records #2/);
+    assert.deepEqual(patches.slice(5), [scoreOnly(1), scoreOnly(2)]);
+    assert.equal(toastTitles().at(-1), "Saved score on 1 record");
+    await until(() => listFetches > fetchesBefore, "the records are fetched again");
+
+    // The last retry saves the last refused record and closes the dialog.
+    refused.clear();
+    await press("Retry failed");
+    await until(() => dialog() === null, "the retry closes the dialog");
+    assert.deepEqual(patches.slice(7), [scoreOnly(2)]);
+    assert.equal(toastTitles().at(-1), "Saved score on 1 record");
+    assert.equal(mostInFlight, 1);
+
+    // One value for several records of a unique column is refused before anything is sent.
+    patches.length = 0;
+    await choose("Column to edit", "email");
+    await press("Select this page");
+    await press("Edit selected");
+    await typeText("a@b.c");
+    await press("Save changes");
+    assert.match(dialog()?.textContent ?? "", /Unique: one record at most can hold a value\./);
+    await press("Cancel");
+    assert.equal(patches.length, 0, "nothing is sent for a repeated unique value");
+
+    // A chosen column the table loses is named in the dialog, and saving stays off; the panel
+    // drops the column and the selection.
+    await choose("Column to edit", "tags");
+    await press("Select this page");
+    await press("Edit selected");
+    await settle(() =>
+      showCollection({
+        ...collection,
+        columns: collection.columns.filter((item) => item.name !== "tags"),
+      }),
+    );
+    assert.match(dialog()?.textContent ?? "", /tags is no longer a column of this table/);
+    assert.equal(button("Save changes")?.disabled, true);
+    await press("Cancel");
+    assert.equal(patches.length, 0);
+    assert.equal(toolbar(), null, "the lost column's selection");
+    assert.equal(button("Select record #1")?.disabled, true, "no box without the column");
+
+    // A table without columns has nothing to select records for.
+    await settle(() => showCollection({ ...collection, columns: [] }));
+    assert.equal(select("Column to edit")?.disabled, true);
+    assert.match(select("Column to edit")?.textContent ?? "", /This table has no columns/);
+    assert.equal(button("Select record #1")?.disabled, true);
+  } finally {
+    if (root) {
+      const leftover: Root = root;
+      const { act } = await import("react");
+      await act(async () => leftover.unmount());
+    }
+    queries?.clear();
+    if (nodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = nodeEnv;
+    Reflect.deleteProperty(globalThis, "React");
+    for (const [name, descriptor] of nodeGlobals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+    await window.happyDOM.close();
+  }
+});

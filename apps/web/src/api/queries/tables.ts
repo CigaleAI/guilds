@@ -13,6 +13,8 @@ import type {
   RecordsQuery,
   DatabaseInput,
   RecordUpdate,
+  RecordsUpdate,
+  RecordsUpdateOutcome,
 } from "../types/tables";
 
 /** Query keys of tables. Identity is fixed for the page's life, so keys carry no user or org. */
@@ -133,6 +135,32 @@ export function useUpdateRecord(id: string) {
         },
       ),
     onSuccess: refresh,
+  });
+}
+
+/**
+ * Writes the same changed values to each record, one PATCH at a time in order, so one is in flight
+ * at most. A refused record is recorded with the server's reason and the next one is still sent;
+ * the mutation itself never fails. The tables refresh once, after the last request, whatever each
+ * one did.
+ */
+export function useUpdateRecordsInTurn(id: string) {
+  const refresh = useDatabasesRefresh();
+  return useMutation({
+    mutationFn: async ({ recordIds, body }: RecordsUpdate) => {
+      const outcome: RecordsUpdateOutcome = { updated: [], failed: [] };
+      for (const recordId of recordIds) {
+        await api<{ record: CollectionRecord; warnings: string[] }>(
+          `${collectionPath(id)}/records/${recordId}`,
+          { method: "PATCH", body: { body } },
+        ).then(
+          ({ warnings }) => outcome.updated.push({ recordId, warnings }),
+          (error: Error) => outcome.failed.push({ recordId, reason: error.message }),
+        );
+      }
+      return outcome;
+    },
+    onSettled: refresh,
   });
 }
 
