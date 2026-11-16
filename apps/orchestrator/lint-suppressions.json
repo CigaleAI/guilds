@@ -41,7 +41,7 @@
   },
   "src/attachments/store.ts": {
     "limits/inline-parameter-type": {
-      "count": 2
+      "count": 1
     }
   },
   "src/avatars/index.ts": {

@@ -1,7 +1,7 @@
-import { useHarnessCatalog, useSubscriptionAgentsOn } from "../../../api/queries/agents";
+import { useHarnessCatalog } from "../../../api/queries/agents";
 import type { ModelSource } from "../../../api/types/agents";
 import { Segmented, type SegmentedOption } from "@guildsrun/ui";
-import { offersModelSource, withModelSource, type ConfigForm } from "./configForm";
+import { withModelSource, type ConfigForm } from "./configForm";
 
 const OPTIONS: SegmentedOption<ModelSource>[] = [
   { value: "key", label: "Model on a key" },
@@ -15,13 +15,10 @@ type ModelSourceFieldProps = {
 
 /**
  * Whether the agent runs on a model on one of the organisation's keys, or on its harness on the
- * operator's own subscription. Shown while the box offers subscription agents, and to an agent
- * already on one so it can move to a key.
+ * operator's own subscription.
  */
 export function ModelSourceField({ form, onChange }: ModelSourceFieldProps) {
-  const on = useSubscriptionAgentsOn();
   const catalog = useHarnessCatalog();
-  if (!offersModelSource(on.data, form.model_source)) return null;
   return (
     <div className="flex flex-col gap-1.5">
       <Segmented

@@ -282,7 +282,7 @@ export async function addAgent(
 
 /**
  * Creates an agent in the guild: validated, on a model the organisation has connected or on a
- * subscription the box offers, with the agent-optimized browser only while it is ready, with
+ * subscription's harness the box does not turn off, with the agent-optimized browser only while it is ready, with
  * repositories it can use, within its policy's caps and the guild's agent limit, and on the
  * machine the request names or the organisation's only one. Only a guild admin gives it
  * tool-result turns of its own.
@@ -430,7 +430,7 @@ async function moveAgentNotes(
 
 /**
  * Changes an agent's config and profile. A new config is validated and its model connected, or its
- * subscription offered by the box unless the agent is already on one; the
+ * subscription's harness one the box does not turn off unless the agent is already on it; the
  * agent-optimized browser turned on, or given another browser model, must be ready, while an edit
  * that leaves both alone saves without the check; a repository newly picked is one the agent can
  * use; a browser or coding switched on is

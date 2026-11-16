@@ -99,6 +99,9 @@ The run opens with the agent's usual system prompt, then one
 its instruction, and when the routine last fired. A routine that reads
 new records can pass that last time as `since` to `record_list`, so
 each wake-up handles only what is new ([Collections](collections.md)).
+A [subscription agent](agents.md#model-source)'s routine run is one
+turn of its harness, a new session, whose prompt is that message
+([Runs](runs.md#harness-turns-by-how-a-run-starts)).
 
 With Memory on, the agent may update its
 [Memory](memory.md#when-the-agent-writes) before the run ends. The run

@@ -6,7 +6,6 @@ import { after, before, test } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildApp, buildHarnessMcpApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
-import { installSubscriptionAgents } from "../../src/coding/harnesses.js";
 import type { Database } from "../../src/db/client.js";
 import { generationLoop, LOOP_TIMINGS, type GenerationLoop } from "../../src/generation/index.js";
 import { harnessTurnTiming } from "../../src/generation/harness-loop.js";
@@ -60,7 +59,6 @@ let mcpUrl = "";
 before(async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   harnessTurnTiming.pollMs = 50;
-  installSubscriptionAgents(true);
   database = await connect(await createIsolatedDatabase(dbName));
   const db = database.pool;
   const notes = new NotesStore(tempDir("guilds-subscription-mcp-notes-"), templatesRoot());
@@ -93,7 +91,6 @@ before(async () => {
 });
 
 after(async () => {
-  installSubscriptionAgents(false);
   Object.assign(harnessTurnTiming, timing);
   await listener.close();
   await app.close();

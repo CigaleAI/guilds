@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-65](#sec-65--an-image-attached-to-a-subscription-agents-message-is-a-file-every-process-on-its-machine-reads) | An image attached to a subscription agent's message is a file every process on its machine reads | Open |
 | [SEC-64](#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools) | A subscription agent's MCP token lets any process on its machine call its Guilds tools | Open |
 | [SEC-63](#sec-63--on-docker-desktop-every-sandbox-reaches-the-operator-app) | On Docker Desktop every sandbox reaches the operator app | Open |
 | [SEC-62](#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network) | A subscription agent's harness holds its whole prompt beside its secrets and the network | Open |
@@ -73,6 +74,45 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-65 — An image attached to a subscription agent's message is a file every process on its machine reads
+
+**Status:** open.
+
+**Found:** 2026-11-16, giving a subscription agent the images attached
+to its messages.
+
+**Where:** `HarnessLoop.placeAttachments` in
+`apps/orchestrator/src/generation/harness-loop.ts`, which writes each
+image to `.runs/<run id>/attachments/<attachment id>/<filename>` in
+the agent's home, and `resolveAttachments` in
+`apps/orchestrator/src/generation/operator.ts`, behind
+`POST /api/agents/:id/runs` and `POST /api/runs/:id/messages`.
+
+**Exposure:** a key agent's model receives an image in the request to
+its provider, and the image never reaches the agent's machine. A
+subscription agent's harness reads it as a file in the agent's home,
+so the image sits where every process on the machine reads it: the
+harness, a command it runs, a package install (SEC-4), and every other
+agent placed on the machine (SEC-24). It stays there with the run's
+folder, for the agent's 20 most recent runs, after the run ends. The
+harness reads it with the network open and the agent's secrets in its
+environment (SEC-62): text in an image can steer it as text in a
+message can (SEC-8), and the image leaves the box for the harness's
+vendor on the operator's subscription.
+
+**Control in place:** only an operator who can open the agent's runs
+attaches an image, and only an image the organisation uploaded: four
+at most, each a JPEG, PNG, GIF, or WebP of at most 10 MiB, its bytes
+sniffed and its name sanitised (SEC-13). The file is written through
+the agent's host directory without following a link at any part of
+its path (SEC-1), and only the images of the messages that open the
+generation are written.
+
+**Fix to make:** remove a run's images from the home once its last
+turn ends, and give agents that read images from people outside the
+operator's trust a machine of their own. Until then, attach to a
+subscription agent only images its machine's other agents may read.
 
 ## SEC-64 — A subscription agent's MCP token lets any process on its machine call its Guilds tools
 
@@ -219,7 +259,11 @@ the variables that would move the CLI onto a metered key and turns
 off hooks, plugins, and project MCP servers; Codex also loads no
 `config.toml` or rules from the home. A turn stops after 30
 minutes; since 2026-11-16 after the agent's `max_turn_minutes`, 30 by
-default. The organisation's model keys never reach the sandbox.
+default. The organisation's model keys never reach the sandbox. Until
+2026-11-16 a box offered subscription agents only with
+`SUBSCRIPTION_AGENTS=1`; since then every box offers them to whoever
+creates agents, and a box that wants none turns Claude Code and Codex
+off with `HARNESSES_OFF`, which turns them off for coding agents too.
 
 **Fix to make:** start the harness with only its own credential in its
 environment, and limit what the agent's container reaches. Until then,

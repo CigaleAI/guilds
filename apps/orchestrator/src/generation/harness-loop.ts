@@ -1,3 +1,5 @@
+import type { AttachmentService } from "../attachments/store.js";
+import { AttachmentError } from "../attachments/types.js";
 import { HARNESS_INFO, HARNESS_TAKES_MAX_TURNS, type TurnHarness } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
@@ -7,18 +9,19 @@ import {
   listMessages,
   mergeRunMetadata,
   type ActiveRunRow,
-  type MessageRow,
   type RunRow,
 } from "../db/runs.js";
 import {
   modelSourceOf,
   type AssistantMessage,
+  type AttachmentRef,
   type Harness,
   type TokenUsage,
   type RunConfigSnapshot,
   type RunHarnessTurn,
   type ToolCall,
 } from "../db/schema/index.js";
+import { writeAgentFile } from "../lib/agent-file.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { callSegment } from "../toolbox/code.js";
 import {
@@ -58,6 +61,7 @@ import {
 } from "./harness-rows.js";
 import { harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
 import type { HarnessGrant, HarnessMcpServer } from "./harness-mcp.js";
+import { attachmentHomePath, harnessTurnPrompt, openingAttachments } from "./harness-prompt.js";
 import { pendingToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
 
@@ -74,25 +78,6 @@ export type SubscriptionGeneration = RunGeneration & {
   source: "subscription";
   snapshot: HarnessRunConfigSnapshot;
 };
-
-/** What a turn of the harness reads: the run's system prompt, and the messages that opened the generation. */
-export type HarnessTurnPrompt = { system: string; prompt: string };
-
-/**
- * What a turn of the harness reads from the run's rows: the system prompt the run starts with,
- * and the user messages added since the run's last reply, in the text a model is sent them.
- */
-export function harnessTurnPrompt(rows: MessageRow[]): HarnessTurnPrompt {
-  const system =
-    rows.flatMap((row) => (row.payload.role === "system" ? [row.payload.content] : []))[0] ?? "";
-  const lastReply = rows.findLastIndex(
-    (row) => row.payload.role === "assistant" || row.payload.role === "tool",
-  );
-  const opening = rows
-    .slice(lastReply + 1)
-    .flatMap((row) => (row.payload.role === "user" ? [row.payload.content] : []));
-  return { system, prompt: opening.join("\n\n") };
-}
 
 /** A call of the harness's own tool whose result has not come yet, and when its row was kept. */
 type PendingCall = { call: ToolCall; seen: number };
@@ -144,13 +129,15 @@ export function harnessLoopDatabase(db: Queryable): HarnessLoopDatabase {
 
 /**
  * What subscription agents' turns are run with, built once by the loop: the machines a lost turn
- * is stopped on, and the MCP server each turn's harness calls its Guilds tools on.
+ * is stopped on, the MCP server each turn's harness calls its Guilds tools on, and the store the
+ * images attached to a turn's messages are read from; none on a box that keeps no images.
  */
 export type HarnessLoopServices = {
   db: HarnessLoopDatabase;
   events: RunEventBus;
   machines: AgentMachines;
   mcp: HarnessMcpServer;
+  attachments: AttachmentService | null;
 };
 
 /**
@@ -310,11 +297,14 @@ export class HarnessLoop {
 
   /**
    * Starts the CLI on the run's system prompt with the generation's messages, given the MCP server
-   * at `mcp`; false when it did not start, and the run says why.
+   * at `mcp`, once the images they carry are in the agent's home; false when it did not start, and
+   * the run says why.
    */
   private async startTurn(gen: SubscriptionGeneration, turn: HarnessRunTurn, mcp: HarnessMcpAccess): Promise<boolean> {
-    const { system, prompt } = harnessTurnPrompt(await this.services.db.listMessages(gen.runId));
+    const rows = await this.services.db.listMessages(gen.runId);
+    const { system, prompt } = harnessTurnPrompt(rows, turn.ops.agent_home);
     try {
+      await this.placeAttachments(gen, turn.ops, openingAttachments(rows));
       await launchHarness(turn.ops, turn.call_id, {
         harness: turn.harness,
         prompt,
@@ -336,6 +326,24 @@ export class HarnessLoop {
       );
       await this.services.events.recordError(gen, refused.code, refused);
       return false;
+    }
+  }
+
+  /**
+   * Writes each image in `refs` into the agent's home, through its host directory, at the path its
+   * turn's prompt names; refused on a box that keeps no images.
+   */
+  private async placeAttachments(gen: SubscriptionGeneration, run: ToolRun, refs: AttachmentRef[]): Promise<void> {
+    if (!refs.length) {
+      return;
+    }
+    const { attachments } = this.services;
+    if (attachments === null || run.workspace_dir === null) {
+      throw new AttachmentError(503, "attachments are not configured");
+    }
+    for (const ref of refs) {
+      const { bytes } = await attachments.getForOrg(gen.agent.org_id, ref.id);
+      await writeAgentFile(run.workspace_dir, attachmentHomePath(gen.runId, ref), bytes);
     }
   }
 

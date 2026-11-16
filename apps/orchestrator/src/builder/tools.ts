@@ -3,6 +3,7 @@ import type { ConversationTool } from "../conversation/runner.js";
 import type { RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";
 import { recommendedModelOf } from "../recipes/parse-roles.js";
+import { roleRunsOnSubscription } from "../recipes/prepare.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
 import {
   searchConnectedWorkspace,
@@ -210,7 +211,7 @@ const recipeDocumentParameter: ToolSchema = {
           config: {
             type: "object",
             description:
-              "Agent configuration: model, run limits, browser, coding (true for a role that clones, edits, runs, and pushes code; see the coding capability), harness (a coding role's harness: claude-code, codex, cursor, or antigravity; leave it out unless the operator named one), harness_model (the model that harness runs; leave it out unless the operator named one), harness_effort (the reasoning effort that model runs at: none, minimal, low, medium, high, xhigh, max, or ultra; leave it out unless the operator named one), repositories (a coding role's list of the recipe's repositories it works on, by name, each once; its agent clones only those), secret_aliases (variable names the role's commands see beside its secrets, each holding the value of the secret it names; leave it out unless the operator asked), and memory (false to omit Memory and memory_write).",
+              "Agent configuration: model (left out of a subscription role), run limits, browser, coding (true for a role that clones, edits, runs, and pushes code; see the coding capability), harness (a coding role's harness: claude-code, codex, cursor, or antigravity, set only when the operator named one; or a subscription role's: claude-code or codex), harness_model (the model that harness runs; leave it out unless the operator named one), harness_effort (the reasoning effort that model runs at: none, minimal, low, medium, high, xhigh, max, or ultra; leave it out unless the operator named one), repositories (a coding role's list of the recipe's repositories it works on, by name, each once; its agent clones only those), secret_aliases (variable names the role's commands see beside its secrets, each holding the value of the secret it names; leave it out unless the operator asked), and memory (false to omit Memory and memory_write).",
           },
           task: {
             type: "object",
@@ -514,14 +515,17 @@ export const builderWriteRecipe = builderTool({
   },
 });
 
-/** A role the coach wrote without a model is recommended the coach's own. */
+/**
+ * A role the coach wrote without a model is recommended the coach's own, but a subscription role,
+ * whose harness runs every turn without a model.
+ */
 export function recommendCoachModel(recipe: RecipeDocument, coachModel: string): void {
   const model = coachModel.trim();
   if (!model) {
     return;
   }
   for (const role of recipe.roles) {
-    if (recommendedModelOf(role.config) === null) {
+    if (recommendedModelOf(role.config) === null && !roleRunsOnSubscription(role)) {
       role.config.model = model;
     }
   }

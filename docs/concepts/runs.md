@@ -225,8 +225,8 @@ dismissed. `/guilds/<id>/agents/<id>/history` opens Chat with the
 drawer expanded.
 
 The **composer** always shows a paperclip. When the agent's model
-accepts images, it adds JPEG, PNG, GIF, or WebP images, at most four,
-10 MiB each. A message may be images with no caption. When the model
+accepts images, or the agent is a subscription agent, it adds JPEG,
+PNG, GIF, or WebP images, at most four, 10 MiB each. A message may be images with no caption. When the model
 does not accept images, or is not among the organisation's chosen
 models, the paperclip is disabled and a tooltip says so. The
 transcript shows the images on the operator's bubble.
@@ -327,15 +327,27 @@ Chat Completions `image_url` parts:
 A Messages API provider receives the same parts as image blocks: a
 data URL as a base64 source, a signed URL as a URL source.
 
+A subscription agent's harness reads each image as a file. Before its
+turn starts, the orchestrator writes every image of the messages that
+open the generation into the agent's home, through its host
+directory, at `.runs/<run id>/attachments/<attachment id>/<filename>`,
+and the turn's prompt follows each message's text with one line per
+image: `Attached image: /home/<agent id>/.runs/<run id>/attachments/<attachment id>/<filename>`.
+The files go with the run's folder, which `.runs/` keeps for the
+agent's 20 most recent runs ([Code tasks](coding/code-tasks.md)). An
+image the store no longer holds fails the turn at start with
+`harness.start`.
+
 Token counting adds 1600 tokens per image. It does not encode those
 URLs.
 
 `POST /api/attachments` takes the file bytes as the body, with the
 name in `X-Filename`. It returns 201 with `id`, `filename`, `mime`,
 `bytes`, `kind`, `url`, and `created_at`. It refuses an empty file or
-one over 10 MiB (422). Sending refs refuses a model that does not take
-attachments, a subscription agent, which has no model, more than four
-refs, or a repeated ref (422), and an unknown ref (404). `GET /api/attachments/:id` serves the bytes to the
+one over 10 MiB (422). Sending refs refuses a model on a key that does not take
+attachments, more than four refs, or a repeated ref (422), and an
+unknown ref (404); a subscription agent takes them whatever a model
+would. `GET /api/attachments/:id` serves the bytes to the
 same organisation.
 
 ### Metadata
@@ -527,7 +539,8 @@ under the call id `turn_<generation>_<run id>`
    every user message since the run's last assistant or tool row, in
    order, joined by a blank line: the opening message, a message the
    operator sent, a Group Chat info or Schedule wake-up message, or a
-   wake-up's message. On Claude Code the turn makes at most the
+   wake-up's message, each followed by a line naming the path of each
+   image attached to it ([Attachments](#attachments)). On Claude Code the turn makes at most the
    snapshot's `max_steps` model calls (`--max-turns`); Codex has no
    such limit, so `max_turn_minutes` and `max_tool_calls` bound its
    turn. A run whose `metadata.harness_turn` holds a session resumes
@@ -599,6 +612,51 @@ held message as it is.
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
 `.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`, under the
 same retention as a code task's.
+
+### Harness turns by how a run starts
+
+Every way a run starts, and every way a run takes its next
+generation, gives a subscription agent one turn of its harness, on
+the run's composed system prompt and the opening message a model on a
+key reads in its place. The run completes, waits, and refuses
+messages as a key agent's does.
+
+| Start | The turn's prompt | Session | Where the reply goes |
+| --- | --- | --- | --- |
+| an operator's first message (direct run) | the message, and a line per attached image | a new one | the run; a direct run stays open |
+| the operator's next message | the message, and a line per attached image | the run's, resumed | the run |
+| a group delivery | the **Group Chat info** message | a new one | the run, which completes; the agent posts to the chat only with `group_post`, which its harness calls on the MCP server |
+| a routine firing | the **Schedule wake-up** message | a new one | the run, which completes |
+| a wake-up | the **Wake-up** message | the run's, resumed, also on a one-shot run the wake-up reopens | the run, which completes again when it reopened |
+| a message to a resumed one-shot run | the message | the run's, resumed | the run |
+
+A session belongs to a run, as a key agent's history does: a run's
+turns resume the session its last turn reported, and a new run starts
+a new one, carrying what earlier runs learned only through Memory,
+notes, records, State, and the group chat's history, as a key agent's
+new run does.
+
+Between a model loop's steps the orchestrator acts on the run; inside
+a harness turn the CLI takes its own steps, and the orchestrator acts
+at the nearest point it has:
+
+- **A cancel, or an interrupting group post**, sends the harness
+  `stop` as soon as the poll under way, if any, returns, as a model
+  loop stops its model call or command. The interrupted delivery
+  completes and the chat delivers to the agent again.
+- **A message posted while the agent generates** is refused, or waits
+  for the next delivery, for a harness turn as for a model loop; no
+  message enters a turn under way.
+- **Max tool calls and a blocking issue** are checked on each call of
+  the MCP server, where a model loop checks them between steps; the
+  call past the limit or the blocking call ends the turn.
+- **Tool-result stubbing and the input limit** do not apply: the
+  harness sends its own session to its model, and compacts that
+  session itself when it grows. A subscription agent's run never hands
+  off for its size.
+- **Each generation's set-up** runs as a model loop's does before its
+  first step: the secrets are looked up again, the live bindings
+  narrow the offer, and the machine is started.
 
 ### Stubbing rules
 
@@ -849,6 +907,7 @@ cancel and resume are, and records `cancel_reason: "operator"`.
     harness turn, and the offered tools (`offered-tools.ts`)
   - `completion.ts`: model calls, input counting, and credentials
   - `harness-loop.ts`: a subscription agent's turns on its harness;
+    `harness-prompt.ts`: what a turn reads from the run's rows;
     `harness-ending.ts`: how a turn ended and the run error it fails
     with; `parse-claude-code.ts` and `parse-codex.ts`: each CLI's
     events; `harness-rows.ts`: the rows they make

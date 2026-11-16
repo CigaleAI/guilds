@@ -8,6 +8,35 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A subscription agent runs every way an agent's run
+starts: a direct message, a group delivery, a routine's firing, a
+wake-up, and a message to a resumed run each run one turn of its
+harness on the opening message a key agent's model reads. A new run
+starts a new session and a run's later turns resume its own; an
+interrupting group post stops the turn; the agent posts to the group
+chat with `group_post` on the orchestrator's MCP server.
+
+**No impact.** A subscription agent takes images: a message to it may
+carry the images an operator uploaded, which a model on a key takes
+only when its model accepts them. Before its turn starts, each image
+of the messages that open the generation is written into the agent's
+home at `.runs/<run id>/attachments/<attachment id>/<filename>`, and
+the turn's prompt names it on a line `Attached image: <path>` after
+its message. The composer's paperclip is enabled for a subscription
+agent
+([SEC-65](docs/architecture/security-register.md#sec-65--an-image-attached-to-a-subscription-agents-message-is-a-file-every-process-on-its-machine-reads)).
+
+**No impact.** The Guild Builder writes a subscription role when the
+operator asks for an agent on their own Claude Code or Codex
+subscription: a role with a harness, no model, and coding off keeps no
+model on the write, where any other role without one is recommended
+the coach's, and its guild deploys with a subscription agent.
+
+**No impact.** Prompt Studio publishes a draft to a subscription
+agent: publishing estimates its composed prompt's input tokens as for
+any agent, and refuses one past `max_input_tokens` only for an agent
+on a key, since a subscription agent's harness keeps its own context.
+
 **Rebuild.** A Claude Code subscription agent's turn makes at most the
 run's `max_steps` model calls: the CLI starts with `--max-turns`, and a
 turn that stops there ends the generation with `generation.max_steps`,
@@ -158,6 +187,31 @@ each repository's step, once it passes, gives the repository to the
 agents whose role lists it. A recipe whose coding roles list no
 repositories applies with agents that work on none until their
 repositories are picked in Settings.
+
+**Rebuild.** An agent can be a subscription agent: no model, and a
+harness, Claude Code or Codex, on the operator's own subscription as
+its model source. A subscription agent is
+created and saved through the agent routes with `model: null` and its
+`harness`, `harness_model`, and `harness_effort`, and refused on
+Cursor or Antigravity, or with a model-loop
+setting off its default. An agent's view and its
+guild's list carry `model_source` (`key` or `subscription`), derived
+from its `model`. `GET /api/harnesses` adds,
+per harness, `subscription`. A
+subscription agent needs a machine of the coding minimum whose image
+carries its harness; the machine listing names each agent's
+`model_source`, and the apply preview refuses a machine without a
+subscription role's harness with `machine.harness`. A subscription
+agent counts against an organisation's `maxCodingAgents`, as a coding
+agent does. A recipe role with a harness, no model, and no `coding` is
+a subscription role: capture writes one for a subscription agent, the
+apply preview asks it for a harness and no model (`harnesses` entries
+carry `subscription`), and validation reports `subscription.harness` and
+`subscription.setting`.
+In the operator app, the create dialog's Model step and an agent's Settings choose the **Model
+source**: a model on a key, or a subscription on Claude Code or Codex.
+A subscription agent's Settings show its **Harness** section with its
+credential and readiness in place of **Model**.
 
 **Rebuild.** A Claude Code subscription agent runs: each generation
 of its run is one turn of Claude Code in the agent's sandbox, started

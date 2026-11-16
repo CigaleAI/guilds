@@ -105,7 +105,8 @@ the operator, and does not put the domain into Task to make up for it.
    proposal it made in the same step.
 5. The operator reviews the diff and publishes, edits and publishes,
    or discards. Publishing checks the
-   embeds, the composed prompt, and its size in input tokens. It
+   embeds, the composed prompt, and, for an agent on a key, its size
+   in input tokens. It
    archives the outgoing Task as a version. If someone changed the
    Task since the draft's base, publishing is refused.
 
@@ -493,7 +494,11 @@ run. Embed expansion in the inventory is lazy on select.
 
 Publish preflights embeds, composition, and the input-token estimate
 against stored tool schemas. A draft that embeds a note not yet
-created is refused. It archives the outgoing task in
+created is refused, and so is a key agent's draft whose composed
+prompt exceeds its `max_input_tokens` (422 "composed prompt exceeds
+the target agent's max_input_tokens"). A subscription agent's draft
+is estimated the same way and publishes whatever its size: its
+harness keeps its own context. It archives the outgoing task in
 `task_revisions` and compare-and-swaps the live row against the
 `agents.task` version the draft is based on (optimistic concurrency).
 A stale base returns 409.

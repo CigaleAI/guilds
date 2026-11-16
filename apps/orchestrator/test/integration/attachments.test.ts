@@ -158,8 +158,13 @@ test("operators upload images, attach them to a run, and cannot read another org
       headers: { ...OWNER, "content-type": "application/json" },
       payload: { message: "see this", attachment_ids: [row.id] },
     });
-    assert.equal(unmodelled.statusCode, 422, unmodelled.body);
-    assert.match(unmodelled.json().detail, /a subscription agent takes no attachments/);
+    assert.equal(unmodelled.statusCode, 202, unmodelled.body);
+    const unmodelledRows = await app.inject({ method: "GET", url: `/api/runs/${String(unmodelled.json().id)}/messages`, headers: OWNER });
+    assert.deepEqual(
+      unmodelledRows.json().at(-1).metadata.attachments,
+      [{ id: row.id, filename: "shot.png", mime: "image/png", kind: "image" }],
+      "a subscription agent's harness takes the image as a file, whatever a model would",
+    );
 
     const created = await app.inject({
       method: "POST",

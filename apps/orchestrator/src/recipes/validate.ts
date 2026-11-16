@@ -9,7 +9,6 @@ import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS } from "../agents/config.js";
 import { isValidRepositoryList, isValidSecretAliases } from "../agents/validation.js";
 import {
-  areSubscriptionAgentsOn,
   credentialFix,
   HARNESS_INFO,
   harnessModelOf,
@@ -59,15 +58,12 @@ function harnessChoiceFinding(role: RecipeRole): RecipeFinding | null {
   return null;
 }
 
-/**
- * What a subscription role cannot apply as: a box that turns subscription agents off, which
- * blocks it, and the model-loop settings it sets, which apply leaves out.
- */
+/** The model-loop settings a subscription role sets, which apply leaves out. */
 function subscriptionFindings(role: RecipeRole): RecipeFinding[] {
   if (!roleRunsOnSubscription(role)) {
     return [];
   }
-  const settings = subscriptionLoopSettings(role).map((key) =>
+  return subscriptionLoopSettings(role).map((key) =>
     finding(
       "subscription.setting",
       "warning",
@@ -75,18 +71,6 @@ function subscriptionFindings(role: RecipeRole): RecipeFinding[] {
       `config.${key} sets the model loop, which a subscription role's harness replaces; apply leaves it out`,
     ),
   );
-  if (areSubscriptionAgentsOn()) {
-    return settings;
-  }
-  return [
-    finding(
-      "subscription.off",
-      "error",
-      `roles.${role.role}.config.harness`,
-      "subscription agents are turned off on this box: give the role a model on a key",
-    ),
-    ...settings,
-  ];
 }
 
 /** A coding or subscription role's harness runs on a credential nobody can know before apply. */

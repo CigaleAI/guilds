@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, describe, test } from "node:test";
 import { generationLive } from "../../src/generation/completion.js";
 import { harnessTurnFailure } from "../../src/generation/harness-ending.js";
-import { harnessTurnPrompt, harnessTurnTiming } from "../../src/generation/harness-loop.js";
+import { harnessTurnTiming } from "../../src/generation/harness-loop.js";
+import { attachmentHomePath, harnessTurnPrompt, openingAttachments } from "../../src/generation/harness-prompt.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 import type { MessageRow } from "../../src/db/runs.js";
-import type { ResolvedAgentConfig } from "../../src/db/schema/index.js";
+import type { AttachmentRef, ResolvedAgentConfig } from "../../src/db/schema/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps, sandboxHelperRequest, type HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
@@ -143,6 +144,19 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal(call.stdin, "use bash twice", "the message that opened the generation is the prompt");
     assert.ok(!call.argv.includes("--resume"), "a new run starts a new session");
     assert.equal(call.argv[call.argv.indexOf("--max-turns") + 1], String(SUBSCRIBER.max_steps), "its turn makes at most max_steps model calls");
+  });
+
+  test("a message's image on a box that keeps no images fails the turn at start, and the CLI never runs", async () => {
+    const { loop, db, calls, errors } = subscriptionLoop(recordedEvents("claude-code"));
+    const opening = (db.messages as Row[])[1];
+    assert.ok(opening);
+    opening.metadata = { ...opening.metadata, attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }] };
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(
+      errors().map((entry) => [entry.operation, entry.message]),
+      [["harness.start", "Claude Code did not start: attachments are not configured"]],
+    );
+    assert.equal(calls().length, 0);
   });
 
   test("a Claude Code turn that stops at its max_steps ends the generation with generation.max_steps", async () => {
@@ -327,8 +341,9 @@ describe("a turn lost with the orchestrator", () => {
 });
 
 describe("a harness turn's prompt and outcome", () => {
-  const row = (seq: number, payload: Record<string, unknown>): MessageRow =>
-    ({ id: seq, run_id: "r", seq, payload, metadata: {}, created_at: "", cost_usd: null }) as unknown as MessageRow;
+  const row = (seq: number, payload: Record<string, unknown>, metadata: Record<string, unknown> = {}): MessageRow =>
+    ({ id: seq, run_id: "r", seq, payload, metadata, created_at: "", cost_usd: null }) as unknown as MessageRow;
+  const image = (id: string, filename: string) => ({ id, filename, mime: "image/png", kind: "image" });
 
   test("the prompt is the user messages since the run's last reply, after the system prompt", () => {
     const rows = [
@@ -338,8 +353,27 @@ describe("a harness turn's prompt and outcome", () => {
       row(3, { role: "user", content: "second" }),
       row(4, { role: "user", content: "third" }),
     ];
-    assert.deepEqual(harnessTurnPrompt(rows), { system: "sys", prompt: "second\n\nthird" });
-    assert.deepEqual(harnessTurnPrompt(rows.slice(0, 2)), { system: "sys", prompt: "first" });
+    assert.deepEqual(harnessTurnPrompt(rows, "/home/a_1"), { system: "sys", prompt: "second\n\nthird" });
+    assert.deepEqual(harnessTurnPrompt(rows.slice(0, 2), "/home/a_1"), { system: "sys", prompt: "first" });
+  });
+
+  test("each image of the opening messages is named by its path in the agent's home, under the message it came with", () => {
+    const rows = [
+      row(0, { role: "system", content: "sys" }),
+      row(1, { role: "user", content: "old" }, { attachments: [image("att_old", "old.png")] }),
+      row(2, { role: "assistant", content: "done" }),
+      row(3, { role: "user", content: "What is on these?" }, { attachments: [image("att_1", "shot.png"), image("att_2", "chart.png")] }),
+      row(4, { role: "user", content: "" }, { attachments: [image("att_3", "only.png")] }),
+    ];
+    assert.deepEqual(harnessTurnPrompt(rows, "/home/a_1").prompt, [
+      "What is on these?",
+      "Attached image: /home/a_1/.runs/r/attachments/att_1/shot.png",
+      "Attached image: /home/a_1/.runs/r/attachments/att_2/chart.png",
+      "",
+      "Attached image: /home/a_1/.runs/r/attachments/att_3/only.png",
+    ].join("\n"));
+    assert.deepEqual(openingAttachments(rows).map((ref) => ref.id), ["att_1", "att_2", "att_3"], "the images of earlier generations are not placed again");
+    assert.equal(attachmentHomePath("r_1", image("att_1", "shot.png") as AttachmentRef), ".runs/r_1/attachments/att_1/shot.png");
   });
 
   test("each way a turn ends names its run error, and a clean exit none", () => {

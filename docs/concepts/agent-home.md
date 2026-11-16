@@ -41,7 +41,9 @@ The home holds:
   ([Browser](browser.md))
 - `screenshots/latest.jpg`, the page `browser_screenshot` saved last
 - `repos/`, a coding agent's clones ([Coding agents](coding/index.md))
-- `.runs/`, the logs of its code and harness calls
+- `.runs/`, the logs of its code and harness calls, and the images
+  attached to a subscription agent's messages
+  ([Runs](runs.md#attachments))
 - `.bash_history`, the CLI tab's shell history
 - `.gitconfig`, caches, and toolchains
 

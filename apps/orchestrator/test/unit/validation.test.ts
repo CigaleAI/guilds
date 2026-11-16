@@ -30,7 +30,7 @@ import {
   validateAgentName,
   validateWakeTriggers,
 } from "../../src/agents/validation.js";
-import { installHarnessesOff, installSubscriptionAgents } from "../../src/coding/harnesses.js";
+import { installHarnessesOff } from "../../src/coding/harnesses.js";
 import type { GuildOperatorRow, GuildRow } from "../../src/db/guilds.js";
 import { canSeeGuild, guildRole } from "../../src/guilds/operators.js";
 import {
@@ -381,24 +381,19 @@ test("a subscription agent takes none of the model loop's settings but their def
   assert.equal(validateAgentConfig({ model: VALID_CONFIG.model, temperature: 0.2, thinking_level: "high" }).temperature, 0.2);
 });
 
-test("a subscription agent is created or switched to only while the box offers them, on a harness it does not turn off", () => {
+test("a subscription agent is created or switched to on a harness the box does not turn off", () => {
   const subscription = validateAgentConfig({ model: null, harness: "codex" });
   const keyed = validateAgentConfig({ model: VALID_CONFIG.model });
   try {
-    installSubscriptionAgents(false);
-    assert.throws(() => assertSubscriptionAgent(subscription), /subscription agents are turned off on this box: give the agent a model on a key/);
-    assert.throws(() => assertSubscriptionAgent(subscription, keyed), /subscription agents are turned off on this box/);
-    assert.doesNotThrow(() => assertSubscriptionAgent(subscription, subscription), "an agent on a subscription keeps it");
-    assert.doesNotThrow(() => assertSubscriptionAgent(keyed));
-    installSubscriptionAgents(true);
     assert.doesNotThrow(() => assertSubscriptionAgent(subscription));
     assert.doesNotThrow(() => assertSubscriptionAgent(subscription, keyed));
+    assert.doesNotThrow(() => assertSubscriptionAgent(keyed));
     installHarnessesOff(["codex"]);
+    assert.throws(() => assertSubscriptionAgent(subscription), /Codex is turned off on this box/);
     assert.throws(() => assertSubscriptionAgent(subscription, keyed), /Codex is turned off on this box/);
     assert.doesNotThrow(() => assertSubscriptionAgent(subscription, subscription), "an agent on the harness keeps it");
     assert.doesNotThrow(() => assertSubscriptionAgent({ ...subscription, harness: null }), "a config without a harness is no subscription to offer");
   } finally {
-    installSubscriptionAgents(false);
     installHarnessesOff([]);
   }
 });

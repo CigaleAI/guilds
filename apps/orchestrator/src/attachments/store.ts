@@ -109,25 +109,33 @@ export class AttachmentService {
     }
   }
 
-  async resolveForMessage(args: {
-    orgId: string;
-    model: string;
-    ids: string[];
-  }): Promise<AttachmentRef[]> {
-    if (!args.ids.length) {
+  /**
+   * The images a message to an agent on `model` carries, by id: refused when the model takes no
+   * images, then resolved as `resolveUploads` resolves them.
+   */
+  async resolveForModel(orgId: string, model: string, ids: string[]): Promise<AttachmentRef[]> {
+    if (!ids.length) {
       return [];
     }
-    if (!modelAcceptsAttachments(args.model)) {
+    if (!modelAcceptsAttachments(model)) {
       throw new AttachmentError(422, "this agent's model does not accept attachments");
     }
-    if (args.ids.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+    return this.resolveUploads(orgId, ids);
+  }
+
+  /** The images a message carries, by id: at most four, none twice, each one of the organisation's uploads. */
+  async resolveUploads(orgId: string, ids: string[]): Promise<AttachmentRef[]> {
+    if (!ids.length) {
+      return [];
+    }
+    if (ids.length > MAX_ATTACHMENTS_PER_MESSAGE) {
       throw new AttachmentError(422, `at most ${MAX_ATTACHMENTS_PER_MESSAGE} attachments per message`);
     }
-    const unique = [...new Set(args.ids)];
-    if (unique.length !== args.ids.length) {
+    const unique = [...new Set(ids)];
+    if (unique.length !== ids.length) {
       throw new AttachmentError(422, "attachment_ids must not repeat");
     }
-    const rows = await this.db.listAttachmentsByIds(args.orgId, unique);
+    const rows = await this.db.listAttachmentsByIds(orgId, unique);
     const byId = new Map(rows.map((row) => [row.id, row]));
     const refs: AttachmentRef[] = [];
     for (const id of unique) {

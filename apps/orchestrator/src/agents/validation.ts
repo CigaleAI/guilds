@@ -1,13 +1,11 @@
 import { normalizeAvatarColor, normalizeAvatarShape } from "../avatars/index.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import {
-  areSubscriptionAgentsOn,
   HARNESS_MODEL_RE,
   harnessOffMessage,
   isHarness,
   isHarnessOff,
   isTurnHarness,
-  SUBSCRIPTION_AGENTS_OFF_MESSAGE,
   subscriptionHarnessMessage,
 } from "../coding/harnesses.js";
 import { REPOSITORY_NAME_RE } from "../coding/repositories.js";
@@ -403,17 +401,12 @@ function assertHarnessPickable(harness: Harness, previous?: AgentConfig): void {
 }
 
 /**
- * A subscription agent needs the box to offer subscription agents, and a harness the box does not
- * turn off: every create and every switch to a subscription is refused without them. An agent
- * already on a subscription keeps it, and its harness, while the box turns either off.
+ * A subscription agent needs a harness the box does not turn off: every create, and every switch
+ * to that harness, is refused on one it does. An agent already on the harness keeps it.
  */
 export function assertSubscriptionAgent(config: AgentConfig, previous?: AgentConfig): void {
   if (modelSourceOf(config).kind === "key" || config.harness === null) {
     return;
-  }
-  const wasSubscription = previous !== undefined && modelSourceOf(previous).kind === "subscription";
-  if (!areSubscriptionAgentsOn() && !wasSubscription) {
-    throw new AgentValidationError(SUBSCRIPTION_AGENTS_OFF_MESSAGE);
   }
   assertHarnessPickable(config.harness, previous);
 }
