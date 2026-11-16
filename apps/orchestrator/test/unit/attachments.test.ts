@@ -156,22 +156,22 @@ test("AttachmentService uploads and resolves only for models that accept images"
     bytes: PNG,
   });
   assert.equal(uploaded.mime, "image/png");
-  const refs = await service.resolveForMessage({
-    orgId: "org_1",
-    model: "deepinfra/zai-org/GLM-5.3-Flash",
-    ids: [uploaded.id],
-  });
+  const refs = await service.resolveForModel("org_1", "deepinfra/zai-org/GLM-5.3-Flash", [uploaded.id]);
   assert.deepEqual(refs, [
     { id: uploaded.id, filename: "shot.png", mime: "image/png", kind: "image" },
   ]);
   await assert.rejects(
-    () =>
-      service.resolveForMessage({
-        orgId: "org_1",
-        model: "deepinfra/Qwen/Qwen3.8-2.4T-A95B",
-        ids: [uploaded.id],
-      }),
+    () => service.resolveForModel("org_1", "deepinfra/Qwen/Qwen3.8-2.4T-A95B", [uploaded.id]),
     (error: unknown) =>
       error instanceof AttachmentError && /does not accept attachments/.test(error.message),
+  );
+  assert.deepEqual(await service.resolveUploads("org_1", [uploaded.id]), refs, "uploads resolve without a model");
+  await assert.rejects(
+    () => service.resolveUploads("org_1", [uploaded.id, uploaded.id]),
+    (error: unknown) => error instanceof AttachmentError && /must not repeat/.test(error.message),
+  );
+  await assert.rejects(
+    () => service.resolveUploads("org_2", [uploaded.id]),
+    (error: unknown) => error instanceof AttachmentError && error.status === 404,
   );
 });

@@ -64,11 +64,7 @@ async function resolveAttachments(
   if (source.kind === "subscription") {
     throw new RunRequestError(422, "a subscription agent takes no attachments: they go to a model on a key");
   }
-  return services.attachments.resolveForMessage({
-    orgId: agent.org_id,
-    model: source.model,
-    ids,
-  });
+  return services.attachments.resolveForModel(agent.org_id, source.model, ids);
 }
 
 /**
