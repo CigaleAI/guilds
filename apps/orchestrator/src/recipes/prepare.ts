@@ -5,7 +5,7 @@ import type {
   RecipeRole,
   RecipeSchedule,
 } from "../db/schema/index.js";
-import { isValidSecretAliases } from "../agents/validation.js";
+import { isValidRepositoryList, isValidSecretAliases } from "../agents/validation.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
@@ -66,6 +66,12 @@ export function roleCodes(role: RecipeRole): boolean {
   return role.config.coding === true;
 }
 
+/** The repositories a role's agent works on, by name: a coding role's list when it is one, else none. */
+export function roleRepositories(role: RecipeRole): string[] {
+  const listed = role.config.repositories;
+  return roleCodes(role) && isValidRepositoryList(listed) ? listed : [];
+}
+
 /** The harness the recipe names, while the role applies with it; else null. */
 function keptRecipeHarness(roleConfig: RecipeRole["config"], applied: Harness | null): Harness | null {
   return applied !== null && applied === harnessOf(roleConfig) ? applied : null;
@@ -92,8 +98,8 @@ export type RoleChoice = { model?: string | undefined; harness?: Harness | undef
 /**
  * The agent config a role applies as: the role's, with the model and harness the operator chose
  * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
- * harness, and the recipe's harness model and effort only with the recipe's harness, and secret
- * aliases that do not validate are left out. The agent browses with the step-by-step browser
+ * harness and its repositories, and the recipe's harness model and effort only with the recipe's
+ * harness, and secret aliases or repositories that do not validate are left out. The agent browses with the step-by-step browser
  * tools. Every other setting the role leaves out takes its
  * default when `validateAgentConfig` reads the config. The machine the agent goes on is the apply's.
  */
@@ -111,6 +117,7 @@ export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}):
     harness: applied,
     harness_model: appliedHarnessModel(roleConfig, applied),
     harness_effort: appliedHarnessEffort(roleConfig, applied),
+    repositories: roleRepositories(role),
     secret_aliases: isValidSecretAliases(roleConfig.secret_aliases) ? roleConfig.secret_aliases : {},
   };
 }

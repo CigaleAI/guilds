@@ -28,6 +28,19 @@ operator app together.
 a GitHub login's pick, unpicks it from each agent that picks it and
 can no longer use it, in the same transaction.
 
+**Breaking for recipes.** A recipe's coding role lists the
+repositories its agent works on in `config.repositories`, each a name
+from the recipe's `repositories`; another name is the
+`repositories.unknown` error, a list that is not names each once is
+`repositories.invalid`, and a list on a role without `coding` warns
+`repositories.coding` and is left out. `repositories.unused` warns,
+at `repositories.<name>`, for each repository no role lists. Capture
+writes each role's list. Apply creates the agents with none picked;
+each repository's step, once it passes, gives the repository to the
+agents whose role lists it. A recipe whose coding roles list no
+repositories applies with agents that work on none until their
+repositories are picked in Settings.
+
 **Rebuild.** A recipe that lists repositories no longer asks for a
 GitHub connection: applying it adds no `conn:github` step of its own,
 and its preview names no GitHub App to set up for them. Each

@@ -297,6 +297,19 @@ function requireRepositories(value: unknown, coding: boolean): AgentConfig["repo
   return names;
 }
 
+/** Whether a value is repositories a coding agent's config takes, as `validateAgentConfig` checks them. */
+export function isValidRepositoryList(value: unknown): value is AgentConfig["repositories"] {
+  try {
+    requireRepositories(value, true);
+    return true;
+  } catch (error) {
+    if (error instanceof AgentValidationError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 /**
  * Refuses a config whose repositories name one outside `usable`, the repositories the agent can
  * use, naming each. One the agent's `previous` config already lists stays when the agent can no

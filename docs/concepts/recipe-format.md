@@ -59,7 +59,8 @@ flowchart TD
 - **secrets** are the [secrets](secrets.md) each role needs, by name.
 - **external** lists setup the operator does outside the platform.
 - **repositories** are the git repositories coding roles work in, by
-  name and purpose. See [Repositories](coding/repositories.md).
+  name and purpose. Each coding role lists the ones it works in. See
+  [Repositories](coding/repositories.md).
 - **design** records the reasoning behind the guild. It does not run.
 
 ### Placeholders that apply resolves
@@ -219,6 +220,12 @@ Validation errors with `config.unknown` on any other key.
 - `config.harness_effort` names the effort that model runs at, under
   the agent configuration's rule. It is optional; without it the model
   runs at its default effort.
+- `config.repositories` lists the repositories a coding role works
+  in, by name, each once. Each name is one the recipe lists in
+  `repositories`; another is the `repositories.unknown` error. It is
+  optional; a role without it works in none. Apply gives it to the
+  role's agent one repository at a time, as each repository's step
+  passes ([Applying recipes](applying-recipes.md#reference)).
 - `config.secret_aliases` maps variable names to secret names, under
   the agent configuration's rule (see [Secrets](secrets.md)). It is
   optional.
@@ -379,7 +386,8 @@ A connection whose server the box lacks is a blocking error:
 work in, by `name` and a one-line `purpose`.
 
 - `name` matches `^[a-z][a-z0-9_-]{0,62}$`. It is unique. It is the
-  folder under `repos/` in each coding agent's home.
+  folder under `repos/` in the home of each coding agent whose role
+  lists it in `config.repositories`.
 - `purpose` is at most 400 characters.
 - A URL, an owner, or any other key is refused.
 
@@ -435,7 +443,10 @@ findings `collection.conflict` and `machine.*`
 | `capacity.agents`, `capacity.browser`, `capacity.coding` | error | The roles, the browser roles, or the coding roles exceed what the organisation may still create under its limits. A limit that is not set never fires. Core sets none |
 | `config.unknown` | error | A role's `config` has a key that is not an agent configuration key |
 | `coding.flag` | error | `config.coding` is not a boolean |
-| `repositories.unused` | warning | Repositories are listed and no role sets `config.coding` |
+| `repositories.unused` | warning | At `repositories.<name>`: no role lists the repository in `config.repositories` |
+| `repositories.invalid` | error | A role's `config.repositories` is not a list of repository names, each once |
+| `repositories.unknown` | error | A role's `config.repositories` names a repository the recipe does not list |
+| `repositories.coding` | warning | A role without `coding` lists repositories; apply leaves them out |
 | `model.unknown` | warning | `config.model` is not a known model; apply asks for one |
 | `model.coding` | warning | A coding-API model on a role without `coding`; apply asks for another |
 | `model.not_connected` | warning | The model's provider is not connected for the organisation; apply asks for another |

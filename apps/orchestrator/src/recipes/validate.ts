@@ -7,7 +7,7 @@ import {
 } from "../db/schema/index.js";
 import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS } from "../agents/config.js";
-import { isValidSecretAliases } from "../agents/validation.js";
+import { isValidRepositoryList, isValidSecretAliases } from "../agents/validation.js";
 import { credentialFix, HARNESS_INFO, harnessModelOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
@@ -18,6 +18,7 @@ import { isDisplayPath } from "../artifacts/paths.js";
 import { operatorAccessCuts } from "./access-edits.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
 import { browserRoles, finding, type RecipeRule, type ValidationContext } from "./findings.js";
+import { roleRepositories } from "./prepare.js";
 import { validateDesign } from "./validate-design.js";
 
 /** A check of one role of the recipe. */
@@ -133,10 +134,39 @@ function codingCapacity(recipe: RecipeDocument, ctx: ValidationContext): RecipeF
   return [finding("capacity.coding", "error", "roles", `recipe needs ${needed} coding agents; ${ctx.remainingCodingAgents} remaining`)];
 }
 
-/** Repositories no coding role clones. */
+/** Repositories no role lists in its config.repositories. */
 function unusedRepositories(recipe: RecipeDocument): RecipeFinding[] {
-  if (!recipe.repositories.length || codingRoles(recipe).length) return [];
-  return [finding("repositories.unused", "warning", "repositories", "the recipe lists repositories but no role sets config.coding")];
+  const listed = new Set(recipe.roles.flatMap(roleRepositories));
+  return recipe.repositories
+    .filter((repository) => !listed.has(repository.name))
+    .map((repository) =>
+      finding(
+        "repositories.unused",
+        "warning",
+        `repositories.${repository.name}`,
+        `no role lists ${repository.name} in config.repositories, so no agent works on it`,
+      ),
+    );
+}
+
+/**
+ * A role's repositories apply cannot give its agent: not a list of names each once, on a role that
+ * does not code, or naming a repository the recipe does not list.
+ */
+function repositoryFindings(role: RecipeRole, recipe: RecipeDocument): RecipeFinding[] {
+  const listed = role.config.repositories;
+  const path = `roles.${role.role}.config.repositories`;
+  if (listed === undefined || listed === null) return [];
+  if (!isValidRepositoryList(listed)) {
+    return [finding("repositories.invalid", "error", path, "config.repositories must be a list of repository names, each once")];
+  }
+  if (listed.length && role.config.coding !== true) {
+    return [finding("repositories.coding", "warning", path, "config.repositories is only for a coding role; apply leaves it out")];
+  }
+  const known = new Set(recipe.repositories.map((repository) => repository.name));
+  return listed
+    .filter((name) => !known.has(name))
+    .map((name) => finding("repositories.unknown", "error", path, `unknown repository ${name}; list it in the recipe's repositories`));
 }
 
 /** Config keys an agent does not have. */
@@ -261,6 +291,7 @@ const ROLE_RULES: RoleRule[] = [
   codingFlag,
   modelFindings,
   harnessFindings,
+  repositoryFindings,
   browserFlag,
   taskFindings,
   missingSchedule,

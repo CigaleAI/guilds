@@ -192,7 +192,8 @@ async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeD
     agentId,
     guildId: skeleton.guildId,
     name: skeleton.names.get(role.role) ?? role.name_suggestion,
-    config: validateAgentConfig(role.config),
+    // The guild has none of the role's repositories yet: each reaches the agent when its checklist step passes.
+    config: validateAgentConfig({ ...role.config, repositories: [] }),
     focus: role.focus,
     wakeTriggers: role.wake_triggers,
     avatarShape: role.avatar_shape,

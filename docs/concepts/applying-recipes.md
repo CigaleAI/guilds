@@ -90,7 +90,8 @@ The checklist lists what the operator still has to do:
   already covers it.
 - **Add each secret** so it reaches every agent that needs it.
 - **Add each repository** in the guild's Settings, with its URL and a
-  credential, when the recipe lists repositories.
+  credential, when the recipe lists repositories. When its step passes
+  **Check**, each agent whose role lists the repository picks it.
 - **Confirm** each external setup step.
 
 Steps the platform can check are verified, not just ticked: **Check**
@@ -458,7 +459,12 @@ text, a `closure` (`verified` or `confirmed`), and a `status` (`open`,
 A step for a reused login, and its overlay step, start verified.
 
 A recipe with `repositories` adds one `repo:<name>` step per
-repository, and no connection step. That step's setup is the
+repository, and no connection step. Apply creates every agent with no
+repositories picked, since the new guild has none yet. When a
+repository's step passes, each agent whose role lists the repository
+in `config.repositories` picks it, at its place in the role's order
+([Recipe format](recipe-format.md#roles)). A skipped step gives it to
+no agent. That step's setup is the
 repository's purpose, where to add it (the guild's Settings, under
 Repositories, with that name), and what to add it with: its HTTPS
 URL, on any git host, and a credential, a GitHub login for a GitHub
@@ -477,7 +483,7 @@ A secret the operator chose to `skip` has no step.
 | Reuse or Connect server S | connection `status=connected` for the guild (verified), or operator skips with a warning |
 | Secret `NAME` | a secret of the destination name reaches every agent of the roles that need it, the recipe secret's `roles` or else every planned role (verified), or skipped |
 | Tool overlays for S | the server has a guild- or agent-scope binding (verified); a verified Connect step writes the overlays and closes it; skipped with the Connect step |
-| Repository `name` | the guild has a repository of that name (verified), or skipped |
+| Repository `name` | the guild has a repository of that name (verified), and each agent whose role lists it then picks it; or skipped |
 | Browser for role R | deferred until after activate; the live agent asks the operator to log in |
 | External item | operator attests (confirmed) |
 | Activate paused routines | Activate |
