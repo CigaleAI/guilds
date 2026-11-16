@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The Guild Builder writes a subscription role when the
+operator asks for an agent on their own Claude Code or Codex
+subscription: a role with a harness, no model, and coding off keeps no
+model on the write, where any other role without one is recommended
+the coach's, and its guild deploys with a subscription agent.
+
 **No impact.** Prompt Studio publishes a draft to a subscription
 agent: publishing estimates its composed prompt's input tokens as for
 any agent, and refuses one past `max_input_tokens` only for an agent

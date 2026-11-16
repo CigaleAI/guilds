@@ -107,7 +107,7 @@ choose the mascots.
   marketplace models, preselected with its default. While no provider
   is connected, a guide to [Model keys](model-keys.md) shows instead.
   The coach's model is written into the roles it drafts without one,
-  as their recommendation.
+  as their recommendation, but a subscription role.
 - **Draft the recipe** (or Cmd/Ctrl+Enter) starts a session with that
   description as its first message.
 - **Try** offers example descriptions that fill the box to edit before
@@ -238,6 +238,12 @@ the recipe records.
   repositories by name and purpose, never a URL or credential. Each
   coding role's Task names its repositories, the checks it runs, and
   how work reaches its reviewer.
+- **Subscription.** When the operator asks for an agent on their own
+  Claude Code or Codex subscription, the coach writes a subscription
+  role: `config.harness` `claude-code` or `codex`, no `config.model`,
+  `config.coding` off, and no model-loop settings. Apply creates it
+  as a subscription agent ([Agents](agents.md#model-source)); it
+  counts against the coding agents, as a coding role does.
 - **Scripts.** Builder-written scripts are documents. They cannot run
   in the Builder.
 
@@ -302,6 +308,8 @@ rule is refused (`collections[i].columns: column "x": …`). Each
 accepted write:
 
 - recommends the coach's model on every role without `config.model`
+  but a subscription role: one with a `config.harness`, no model, and
+  `config.coding` off ([Recipe format](recipe-format.md))
 - keeps a reviewed field's author when its content did not change, and
   marks every other field `{ by: "builder", reviewed: false }`
 - assigns the guild's looks: one DiceBear family, and a unique variant

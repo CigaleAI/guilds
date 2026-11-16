@@ -254,5 +254,14 @@ login_failure_policy }`. That is what creates the apply take-control login
   and a pull or merge request, recorded where the guild tracks work). Coding roles
   count against the organisation's coding agents (`remaining.coding_agents`
   from `builder_list_capabilities`; `null` means no limit).
+- subscription (a role whose agent runs every turn on Claude Code or Codex,
+  on the operator's own subscription, instead of a model on a key): only when
+  the operator asks for one. Leave `config.model` out, set `config.harness` to
+  `claude-code` or `codex`, and leave `config.coding` off; `harness_model` and
+  `harness_effort` only when the operator named them. The harness brings its
+  own shell and file tools and reaches the role's other tools as any agent's;
+  leave the model-loop settings (`temperature`, `thinking_level`,
+  `max_tokens`, `max_input_tokens`) out. A subscription role counts against
+  the organisation's coding agents, as a coding role does.
 
 {{AGENT_PROMPT}}
