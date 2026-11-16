@@ -19,7 +19,6 @@ import {
 } from "../db/schema/index.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { callSegment } from "../toolbox/code.js";
-import { CODE_TASK_DEFAULT_MINUTES } from "../toolbox/harness.js";
 import {
   endHarnessTurn,
   HARNESS_POLL_FAILURES_MAX,
@@ -33,9 +32,7 @@ import {
   type HarnessMcpAccess,
   type HarnessPollResult,
   type Settled,
-  type TurnEnding,
 } from "../toolbox/harness-ops.js";
-import { failureDetail } from "../toolbox/harness-result.js";
 import type { ToolRun } from "../toolbox/index.js";
 import { completeIfActive } from "./chain.js";
 import {
@@ -52,6 +49,7 @@ import {
   claudeCodeToolRecord,
   interruptedHarnessToolRecord,
 } from "./harness-rows.js";
+import { HARNESS_TURN_MINUTES, harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
 import type { HarnessGrant, HarnessMcpServer } from "./harness-mcp.js";
 import {
   parseClaudeCodeEvents,
@@ -63,9 +61,6 @@ import { maintenanceRun } from "./workspace.js";
 
 /** How often a subscription agent's turn is polled, and how long its minutes are; tests shorten both. */
 export const harnessTurnTiming = { pollMs: 1000, minuteMs: 60_000 };
-
-/** How long a subscription agent's turn runs before its harness is stopped: a `code_task` call's default. */
-export const HARNESS_TURN_MINUTES = CODE_TASK_DEFAULT_MINUTES;
 
 /** A run's snapshot as the harness loop reads it: a subscription agent's, on the harness that runs its turns. */
 export type HarnessRunConfigSnapshot = RunConfigSnapshot & { model: null; harness: TurnHarness };
@@ -119,63 +114,6 @@ type HarnessRunTurn = {
 
 /** How a subscription agent's turn's poll loop ends: as a harness's does, or stopped because the run's tool calls asked. */
 type TurnSettled = Settled | "stopped";
-
-/** How a subscription agent's turn ended: as a harness's turn does, or stopped at its run's tool calls' asking. */
-export type HarnessTurnEnding = Omit<TurnEnding, "settled"> & { settled: TurnEnding["settled"] | "stopped" };
-
-/** The run error each way a started turn can end other than a clean exit or a cancel. */
-const SETTLED_CODE: Record<
-  Exclude<HarnessTurnEnding["settled"], "exited" | "cancelled" | "not_started" | "stopped">,
-  HarnessTurnError["code"]
-> = {
-  missing: "harness.lost",
-  unreadable: "harness.lost",
-  unresponsive: "harness.unresponsive",
-  timed_out: "harness.timed_out",
-};
-
-const SETTLED_MESSAGE: Record<keyof typeof SETTLED_CODE, (label: string) => string> = {
-  missing: (label) =>
-    `${label}'s state is gone: the machine restarted or its container was recreated. The run's next turn resumes its session.`,
-  unreadable: (label) => `${label} exited, and its result could not be read.`,
-  unresponsive: (label) =>
-    `${label} stopped answering, so it was stopped. The run's next turn resumes its session.`,
-  timed_out: (label) =>
-    `${label} was stopped after ${HARNESS_TURN_MINUTES} minutes. The run's next turn resumes its session.`,
-};
-
-/**
- * The run error a turn that ended `ending` fails its generation with; null for a turn whose CLI
- * exited cleanly, that was cancelled, or that its run's tool calls stopped, which ends the
- * generation with their own error. A harness that did not stop is named with its log.
- */
-export function harnessTurnFailure(
-  harness: Harness,
-  ending: HarnessTurnEnding,
-  logPath: string,
-): HarnessTurnError | null {
-  const label = HARNESS_INFO[harness].label;
-  const unstopped =
-    ending.stopped === false
-      ? ` It did not stop and may still be running; its log is ${logPath}.`
-      : "";
-  if (ending.settled === "exited") {
-    const result = ending.result ?? {};
-    return result.exit_code === 0 && result.is_error !== true
-      ? null
-      : new HarnessTurnError(
-          "harness.failed",
-          `${label}'s turn failed (${failureDetail(harness, result, null)})`,
-        );
-  }
-  if (ending.settled === "cancelled" || ending.settled === "not_started" || ending.settled === "stopped") {
-    return null;
-  }
-  return new HarnessTurnError(
-    SETTLED_CODE[ending.settled],
-    SETTLED_MESSAGE[ending.settled](label) + unstopped,
-  );
-}
 
 /** The db/ functions a subscription agent's turns read the run, keep its session, and complete it through. */
 export type HarnessLoopDatabase = {

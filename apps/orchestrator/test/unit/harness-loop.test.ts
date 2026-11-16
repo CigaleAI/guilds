@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, describe, test } from "node:test";
 import { generationLive } from "../../src/generation/completion.js";
-import { harnessTurnFailure, harnessTurnPrompt, harnessTurnTiming } from "../../src/generation/harness-loop.js";
+import { harnessTurnFailure } from "../../src/generation/harness-ending.js";
+import { harnessTurnPrompt, harnessTurnTiming } from "../../src/generation/harness-loop.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 import type { MessageRow } from "../../src/db/runs.js";
