@@ -266,7 +266,7 @@ export async function addGuildRepository(
     remoteId = match.id;
   }
   if (input.secretId !== null) {
-    // The secret's value reaches every coding agent of the guild through git.
+    // The secret's value reaches every coding agent of the guild that picks the repository, through git.
     await services.secrets.requireManagedSecret(guild.org_id, input.secretId, userId);
   }
   const branch = defaultBranch ?? DEFAULT_BRANCH;

@@ -297,7 +297,7 @@ under the transcript ([Reviewing changes](reviewing-changes.md#in-the-app)).
 | Kimi Code models | Only for agents with coding on |
 | Browser | Independent of coding: an agent that debugs a web front end has both |
 | Coding agents per organisation | `maxCodingAgents` in the organisation's policy; core sets no bound |
-| Repositories | Shared by every coding agent of the guild; a run fails at start without one |
+| Repositories | The guild's, each agent picking the ones it works on; a run fails at start without one, or with a pick the agent can no longer use |
 | Working trees | One per agent, never shared |
 | Branch name | `agent/<agent name>/<topic>`, from the system prompt |
 | Pushes and pull requests | By the agent with `shell`; the harness never pushes |
@@ -372,7 +372,7 @@ capabilities payload reports `max_coding_agents` and the remaining
 
 | Path | Holds |
 | --- | --- |
-| `apps/orchestrator/src/coding/` | Harnesses (`harnesses.ts`), the model catalogue (`harness-models.ts`), repositories (`repositories.ts`), a guild's repositories and their GitHub logins (`guild-repositories.ts`), GitHub tokens and clone errors (`git.ts`) |
+| `apps/orchestrator/src/coding/` | Harnesses (`harnesses.ts`), the model catalogue (`harness-models.ts`), repositories (`repositories.ts`), the repositories an agent can use and picks (`agent-repositories.ts`), a guild's repositories and their GitHub logins (`guild-repositories.ts`), GitHub tokens and clone errors (`git.ts`) |
 | `apps/orchestrator/src/generation/generate.ts` | The first two generation-start checks: a harness and a repository |
 | `apps/orchestrator/src/generation/coding.ts` | What a coding run does around its tool calls: the harness check, the repositories' tokens and clone, and the checkpoints; and the diff, harness log, and harness check an operator asks for |
 | `apps/orchestrator/src/generation/run-review.ts` | A coding agent's harness view and a run's changes |

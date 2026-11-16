@@ -52,7 +52,7 @@ const NATIVE_TOOL_SUMMARIES: ReadonlyMap<string, string> = new Map([
   ["code_search", "Searches the files on the agent's machine for matching text."],
   [
     "code_task",
-    "Hands a coding job on one of the guild's repositories to the agent's coding assistant.",
+    "Hands a coding job on one of the repositories the agent picks to its coding assistant.",
   ],
   [
     "secret_store",
