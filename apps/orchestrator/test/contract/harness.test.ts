@@ -8,6 +8,7 @@ import { RunEventBus } from "../../src/generation/events.js";
 import { HarnessLoop } from "../../src/generation/harness-loop.js";
 import { HarnessMcpServer } from "../../src/generation/harness-mcp.js";
 import { ToolCalls, type GenerationTools } from "../../src/generation/tool-calls.js";
+import { harnessNeedsRepository } from "../../src/coding/harnesses.js";
 import { agentHome } from "../../src/lib/agent-file.js";
 import {
   RunSandboxes,
@@ -23,10 +24,11 @@ import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensan
 import { toolFixture } from "../helpers/toolbox.js";
 
 // A live turn of each harness in the runtime image, on a real subscription, and live turns of a
-// subscription agent on Claude Code and on Codex, one of each calling a Guilds tool on the
-// orchestrator's MCP server. Each runs when its credential is in the environment:
-// CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, or for Codex CODEX_AUTH_JSON, the path of an auth.json
-// from `codex login`.
+// subscription agent on each harness, one of each calling a Guilds tool on the orchestrator's MCP
+// server; Cursor's and Antigravity's in a repository, under the run's prompt as a rule. Each runs
+// when its credential is in the environment: CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, for Codex
+// CODEX_AUTH_JSON, the path of an auth.json from `codex login`, and for Antigravity
+// ANTIGRAVITY_OAUTH_TOKEN, the path of the `antigravity-oauth-token` a sign-in with `agy` writes.
 const IMAGE = process.env.CONTRACT_RUNTIME_IMAGE ?? "agent-runtime:0.4";
 const imageMissing =
   gated || (run("docker", ["image", "inspect", IMAGE], false).status !== 0 ? `build ${IMAGE} first (make runtime-image)` : false);
@@ -36,7 +38,27 @@ const LIVE: Array<{ harness: Harness; credential: string }> = [
   { harness: "claude-code", credential: "CLAUDE_CODE_OAUTH_TOKEN" },
   { harness: "codex", credential: "CODEX_AUTH_JSON" },
   { harness: "cursor", credential: "CURSOR_API_KEY" },
+  { harness: "antigravity", credential: "ANTIGRAVITY_OAUTH_TOKEN" },
 ];
+
+/** The login files each harness that logs in reads in the home, from the file its credential variable names. */
+const LOGIN_FILES: Partial<Record<string, string>> = {
+  CODEX_AUTH_JSON: ".codex/auth.json",
+  ANTIGRAVITY_OAUTH_TOKEN: ".gemini/antigravity-cli/antigravity-oauth-token",
+};
+
+/** The secrets a live turn on the harness whose credential is `credential` runs on: its token, or none for a login. */
+function liveSecrets(credential: string): Record<string, string> {
+  return LOGIN_FILES[credential] === undefined ? { [credential]: String(process.env[credential]) } : {};
+}
+
+/** Writes the login `credential` names into agent `agentId`'s home on `machine`; nothing for a token. */
+async function writeLogin(machine: Awaited<ReturnType<RunSandboxes["ensure"]>>, agentId: string, credential: string): Promise<void> {
+  const file = LOGIN_FILES[credential];
+  if (file !== undefined) {
+    await machine.files!.writeFiles([{ path: `${agentHome(agentId)}/${file}`, data: readFileSync(String(process.env[credential]), "utf8") }]);
+  }
+}
 
 for (const { harness, credential } of LIVE) {
   const skip = imageMissing || (process.env[credential] ? false : `set ${credential} to run the live ${harness} turn`);
@@ -55,14 +77,9 @@ for (const { harness, credential } of LIVE) {
     try {
       prepareWorkspace(server.workspaceRoot, MACHINE.id, agentId);
       const machine = await sandboxes.ensure(MACHINE);
-      const secrets: Record<string, string> =
-        credential === "CODEX_AUTH_JSON" ? {} : { [credential]: String(process.env[credential]) };
+      const secrets = liveSecrets(credential);
       const sandbox = agentSandbox(machine, agentHome(agentId), { ...secrets, ...seatEnvironment(seat) });
-      if (credential === "CODEX_AUTH_JSON") {
-        await machine.files!.writeFiles([
-          { path: `${agentHome(agentId)}/.codex/auth.json`, data: readFileSync(String(process.env.CODEX_AUTH_JSON), "utf8") },
-        ]);
-      }
+      await writeLogin(machine, agentId, credential);
       const setup = await sandbox.commands.run(
         "mkdir -p repos/live && cd repos/live && git init -q -b main && git -c user.name=t -c user.email=t@t.invalid commit -q --allow-empty -m start && echo ready",
         { timeoutSeconds: 30 },
@@ -107,6 +124,14 @@ for (const { harness, credential } of LIVE) {
 const claudeSkip = imageMissing || (process.env.CLAUDE_CODE_OAUTH_TOKEN ? false : "set CLAUDE_CODE_OAUTH_TOKEN to run the live subscription turn");
 const codexSkip = imageMissing || (process.env.CODEX_AUTH_JSON ? false : "set CODEX_AUTH_JSON to run the live Codex subscription turn");
 
+/** The variable each harness's live subscription turn reads its credential from. */
+const CREDENTIALS: Record<Harness, string> = {
+  "claude-code": "CLAUDE_CODE_OAUTH_TOKEN",
+  codex: "CODEX_AUTH_JSON",
+  cursor: "CURSOR_API_KEY",
+  antigravity: "ANTIGRAVITY_OAUTH_TOKEN",
+};
+
 type Row = { seq: number; payload: Record<string, unknown>; metadata: Record<string, unknown> };
 
 /**
@@ -129,7 +154,7 @@ function sandboxReach(): { bind: string; host: string } {
  * and its metadata.
  */
 async function liveSubscriptionTurn(
-  harness: "claude-code" | "codex",
+  harness: Harness,
   system: string,
   prompt: string,
   offered: string[],
@@ -151,13 +176,17 @@ async function liveSubscriptionTurn(
   try {
     prepareWorkspace(server.workspaceRoot, MACHINE.id, agentId);
     const machine = await sandboxes.ensure(MACHINE);
-    const secrets: Record<string, string> =
-      harness === "claude-code" ? { CLAUDE_CODE_OAUTH_TOKEN: String(process.env.CLAUDE_CODE_OAUTH_TOKEN) } : {};
+    const secrets = liveSecrets(CREDENTIALS[harness]);
     const sandbox = agentSandbox(machine, agentHome(agentId), { ...secrets, ...seatEnvironment(seat) });
-    if (harness === "codex") {
-      await machine.files!.writeFiles([
-        { path: `${agentHome(agentId)}/.codex/auth.json`, data: readFileSync(String(process.env.CODEX_AUTH_JSON), "utf8") },
-      ]);
+    await writeLogin(machine, agentId, CREDENTIALS[harness]);
+    // Cursor and Antigravity run a subscription agent only in a repository; its turn starts there.
+    const repositories = harnessNeedsRepository(harness) ? ["live"] : [];
+    if (repositories.length) {
+      const setup = await sandbox.commands.run(
+        "mkdir -p repos/live && cd repos/live && git init -q -b main && git -c user.name=t -c user.email=t@t.invalid commit -q --allow-empty -m start && echo ready",
+        { timeoutSeconds: 30 },
+      );
+      assert.equal(stdoutOf(setup).trim(), "ready");
     }
     const events = new RunEventBus({
       nextSeq: async () => rows.length,
@@ -185,6 +214,7 @@ async function liveSubscriptionTurn(
       harness,
       offered_tools: new Set(offered),
       group_chat: group_chat as never,
+      code_repositories: repositories,
     });
     const schemas = schemasFor(offered);
     const tools: GenerationTools = { run: ctx.run, hooks: ctx.hooks, schemas, secrets, connections: new Map(), maxToolCalls: 50 };
@@ -313,3 +343,28 @@ test("a live Codex subscription turn calls a Guilds tool on the orchestrator's M
   assert.equal(call.metadata.from_harness, undefined);
   assert.ok(!rows.some((row) => JSON.stringify(row.payload).includes("mcp__guilds__group_post")), "the harness's own events for it make no row");
 });
+
+for (const { harness, label, tool } of [
+  { harness: "cursor", label: "Cursor", tool: "group_post" },
+  { harness: "antigravity", label: "Antigravity", tool: "mcp_guilds_group_post" },
+] as const) {
+  const skip = imageMissing || (process.env[CREDENTIALS[harness]] ? false : `set ${CREDENTIALS[harness]} to run the live ${label} subscription turn`);
+  test(`a live ${label} subscription turn in its repository follows the run's prompt as a rule beside its own, and calls a Guilds tool on the orchestrator's MCP server`, { skip, timeout: 600_000 }, async () => {
+    const posted: string[] = [];
+    const { rows, errors, metadata } = await liveSubscriptionTurn(
+      harness,
+      `You are Quill, an agent of a test guild. Your tool \`${tool}\` posts to the guild's chat. ` +
+        "Call it exactly once with the content PINEAPPLE, then answer with the single word done.",
+      "Tell the guild.",
+      ["group_post"],
+      posted,
+    );
+    assert.deepEqual(errors, []);
+    assert.deepEqual(posted, ["PINEAPPLE"], "the call reached the guild chat through the server, as the rule asked");
+    const call = rows.find((row) => JSON.stringify(row.payload.tool_calls ?? []).includes('"name":"group_post"'));
+    assert.ok(call, "the call is the run's own tool call");
+    assert.equal(call.metadata.from_harness, undefined);
+    assert.ok(rows.filter((row) => row.metadata.from_harness !== undefined).every((row) => row.metadata.from_harness === harness));
+    assert.ok(typeof (metadata.harness_turn as { session_id?: unknown })?.session_id === "string");
+  });
+}
