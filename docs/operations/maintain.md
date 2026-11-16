@@ -70,16 +70,17 @@ Everything the box knows is this tree plus `.env`.
 
 ## Update
 
-Read the [changelog](../../CHANGELOG.md). Each version names its
-effect ([Versions](../CONTRIBUTING.md#versions)).
+Read the [changelog](../../CHANGELOG.md) entry of each version
+between the box's and the one it moves to. Each says whether it is
+breaking and gives its upgrade steps
+([Versions](../CONTRIBUTING.md#versions)).
 
-| Effect | Do |
+| Version | Do |
 | --- | --- |
-| `no impact` | Nothing |
-| `rebuild` | The commands below |
-| `breaking` | [Back up](#back-up), then follow the steps in that version's entry |
+| Not breaking | The commands below |
+| Breaking | [Back up](#back-up), then follow the **Upgrade** steps of that version's entry |
 
-To rebuild:
+The update commands:
 
 ```text
 git pull

@@ -73,8 +73,8 @@ These pages are also published at
   another computer
 - [Maintain](operations/maintain.md) — what runs, update, back up,
   restore, logs, error messages
-- [Changelog](../CHANGELOG.md) — each version, and what a running box
-  does with it
+- [Changelog](../CHANGELOG.md) — each version, whether it is breaking,
+  and how a box upgrades to it
 
 ## Concepts
 
