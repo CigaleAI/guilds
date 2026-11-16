@@ -305,14 +305,6 @@ export function withModelSource(
   };
 }
 
-/**
- * Whether the form offers the choice of model source: while the box offers subscription agents,
- * and for an agent already on one, which can move to a key.
- */
-export function offersModelSource(subscriptionAgentsOn: boolean | undefined, source: ModelSource): boolean {
-  return subscriptionAgentsOn === true || source === "subscription";
-}
-
 /** The model-loop settings a subscription sends: their defaults, since its harness replaces the loop. */
 const subscriptionLoopSettings = {
   temperature: defaultAgentConfig.temperature,

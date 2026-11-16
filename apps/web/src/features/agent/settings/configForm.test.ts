@@ -4,7 +4,6 @@ import type { HarnessCatalog, Machine } from "../../../api/types/agents";
 import {
   configErrors,
   configFormOf,
-  offersModelSource,
   takesHarness,
   withModelSource,
   configOf,
@@ -490,11 +489,4 @@ test("switching the model source keeps a harness only for a subscription that ru
   assert.equal(back.model_source, "key");
   assert.equal(back.harness, "");
   assert.equal(back.harness_model, "");
-});
-
-test("the model source is offered while the box offers subscriptions, and to an agent already on one", () => {
-  assert.equal(offersModelSource(true, "key"), true);
-  assert.equal(offersModelSource(false, "key"), false);
-  assert.equal(offersModelSource(undefined, "key"), false);
-  assert.equal(offersModelSource(false, "subscription"), true);
 });

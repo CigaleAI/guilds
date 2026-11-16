@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
-import { installSubscriptionAgents } from "../../src/coding/harnesses.js";
 import { listAgents } from "../../src/db/agents.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
@@ -19,11 +18,10 @@ const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const dbName = uniqueDbName("agent_platform_recipe_subscription");
 
 after(async () => {
-  installSubscriptionAgents(false);
   await dropIsolatedDatabase(dbName);
 });
 
-test("a captured subscription role applies on its harness, and is refused while the box turns them off", { timeout: 60_000 }, async () => {
+test("a captured subscription role applies on its harness", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
@@ -43,7 +41,6 @@ test("a captured subscription role applies on its harness, and is refused while 
         : { method, url, headers: { ...AUTH, "content-type": "application/json" }, payload: payload as object },
     );
   try {
-    installSubscriptionAgents(true);
     const source = await call("POST", "/api/guilds", { name: "subscription-source" });
     assert.equal(source.statusCode, 201, source.body);
     await codeDefaultMachine(app, AUTH);
@@ -79,16 +76,6 @@ test("a captured subscription role applies on its harness, and is refused while 
     assert.equal(modelled.statusCode, 422, modelled.body);
     assert.match(String(modelled.json().detail), /models\.writer: a subscription role takes no model/);
 
-    // While the box turns subscription agents off, the role blocks the apply.
-    installSubscriptionAgents(false);
-    const off = await call("POST", `/api/recipes/${recipeId}/preview`, {});
-    assert.equal(off.statusCode, 200, off.body);
-    assert.deepEqual(off.json().errors.map((item: { code: string }) => item.code), ["subscription.off"]);
-    const refused = await call("POST", `/api/recipes/${recipeId}/apply`, { guild_name: "subscription-off", names: [{ role: "writer", name: "writer-off" }] });
-    assert.equal(refused.statusCode, 422, refused.body);
-    assert.match(String(refused.json().detail), /subscription agents are turned off on this box/);
-
-    installSubscriptionAgents(true);
     const applied = await call("POST", `/api/recipes/${recipeId}/apply`, {
       guild_name: "subscription-target",
       names: [{ role: "writer", name: "writer-two" }],
@@ -102,7 +89,6 @@ test("a captured subscription role applies on its harness, and is refused while 
     assert.equal(created?.config.harness, "claude-code");
     assert.equal(created?.config.harness_model, null, "another harness takes its default model");
   } finally {
-    installSubscriptionAgents(false);
     await app.close();
     await database.close();
   }

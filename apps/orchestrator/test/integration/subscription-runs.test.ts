@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { artifactStore } from "../../src/artifacts/store.js";
-import { installSubscriptionAgents } from "../../src/coding/harnesses.js";
 import { generationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { harnessTurnTiming } from "../../src/generation/harness-loop.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
@@ -27,7 +26,6 @@ const dbName = uniqueDbName("agent_platform_subscription_runs");
 const timing = { ...harnessTurnTiming };
 
 after(async () => {
-  installSubscriptionAgents(false);
   Object.assign(harnessTurnTiming, timing);
   await dropIsolatedDatabase(dbName);
 });
@@ -41,7 +39,6 @@ type MessageView = {
 test("a direct message to a Claude Code subscription agent runs a turn of its CLI, resumes it, and cancels it", { timeout: 120_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   harnessTurnTiming.pollMs = 50;
-  installSubscriptionAgents(true);
   const database = await connect(await createIsolatedDatabase(dbName));
   const db = database.pool;
   const notes = new NotesStore(tempDir("guilds-subscription-notes-"), templatesRoot());
@@ -163,7 +160,6 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     assert.equal(after.at(-1)?.metadata.from_harness, "claude-code");
     assert.equal(cancelled.json().errors.at(-1)?.operation, "generation.cancelled");
   } finally {
-    installSubscriptionAgents(false);
     await app.close();
     await loop.close();
     await database.close();

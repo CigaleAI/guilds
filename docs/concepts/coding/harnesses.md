@@ -143,12 +143,6 @@ and no code tools.
 
 - Only Claude Code and Codex run a subscription agent. Cursor and
   Antigravity stay harnesses of coding agents only.
-- The box offers subscription agents only with
-  `SUBSCRIPTION_AGENTS=1` ([Configure](../../operations/configure.md)).
-  Without it, the default, a create or a switch to a subscription is refused
-  with 422 "subscription agents are turned off on this box: give the
-  agent a model on a key". An agent already on a subscription keeps
-  it.
 - A harness turned off with `HARNESSES_OFF` is refused as a new pick
   for a subscription agent as for a coding agent.
 - Claude Code and Codex run a subscription agent's turns: each
@@ -303,7 +297,7 @@ machine that has it."
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
 | Subscription harness | Claude Code or Codex |
-| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; each generation one turn of Claude Code or Codex of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
+| Subscription agents | Each generation one turn of Claude Code or Codex of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |
@@ -369,9 +363,8 @@ GET  /api/agents/:id/harness
 POST /api/agents/:id/harness/check
 ```
 
-`GET /api/harnesses` returns `{ harnesses, subscription_agents }` for
-any signed-in user: the catalogue, and whether the box offers
-subscription agents. Each entry holds `harness`, `label`, `enabled`
+`GET /api/harnesses` returns `{ harnesses }` for any signed-in user:
+the catalogue. Each entry holds `harness`, `label`, `enabled`
 (false when the box turns it off), `subscription` (whether a
 subscription agent runs on it), `models`, and `unlisted_efforts`: the
 efforts the default model or a custom name runs at. Each model holds

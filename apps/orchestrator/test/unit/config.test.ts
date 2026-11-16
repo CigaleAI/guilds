@@ -189,12 +189,6 @@ test("a name in HARNESSES_OFF that is not a harness fails the configuration", ()
   );
 });
 
-test("SUBSCRIPTION_AGENTS=1 offers subscription agents; unset or any other value does not", () => {
-  assert.equal(loadConfig(testEnv("postgresql://example", { SUBSCRIPTION_AGENTS: "1" })).offersSubscriptionAgents, true);
-  assert.equal(loadConfig(testEnv("postgresql://example")).offersSubscriptionAgents, false);
-  assert.equal(loadConfig(testEnv("postgresql://example", { SUBSCRIPTION_AGENTS: "on" })).offersSubscriptionAgents, false);
-});
-
 /** The configuration of a box whose environment adds `extra`. */
 function configWith(extra: Record<string, string>) {
   return loadConfig(

@@ -9,7 +9,7 @@ import {
   harnessLaunch,
   harnessOffer,
 } from "../../src/coding/harness-models.js";
-import { HARNESS_MODEL_RE, installSubscriptionAgents } from "../../src/coding/harnesses.js";
+import { HARNESS_MODEL_RE } from "../../src/coding/harnesses.js";
 import { HARNESSES, EFFORTS } from "../../src/db/schema/index.js";
 
 test("every listed model id, and every CLI name it starts under, is a model name the driver passes", () => {
@@ -109,14 +109,6 @@ test("the catalogue lists every harness's models without the CLI names they star
   });
 });
 
-test("the harness offer says whether the box offers subscription agents", () => {
-  try {
-    installSubscriptionAgents(true);
-    assert.equal(harnessOffer().subscription_agents, true);
-    installSubscriptionAgents(false);
-    assert.equal(harnessOffer().subscription_agents, false);
-    assert.deepEqual(harnessOffer().harnesses, harnessCatalog());
-  } finally {
-    installSubscriptionAgents(false);
-  }
+test("the harness offer is every harness's catalog", () => {
+  assert.deepEqual(harnessOffer(), { harnesses: harnessCatalog() });
 });

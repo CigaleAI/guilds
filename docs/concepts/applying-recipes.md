@@ -292,8 +292,7 @@ refused with `models.<role>: a subscription role takes no model`. It
 takes a harness as a coding role does, from Claude Code and Codex
 only: a recipe's Cursor or Antigravity is not preselected, and a
 chosen one is refused. Its agent is created with no model, `coding`
-off, and its harness. While the box turns subscription agents off, a
-subscription role is the blocking error `subscription.off`.
+off, and its harness.
 
 Agents from roles with `config.coding: true` are created with coding
 on.

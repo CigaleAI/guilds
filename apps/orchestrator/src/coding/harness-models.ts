@@ -1,5 +1,5 @@
 import { HARNESSES, type Harness } from "../db/schema/index.js";
-import { areSubscriptionAgentsOn, HARNESS_INFO, isHarnessOff, isTurnHarness } from "./harnesses.js";
+import { HARNESS_INFO, isHarnessOff, isTurnHarness } from "./harnesses.js";
 import { EFFORTS, type AgentConfig, type Effort, type RecipeRole } from "../db/schema/index.js";
 
 
@@ -148,10 +148,10 @@ export function harnessCatalog(): HarnessCatalog[] {
   }));
 }
 
-/** The harnesses the box offers, and whether it offers subscription agents. */
-export type HarnessOffer = { harnesses: HarnessCatalog[]; subscription_agents: boolean };
+/** The harnesses the box offers. */
+export type HarnessOffer = { harnesses: HarnessCatalog[] };
 
-/** What Settings and the create flow offer: every harness's catalog, and whether subscription agents are on. */
+/** What Settings and the create flow offer: every harness's catalog. */
 export function harnessOffer(): HarnessOffer {
-  return { harnesses: harnessCatalog(), subscription_agents: areSubscriptionAgentsOn() };
+  return { harnesses: harnessCatalog() };
 }

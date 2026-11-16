@@ -41,8 +41,6 @@ export type AppConfig = {
   attachmentsRoot: string;
   /** The coding harnesses the box turns off: kept in the image, neither offered nor run. */
   harnessesOff: Harness[];
-  /** Whether the box offers subscription agents, whose turns run on a harness on the operator's own subscription. */
-  offersSubscriptionAgents: boolean;
 };
 
 /** What an extension adds to core's settings: the modes it identifies requests in. */
@@ -307,7 +305,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, extension: Conf
     maxConcurrentGenerations,
     attachmentsRoot: attachmentsRoot ? path.resolve(attachmentsRoot) : "",
     harnessesOff: parseHarnessesOff(env.HARNESSES_OFF),
-    offersSubscriptionAgents: env.SUBSCRIPTION_AGENTS === "1",
   };
 }
 

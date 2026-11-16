@@ -159,6 +159,31 @@ agents whose role lists it. A recipe whose coding roles list no
 repositories applies with agents that work on none until their
 repositories are picked in Settings.
 
+**Rebuild.** An agent can be a subscription agent: no model, and a
+harness, Claude Code or Codex, on the operator's own subscription as
+its model source. A subscription agent is
+created and saved through the agent routes with `model: null` and its
+`harness`, `harness_model`, and `harness_effort`, and refused on
+Cursor or Antigravity, or with a model-loop
+setting off its default. An agent's view and its
+guild's list carry `model_source` (`key` or `subscription`), derived
+from its `model`. `GET /api/harnesses` adds,
+per harness, `subscription`. A
+subscription agent needs a machine of the coding minimum whose image
+carries its harness; the machine listing names each agent's
+`model_source`, and the apply preview refuses a machine without a
+subscription role's harness with `machine.harness`. A subscription
+agent counts against an organisation's `maxCodingAgents`, as a coding
+agent does. A recipe role with a harness, no model, and no `coding` is
+a subscription role: capture writes one for a subscription agent, the
+apply preview asks it for a harness and no model (`harnesses` entries
+carry `subscription`), and validation reports `subscription.harness` and
+`subscription.setting`.
+In the operator app, the create dialog's Model step and an agent's Settings choose the **Model
+source**: a model on a key, or a subscription on Claude Code or Codex.
+A subscription agent's Settings show its **Harness** section with its
+credential and readiness in place of **Model**.
+
 **Rebuild.** A Claude Code subscription agent runs: each generation
 of its run is one turn of Claude Code in the agent's sandbox, started
 with the run's composed system prompt in place of Claude Code's own

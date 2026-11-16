@@ -71,8 +71,7 @@ model when it has one, otherwise the operator picks one.
 On a subscription, the agent names a harness, its model, and its
 effort ([Harnesses](coding/harnesses.md#subscription-agents)), and
 the harness runs on the operator's own subscription. Only Claude Code
-and Codex run one, and the box offers subscription agents only with
-`SUBSCRIPTION_AGENTS=1` ([Configure](../operations/configure.md)).
+and Codex run one.
 The settings of the orchestrator's model loop do not apply to it:
 temperature, thinking level, max output tokens, max input tokens, and
 keep tool results stay at their defaults.
@@ -209,8 +208,7 @@ is disabled once the guild is full. Each agent row shows:
 1. **Identity**: the name (it can change later in Settings), an
    optional focus, and an avatar picker: a mascot set, a random
    variant, and one of six identity colours.
-2. **Model**: while the box offers subscription agents, it starts with
-   **Model source**: **Model on a key** or **Subscription**. Under
+2. **Model**: it starts with **Model source**: **Model on a key** or **Subscription**. Under
    **Subscription** a line reads "The harness runs every turn on your
    own subscription, with its own tools and the guild's tools this
    agent is given." On a key, the
@@ -305,8 +303,7 @@ and **Machine** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
 The sections follow the form's Coding button and its **Model source**,
 so turning Coding on or picking another source changes them before
 the save. **Model source** shows at the top of an agent's Model, and
-of a subscription agent's Harness, while the box offers subscription
-agents or the agent is on one. A step whose fields
+of a subscription agent's Harness. A step whose fields
 have an error, or that holds a coding-readiness problem to fix,
 carries a warning in place of its number. A coding agent that is not
 ready opens on a banner that lists what is missing; so does a
@@ -349,7 +346,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
-| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools but the code tools through the orchestrator's MCP server |
+| Subscription agent | no model; a harness, Claude Code or Codex; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools but the code tools through the orchestrator's MCP server |
 | Repositories | only on a coding agent; each one the agent can use ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
@@ -412,11 +409,9 @@ The model source is checked on every create and update, each a 422:
 | no `model`, no `harness` | `an agent without a model is a subscription agent: it needs a harness` |
 | no `model`, `harness` `cursor` or `antigravity` | `<Harness> cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model` |
 | no `model`, and `temperature`, `thinking_level`, `max_tokens`, `max_input_tokens`, or `keep_tool_result_generations` off its default | `a subscription agent takes no <keys>: they set the model loop, which its harness replaces` |
-| no `model` on create or on a switch to it, without `SUBSCRIPTION_AGENTS=1` | `subscription agents are turned off on this box: give the agent a model on a key` |
 
-An agent already on a subscription keeps it while the box turns
-subscription agents off. A switch from a subscription to a model on
-a key, and back, is one update of `model` and `harness`.
+A switch from a subscription to a model on a key, and back, is one
+update of `model` and `harness`.
 
 Validation errors are 422 with the message, for example
 `name must match ^[a-z][a-z0-9-]{0,62}$`, `max_steps must be a

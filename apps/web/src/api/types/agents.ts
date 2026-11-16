@@ -118,8 +118,8 @@ export type HarnessCatalog = {
   unlisted_efforts: HarnessEffort[];
 };
 
-/** `GET /api/harnesses`: every harness's catalog, and whether the box offers subscription agents. */
-export type HarnessOffer = { harnesses: HarnessCatalog[]; subscription_agents: boolean };
+/** `GET /api/harnesses`: every harness's catalog. */
+export type HarnessOffer = { harnesses: HarnessCatalog[] };
 
 export type AgentConfig = {
   /** The `{provider}/{model}` the agent runs on, on a key; null for a subscription agent. */

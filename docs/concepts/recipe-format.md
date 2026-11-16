@@ -464,7 +464,6 @@ findings `collection.conflict` and `machine.*`
 | `harness.off` | warning | `config.harness` names a harness the box turns off; apply asks for another |
 | `harness.coding` | warning | A role with a model and without `coding` names a harness; apply leaves it out |
 | `harness.credential` | warning | On every coding role and subscription role: the harness runs on a subscription credential that cannot be known before apply. It names the fix after apply: the secret to grant, or the login to run in the agent's CLI tab |
-| `subscription.off` | error | A subscription role while the box does not offer subscription agents (no `SUBSCRIPTION_AGENTS=1`): give the role a model on a key |
 | `subscription.harness` | warning | A subscription role names `cursor` or `antigravity`, which run no subscription agent; apply asks for Claude Code or Codex |
 | `subscription.setting` | warning | A subscription role sets a model-loop setting off its default; apply leaves it out |
 | `harness_model.invalid` | warning | `config.harness_model` is not a model name; apply leaves it out |

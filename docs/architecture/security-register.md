@@ -219,7 +219,11 @@ the variables that would move the CLI onto a metered key and turns
 off hooks, plugins, and project MCP servers; Codex also loads no
 `config.toml` or rules from the home. A turn stops after 30
 minutes; since 2026-11-16 after the agent's `max_turn_minutes`, 30 by
-default. The organisation's model keys never reach the sandbox.
+default. The organisation's model keys never reach the sandbox. Until
+2026-11-16 a box offered subscription agents only with
+`SUBSCRIPTION_AGENTS=1`; since then every box offers them to whoever
+creates agents, and a box that wants none turns Claude Code and Codex
+off with `HARNESSES_OFF`, which turns them off for coding agents too.
 
 **Fix to make:** start the harness with only its own credential in its
 environment, and limit what the agent's container reaches. Until then,

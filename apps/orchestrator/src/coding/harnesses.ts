@@ -115,22 +115,6 @@ export function subscriptionHarnessMessage(harness: Harness): string {
   return `${HARNESS_INFO[harness].label} cannot run a subscription agent: pick ${offered}, or give the agent a model`;
 }
 
-/** Whether the box offers subscription agents; it does not until boot installs the setting. */
-let offersSubscriptionAgents = false;
-
-/** Sets whether the box offers subscription agents, once at boot. */
-export function installSubscriptionAgents(offered: boolean): void {
-  offersSubscriptionAgents = offered;
-}
-
-export function areSubscriptionAgentsOn(): boolean {
-  return offersSubscriptionAgents;
-}
-
-/** Why an agent cannot be created on, or switched to, a subscription while the box turns them off. */
-export const SUBSCRIPTION_AGENTS_OFF_MESSAGE =
-  "subscription agents are turned off on this box: give the agent a model on a key";
-
 /** Why an agent cannot pick, or run on, a harness the box turns off. */
 export function harnessOffMessage(harness: Harness): string {
   return `${HARNESS_INFO[harness].label} is turned off on this box: pick another harness in the agent's Settings`;

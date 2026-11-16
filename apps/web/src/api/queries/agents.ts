@@ -71,7 +71,7 @@ export function useAgent(agentId: string) {
   });
 }
 
-/** What the box offers of harnesses: each one's models and efforts, and whether subscription agents are on; fixed while the server runs. */
+/** What the box offers of harnesses: each one's models and efforts; fixed while the server runs. */
 function harnessOfferQuery() {
   return {
     queryKey: agentKeys.harnesses,
@@ -83,11 +83,6 @@ function harnessOfferQuery() {
 /** The models each harness offers, and the efforts they run at. */
 export function useHarnessCatalog() {
   return useQuery({ ...harnessOfferQuery(), select: (data: HarnessOffer) => data.harnesses });
-}
-
-/** Whether the box offers subscription agents. */
-export function useSubscriptionAgentsOn() {
-  return useQuery({ ...harnessOfferQuery(), select: (data: HarnessOffer) => data.subscription_agents });
 }
 
 /** Each harness's credentials for the agent; read fresh, since grants and logins change elsewhere. */
