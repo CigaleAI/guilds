@@ -103,6 +103,10 @@ and organisation. Its menu:
   ([Group chat](group-chat.md#in-the-app)); reported issues still
   ring ([Inbox and issues](inbox.md#alert-severity)), and desktop
   notifications are unchanged
+- sets the **Chime sound** for this browser, in every guild and
+  organisation: **Default** is the built-in two-note chime, **Choose
+  a file…** takes an audio file the browser can play, up to 256 KB.
+  The same sound rings for new messages and for reported issues
 - turns **Desktop notifications** on or off for this browser, when
   the browser supports them. Turning them on asks the browser's
   permission ([Group chat](group-chat.md#in-the-app))

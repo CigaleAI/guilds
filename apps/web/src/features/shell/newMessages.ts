@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import type { MessageNotice } from "../../api/types/chat";
 import { useIdentity } from "../../app/identity";
 import { readStored } from "../../app/storage";
-import { playChime, primeChime } from "./chime";
+import { playChime, primeChime, restoreChimeSound } from "./chime";
 import { useDesktopNotification } from "./desktopNotifications";
 
 /** The least time between two chimes, so a burst of replies rings once. */
@@ -45,6 +45,9 @@ function isAttending(): boolean {
 export function useChime(): () => void {
   const lastAt = useRef<number | null>(null);
   useEffect(primeChime, []);
+  useEffect(() => {
+    void restoreChimeSound();
+  }, []);
   return () => {
     if (!chimeDue(lastAt.current, Date.now())) return;
     if (playChime()) lastAt.current = Date.now();

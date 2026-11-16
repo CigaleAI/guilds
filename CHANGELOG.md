@@ -21,6 +21,12 @@ no message, no coach run of the month, no entry in the session's
 `errors`, no `session.error`. The operator sends it again when a
 generation ends.
 
+**Rebuild.** The account menu's **Chime sound** sets the sound this
+browser rings for new messages and reported issues: **Default** is
+the built-in two-note chime, **Choose a file…** takes an audio file
+the browser can play, up to 256 KB. The file stays in this browser,
+in `guilds-chime-sound`.
+
 **Rebuild.** In Studio's **Tools**, each native tool's name carries an
 info icon that says what the tool does in one plain sentence, on
 hover, keyboard focus, or a click or tap. Scripts and connection

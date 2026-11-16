@@ -5,12 +5,14 @@ import {
   LogOut,
   Monitor,
   Moon,
+  Music,
   Settings,
   Sun,
   ShieldCheck,
   VolumeX,
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
+import { useRef, useState } from "react";
 import { switchOrg } from "../../api/identity";
 import { useIdentity } from "../../app/identity";
 import { useSlots } from "../../app/slots";
@@ -26,7 +28,17 @@ import {
   MenuSeparator,
   initialsOf,
   personTone,
+  toast,
 } from "@guildsrun/ui";
+import {
+  chooseChimeFile,
+  chooseDefaultChime,
+  maxChimeBytes,
+  playChime,
+  readChimeSound,
+  resumeChimeAudio,
+  type ChimeSound,
+} from "./chime";
 import { messageChimeMutedKey } from "./newMessages";
 import { useDesktopNotificationsChoice } from "./desktopNotifications";
 const themes: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
@@ -76,11 +88,60 @@ function AccountTrigger({ compact }: AccountTriggerProps) {
   );
 }
 
+const chimeChoiceCopy = {
+  "too-large": {
+    title: "That sound is too large",
+    description: `Pick a file under ${maxChimeBytes / 1024} KB.`,
+  },
+  "not-audio": {
+    title: "That isn't an audio file",
+    description: "Pick a sound the browser can play, such as MP3 or WAV.",
+  },
+  undecodable: {
+    title: "This browser can't play that sound",
+    description: "Pick a different audio file.",
+  },
+  unstored: {
+    title: "Couldn't save the chime sound",
+    description: "This browser is blocking storage.",
+  },
+};
+
+async function previewChime(): Promise<void> {
+  await resumeChimeAudio();
+  playChime();
+}
+
+async function chooseChimeSound(file: File, setSound: (sound: ChimeSound) => void): Promise<void> {
+  const choice = await chooseChimeFile(file);
+  if (choice.kind !== "chosen") {
+    toast({ kind: "error", ...chimeChoiceCopy[choice.kind] });
+    return;
+  }
+  setSound(choice.sound);
+  await previewChime();
+}
+
+async function selectDefaultChime(setSound: (sound: ChimeSound | null) => void): Promise<void> {
+  if (chooseDefaultChime() === "unavailable") {
+    toast({ kind: "error", ...chimeChoiceCopy.unstored });
+    return;
+  }
+  setSound(null);
+  await previewChime();
+}
+
+function chimeFilePicked(input: HTMLInputElement, setSound: (sound: ChimeSound) => void): void {
+  const file = input.files?.[0];
+  input.value = "";
+  if (file) void chooseChimeSound(file, setSound);
+}
+
 type AccountMenuProps = { compact?: boolean };
 
 /**
- * The signed-in operator: organisation, theme, message chime, desktop notifications, settings and sign-out.
- * `compact` shows only the avatar.
+ * The signed-in operator: organisation, theme, message chime, chime sound, desktop notifications,
+ * settings and sign-out. `compact` shows only the avatar.
  */
 export function AccountMenu({ compact = false }: AccountMenuProps) {
   const { user, org, orgs } = useIdentity();
@@ -90,68 +151,95 @@ export function AccountMenu({ compact = false }: AccountMenuProps) {
   const [theme, setTheme] = useThemeChoice();
   const notifications = useDesktopNotificationsChoice();
   const [chimeMuted, setChimeMuted] = useStoredFlag(messageChimeMutedKey);
+  const [chimeSound, setChimeSound] = useState(readChimeSound);
+  const chimeFile = useRef<HTMLInputElement>(null);
 
   return (
-    <Menu>
-      <AccountTrigger compact={compact} />
-      <MenuContent side="top" align="start" className="min-w-60">
-        {orgs.length > 1 ? (
-          <>
-            <MenuLabel>Organisation</MenuLabel>
-            {orgs.map((candidate) => (
-              <MenuItem
-                key={candidate.id}
-                {...(candidate.id === org.id ? { icon: Check } : {})}
-                onSelect={() => candidate.id !== org.id && switchOrg(candidate.id)}
-              >
-                {candidate.name}
-              </MenuItem>
-            ))}
-            <MenuSeparator />
-          </>
-        ) : null}
-        <MenuLabel>Theme</MenuLabel>
-        {themes.map((choice) => (
+    <>
+      <Menu>
+        <AccountTrigger compact={compact} />
+        <MenuContent side="top" align="start" className="min-w-60">
+          {orgs.length > 1 ? (
+            <>
+              <MenuLabel>Organisation</MenuLabel>
+              {orgs.map((candidate) => (
+                <MenuItem
+                  key={candidate.id}
+                  {...(candidate.id === org.id ? { icon: Check } : {})}
+                  onSelect={() => candidate.id !== org.id && switchOrg(candidate.id)}
+                >
+                  {candidate.name}
+                </MenuItem>
+              ))}
+              <MenuSeparator />
+            </>
+          ) : null}
+          <MenuLabel>Theme</MenuLabel>
+          {themes.map((choice) => (
+            <MenuItem
+              key={choice.value}
+              icon={theme === choice.value ? Check : choice.icon}
+              onSelect={() => setTheme(choice.value)}
+            >
+              {choice.label}
+            </MenuItem>
+          ))}
+          <MenuSeparator />
           <MenuItem
-            key={choice.value}
-            icon={theme === choice.value ? Check : choice.icon}
-            onSelect={() => setTheme(choice.value)}
+            role="menuitemcheckbox"
+            aria-checked={!chimeMuted}
+            icon={chimeMuted ? VolumeX : Check}
+            onSelect={() => setChimeMuted(!chimeMuted)}
           >
-            {choice.label}
+            Message chime
           </MenuItem>
-        ))}
-        <MenuSeparator />
-        <MenuItem
-          role="menuitemcheckbox"
-          aria-checked={!chimeMuted}
-          icon={chimeMuted ? VolumeX : Check}
-          onSelect={() => setChimeMuted(!chimeMuted)}
-        >
-          Message chime
-        </MenuItem>
-        {notifications.supported ? (
+          <MenuLabel>Chime sound</MenuLabel>
           <MenuItem
-            icon={notifications.on ? Check : Bell}
-            onSelect={() => void notifications.toggle()}
+            {...(chimeSound === null ? { icon: Check } : {})}
+            onSelect={() => void selectDefaultChime(setChimeSound)}
           >
-            Desktop notifications
+            Default
           </MenuItem>
-        ) : null}
-        <MenuSeparator />
-        <MenuItem icon={Settings} onSelect={() => void navigate({ to: "/settings" })}>
-          Settings
-        </MenuItem>
-        {platformAdmin ? (
-          <MenuItem icon={ShieldCheck} onSelect={() => void navigate({ to: "/admin" })}>
-            Admin
+          {chimeSound ? (
+            <MenuItem icon={Check} onSelect={() => void previewChime()}>
+              {chimeSound.name}
+            </MenuItem>
+          ) : null}
+          <MenuItem icon={Music} onSelect={() => chimeFile.current?.click()}>
+            Choose a file…
           </MenuItem>
-        ) : null}
-        {signOut ? (
-          <MenuItem icon={LogOut} onSelect={() => void signOut()}>
-            Sign out
+          {notifications.supported ? (
+            <MenuItem
+              icon={notifications.on ? Check : Bell}
+              onSelect={() => void notifications.toggle()}
+            >
+              Desktop notifications
+            </MenuItem>
+          ) : null}
+          <MenuSeparator />
+          <MenuItem icon={Settings} onSelect={() => void navigate({ to: "/settings" })}>
+            Settings
           </MenuItem>
-        ) : null}
-      </MenuContent>
-    </Menu>
+          {platformAdmin ? (
+            <MenuItem icon={ShieldCheck} onSelect={() => void navigate({ to: "/admin" })}>
+              Admin
+            </MenuItem>
+          ) : null}
+          {signOut ? (
+            <MenuItem icon={LogOut} onSelect={() => void signOut()}>
+              Sign out
+            </MenuItem>
+          ) : null}
+        </MenuContent>
+      </Menu>
+      <input
+        ref={chimeFile}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        aria-label="Chime sound file"
+        onChange={(event) => chimeFilePicked(event.currentTarget, setChimeSound)}
+      />
+    </>
   );
 }
