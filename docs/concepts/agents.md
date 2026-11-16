@@ -127,7 +127,8 @@ leaves it as it is passes.
 
 A coding agent starts at 200 steps and 200 tool calls. A subscription
 agent's **Run limits** show Max steps, Max tool calls, Max wake-ups,
-and Max turn minutes; an agent on a key shows every limit but Max
+and Max turn minutes; its Max steps bounds the model calls of one turn
+on Claude Code, and Codex has no such limit; an agent on a key shows every limit but Max
 turn minutes, which its runs do not read. What happens at each limit
 is on [Runs](runs.md).
 

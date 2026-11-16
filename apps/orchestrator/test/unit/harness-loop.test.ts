@@ -142,6 +142,17 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.ok(call.argv.includes("--strict-mcp-config"));
     assert.equal(call.stdin, "use bash twice", "the message that opened the generation is the prompt");
     assert.ok(!call.argv.includes("--resume"), "a new run starts a new session");
+    assert.equal(call.argv[call.argv.indexOf("--max-turns") + 1], String(SUBSCRIBER.max_steps), "its turn makes at most max_steps model calls");
+  });
+
+  test("a Claude Code turn that stops at its max_steps ends the generation with generation.max_steps", async () => {
+    const recorded = recordedEvents("claude-code");
+    const stopped = JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, num_turns: 30, session_id: RECORDED_SESSION, usage: { input_tokens: 40, output_tokens: 9 } });
+    const { loop, rows, errors, sandbox } = subscriptionLoop([...recorded.slice(0, 3), stopped]);
+    sandbox.env.HARNESS_STUB_EXIT = "1";
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(errors().map((error) => [error.operation, error.message]), [["generation.max_steps", "max_steps reached"]]);
+    assert.equal(rows().at(-1)?.metadata.cost_source, "subscription", "its usage is kept as a finished turn's");
   });
 
   test("the CLI's events for a call of the orchestrator's MCP server make no row of their own", async () => {

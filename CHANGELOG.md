@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A Claude Code subscription agent's turn makes at most the
+run's `max_steps` model calls: the CLI starts with `--max-turns`, and a
+turn that stops there ends the generation with `generation.max_steps`,
+"max_steps reached", as a model's run does. Codex has no such limit;
+`max_turn_minutes` and `max_tool_calls` bound its turn. The runtime
+image must be rebuilt: `guilds-harness start` takes `max_turns`, which
+only the Claude Code driver accepts, and `result` says whether the
+turn stopped at it.
+
 **Rebuild.** Agent configs and run snapshots gain `max_turn_minutes`,
 how many minutes a subscription agent's turn of its harness runs
 before it is stopped: a whole number of 1 or more, 30 by default; a

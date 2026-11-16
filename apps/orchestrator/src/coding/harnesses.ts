@@ -86,6 +86,15 @@ export function isTurnHarness(harness: Harness): harness is TurnHarness {
   return TURN_HARNESSES.some((item) => item === harness);
 }
 
+/**
+ * Whether a harness that runs a subscription agent's turns ends its turn after the run's
+ * `max_steps` model calls: Claude Code takes `--max-turns`; Codex has no limit of the kind.
+ */
+export const HARNESS_TAKES_MAX_TURNS: Record<TurnHarness, boolean> = {
+  "claude-code": true,
+  codex: false,
+};
+
 /** The name a subscription agent's harness is given the orchestrator's MCP server under (`runtime/guilds-harness`). */
 export const HARNESS_MCP_SERVER = "guilds";
 

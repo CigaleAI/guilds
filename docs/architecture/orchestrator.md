@@ -966,10 +966,12 @@ the steps `HARNESS_TURN_STEPS` makes of its events
 (`generation/harness-rows.ts`), the reply holding the turn's usage
 at `cost_source: subscription`. It keeps the session in
 `metadata.harness_turn` for the next generation to resume, stops the
-harness after the snapshot's `max_turn_minutes`, and ends with
-`harness.start`, `harness.failed`, `harness.lost`,
-`harness.unresponsive`, or `harness.timed_out` when it does not exit
-cleanly. The server runs the harness's calls through
+harness after the snapshot's `max_turn_minutes`, gives Claude Code
+the snapshot's `max_steps` as `--max-turns`
+(`HARNESS_TAKES_MAX_TURNS`), records `generation.max_steps` when it
+stops there, and ends with `harness.start`, `harness.failed`,
+`harness.lost`, `harness.unresponsive`, or `harness.timed_out` when it
+does not exit cleanly. The server runs the harness's calls through
 `ToolCalls.executeHarnessCall`, one at a time per grant; a call past
 `max_tool_calls` or one that files a blocking issue asks the turn to
 stop, and the loop stops the harness and records

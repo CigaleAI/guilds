@@ -166,6 +166,7 @@ test("a direct message to a Codex subscription agent runs a turn of codex exec, 
   assert.ok(call.system_prompt?.includes("`mcp__guilds__report_issue`"), "it names each tool as Codex's model calls it");
   assert.equal(call.stdin, "Make the greeting name the guild.");
   assert.ok(!call.argv.includes("resume"));
+  assert.ok(!call.argv.includes("--max-turns"), "Codex takes no limit on its model calls");
   assert.equal(call.mcp_config?.mcpServers.guilds?.url, `${mcpUrl}/mcp/${agentId}`);
 
   assert.deepEqual(

@@ -115,6 +115,9 @@ export class HarnessMcpRefused extends Error {
   }
 }
 
+/** What a generation that made its last model call records as its run error. */
+export const STEP_LIMIT_MESSAGE = "max_steps reached";
+
 /** What a run that made its last tool call tells its model, and records as its run error. */
 export const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 

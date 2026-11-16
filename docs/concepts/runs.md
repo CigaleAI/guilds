@@ -105,6 +105,12 @@ long:
 - **Max input tokens**: the size of the prompt sent to the model.
   Above it the model is not called and the run completes.
 
+A subscription agent's turn keeps Max steps and Max tool calls, and
+adds **Max turn minutes**, how long the turn runs before its harness
+is stopped. Max steps ends a Claude Code turn after that many model
+calls; Codex has no such limit. Max input tokens does not apply: the
+harness keeps its own context ([Harness turns](#harness-turns)).
+
 A run that hit its tool-call or input-token limit cannot be resumed.
 Start a new one.
 
@@ -521,8 +527,11 @@ under the call id `turn_<generation>_<run id>`
    every user message since the run's last assistant or tool row, in
    order, joined by a blank line: the opening message, a message the
    operator sent, a Group Chat info or Schedule wake-up message, or a
-   wake-up's message. A run whose `metadata.harness_turn` holds a
-   session resumes it; a new run starts a new session. The run records
+   wake-up's message. On Claude Code the turn makes at most the
+   snapshot's `max_steps` model calls (`--max-turns`); Codex has no
+   such limit, so `max_turn_minutes` and `max_tool_calls` bound its
+   turn. A run whose `metadata.harness_turn` holds a session resumes
+   it; a new run starts a new session. The run records
    `metadata.harness_turn` at the start and again once the CLI reports
    its session. The generation's grant on the orchestrator's MCP server
    opens before the start: the CLI is given its URL and token for that
@@ -559,6 +568,7 @@ under the call id `turn_<generation>_<run id>`
 | `harness.lost` | a poll found the turn's state gone, or the CLI exited and its result could not be read |
 | `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
 | `harness.timed_out` | the turn ran its snapshot's `max_turn_minutes`: "`<Harness>` was stopped after `<minutes>` minutes."; the harness got `stop` |
+| `generation.max_steps` | Claude Code ended its turn at its `max_steps` model calls: "max_steps reached". The run stays open, as a model's run does at the limit |
 | `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls; the harness got `stop`, and the run completes |
 | `generation.blocked` | a call of the MCP server filed a blocking issue; the harness got `stop` |
 

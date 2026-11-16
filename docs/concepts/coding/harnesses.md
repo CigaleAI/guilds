@@ -497,7 +497,7 @@ pinned to the CLI version the image installs.
 
 | Harness | Command | Model and effort | Resume | Prompt |
 | --- | --- | --- | --- | --- |
-| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, then `--effort <effort>`, before `--resume` | `--resume <session id>` | stdin |
+| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, then `--effort <effort>`, then `--max-turns <n>`, before `--resume` | `--resume <session id>` | stdin |
 | Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>`, then `-c model_reasoning_effort="<effort>"`, after the managed flags and before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) |
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
 | Antigravity | `agy --output-format stream-json --dangerously-skip-permissions --disable-slash-commands --add-dir <run folder> -p "Read your task in <prompt file> and follow it."` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | the prompt file, named in `-p`; `--add-dir` lets the CLI's tools reach it outside the repository |
@@ -535,6 +535,14 @@ mcp_token go together` otherwise). Cursor and Antigravity refuse one
 (`<harness> takes no MCP server`) before the call starts. The
 orchestrator sends such a request through a request file, never on
 the command line, and the token is on no command line.
+
+A request with a `max_turns`, a count of 1 or more, starts Claude Code
+with `--max-turns <n>`, which ends its turn after that many model
+calls with the result subtype `error_max_turns`; `result` then says
+`max_turns: true`. Codex, Cursor, and Antigravity have no such limit
+and refuse one (`<harness> takes no turn limit`), and a value that is
+not a whole number of 0 or more is refused (`max_turns is invalid`),
+before the call starts. A `code_task` call sends none.
 
 The orchestrator resolves the agent's model and effort through the
 catalogue before the call: a listed Cursor model becomes its CLI name

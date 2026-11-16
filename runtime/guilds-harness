@@ -16,7 +16,8 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
   `mcp_url` and its `mcp_token` starts a CLI that takes an MCP server with that one server, the
   token sent as its bearer; any other CLI refuses it. The token reaches the CLI through a
   private file: Claude Code reads it there, and the supervisor sets it in Codex's own
-  environment alone.
+  environment alone. A request with a `max_turns` starts a CLI that takes a limit on its model
+  calls with that limit; any other CLI refuses it.
 - `poll`: the raw events after a byte offset into the log, their normalised progress lines,
   the new offset, the session id once the harness has reported one, and whether the CLI has
   exited.
@@ -97,10 +98,12 @@ class ToolError(Exception):
 
 
 class Launch(NamedTuple):
-    """The model and effort a call starts the CLI with; empty leaves each to the harness."""
+    """The model and effort a call starts the CLI with, empty to leave each to the harness, and
+    the most model calls its turn may make, 0 for no limit."""
 
     model: str
     effort: str
+    max_turns: int
 
 
 class McpServer(NamedTuple):
@@ -220,10 +223,16 @@ class Driver:
         none for a CLI that reads the file itself."""
         return {}
 
+    def max_turns_args(self, max_turns: int) -> list[str]:
+        """The arguments that end the turn after `max_turns` model calls."""
+        raise ToolError(f"{self.name} takes no turn limit")
+
     def model_args(self, launch: Launch) -> list[str]:
-        """`--model` with the model, then the effort's arguments; nothing for what is empty."""
+        """`--model` with the model, then the effort's arguments, then the turn limit's; nothing
+        for what is empty."""
         argv = ["--model", launch.model] if launch.model else []
-        return argv + (self.effort_args(launch.effort) if launch.effort else [])
+        argv += self.effort_args(launch.effort) if launch.effort else []
+        return argv + (self.max_turns_args(launch.max_turns) if launch.max_turns else [])
 
     def credential(self, env: dict[str, str]) -> str | None:
         """`secret` or `login` when the harness has a credential to run on, else None."""
@@ -323,6 +332,9 @@ class ClaudeCode(Driver):
     def effort_args(self, effort: str) -> list[str]:
         return ["--effort", effort]
 
+    def max_turns_args(self, max_turns: int) -> list[str]:
+        return ["--max-turns", str(max_turns)]
+
     def system_prompt_args(self, path: Path) -> list[str]:
         return ["--system-prompt-file", str(path)]
 
@@ -384,6 +396,7 @@ class ClaudeCode(Driver):
                     "message": text or last_text,
                     "is_error": is_error,
                     "error": (text or str(event.get("subtype") or "")) if is_error else "",
+                    "max_turns": event.get("subtype") == "error_max_turns",
                 }
             if event.get("type") == "assistant":
                 texts = [
@@ -941,14 +954,18 @@ def op_check(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _launch(spec: dict[str, Any]) -> Launch:
-    """The model the harness runs and its effort, each empty for the harness's default."""
+    """The model the harness runs and its effort, each empty for the harness's default, and its
+    turn's limit on model calls, 0 for none."""
     model = spec.get("model") or ""
     if not isinstance(model, str) or (model and not MODEL_RE.fullmatch(model)):
         raise ToolError("model is invalid")
     effort = spec.get("effort") or ""
     if not isinstance(effort, str) or (effort and effort not in EFFORTS):
         raise ToolError("effort is invalid")
-    return Launch(model, effort)
+    max_turns = spec.get("max_turns") or 0
+    if not isinstance(max_turns, int) or isinstance(max_turns, bool) or max_turns < 0:
+        raise ToolError("max_turns is invalid")
+    return Launch(model, effort, max_turns)
 
 
 def _start_request(spec: dict[str, Any]) -> tuple[Driver, str, str, Path, str, str]:
@@ -1057,8 +1074,8 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
         RUNS / run_id / f"{call_id}.system.md" if system_prompt else None,
         RUNS / run_id / f"{call_id}.mcp.json" if mcp else None,
     )
-    # Refuses an effort, a system prompt or an MCP server the harness cannot take before anything
-    # is claimed or reset.
+    # Refuses an effort, a turn limit, a system prompt or an MCP server the harness cannot take
+    # before anything is claimed or reset.
     driver.model_args(launch)
     if files.system:
         driver.system_prompt_args(files.system)
@@ -1274,6 +1291,7 @@ def op_result(spec: dict[str, Any]) -> dict[str, Any]:
         "message": outcome.get("message") or "",
         "is_error": bool(outcome.get("is_error")),
         "error": outcome.get("error") or "",
+        "max_turns": bool(outcome.get("max_turns")),
         "events": len(events),
         "unparsed": unparsed,
         "stderr": _stderr_tail(paths["stderr"]),

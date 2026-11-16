@@ -32,13 +32,15 @@ export type HarnessPoll = Static<typeof HarnessPoll>;
 
 /**
  * What the `result` op says of a harness that exited: whether the call's state is gone, the
- * CLI's exit code and error flag, its session and final message, how many events it printed and
- * how many lines were not JSON, and the end of its stderr and its error text.
+ * CLI's exit code and error flag, whether it ended at its turn limit, its session and final
+ * message, how many events it printed and how many lines were not JSON, and the end of its stderr
+ * and its error text.
  */
 export const HarnessExit = Type.Object({
   missing: Type.Optional(Type.Boolean()),
   exit_code: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   is_error: Type.Optional(Type.Boolean()),
+  max_turns: Type.Optional(Type.Boolean()),
   session_id: Type.Optional(Type.String()),
   message: Type.Optional(Type.String()),
   events: Type.Optional(Type.Number()),
@@ -104,6 +106,7 @@ export type HarnessOpFields = {
   session_id?: string;
   model?: string;
   effort?: Effort;
+  max_turns?: number;
   offset?: number;
   mcp_url?: string;
   mcp_token?: string;
@@ -175,8 +178,9 @@ export type HarnessMcpAccess = { url: string; token: string };
 /**
  * What a harness CLI is started with: the harness, the prompt it reads on stdin or from its file,
  * the repository it runs in (null for the agent's home), the system prompt that replaces its own,
- * the orchestrator's MCP server it is given (null for none), the session it resumes, and the
- * model and effort the agent sets for it, each null to leave it to the harness.
+ * the orchestrator's MCP server it is given (null for none), the session it resumes, the model and
+ * effort the agent sets for it, each null to leave it to the harness, and the most model calls its
+ * turn may make, null for no limit.
  */
 export type HarnessStart = {
   harness: Harness;
@@ -187,6 +191,7 @@ export type HarnessStart = {
   session_id: string | null;
   model: string | null;
   effort: Effort | null;
+  max_turns: number | null;
 };
 
 /**
@@ -201,6 +206,7 @@ export async function launchHarness(ops: ToolRun, callId: string, start: Harness
   const resume = start.session_id ? { session_id: start.session_id } : {};
   const model = launch.model ? { model: launch.model } : {};
   const effort = launch.effort ? { effort: launch.effort } : {};
+  const maxTurns = start.max_turns === null ? {} : { max_turns: start.max_turns };
   const fields: HarnessOpFields = {
     harness: start.harness,
     prompt: start.prompt,
@@ -209,6 +215,7 @@ export async function launchHarness(ops: ToolRun, callId: string, start: Harness
     ...resume,
     ...model,
     ...effort,
+    ...maxTurns,
   };
   if (start.mcp === null) {
     await harnessOp(ops, callId, "start", fields);

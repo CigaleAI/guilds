@@ -794,6 +794,37 @@ describe("a harness started for a run's own turn", () => {
     assert.equal(existsSync(systemFile), false, "the system prompt goes with the call's state");
   });
 
+  test("a turn limit ends Claude Code's turn after that many model calls, and a turn that stops at it says so", async () => {
+    const { sandbox, calls } = harnessSandbox("claude", () => [
+      JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, num_turns: 5, session_id: SESSION }),
+    ]);
+    const op = turnOps(sandbox, "call_limited");
+    await op("start", { prompt: "hello", model: "opus", effort: "high", max_turns: 5 });
+    for (let attempt = 0; attempt < 100 && !calls().length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const [call] = calls();
+    assert.ok(call);
+    assert.deepEqual(call.argv.slice(call.argv.indexOf("--model")), ["--model", "opus", "--effort", "high", "--max-turns", "5"]);
+    let polled = await op("poll", { offset: 0 });
+    for (let attempt = 0; attempt < 200 && polled.meta.exited !== true; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      polled = await op("poll", { offset: 0 });
+    }
+    const result = await op("result");
+    assert.equal(result.meta.max_turns, true);
+    assert.equal(result.meta.is_error, true);
+  });
+
+  test("a CLI with no turn limit refuses one, and a limit that is not a count is refused, before the call starts", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
+    const op = turnOps(sandbox, "call_codex_limit");
+    await assert.rejects(op("start", { harness: "codex", prompt: "hello", max_turns: 5 }), /codex takes no turn limit/);
+    await assert.rejects(op("start", { harness: "claude-code", prompt: "hello", max_turns: "5" }), /max_turns is invalid/);
+    await assert.rejects(op("start", { harness: "claude-code", prompt: "hello", max_turns: -1 }), /max_turns is invalid/);
+    assert.equal(calls().length, 0);
+  });
+
   test("a CLI that takes no system prompt refuses one and never starts", async () => {
     const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"));
     const op = turnOps(sandbox, "call_cursor");
@@ -821,6 +852,7 @@ describe("a harness started for a run's own turn", () => {
       session_id: null,
       model: null,
       effort: null,
+      max_turns: null,
     });
   }
 

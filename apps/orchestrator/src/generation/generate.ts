@@ -34,6 +34,7 @@ import {
   GenerationCancelled,
   logOperationFailure,
   RunLimitError,
+  STEP_LIMIT_MESSAGE,
   SubscriptionRunUnavailable,
   TOOL_CALL_LIMIT_MESSAGE,
   type OperationFailure,
@@ -623,7 +624,7 @@ export class RunGenerator {
         return;
       }
       if (step === maxSteps - 1) {
-        await this.services.events.recordError(gen, "generation.max_steps", new Error("max_steps reached"));
+        await this.services.events.recordError(gen, "generation.max_steps", new Error(STEP_LIMIT_MESSAGE));
         return;
       }
     }

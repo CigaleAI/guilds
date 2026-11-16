@@ -1,4 +1,4 @@
-import { HARNESS_INFO, type TurnHarness } from "../coding/harnesses.js";
+import { HARNESS_INFO, HARNESS_TAKES_MAX_TURNS, type TurnHarness } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import {
@@ -42,6 +42,7 @@ import {
   GenerationCancelled,
   HarnessTurnError,
   RunLimitError,
+  STEP_LIMIT_MESSAGE,
   TOOL_CALL_LIMIT_MESSAGE,
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
@@ -195,8 +196,9 @@ export class HarnessLoop {
   }
 
   /**
-   * Ends the generation as its turn ended: with the stop the run's tool calls asked for, the way
-   * the model loop ends on them, else with the run error of a turn that did not exit cleanly.
+   * Ends the generation as its turn ended: with the stop the run's tool calls asked for, or the
+   * step limit its CLI stopped at, the way the model loop ends on them, else with the run error of
+   * a turn that did not exit cleanly.
    */
   private async recordEnding(gen: SubscriptionGeneration, turn: HarnessRunTurn, ending: HarnessTurnEnding): Promise<void> {
     const { db, events } = this.services;
@@ -212,6 +214,10 @@ export class HarnessLoop {
         new RunLimitError("generation.max_tool_calls", TOOL_CALL_LIMIT_MESSAGE),
       );
       await completeIfActive(db, gen.runId);
+      return;
+    }
+    if (ending.settled === "exited" && ending.result?.max_turns === true) {
+      await events.recordError(gen, "generation.max_steps", new RunLimitError("generation.max_steps", STEP_LIMIT_MESSAGE));
       return;
     }
     const failure = harnessTurnFailure(turn.harness, ending, turn.log_path, gen.snapshot.max_turn_minutes);
@@ -318,6 +324,7 @@ export class HarnessLoop {
         session_id: turn.session,
         model: gen.snapshot.harness_model,
         effort: gen.snapshot.harness_effort,
+        max_turns: HARNESS_TAKES_MAX_TURNS[turn.harness] ? gen.snapshot.max_steps : null,
       });
       return true;
     } catch (error) {
