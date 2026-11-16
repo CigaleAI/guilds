@@ -55,24 +55,40 @@ export function serverOriginLabel(
   return server.verified ? null : "Unverified";
 }
 
+/** A login's settings as a server card shows them: its connector's schema, as a form or, for Drive, as its folder. */
+export type SchemaSettingsPanel = {
+  kind: "schema" | "drive_folder";
+  schema: NonNullable<McpServerAccess["settings_schema"]>;
+};
+
 /**
  * The settings a server card shows for the login in use: its connector's schema once the login is
- * signed in, the repositories once a GitHub login connects, or none.
+ * signed in, Drive's as its folder, the repositories once a GitHub login connects, or none.
  */
 export function loginSettingsPanel(
   server: McpServerAccess,
-):
-  | { kind: "schema"; schema: NonNullable<McpServerAccess["settings_schema"]> }
-  | { kind: "github" }
-  | null {
+): SchemaSettingsPanel | { kind: "github" } | null {
   if (!server.connection_id) return null;
   if (server.settings_schema && (server.status === "connected" || server.needs_settings)) {
-    return { kind: "schema", schema: server.settings_schema };
+    return {
+      kind: server.slug === "drive" ? "drive_folder" : "schema",
+      schema: server.settings_schema,
+    };
   }
   if (server.slug === "github" && server.status === "connected") {
     return { kind: "github" };
   }
   return null;
+}
+
+/** Whether `settings` leave out, or leave empty, a property the connector's settings schema requires. */
+export function lacksRequiredSetting(
+  schema: SchemaSettingsPanel["schema"],
+  settings: McpServerAccess["settings"],
+): boolean {
+  return (schema.required ?? []).some(
+    (name) => settings[name] === undefined || settings[name] === "",
+  );
 }
 
 /** The login the scope being edited owns, which it may disconnect; inherited logins belong to a wider scope. */

@@ -44,6 +44,8 @@ export const accessKeys = {
   reach: (subject: ReachSubject) => ["access-lists", "reach", subject.type, subject.id] as const,
   access: (owner: AccessOwner) => ["access", owner.scope, owner.id] as const,
   githubRepositories: (connectionId: string) => ["github", connectionId, "repositories"] as const,
+  driveFolder: (connectionId: string, folderId: string) =>
+    ["drive", connectionId, "folder", folderId] as const,
 };
 
 const accessPath = (owner: AccessOwner) =>
@@ -307,6 +309,22 @@ export function lookupWithLogin(connectionId: string, property: string, q: strin
   return api<{ options: LookupOption[] }>(
     `/api/mcp/connections/${encodeURIComponent(connectionId)}/lookup?property=${encodeURIComponent(property)}&q=${encodeURIComponent(q)}`,
   ).then((body) => body.options);
+}
+
+/**
+ * The Drive folder a login's `folder_id` names, as that login's lookup reads it: its name, and its
+ * path in `detail`. Null when the lookup answers without it; none is read for an empty id.
+ */
+export function useDriveFolder(connectionId: string, folderId: string) {
+  return useQuery({
+    queryKey: accessKeys.driveFolder(connectionId, folderId),
+    enabled: Boolean(connectionId && folderId),
+    retry: false,
+    queryFn: async () =>
+      (await lookupWithLogin(connectionId, "folder_id", folderId)).find(
+        (option) => option.value === folderId,
+      ) ?? null,
+  });
 }
 
 /** Saves a login's settings; one that waited for them connects. */

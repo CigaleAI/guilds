@@ -6,6 +6,22 @@ each digit means, and how an entry is written, is in
 [Contributing](docs/CONTRIBUTING.md#versions). The commands every
 upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
+## Unreleased
+
+**Added.** The Drive card's **Folder** shows the picked folder's
+name, its full path as the login can read it, and **Open in Google
+Drive**. The saved folder is read again on reload, and search results
+show their paths. A path the login cannot read in full, a parent with a
+blank name, a parent Drive cannot be reached for, cycles, and paths
+past 32 folders read **Full path unavailable**. The name and the link
+still show, and the saved setting stays. While a save is pending, no
+search result can be picked. **Remove folder** asks first, says
+nothing in Drive is deleted or trashed and the login stays connected,
+and clears only the unsaved pick. The saved folder stays until another
+is picked and saved. An inherited login's folder has no removal. Every
+login's **Save settings** stays off while a required setting is
+missing or empty.
+
 ## 0.2.0
 
 **Breaking.** An agent can run on the operator's own Claude Code,

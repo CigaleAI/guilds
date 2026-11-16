@@ -303,7 +303,10 @@ test("Drive's adapter looks up folders by name or link and validates the picked 
       return { status: 200, json: { id: "1AbCdEfGhIjKlMnOpQrStUv", name: "Shared", mimeType: DRIVE_FOLDER_MIME } };
     }
     if (parsed.pathname.endsWith("/files/fold_1")) {
-      return { status: 200, json: { id: "fold_1", name: "Inbox", mimeType: DRIVE_FOLDER_MIME } };
+      return { status: 200, json: { id: "fold_1", name: "Inbox", mimeType: DRIVE_FOLDER_MIME, parents: ["root_real"] } };
+    }
+    if (parsed.pathname.endsWith("/files/root_real")) {
+      return { status: 200, json: { id: "root_real", name: "My Drive", mimeType: DRIVE_FOLDER_MIME } };
     }
     return { status: 404 };
   });
@@ -314,7 +317,7 @@ test("Drive's adapter looks up folders by name or link and validates the picked 
     settings,
   });
   assert.deepEqual(await drive.lookup!("folder_id", "inbox", { access_token: "tok" }, ctx({})), [
-    { value: "fold_1", label: "Inbox" },
+    { value: "fold_1", label: "Inbox", detail: "My Drive / Inbox" },
   ]);
   assert.deepEqual(
     await drive.lookup!(
@@ -323,7 +326,7 @@ test("Drive's adapter looks up folders by name or link and validates the picked 
       { access_token: "tok" },
       ctx({}),
     ),
-    [{ value: "1AbCdEfGhIjKlMnOpQrStUv", label: "Shared" }],
+    [{ value: "1AbCdEfGhIjKlMnOpQrStUv", label: "Shared", detail: "Full path unavailable" }],
   );
   assert.equal(await drive.validate!({ access_token: "tok" }, ctx({ folder_id: "fold_1" })), "Inbox");
   await assert.rejects(

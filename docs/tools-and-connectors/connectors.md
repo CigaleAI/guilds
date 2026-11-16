@@ -199,7 +199,13 @@ there is refused, and another keyword is kept and checks nothing. A
 login's settings are checked against `type`, `properties`, `required`,
 `additionalProperties: false`, `items`, the counts and lengths,
 `pattern`, and `enum`. A property marked `x-lookup` gets a search box
-that the adapter's `lookup` fills.
+that the adapter's `lookup` fills. Each option has a `value`, which the
+setting stores, a `label`, and an optional `detail` and `image` shown
+beside it. Drive's `folder_id` has a field of its own
+([The Drive folder on the card](google.md#the-drive-folder-on-the-card)).
+
+The card's **Save settings** stays off while a required setting is
+missing or empty.
 
 A login that lacks a required setting is signed in but `pending`. Its
 metadata carries `needs_settings`, and its card shows the settings

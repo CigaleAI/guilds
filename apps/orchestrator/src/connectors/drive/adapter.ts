@@ -20,6 +20,7 @@ import {
   searchDriveFolders,
   type ScopedDrive,
 } from "./folder.js";
+import { locateDriveFolders } from "./path.js";
 import {
   CopyFileParameters,
   CreateFileParameters,
@@ -199,17 +200,24 @@ export default toolsAdapter(
       const folder = await folderWork(() => assertPickedDriveFolder(accessToken, folderId, { client: ctx.http }));
       return folder.name;
     },
-    /** Folders for `folder_id`: the one a pasted link names, else those whose name contains the query. */
+    /**
+     * Folders for `folder_id`: the one a pasted link or id names, else those whose name contains
+     * the query. Each option's `detail` is the folder's path as the login can read it.
+     */
     async lookup(property, query, creds, ctx) {
       if (property !== "folder_id") {
         throw new ConnectorError(`Drive has no lookup for ${property}`, 404);
       }
       const accessToken = requiredCredential(creds, "access_token", "Drive access token is missing");
+      const login = { accessToken, client: ctx.http };
       const ref = pastedDriveFolderRef(query);
       const folders = await folderWork(async () =>
-        ref ? [await loadDriveFolder(accessToken, ref, { client: ctx.http })] : searchDriveFolders(accessToken, query, { client: ctx.http }),
+        locateDriveFolders(
+          login,
+          ref ? [await loadDriveFolder(accessToken, ref, login)] : await searchDriveFolders(accessToken, query, login),
+        ),
       );
-      return folders.map((folder) => ({ value: folder.id, label: folder.name }));
+      return folders.map((folder) => ({ value: folder.id, label: folder.name, detail: folder.path }));
     },
     list: async (_creds, ctx) => rewriteDescriptions(await ctx.remote.list()),
     call: forwarded,

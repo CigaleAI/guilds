@@ -4,6 +4,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { lookupWithLogin, useSaveSettings } from "../../api/queries/access";
 import { useInstance } from "../../api/queries/admin";
 import type { AccessOwner, McpServerAccess, McpToolAccess } from "../../api/types/access";
+import { isString } from "../../api/wire";
 import { useIdentity } from "../../app/identity";
 import { Button, FilterBar, IntegrationCard, Tag, ToolRow, toast, Icon } from "@guildsrun/ui";
 import { connectorSetupGap, setupSearch, type ConnectorSetupGap } from "../instance/instance";
@@ -12,12 +13,15 @@ import {
   canTestLogin,
   connectionStatus,
   filterTools,
+  lacksRequiredSetting,
   loginSettingsPanel,
   ownedConnection,
   serverOriginLabel,
+  type SchemaSettingsPanel,
   type ToolFilter,
 } from "./access";
 import { connectorLogo } from "./connectorLogo";
+import { DriveFolderField } from "./DriveFolderField";
 import { GithubSettings } from "./GithubRepositories";
 import { SettingsForm, type SettingsValue } from "./SettingsForm";
 import { TestConnectionDialog } from "./TestConnectionDialog";
@@ -98,11 +102,11 @@ export function ServerCard({
         {...(panel
           ? {
               settings:
-                panel.kind === "schema" ? (
+                panel.kind !== "github" ? (
                   <LoginSettings
                     key={server.connection_id}
                     server={server}
-                    schema={panel.schema}
+                    panel={panel}
                     owned={owned}
                   />
                 ) : (
@@ -378,22 +382,19 @@ function ServerTools({
 
 type LoginSettingsProps = {
   server: McpServerAccess;
-  schema: NonNullable<McpServerAccess["settings_schema"]>;
+  panel: SchemaSettingsPanel;
   owned: string | null;
 };
 
 /**
  * What the login stores beside its credentials, as its connector's schema describes it. The
- * scope that owns the login edits and saves it; an inherited login's settings are read-only.
+ * scope that owns the login edits and saves it once every required setting is set; an inherited
+ * login's settings are read-only.
  */
-function LoginSettings({ server, schema, owned }: LoginSettingsProps) {
+function LoginSettings({ server, panel, owned }: LoginSettingsProps) {
   const connectionId = owned ?? server.connection_id ?? "";
   const save = useSaveSettings(connectionId);
   const [draft, setDraft] = useState<SettingsValue>(server.settings);
-  const search = useCallback(
-    (property: string, query: string) => lookupWithLogin(connectionId, property, query),
-    [connectionId],
-  );
   const changed = JSON.stringify(draft) !== JSON.stringify(server.settings);
   return (
     <div className="flex flex-col gap-3">
@@ -405,10 +406,10 @@ function LoginSettings({ server, schema, owned }: LoginSettingsProps) {
           Set on the inherited login. Connect here to use your own.
         </p>
       ) : null}
-      <SettingsForm
-        schema={schema}
-        value={draft}
-        search={search}
+      <LoginSettingsFields
+        panel={panel}
+        connectionId={connectionId}
+        draft={draft}
         disabled={save.isPending}
         {...(owned ? { onChange: setDraft } : {})}
       />
@@ -416,7 +417,11 @@ function LoginSettings({ server, schema, owned }: LoginSettingsProps) {
         <div className="flex gap-2">
           <Button
             size="sm"
-            disabled={save.isPending || (!changed && !server.needs_settings)}
+            disabled={
+              save.isPending ||
+              (!changed && !server.needs_settings) ||
+              lacksRequiredSetting(panel.schema, draft)
+            }
             onClick={() =>
               save.mutate(draft, {
                 onSuccess: () => toast({ kind: "success", title: `${server.name} settings saved` }),
@@ -444,5 +449,48 @@ function LoginSettings({ server, schema, owned }: LoginSettingsProps) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+type LoginSettingsFieldsProps = {
+  panel: SchemaSettingsPanel;
+  connectionId: string;
+  /** The settings being edited, not yet saved. */
+  draft: SettingsValue;
+  disabled: boolean;
+  /** Absent for an inherited login's settings. */
+  onChange?: (next: SettingsValue) => void;
+};
+
+/** The inputs of a login's settings: Drive's folder, or the form its connector's schema describes. */
+function LoginSettingsFields({
+  panel,
+  connectionId,
+  draft,
+  disabled,
+  onChange,
+}: LoginSettingsFieldsProps) {
+  const search = useCallback(
+    (property: string, query: string) => lookupWithLogin(connectionId, property, query),
+    [connectionId],
+  );
+  if (panel.kind === "drive_folder") {
+    return (
+      <DriveFolderField
+        connectionId={connectionId}
+        folderId={isString(draft.folder_id) ? draft.folder_id : ""}
+        disabled={disabled}
+        onChange={onChange ? (next) => onChange({ ...draft, folder_id: next }) : undefined}
+      />
+    );
+  }
+  return (
+    <SettingsForm
+      schema={panel.schema}
+      value={draft}
+      search={search}
+      disabled={disabled}
+      {...(onChange ? { onChange } : {})}
+    />
   );
 }
