@@ -8,6 +8,14 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A subscription agent runs every way an agent's run
+starts: a direct message, a group delivery, a routine's firing, a
+wake-up, and a message to a resumed run each run one turn of its
+harness on the opening message a key agent's model reads. A new run
+starts a new session and a run's later turns resume its own; an
+interrupting group post stops the turn; the agent posts to the group
+chat with `group_post` on the orchestrator's MCP server.
+
 **No impact.** A subscription agent takes images: a message to it may
 carry the images an operator uploaded, which a model on a key takes
 only when its model accepts them. Before its turn starts, each image

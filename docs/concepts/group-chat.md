@@ -124,8 +124,14 @@ message, which message is being replied to. Surrounding messages
 around that replied-to message (two before and two after) are pulled
 into the history snapshot, filtered by Jev when System One is set.
 
+A [subscription agent](agents.md#model-source)'s delivery is one turn
+of its harness, a new session, whose prompt is that short message
+([Runs](runs.md#harness-turns-by-how-a-run-starts)).
+
 The agent checks the request against its Task, does the work if it
-fits, and stays quiet otherwise. It posts with `group_post` to hand a
+fits, and stays quiet otherwise. Nothing it writes reaches the chat by
+itself. It posts with `group_post`, which a subscription agent's
+harness calls on the orchestrator's MCP server, to hand a
 task to another agent, to ask another agent for help or a question, or
 to talk with an operator. Work products stay in their canonical
 artifact. Its posts are short. With Memory on, it may also update its
@@ -151,8 +157,9 @@ ends.
 A post can ask to **interrupt**. The message is saved as usual, then
 the group runs it targets are cancelled: the runs of the agents it
 addresses (by `@` tag, or the replied-to agent when untagged), or every
-group run when it addresses no specific agent. The cancelled agents
-start again with the new message in view.
+group run when it addresses no specific agent. A subscription agent's
+harness turn is stopped as its model call would be. The cancelled agents start
+again with the new message in view.
 
 ### Busy agents
 

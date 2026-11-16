@@ -613,6 +613,51 @@ held message as it is.
 `.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`, under the
 same retention as a code task's.
 
+### Harness turns by how a run starts
+
+Every way a run starts, and every way a run takes its next
+generation, gives a subscription agent one turn of its harness, on
+the run's composed system prompt and the opening message a model on a
+key reads in its place. The run completes, waits, and refuses
+messages as a key agent's does.
+
+| Start | The turn's prompt | Session | Where the reply goes |
+| --- | --- | --- | --- |
+| an operator's first message (direct run) | the message, and a line per attached image | a new one | the run; a direct run stays open |
+| the operator's next message | the message, and a line per attached image | the run's, resumed | the run |
+| a group delivery | the **Group Chat info** message | a new one | the run, which completes; the agent posts to the chat only with `group_post`, which its harness calls on the MCP server |
+| a routine firing | the **Schedule wake-up** message | a new one | the run, which completes |
+| a wake-up | the **Wake-up** message | the run's, resumed, also on a one-shot run the wake-up reopens | the run, which completes again when it reopened |
+| a message to a resumed one-shot run | the message | the run's, resumed | the run |
+
+A session belongs to a run, as a key agent's history does: a run's
+turns resume the session its last turn reported, and a new run starts
+a new one, carrying what earlier runs learned only through Memory,
+notes, records, State, and the group chat's history, as a key agent's
+new run does.
+
+Between a model loop's steps the orchestrator acts on the run; inside
+a harness turn the CLI takes its own steps, and the orchestrator acts
+at the nearest point it has:
+
+- **A cancel, or an interrupting group post**, sends the harness
+  `stop` as soon as the poll under way, if any, returns, as a model
+  loop stops its model call or command. The interrupted delivery
+  completes and the chat delivers to the agent again.
+- **A message posted while the agent generates** is refused, or waits
+  for the next delivery, for a harness turn as for a model loop; no
+  message enters a turn under way.
+- **Max tool calls and a blocking issue** are checked on each call of
+  the MCP server, where a model loop checks them between steps; the
+  call past the limit or the blocking call ends the turn.
+- **Tool-result stubbing and the input limit** do not apply: the
+  harness sends its own session to its model, and compacts that
+  session itself when it grows. A subscription agent's run never hands
+  off for its size.
+- **Each generation's set-up** runs as a model loop's does before its
+  first step: the secrets are looked up again, the live bindings
+  narrow the offer, and the machine is started.
+
 ### Stubbing rules
 
 For the provider request only, large tool **results** outside the keep
