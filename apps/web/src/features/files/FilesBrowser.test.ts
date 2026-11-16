@@ -60,9 +60,11 @@ test("files are selected apart from the open one, and a confirmed delete sends e
       Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
     }
     // The server: the page's files, the ids whose delete it refuses, and every request it got.
+    const longPrefix = "quarterly-operations-review-for-the-northern-region-consolidated-draft-";
+    const longNames = [`${longPrefix}reviewed-by-finance.csv`, `${longPrefix}reviewed-by-legal.csv`];
     const stored: ItemSections<FileItem> = {
       own: [file("a.txt"), file("b.txt")],
-      shared: [file("c.txt"), file("d.txt")],
+      shared: [file("c.txt"), file("d.txt"), ...longNames.map(file)],
     };
     const refused = new Set<string>();
     const deletes: string[] = [];
@@ -190,6 +192,24 @@ test("files are selected apart from the open one, and a confirmed delete sends e
     await press("Select a.txt");
     await press("Select c.txt");
     assert.equal(toolbar(), "2 selected");
+    await press("Clear selection");
+    assert.equal(toolbar(), null);
+
+    // Long names that share a prefix are shown whole in the confirmation, wrapping instead of cut off,
+    // inside the dialog's scrolling body.
+    for (const name of longNames) await press(`Select ${name}`);
+    await press("Delete selected");
+    const shownNames = [...(dialog()?.querySelectorAll<HTMLElement>("span.font-mono") ?? [])];
+    assert.deepEqual(
+      shownNames.map((span) => span.textContent),
+      longNames,
+    );
+    for (const span of shownNames) {
+      assert.ok(span.classList.contains("break-all"), "the name wraps");
+      assert.ok(!span.classList.contains("truncate"), "the name is not cut off");
+      assert.ok(span.closest(".overflow-y-auto"), "the names scroll within the dialog");
+    }
+    await press("Cancel");
     await press("Clear selection");
     assert.equal(toolbar(), null);
 

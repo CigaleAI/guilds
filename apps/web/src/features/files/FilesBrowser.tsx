@@ -270,7 +270,7 @@ function FileSelectionBar({ selection, onClear, onDeletionSettled }: FileSelecti
         description={
           <>
             {confirming?.map((item) => (
-              <span key={item.id} className="block truncate font-mono text-sm">
+              <span key={item.id} className="block font-mono text-sm break-all">
                 {item.name}
               </span>
             ))}
