@@ -300,6 +300,7 @@ export class HarnessLoop {
         prompt,
         repository: null,
         system_prompt: system,
+        mcp: null,
         session_id: turn.session,
         model: gen.snapshot.harness_model,
         effort: gen.snapshot.harness_effort,

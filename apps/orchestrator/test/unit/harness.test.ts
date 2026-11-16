@@ -24,12 +24,13 @@ import { ToolArgumentError } from "../../src/toolbox/errors.js";
 import { decodeToolArguments } from "../../src/toolbox/types.js";
 import type { JsonValue } from "../../src/lib/json.js";
 import { BRIEF_PREAMBLE, buildBrief } from "../../src/toolbox/harness-brief.js";
-import { HARNESS_LOG_MAX_BYTES, readHarnessLog, shownProgressLines } from "../../src/toolbox/harness-ops.js";
+import { HARNESS_LOG_MAX_BYTES, launchHarness, opsRun, readHarnessLog, shownProgressLines } from "../../src/toolbox/harness-ops.js";
 import { codeTaskText, failureDetail, formatDuration, isChangedFile, type CodeTaskOutcome } from "../../src/toolbox/harness-result.js";
 import { assertHarnessReady, checkHarnessOn, HarnessSetupError } from "../../src/toolbox/harness-setup.js";
 import { applySecretAliases } from "../../src/access/runtime.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
+import type { StubCall } from "../helpers/harness-cli.js";
 import { noteRowAt } from "../helpers/artifacts.js";
 import { fakeToolboxDatabase, fakeToolEvents, toolFixture, type ToolFixture, type ToolFixtureFields } from "../helpers/toolbox.js";
 import { agentActor } from "../../src/artifacts/actors.js";
@@ -40,7 +41,7 @@ const RECORDED = path.join(HERE, "../helpers/harness");
 const SESSION = "0f9c2a64-5b1e-4c3d-9a8e-2f1d7c6b5a40";
 const TOKEN = "oauth-subscription-token";
 
-type Recorded = { argv: string[]; cwd: string; stdin: string; env: Record<string, string | null> };
+type Recorded = Pick<StubCall, "argv" | "cwd" | "stdin" | "env" | "mcp_config" | "mcp_config_mode" | "env_holding_seek">;
 
 const timing = { ...harnessTiming };
 before(() => {
@@ -777,6 +778,88 @@ describe("a harness started for a run's own turn", () => {
     const op = turnOps(sandbox, "call_codex");
     await assert.rejects(op("start", { harness: "codex", prompt: "hello", system_prompt: "x" }), /codex takes no system prompt/);
     assert.equal(calls().length, 0);
+  });
+
+  /** A turn's MCP server: the URL the stand-in is given, and a token of the length the orchestrator issues. */
+  const MCP = { url: "http://172.17.0.1:8090/mcp/a_1", token: "t".repeat(43) };
+
+  /** Starts Claude Code for call `callId` of run `r_turn` on `sandbox` the way a turn does, given `mcp`. */
+  async function startTurn(sandbox: HostCodeSandbox, callId: string, mcp: { url: string; token: string } | null) {
+    const ctx = toolFixture({ run_id: "r_turn", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+    await launchHarness(opsRun(ctx.run), callId, {
+      harness: "claude-code",
+      prompt: "hello",
+      repository: null,
+      system_prompt: "You are the guild's agent.",
+      mcp,
+      session_id: null,
+      model: null,
+      effort: null,
+    });
+  }
+
+  test("an MCP server reaches Claude Code through a private configuration file in the run folder that goes with the call", async () => {
+    const { sandbox, calls } = harnessSandbox("claude", () => [JSON.stringify({ stub: "hang" })], {
+      HARNESS_STUB_SEEK: MCP.token,
+    });
+    await startTurn(sandbox, "call_mcp", MCP);
+    const configFile = path.join(sandbox.home, ".runs", "r_turn", "call_mcp.mcp.json");
+    for (let attempt = 0; attempt < 100 && !calls().length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const [call] = calls();
+    assert.ok(call);
+    const at = call.argv.indexOf("--mcp-config");
+    assert.equal(call.argv[at + 1], configFile);
+    assert.ok(call.argv.includes("--strict-mcp-config"), "the file's server is the only one");
+    assert.deepEqual(call.mcp_config, {
+      mcpServers: { guilds: { type: "http", url: MCP.url, headers: { Authorization: `Bearer ${MCP.token}` } } },
+    });
+    assert.equal(call.mcp_config_mode, 0o600);
+    assert.ok(!call.argv.some((arg) => arg.includes(MCP.token)), "the token is on no command line");
+    assert.deepEqual(call.env_holding_seek, [], "nor in the CLI's environment");
+    assert.ok(!sandbox.commandsRun.some((command) => command.includes(Buffer.from(MCP.token).toString("base64").slice(0, 40))));
+    assert.ok(sandbox.written.some((written) => written.startsWith("/run/guilds/requests/")), "the start travels through a request file");
+    assert.deepEqual(readdirSync(path.join(sandbox.runDir, "requests")), [], "which the helper removes once read");
+    const op = turnOps(sandbox, "call_mcp");
+    await op("stop");
+    await op("result");
+    assert.equal(existsSync(configFile), false, "the MCP configuration goes with the call's state");
+  });
+
+  test("a CLI that takes no MCP server refuses one and never starts", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
+    const op = turnOps(sandbox, "call_codex_mcp");
+    await assert.rejects(op("start", { harness: "codex", prompt: "hello", mcp_url: MCP.url, mcp_token: MCP.token }), /codex takes no MCP server/);
+    assert.equal(calls().length, 0);
+  });
+
+  test("an MCP server whose URL or token is malformed, or that comes without the other, is refused", async () => {
+    const { sandbox, calls } = harnessSandbox("claude", () => recorded("claude-code"));
+    const op = turnOps(sandbox, "call_bad_mcp");
+    await assert.rejects(op("start", { prompt: "hello", mcp_url: "file:///etc/passwd", mcp_token: MCP.token }), /mcp_url is invalid/);
+    await assert.rejects(op("start", { prompt: "hello", mcp_url: `${MCP.url} --x`, mcp_token: MCP.token }), /mcp_url is invalid/);
+    await assert.rejects(op("start", { prompt: "hello", mcp_url: MCP.url, mcp_token: "short" }), /mcp_token is invalid/);
+    await assert.rejects(op("start", { prompt: "hello", mcp_url: MCP.url, mcp_token: `${MCP.token}"x` }), /mcp_token is invalid/);
+    await assert.rejects(op("start", { prompt: "hello", mcp_url: MCP.url }), /mcp_url and mcp_token go together/);
+    await assert.rejects(op("start", { prompt: "hello", mcp_token: MCP.token }), /mcp_url and mcp_token go together/);
+    assert.equal(calls().length, 0);
+  });
+
+  test("a turn given no MCP server starts Claude Code with none", async () => {
+    const { sandbox, calls } = harnessSandbox("claude", () => [JSON.stringify({ stub: "hang" })]);
+    await startTurn(sandbox, "call_no_mcp", null);
+    for (let attempt = 0; attempt < 100 && !calls().length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const [call] = calls();
+    assert.ok(call);
+    assert.ok(!call.argv.includes("--mcp-config"));
+    assert.ok(call.argv.includes("--strict-mcp-config"));
+    assert.equal(sandbox.written.length, 0, "the start travels inline");
+    const op = turnOps(sandbox, "call_no_mcp");
+    await op("stop");
+    await op("result");
   });
 
   test("a poll returns the raw events it read past the offset, through the last whole line", async () => {

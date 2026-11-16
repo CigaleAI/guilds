@@ -5,7 +5,7 @@ import { keepMatching } from "../lib/decode.js";
 import { isObjectNode } from "../lib/json.js";
 import { errorMessage, writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
-import { HARNESS_HELPER, runCodeHelper, type CodeResult } from "./code.js";
+import { HARNESS_HELPER, runCodeHelper, runCodeHelperFromFile, type CodeResult } from "./code.js";
 import { createToolHooks, type CancelEvent, type ToolRun } from "./types.js";
 
 const HARNESS_OP_TIMEOUT_SECONDS = 60;
@@ -105,11 +105,23 @@ export type HarnessOpFields = {
   model?: string;
   effort?: Effort;
   offset?: number;
+  mcp_url?: string;
+  mcp_token?: string;
 };
 
 /** Runs one `guilds-harness` op for the call `callId` names on the machine. */
 export async function harnessOp(ops: ToolRun, callId: string, op: string, args: HarnessOpFields): Promise<CodeResult> {
   return runCodeHelper(
+    ops,
+    createToolHooks(),
+    { ...args, op, call_id: callId },
+    { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS },
+  );
+}
+
+/** Runs one `guilds-harness` op whose fields hold a credential, through a request file (`runCodeHelperFromFile`). */
+async function harnessOpFromFile(ops: ToolRun, callId: string, op: string, args: HarnessOpFields): Promise<CodeResult> {
+  return runCodeHelperFromFile(
     ops,
     createToolHooks(),
     { ...args, op, call_id: callId },
@@ -155,22 +167,33 @@ export async function stopHarness(
 }
 
 /**
+ * The orchestrator's MCP server a harness turn is given: the URL that serves its agent's tools,
+ * and the bearer token it is served on while its generation runs.
+ */
+export type HarnessMcpAccess = { url: string; token: string };
+
+/**
  * What a harness CLI is started with: the harness, the prompt it reads on stdin or from its file,
  * the repository it runs in (null for the agent's home), the system prompt that replaces its own,
- * the session it resumes, and the model and effort the agent sets for it, each null to leave it
- * to the harness.
+ * the orchestrator's MCP server it is given (null for none), the session it resumes, and the
+ * model and effort the agent sets for it, each null to leave it to the harness.
  */
 export type HarnessStart = {
   harness: Harness;
   prompt: string;
   repository: string | null;
   system_prompt: string | null;
+  mcp: HarnessMcpAccess | null;
   session_id: string | null;
   model: string | null;
   effort: Effort | null;
 };
 
-/** Starts the harness CLI for the call `callId` names on the machine, under the model name and effort the CLI takes. */
+/**
+ * Starts the harness CLI for the call `callId` names on the machine, under the model name and
+ * effort the CLI takes. A start that gives it the MCP server travels through a request file, so
+ * the token is on no command line.
+ */
 export async function launchHarness(ops: ToolRun, callId: string, start: HarnessStart): Promise<void> {
   const launch = harnessLaunch(start.harness, start.model, start.effort);
   const repository = start.repository ? { repository: start.repository } : {};
@@ -178,7 +201,7 @@ export async function launchHarness(ops: ToolRun, callId: string, start: Harness
   const resume = start.session_id ? { session_id: start.session_id } : {};
   const model = launch.model ? { model: launch.model } : {};
   const effort = launch.effort ? { effort: launch.effort } : {};
-  await harnessOp(ops, callId, "start", {
+  const fields: HarnessOpFields = {
     harness: start.harness,
     prompt: start.prompt,
     ...repository,
@@ -186,7 +209,12 @@ export async function launchHarness(ops: ToolRun, callId: string, start: Harness
     ...resume,
     ...model,
     ...effort,
-  });
+  };
+  if (start.mcp === null) {
+    await harnessOp(ops, callId, "start", fields);
+    return;
+  }
+  await harnessOpFromFile(ops, callId, "start", { ...fields, mcp_url: start.mcp.url, mcp_token: start.mcp.token });
 }
 
 /** One poll of a running harness: what the `poll` op says, and the raw JSONL events it read past the offset. */

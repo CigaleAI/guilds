@@ -11,13 +11,20 @@ const STUB = path.join(HERE, "harness/stub-cli");
 /** The session id of the recorded Claude Code turn, `harness/claude-code.jsonl`. */
 export const RECORDED_SESSION = "0f9c2a64-5b1e-4c3d-9a8e-2f1d7c6b5a40";
 
-/** One start of the stand-in CLI: its command line, working directory, stdin, system prompt file, and the variables it shows. */
+/**
+ * One start of the stand-in CLI: its command line, working directory, stdin, system prompt file,
+ * MCP configuration file and its mode, the variables it shows, and the variables whose value
+ * holds `HARNESS_STUB_SEEK`.
+ */
 export type StubCall = {
   argv: string[];
   cwd: string;
   stdin: string;
   system_prompt: string | null;
+  mcp_config: { mcpServers: Record<string, { type: string; url: string; headers: Record<string, string> }> } | null;
+  mcp_config_mode: number | null;
   env: Record<string, string | null>;
+  env_holding_seek: string[];
 };
 
 /** The recorded event stream of a harness under `harness/`, one event per line. */

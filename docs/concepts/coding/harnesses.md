@@ -509,6 +509,21 @@ prompt file, and `result` removes both with the call's state. Codex,
 Cursor, and Antigravity refuse a system prompt (`<harness> takes no
 system prompt`) before the call starts.
 
+A request with an `mcp_url` and its `mcp_token` starts Claude Code
+with `--mcp-config <run folder>/<call id>.mcp.json`, after the system
+prompt file. The file names one HTTP server, `guilds`, at that URL,
+with the token as its `Authorization: Bearer` header; with
+`--strict-mcp-config` it is the only MCP server the call uses. `start`
+writes it with mode 0600 beside the prompt files, and `result` removes
+it with them. The URL must be an `http` or `https` URL with no query,
+the token 43 to 128 URL-safe base64 characters, and each comes with
+the other (`mcp_url is invalid`, `mcp_token is invalid`, `mcp_url and
+mcp_token go together` otherwise). Codex, Cursor, and Antigravity
+refuse one (`<harness> takes no MCP server`) before the call starts.
+The orchestrator sends such a request through a request file, never on
+the command line, and the token is in neither the CLI's environment
+nor its command line.
+
 The orchestrator resolves the agent's model and effort through the
 catalogue before the call: a listed Cursor model becomes its CLI name
 for the effort. The model is passed as one argument. Without a model

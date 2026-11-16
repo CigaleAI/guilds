@@ -116,10 +116,10 @@ the browser tools run `guilds-browser`. `code_task` runs
 `/usr/local/bin/guilds-harness` the same way. The request is base64
 JSON on the command line, carrying the op, its arguments, the run id,
 the agent id, the call id, the default working directory, and the
-result's byte cap. A request whose encoding passes 64 KiB is written
-through the sandbox file API to
-`/run/guilds/requests/<run id>-<call id>.json` instead, and the helper
-reads and deletes it.
+result's byte cap. A request whose encoding passes 64 KiB, and a
+request that holds a credential, is written through the sandbox file
+API to `/run/guilds/requests/<run id>-<call id>.json` instead, and the
+helper reads and deletes it. Only root reads `/run/guilds`.
 
 The helper answers with one base64 JSON envelope, `{ ok, text, meta }`
 or `{ ok: false, error }`. `text` is already shaped to the cap; `meta`

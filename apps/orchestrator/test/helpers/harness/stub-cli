@@ -2,8 +2,9 @@
 """A harness CLI for tests: replays a recorded event stream.
 
 Installed under each harness's binary name on PATH. It writes its argv, working directory,
-stdin, the content of the file `--system-prompt-file` names, and the variables named in
-HARNESS_STUB_SHOW to HARNESS_STUB_RECORD, then prints the
+stdin, the content of the file `--system-prompt-file` names, the content and mode of the file
+`--mcp-config` names, the variables named in HARNESS_STUB_SHOW, and the names of the variables
+whose value holds HARNESS_STUB_SEEK to HARNESS_STUB_RECORD, then prints the
 events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
 `{"stub": "edit", "path": ..., "text": ...}` writes that file instead of printing;
 `{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
@@ -26,8 +27,26 @@ if record:
     if "--system-prompt-file" in sys.argv:
         with open(sys.argv[sys.argv.index("--system-prompt-file") + 1], encoding="utf-8") as handle:
             system = handle.read()
+    mcp_config = None
+    mcp_config_mode = None
+    if "--mcp-config" in sys.argv:
+        mcp_path = sys.argv[sys.argv.index("--mcp-config") + 1]
+        with open(mcp_path, encoding="utf-8") as handle:
+            mcp_config = json.load(handle)
+        mcp_config_mode = os.stat(mcp_path).st_mode & 0o777
+    seek = os.environ.get("HARNESS_STUB_SEEK", "")
+    holding = [name for name, value in os.environ.items() if seek and name != "HARNESS_STUB_SEEK" and seek in value]
     with open(record, "a", encoding="utf-8") as handle:
-        entry = {"argv": sys.argv, "cwd": os.getcwd(), "stdin": stdin, "system_prompt": system, "env": shown}
+        entry = {
+            "argv": sys.argv,
+            "cwd": os.getcwd(),
+            "stdin": stdin,
+            "system_prompt": system,
+            "mcp_config": mcp_config,
+            "mcp_config_mode": mcp_config_mode,
+            "env": shown,
+            "env_holding_seek": holding,
+        }
         handle.write(json.dumps(entry) + "\n")
 delay = float(os.environ.get("HARNESS_STUB_DELAY", "0"))
 with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
