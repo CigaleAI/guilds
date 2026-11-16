@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useUpdateRecordsInTurn } from "../../api/queries/tables";
-import type { Collection, RecordUpdateFailure } from "../../api/types/tables";
+import type { Collection, Column, RecordsUpdateOutcome } from "../../api/types/tables";
 import {
   Banner,
   Button,
@@ -13,7 +13,13 @@ import {
   Select,
   toast,
 } from "@guildsrun/ui";
-import { bulkEditBody, recordsUpdatedToast } from "./bulkEdit";
+import {
+  bulkEditBody,
+  bulkEditTargets,
+  chosenColumn,
+  recordIdsText,
+  recordsUpdatedToast,
+} from "./bulkEdit";
 import { RecordField } from "./RecordDialog";
 
 type BulkEditDialogProps = {
@@ -27,40 +33,40 @@ type BulkEditDialogProps = {
  * Sets one column to the same value on several records, checked as the record dialog checks it.
  * Each record is saved by its own request, one at a time; the records the server refuses are listed
  * with its reasons and stay in the dialog, and the next save sends to them only. A second save while
- * one runs sends nothing more, and the dialog stays open until it ends.
+ * one runs sends nothing more, and the dialog stays open until it ends. A column chosen and then
+ * gone from the table is named, and nothing is sent until another is chosen.
  */
 export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialogProps) {
   const update = useUpdateRecordsInTurn(collection.id);
-  const [columnName, setColumnName] = useState(collection.columns[0]?.name ?? "");
+  const [columnName, setColumnName] = useState("");
   const [text, setText] = useState("");
   const [tried, setTried] = useState(false);
-  const [failed, setFailed] = useState<readonly RecordUpdateFailure[]>([]);
+  const [outcome, setOutcome] = useState<RecordsUpdateOutcome | null>(null);
   const running = useRef(false);
-  const column = collection.columns.find((item) => item.name === columnName) ?? collection.columns[0];
-  const targets = failed.length ? failed.map((failure) => failure.recordId) : (recordIds ?? []);
+  const column = chosenColumn(collection.columns, columnName);
+  const failed = outcome?.failed ?? [];
+  const targets = bulkEditTargets(recordIds ?? [], failed);
+  const result = column ? bulkEditBody(column, text, targets.length) : null;
 
   const close = () => {
     if (running.current) return;
-    setColumnName(collection.columns[0]?.name ?? "");
+    setColumnName("");
     setText("");
     setTried(false);
-    setFailed([]);
+    setOutcome(null);
     onClose();
   };
-
-  if (!column) return null;
-  const result = bulkEditBody(column, text);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if ("error" in result || running.current) return;
+    if (!column || !result || "error" in result || running.current) return;
     running.current = true;
-    void update.mutateAsync({ recordIds: targets, body: result.body }).then((outcome) => {
+    void update.mutateAsync({ recordIds: targets, body: result.body }).then((next) => {
       running.current = false;
-      setFailed(outcome.failed);
-      if (outcome.updated.length) toast(recordsUpdatedToast(column.name, outcome.updated));
-      if (!outcome.failed.length) close();
+      setOutcome(next);
+      if (next.updated.length) toast(recordsUpdatedToast(column.name, next.updated));
+      if (!next.failed.length) close();
     });
   };
 
@@ -74,10 +80,12 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
           />
           <DialogBody>
             <div className="flex flex-col gap-3">
+              <p className="text-sm text-muted">Records {recordIdsText(targets)}</p>
               <Select
                 tone="surface"
                 label="Column"
-                value={column.name}
+                placeholder="Choose a column"
+                value={column?.name ?? ""}
                 disabled={update.isPending || failed.length > 0}
                 onValueChange={(name) => {
                   setColumnName(name);
@@ -86,14 +94,14 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
                 }}
                 options={collection.columns.map((item) => ({ value: item.name, label: item.name }))}
               />
-              <RecordField
-                key={column.name}
+              <BulkEditField
+                columnName={columnName}
                 column={column}
                 text={text}
                 onChange={setText}
-                error={tried && "error" in result ? result.error : undefined}
+                error={tried && result && "error" in result ? result.error : undefined}
               />
-              <RecordUpdateFailures failed={failed} />
+              <RecordsUpdateStatus outcome={outcome} />
             </div>
           </DialogBody>
           <DialogFooter>
@@ -102,7 +110,7 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={update.isPending}>
+            <Button type="submit" disabled={update.isPending || !column}>
               {update.isPending ? "Saving…" : failed.length ? "Retry failed" : "Save changes"}
             </Button>
           </DialogFooter>
@@ -112,18 +120,59 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
   );
 }
 
-type RecordUpdateFailuresProps = { failed: readonly RecordUpdateFailure[] };
+type BulkEditFieldProps = {
+  /** The column chosen; empty before one is. */
+  columnName: string;
+  /** Its definition in the table; undefined when the table has no such column. */
+  column: Column | undefined;
+  text: string;
+  onChange: (text: string) => void;
+  error: string | undefined;
+};
 
-/** The records the last save could not change, each with the server's reason; nothing when none. */
-function RecordUpdateFailures({ failed }: RecordUpdateFailuresProps) {
-  if (!failed.length) return null;
+/** The chosen column's field, or that the table has lost it or has no column. */
+function BulkEditField({ columnName, column, text, onChange, error }: BulkEditFieldProps) {
+  if (!column) {
+    return (
+      <Banner
+        tone="error"
+        title={
+          columnName
+            ? `${columnName} is no longer a column of this table`
+            : "This table has no columns"
+        }
+      />
+    );
+  }
   return (
-    <Banner tone="error" title={`Couldn't save ${failed.length} ${failed.length === 1 ? "record" : "records"}`}>
-      {failed.map((failure) => (
-        <span key={failure.recordId} className="block whitespace-pre-wrap">
-          #{failure.recordId}: {failure.reason}
-        </span>
-      ))}
-    </Banner>
+    <RecordField key={column.name} column={column} text={text} onChange={onChange} error={error} />
+  );
+}
+
+type RecordsUpdateStatusProps = { outcome: RecordsUpdateOutcome | null };
+
+/**
+ * What the last save did to each record: those it saved, and those it could not with the server's
+ * reason; nothing before a save or when every record was saved.
+ */
+function RecordsUpdateStatus({ outcome }: RecordsUpdateStatusProps) {
+  if (!outcome?.failed.length) return null;
+  const { updated, failed } = outcome;
+  return (
+    <>
+      {updated.length ? (
+        <p className="text-sm">Saved {recordIdsText(updated.map((item) => item.recordId))}</p>
+      ) : null}
+      <Banner
+        tone="error"
+        title={`Couldn't save ${failed.length} ${failed.length === 1 ? "record" : "records"}`}
+      >
+        {failed.map((failure) => (
+          <span key={failure.recordId} className="block whitespace-pre-wrap">
+            #{failure.recordId}: {failure.reason}
+          </span>
+        ))}
+      </Banner>
+    </>
   );
 }

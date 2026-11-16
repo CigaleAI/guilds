@@ -12,11 +12,13 @@ commands for each effect are in
 each row has a box that selects it without opening it, the header's
 box selects every shown record, and a bar shows how many are
 selected, **Clear selection**, and **Edit selected**. **Edit
-selected** sets one column to the same value on each selected record,
-checked as the record dialog checks it, and saves the records one at
-a time. The records the server refuses stay listed in the dialog with
-its reasons, and **Retry failed** sends to them only; the records
-re-read after every edit, refused ones included. A search, a filter,
+selected** names the selected records' ids and sets one column to the
+same value on each, checked as the record dialog checks it; a unique
+column takes a value on one record only, and a chosen column the
+table loses is named instead of saved. The records save one at a
+time. The dialog names the records saved and lists those the server
+refuses with its reasons, and **Retry failed** sends to them only; the
+records re-read after every edit, refused ones included. A search, a filter,
 a sort or a page that hides a selected record takes it out of the
 selection.
 

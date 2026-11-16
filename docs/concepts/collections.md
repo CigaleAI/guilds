@@ -166,13 +166,17 @@ A collection opens at `/tables/<id>` on **Records**.
     out of the selection. A bar shows how many are selected,
     **Clear selection**, and **Edit selected**.
   - **Edit selected** sets one column to the same value on every
-    selected record. It takes the column, then the dialog's field for
-    it, checked as the dialog checks it; an empty field clears the
-    value. Each record is saved by its own `PATCH`, one at a time, so
-    it keeps its other values and the server applies every rule of a
-    record write to it alone. The records the server refuses stay
-    listed in the dialog with its reasons, and **Retry failed** sends
-    to them only. The dialog does not close while the records save.
+    selected record, and names their ids. It takes the column, then
+    the dialog's field for it, checked as the dialog checks it; an
+    empty field clears the value. A unique column takes a value on one
+    record only; for several it can only be cleared. A column the
+    table loses while chosen is named, and nothing saves until another
+    is chosen. Each record is saved by its own `PATCH`, one at a time,
+    so it keeps its other values and the server applies every rule of
+    a record write to it alone. After a save the server refuses for
+    some records, the dialog names the records saved and lists the
+    refused ones with its reasons, and **Retry failed** sends to them
+    only. The dialog does not close while the records save.
   - The delete button on a row removes the record after a confirm.
     Its id is not reused.
   - **Delete all** empties the collection after a confirm that asks

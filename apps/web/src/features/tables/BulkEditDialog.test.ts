@@ -17,6 +17,7 @@ const collection: Collection = {
     column("score", "number", { required: true }),
     column("active", "boolean"),
     column("tags", "array", { values: ["red", "blue"] }),
+    column("email", "text", { unique: true }),
   ],
   display_path: "org/o1/collections/leads",
   scope: "org",
@@ -43,7 +44,7 @@ function record(id: number): CollectionRecord {
 /** A PATCH the panel sent: its path and its JSON body. */
 type SentPatch = { path: string; body: string };
 
-test("shown records are selected apart from opening them, and a bulk edit sends one typed PATCH per record, in turn, keeps the refused ones to retry alone, and refreshes either way", async () => {
+test("shown records are selected apart from opening them, and a bulk edit names its records, sends one typed PATCH per record, in turn, keeps the refused ones to retry alone, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
   const window = new Window({ url: "http://localhost/" });
   const globals = {
     window,
@@ -124,6 +125,15 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
       await import("@tanstack/react-router");
     const { getToasts } = await import("@guildsrun/ui");
     const { RecordsPanel } = await import("./RecordsPanel");
+    // The table as the page holds it, swapped below for one that lost a column.
+    let showCollection: (next: Collection) => void = () => undefined;
+    const Panel = () => {
+      const [shown, setShown] = React.useState(collection);
+      React.useEffect(() => {
+        showCollection = setShown;
+      }, []);
+      return createElement(RecordsPanel, { collection: shown });
+    };
 
     // A finite gcTime leaves a timer after the panel unmounts that keeps the test running.
     const client = new QueryClient({
@@ -134,7 +144,7 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
     });
     queries = client;
     const router = createRouter({
-      routeTree: createRootRoute({ component: () => createElement(RecordsPanel, { collection }) }),
+      routeTree: createRootRoute({ component: Panel }),
       history: createMemoryHistory(),
     });
     const container = document.body.appendChild(document.createElement("div"));
@@ -163,8 +173,9 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
       });
     const rows = () => container.querySelectorAll("tbody tr").length;
     const toolbar = () =>
-      [...container.querySelectorAll("span")].find((span) => / selected$/.test(span.textContent ?? ""))
-        ?.textContent ?? null;
+      [...container.querySelectorAll("span")].find((span) =>
+        / selected$/.test(span.textContent ?? ""),
+      )?.textContent ?? null;
     const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
     const toastTitles = () => getToasts().map((item) => item.title);
     const setInput = (input: HTMLInputElement, text: string) =>
@@ -180,6 +191,16 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
       assert.ok(input, "the value's input");
       return setInput(input, text);
     };
+    const typeText = (text: string) =>
+      settle(() => {
+        const area = dialog()?.querySelector("textarea");
+        assert.ok(area, "the text's field");
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set?.call(
+          area,
+          text,
+        );
+        area.dispatchEvent(new Event("input", { bubbles: true }));
+      });
     const search = async (text: string) => {
       const input = container.querySelector<HTMLInputElement>('input[aria-label="Search records"]');
       assert.ok(input, "the search field");
@@ -189,8 +210,12 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
       );
     };
     const choose = async (label: string, option: string) => {
-      const trigger = [...(dialog()?.querySelectorAll<HTMLElement>('[role="combobox"]') ?? [])].find(
-        (candidate) => candidate.id && document.querySelector(`label[for="${candidate.id}"]`)?.textContent?.startsWith(label),
+      const trigger = [
+        ...(dialog()?.querySelectorAll<HTMLElement>('[role="combobox"]') ?? []),
+      ].find(
+        (candidate) =>
+          candidate.id &&
+          document.querySelector(`label[for="${candidate.id}"]`)?.textContent?.startsWith(label),
       );
       assert.ok(trigger, `the ${label} select`);
       await settle(() => trigger.click());
@@ -237,6 +262,7 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
     await press("Select record #2");
     await press("Edit selected");
     assert.match(dialog()?.textContent ?? "", /Edit 2 records/);
+    assert.match(dialog()?.textContent ?? "", /Records #1, #2/);
     await typeValue("5");
     await press("Cancel");
     assert.equal(dialog(), null);
@@ -295,12 +321,21 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
     await press("Edit selected");
     await typeValue("9");
     await press("Save changes");
-    await until(() => /Couldn't save 1 record/.test(dialog()?.textContent ?? ""), "the refused record");
+    await until(
+      () => /Couldn't save 1 record/.test(dialog()?.textContent ?? ""),
+      "the refused record",
+    );
     assert.match(dialog()?.textContent ?? "", /#2: The record changed meanwhile\./);
+    assert.match(dialog()?.textContent ?? "", /Saved #1, #3/);
     assert.match(dialog()?.textContent ?? "", /Edit 1 record/);
+    assert.match(dialog()?.textContent ?? "", /Records #2/);
     assert.deepEqual(
       patches.map((patch) => patch.path),
-      ["/api/collections/c1/records/1", "/api/collections/c1/records/2", "/api/collections/c1/records/3"],
+      [
+        "/api/collections/c1/records/1",
+        "/api/collections/c1/records/2",
+        "/api/collections/c1/records/3",
+      ],
     );
     assert.equal(toastTitles().at(-1), "Saved score on 2 records");
     await until(() => listFetches > fetchesBefore, "the records are fetched again after a refusal");
@@ -314,6 +349,30 @@ test("shown records are selected apart from opening them, and a bulk edit sends 
     ]);
     assert.equal(toastTitles().at(-1), "Saved score on 1 record");
     assert.equal(mostInFlight, 1);
+
+    // One value for several records of a unique column is refused before anything is sent.
+    patches.length = 0;
+    await press("Edit selected");
+    await choose("Column", "email");
+    await typeText("a@b.c");
+    await press("Save changes");
+    assert.match(dialog()?.textContent ?? "", /Unique: one record at most can hold a value\./);
+    await press("Cancel");
+    assert.equal(patches.length, 0, "nothing is sent for a repeated unique value");
+
+    // A chosen column the table loses is named, and saving stays off.
+    await press("Edit selected");
+    await choose("Column", "tags");
+    await settle(() =>
+      showCollection({
+        ...collection,
+        columns: collection.columns.filter((item) => item.name !== "tags"),
+      }),
+    );
+    assert.match(dialog()?.textContent ?? "", /tags is no longer a column of this table/);
+    assert.equal(button("Save changes")?.disabled, true);
+    await press("Cancel");
+    assert.equal(patches.length, 0);
   } finally {
     if (root) {
       const leftover: Root = root;

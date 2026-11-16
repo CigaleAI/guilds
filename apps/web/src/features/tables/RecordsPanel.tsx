@@ -349,7 +349,11 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
       />
 
       <RecordDialog collection={collection} record={open} onClose={() => setOpen(null)} />
-      <BulkEditDialog collection={collection} recordIds={editing} onClose={() => setEditing(null)} />
+      <BulkEditDialog
+        collection={collection}
+        recordIds={editing}
+        onClose={() => setEditing(null)}
+      />
       <DeleteRecordDialog
         collectionId={collection.id}
         record={removing}
