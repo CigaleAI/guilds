@@ -233,7 +233,13 @@ test("an interrupting post stops the agent's harness turn, and the chat delivers
     payload: { content: `@${agentName} research the market` },
   });
   assert.equal(posted.statusCode, 202, posted.body);
-  const [running] = await runsOf(agentId, "group", (runs) => runs.length === 1 && stubsRunning(stub.bin));
+  // The run keeps the session once a poll read the CLI's first event, which the CLI prints after
+  // it recorded its start and read its events: the next start is the interrupting one.
+  const [running] = await runsOf(
+    agentId,
+    "group",
+    (runs) => runs.length === 1 && runs[0]?.metadata.harness_turn?.session_id === RECORDED_SESSION && stubsRunning(stub.bin),
+  );
   assert.ok(running);
   stub.replay([INIT!, ...REPLY]);
   const before = stub.calls().length;
