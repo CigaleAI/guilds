@@ -9,17 +9,11 @@ import {
 } from "../github/tokens.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { GitProvider, GitTokenScope, TokenEntry } from "./git.js";
+import type { GitProvider, TokenEntry } from "./git.js";
 import type { CodingRepository } from "./repositories.js";
 
-/**
- * What an installation token may do on its repositories, by scope: write their contents, which
- * pushes a branch, and with pull requests also open them, as a coding agent's `gh` does.
- */
-const SCOPE_PERMISSIONS = {
-  push: { contents: "write" },
-  push_and_pull_requests: { contents: "write", pull_requests: "write" },
-} as const satisfies Record<GitTokenScope, TokenPermissions>;
+/** What an installation token may do on its repositories: write their contents, which pushes a branch. */
+const PUSH_PERMISSIONS = { contents: "write" } as const satisfies TokenPermissions;
 
 /** The username git sends with a GitHub installation token. */
 const INSTALLATION_TOKEN_USERNAME = "x-access-token";
@@ -50,7 +44,7 @@ export class RepositoryTokenInstallationGoneError extends RepositoryAccessError 
 
 /**
  * GitHub as a git provider: one installation token per GitHub login, limited to the repositories
- * that use it and to the permissions of the run's scope, answered for github.com.
+ * that use it and to pushing branches, answered for github.com.
  */
 export class GithubProvider implements GitProvider {
   constructor(
@@ -60,15 +54,15 @@ export class GithubProvider implements GitProvider {
 
   /**
    * Mints a token for every login the repositories use, scoped to those repositories
-   * (`mintRepositoryToken`) and to the permissions of `scope`. A disconnected login is refused.
+   * (`mintRepositoryToken`) and to pushing branches. A disconnected login is refused.
    */
-  async mint(repositories: CodingRepository[], scope: GitTokenScope): Promise<Map<string, TokenEntry>> {
+  async mint(repositories: CodingRepository[]): Promise<Map<string, TokenEntry>> {
     const entries = new Map<string, TokenEntry>();
     for (const [connectionId, rows] of Map.groupBy(repositories, (row) => row.connection_id)) {
       if (connectionId === null) {
         continue;
       }
-      const minted = await this.mintCodingToken(await this.connectedLogin(connectionId), rows, scope);
+      const minted = await this.mintPushToken(await this.connectedLogin(connectionId), rows);
       for (const row of rows) {
         entries.set(row.name, {
           token: minted.token,
@@ -93,16 +87,12 @@ export class GithubProvider implements GitProvider {
     return connection;
   }
 
-  /** The login's token for its repositories here, within `scope`. GitHub refusing the installation throws a `RepositoryTokenInstallationGoneError`. */
-  private async mintCodingToken(
-    connection: McpConnectionRow,
-    rows: CodingRepository[],
-    scope: GitTokenScope,
-  ): Promise<RepositoryToken> {
+  /** The login's token that pushes to its repositories here. GitHub refusing the installation throws a `RepositoryTokenInstallationGoneError`. */
+  private async mintPushToken(connection: McpConnectionRow, rows: CodingRepository[]): Promise<RepositoryToken> {
     try {
       return await mintRepositoryToken(
         this.db,
-        { connection, repositories: rows, permissions: SCOPE_PERMISSIONS[scope] },
+        { connection, repositories: rows, permissions: PUSH_PERMISSIONS },
         this.options,
       );
     } catch (error) {

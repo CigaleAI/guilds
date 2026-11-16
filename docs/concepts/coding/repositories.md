@@ -59,35 +59,6 @@ stays picked when it can no longer use it, as after its login
 disconnects; its coding runs then fail at start, naming it, until it
 comes back or is unpicked.
 
-### What a coding run does with them
-
-At each generation of a coding agent, the run first checks the
-agent's picks. One it can no longer use fails the run with
-`coding.repositories_gone`, naming it; none picked fails it with
-`coding.repositories_missing`. Then, after the sandbox is up and the
-workspace and harness checks pass, for each repository it picks:
-
-1. **Tokens.** Each repository with a git provider gets its token
-   from that provider. For each GitHub login the repositories use, the
-   orchestrator mints a short-lived token limited to those repositories,
-   with contents and pull requests write. For a repository with an
-   access token, it reads the value of the secret the repository names.
-   It writes the tokens on the agent's machine, outside every home, and
-   adds them to the run's redaction.
-2. **Identity and clone.** The agent's git identity is written into
-   its home, and each repository missing from `repos/` is cloned. A
-   clone already there whose `origin` names another URL on the same
-   host, as after a rename, is pointed at the current URL.
-3. **Start checkpoint** of each one's working tree
-   ([Reviewing changes](reviewing-changes.md)).
-
-After that the agent fetches, branches, commits, and pushes itself.
-The orchestrator never runs git in its own process: a repository's
-hooks and configuration are the agent's.
-
-A token that expires is refreshed while the run goes on
-([Tokens](#tokens)).
-
 ### What a subscription agent's turn does with them
 
 A subscription agent's turn works in the repositories its agent picks,
@@ -99,10 +70,20 @@ which need a repository, the run fails instead with
 `coding.repositories_missing`. Then, once the harness
 check passes, for each repository it picks:
 
-1. **Tokens**, as a coding run's, with one difference: a GitHub
-   token holds contents write alone, which pushes a branch and opens
-   no pull request ([Tokens](#tokens)).
-2. **Identity and clone**, as a coding run's.
+1. **Tokens.** Each repository with a git provider gets its token
+   from that provider. For each GitHub login the repositories use, the
+   orchestrator mints a short-lived token limited to those repositories,
+   with contents write alone, which pushes a branch and opens no pull
+   request. For a repository with an access token, it reads the value
+   of the secret the repository names. It writes the tokens on the
+   agent's machine, outside every home, and adds them to the run's
+   redaction ([Tokens](#tokens)).
+2. **Identity and clone.** The agent's git identity is written into
+   its home, and each repository missing from `repos/` is cloned. A
+   clone already there whose `origin` names another URL on the same
+   host, as after a rename, is pointed at the current URL. The
+   orchestrator never runs git in its own process: a repository's
+   hooks and configuration are the agent's.
 3. **Turn start checkpoint** of each one's working tree, under the
    turn's call id ([Reviewing changes](reviewing-changes.md#checkpoints)).
 
@@ -287,7 +268,7 @@ The coding strip counts the repositories a coding run clones
 | Who may change them | Any operator who sees the guild |
 | Clone timeout | 600 seconds per repository |
 | Token refresh | Replaced within 10 minutes of expiry |
-| GitHub token permissions | Contents and pull requests write for a coding run; contents write alone for a subscription agent's turn |
+| GitHub token permissions | Contents write alone |
 | Tokens between turns | A subscription agent's tokens file is emptied when its turn ends |
 | Commit author email | Empty, or one email address of at most 254 characters, not on a `.invalid` domain |
 | Removing | Unpicks it from each agent that can no longer use it; leaves existing clones in place |
@@ -405,9 +386,8 @@ gets no token.
 
 - `github`: for each GitHub connection the repositories use, the
   orchestrator mints an installation access token limited to those
-  repositories by their GitHub ids, with contents and pull requests
-  write for a coding run, and contents write alone for a subscription
-  agent's turn. A repository stored without an id gets the one GitHub lists
+  repositories by their GitHub ids, with contents write alone. A
+  repository stored without an id gets the one GitHub lists
   under its path. GitHub's answer names every repository as it is now:
   a repository whose name or owner changed gets its current URL, on
   the guild repository and in the login's selection. The token lives
@@ -415,7 +395,7 @@ gets no token.
 - `access_token`: the value of the secret `secret_id` names, read when
   the generation starts, sent with the repository's `username`. It has
   no expiry and is never refreshed, and carries what the host granted
-  it, for a coding run and a subscription agent's turn alike. The
+  it. The
   secret is not added to the agent's environment; an agent gets it
   there only when the secret is also granted to it
   ([Secrets](../secrets.md)).
@@ -445,15 +425,10 @@ drops any helper set before it for an HTTPS host, such as the one
 helper follows. The agent's own git configuration cannot replace it,
 for any HTTPS host.
 
-`shell` exports the token of the GitHub repository that holds the
-working directory as `GH_TOKEN` for `gh`
-([GitHub](../../tools-and-connectors/github.md)). A repository of
-another provider gives no `GH_TOKEN`. A harness gets no repository
-token in its environment
+A harness gets no repository token in its environment
 ([Harness environment](harnesses.md#harness-environment)).
 
-Before each `shell` command, each code task start and poll, and each
-poll of a subscription agent's turn, a token within 10 minutes of
+Before each poll of a subscription agent's turn, a token within 10 minutes of
 expiry is replaced and rewritten. When a subscription agent's turn
 ends, the tokens file is rewritten as `{ repositories: {} }`.
 

@@ -49,17 +49,12 @@ export type TokenEntry = {
 };
 
 /**
- * What a run's repository tokens may do on the host: push branches alone, or push branches and
- * open pull requests. A provider whose tokens the box does not mint carries what the host grants.
- */
-export type GitTokenScope = "push" | "push_and_pull_requests";
-
-/**
  * How a git provider gives its repositories their tokens: the entry of each of `repositories`, all
- * its own, by repository name, each token limited to `scope` where the provider mints it.
+ * its own, by repository name, each token limited to pushing branches where the provider mints
+ * it. A provider whose tokens the box does not mint carries what the host grants.
  */
 export type GitProvider = {
-  mint(repositories: CodingRepository[], scope: GitTokenScope): Promise<Map<string, TokenEntry>>;
+  mint(repositories: CodingRepository[]): Promise<Map<string, TokenEntry>>;
 };
 
 /** Every git provider, by the name a repository gives it. */
@@ -99,8 +94,8 @@ export function pullRequestToolOf(
 }
 
 /**
- * The tokens of a run's guild repositories, each minted through its repository's git provider
- * within `scope`; a repository without one gets none. Knows when a token needs replacing.
+ * The tokens of a run's guild repositories, each minted through its repository's git provider;
+ * a repository without one gets none. Knows when a token needs replacing.
  */
 export class RepositoryTokens {
   entries: Record<string, TokenEntry> = {};
@@ -108,7 +103,6 @@ export class RepositoryTokens {
   constructor(
     private providers: GitProviders,
     private repositories: CodingRepository[],
-    private scope: GitTokenScope,
   ) {}
 
   get values(): string[] {
@@ -134,7 +128,7 @@ export class RepositoryTokens {
       if (provider === null) {
         continue;
       }
-      for (const [name, entry] of await this.providers[provider].mint(rows, this.scope)) {
+      for (const [name, entry] of await this.providers[provider].mint(rows)) {
         entries[name] = entry;
       }
     }
@@ -152,9 +146,9 @@ export async function eraseRepositoryTokens(files: SandboxFiles, agentId: string
   await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: {} }) }]);
 }
 
-/** The tokens of a run's `repositories` within `scope`, minted and recorded on `db` through each one's git provider. */
-export function repositoryTokens(db: Queryable, repositories: CodingRepository[], scope: GitTokenScope): RepositoryTokens {
-  return new RepositoryTokens({ github: githubProvider(db), access_token: accessTokenProvider(db) }, repositories, scope);
+/** The tokens of a run's `repositories`, minted and recorded on `db` through each one's git provider. */
+export function repositoryTokens(db: Queryable, repositories: CodingRepository[]): RepositoryTokens {
+  return new RepositoryTokens({ github: githubProvider(db), access_token: accessTokenProvider(db) }, repositories);
 }
 
 const CREDENTIAL_FAILURE = /could not read (username|password)|authentication failed|terminal prompts disabled/i;

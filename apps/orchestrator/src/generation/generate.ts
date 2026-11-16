@@ -352,24 +352,15 @@ export class RunGenerator {
   }
 
   /**
-   * A coding run starts only with a harness picked and repositories its agent picks and can use;
-   * a subscription run whose agent picks repositories, or whose harness needs one, only when its
-   * agent picks one and can use each of them.
+   * A subscription run whose agent picks repositories, or whose harness needs one, starts only when
+   * its agent picks one and can use each of them.
    */
   private async isStartable(gen: Generation): Promise<boolean> {
-    if (gen.source === "subscription") {
-      const inRepositories = gen.agent.config.repositories.length > 0 || harnessNeedsRepository(gen.snapshot.harness);
-      return !inRepositories || this.canUseItsRepositories(gen);
-    }
-    if (!gen.snapshot.coding) {
+    if (gen.source === "key") {
       return true;
     }
-    if (gen.snapshot.harness === null) {
-      const missing = harnessMissingError();
-      await this.services.events.recordError(gen, missing.code, missing);
-      return false;
-    }
-    return this.canUseItsRepositories(gen);
+    const inRepositories = gen.agent.config.repositories.length > 0 || harnessNeedsRepository(gen.snapshot.harness);
+    return !inRepositories || this.canUseItsRepositories(gen);
   }
 
   /** Whether the agent picks a repository and can use each one it picks; the run says why not. */
@@ -434,22 +425,18 @@ export class RunGenerator {
   }
 
   /**
-   * Whether the generation may take its first step: the workspace has room, a subscription's or a
-   * coding run's harness is ready, and the repositories a coding run or a subscription turn works
-   * in are cloned.
+   * Whether the generation may take its first step: the workspace has room, and on a subscription
+   * the harness is ready and the repositories the turn works in are cloned.
    */
   private async isReady(gen: Generation, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     const { workspace, coding } = this.services;
     if (!(await workspace.hasRoom(gen, gen.agent, sandbox))) {
       return false;
     }
-    if (gen.source === "subscription") {
-      return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareTurnRepositories(gen, sandbox, tools));
-    }
-    if (!gen.snapshot.coding) {
+    if (gen.source === "key") {
       return true;
     }
-    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareRepositories(gen, sandbox, tools));
+    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareTurnRepositories(gen, sandbox, tools));
   }
 
   /**

@@ -33,7 +33,7 @@ import { TEST_CREDENTIALS } from "./models.js";
 import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAgentScript } from "../../src/db/agents.js";
 import type { BlockingIssueRow } from "../../src/db/blocking-issues.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
-import { RepositoryTokens, type GitTokenScope } from "../../src/coding/git.js";
+import { RepositoryTokens } from "../../src/coding/git.js";
 import { AccessTokenProvider } from "../../src/coding/access-token-provider.js";
 import { GithubProvider } from "../../src/coding/github-provider.js";
 import type { CodingRepository } from "../../src/coding/repositories.js";
@@ -496,12 +496,11 @@ export class FakeDB {
     return this.mcp_connection;
   }
 
-  /** A run's repository tokens within `scope`, minted and recorded through this fake. */
-  repositoryTokens(repositories: CodingRepository[], scope: GitTokenScope): RepositoryTokens {
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(
       { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
       repositories,
-      scope,
     );
   }
 
@@ -743,12 +742,11 @@ export class RecordingDB {
     return this.mcp_connection;
   }
 
-  /** A run's repository tokens within `scope`, minted and recorded through this fake. */
-  repositoryTokens(repositories: CodingRepository[], scope: GitTokenScope): RepositoryTokens {
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(
       { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
       repositories,
-      scope,
     );
   }
 

@@ -6,7 +6,6 @@ import {
   cloneFailures,
   eraseRepositoryTokens,
   repositoryTokens,
-  type GitTokenScope,
 } from "../coding/git.js";
 import { RepositoryTokenInstallationGoneError } from "../coding/github-provider.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
@@ -38,7 +37,6 @@ import type { ToolServices } from "../toolbox/services.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { RunRequestError } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
-import type { Generation, KeyGeneration } from "./generate.js";
 import { harnessTurnCallId, type SubscriptionGeneration } from "./harness-loop.js";
 import type { AgentMachines } from "./machines.js";
 import type { GenerationTools } from "./tool-calls.js";
@@ -109,15 +107,14 @@ function repositoryChange(record: RunRepositoryChange): RunRepositoryChange {
 }
 
 /**
- * What a coding run does around its tool calls: the harness checked and the agent's
- * repositories cloned before the model's first step, the end checkpoint taken after its last;
- * what a subscription agent's turn does around its CLI in the repositories its agent picks; and,
- * outside a run, the diff, the harness log, and the harness check an operator asks for.
+ * What a subscription agent's turn does around its CLI: the harness checked, and the turn's work
+ * in the repositories its agent picks; and, outside a run, a turn's diff and the harness check an
+ * operator asks for.
  */
 export class CodingRuns {
   constructor(private readonly services: CodingRunsServices) {}
 
-  /** Whether the run's harness is installed and has a credential; a run that cannot delegate code work fails here. */
+  /** Whether the run's harness is installed and has a credential; a turn whose harness cannot run fails here. */
   async harnessReady(turn: RunGeneration, run: ToolRun): Promise<boolean> {
     try {
       await assertHarnessReady(this.services.tools, run);
@@ -128,27 +125,15 @@ export class CodingRuns {
     }
   }
 
-  /** A coding generation's repositories, placed with tokens that push and open pull requests. */
-  async prepareRepositories(gen: KeyGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
-    const repositories = await this.placeRepositories(gen, sandbox, tools, "push_and_pull_requests");
-    if (repositories === null) {
-      return false;
-    }
-    const names = repositories.map((row) => row.name);
-    tools.run.code_repositories = names;
-    return true;
-  }
-
   /**
    * A subscription turn's repositories, the ones its agent picks, placed with tokens that push
-   * branches alone, and the turn's start checkpoint of each; true at once for an agent that picks
-   * none.
+   * branches, and the turn's start checkpoint of each; true at once for an agent that picks none.
    */
   async prepareTurnRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     if (!gen.agent.config.repositories.length) {
       return true;
     }
-    const repositories = await this.placeRepositories(gen, sandbox, tools, "push");
+    const repositories = await this.placeRepositories(gen, sandbox, tools);
     if (repositories === null) {
       return false;
     }
@@ -159,23 +144,22 @@ export class CodingRuns {
   }
 
   /**
-   * Places the repositories the generation's agent picks in its machine, for a run whose tokens
-   * hold `scope`: a token for each one with a git provider, minted through it (written under
+   * Places the repositories the generation's agent picks in its machine: a token that pushes for
+   * each one with a git provider, minted through it (written under
    * /run/guilds and added to the run's redaction values; a GitHub login whose installation GitHub
    * refuses is retired as `installation_gone`), the agent's git identity, and a clone of each one
    * missing from the workspace. Tokens that expire are replaced before each command once they
    * near it. Null when a token or a clone failed, and the run says why.
    */
   private async placeRepositories(
-    gen: Generation,
+    gen: SubscriptionGeneration,
     sandbox: SandboxHandle,
     tools: GenerationTools,
-    scope: GitTokenScope,
   ): Promise<CodingRepository[] | null> {
     const { db, events } = this.services;
     const { agent } = gen;
     const { repositories } = await loadAgentRepositories(db, agent);
-    const tokens = db.repositoryTokens(repositories, scope);
+    const tokens = db.repositoryTokens(repositories);
     const mint = async () => {
       try {
         await tokens.mint();

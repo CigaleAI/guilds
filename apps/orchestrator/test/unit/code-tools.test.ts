@@ -34,11 +34,13 @@ const GITHUB_APP_KEYS = {
   client_id: "Iv1.client",
   client_secret: "client-secret",
 };
-/** A coding agent's config: coding on, with a harness. */
-const CODER: ResolvedAgentConfig = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
+/** A subscription agent's config: no model, on Claude Code. */
+const SUBSCRIBER: ResolvedAgentConfig = { ...AGENT_CONFIG, model: null, harness: "claude-code" };
 const originalStream = live.streamCompletion;
 /** What `guilds-harness check` answers for Claude Code installed and running on a granted token. */
 const HARNESS_READY = { installed: true, version: "9.9.9 (stub)", credential: "secret" };
+/** What `guilds-harness` answers for a turn that starts, exits at once, and ends cleanly. */
+const TURN_ENDS = { start: {}, poll: { exited: true, offset: 0 }, result: { exit_code: 0, session_id: "s_1" } };
 
 type RepoDB = FakeDB & { listGuildRepositories(guildId: string): Promise<Array<Record<string, unknown>>> };
 
@@ -67,7 +69,7 @@ function withRepositories<T extends FakeDB>(db: T, names: string[], url = "file:
 function readySandbox(options: { clones?: boolean } = {}): HostCodeSandbox {
   const sandbox = new HostCodeSandbox();
   const skipped = options.clones ? {} : { git_setup: { failed: [] }, checkpoint: { repositories: [] } };
-  answerOps(sandbox, { check: HARNESS_READY, ...skipped });
+  answerOps(sandbox, { check: HARNESS_READY, ...TURN_ENDS, ...skipped });
   return sandbox;
 }
 
@@ -163,13 +165,13 @@ test("coding defaults to off, and a new coding agent gets the coding budgets", (
   assert.throws(() => validateAgentConfig({ ...AGENT_CONFIG, coding: "yes" }), /coding must be a boolean/);
 });
 
-describe("coding runs in the generation loop", () => {
+describe("subscription runs at the start of a generation", () => {
   afterEach(() => {
     live.streamCompletion = originalStream;
   });
 
-  function codingSnapshot(): RunConfigSnapshot {
-    return configSnapshot(CODER, { tools: [], secrets: [], mcp: [] }, "schedule");
+  function subscriptionSnapshot(): RunConfigSnapshot {
+    return configSnapshot(SUBSCRIBER, { tools: [], secrets: [], mcp: [] }, "schedule");
   }
 
   function scripted(db: FakeDB, turns: ToolCall[][]) {
@@ -205,50 +207,14 @@ describe("coding runs in the generation loop", () => {
     return { sandboxes, machines };
   }
 
-  test("a coding generation records the workspace size and stops at start when it is over the limit", async () => {
-    const sandbox = readySandbox();
-    const sizes: number[] = [];
-    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]) as RepoDB & {
-      setAgentWorkspaceMib(id: string, mib: number): Promise<void>;
-    };
-    db.setAgentWorkspaceMib = async (_id, mib) => {
-      sizes.push(mib);
-    };
-    db.agent.config = { ...CODER, repositories: ["shop", "admin"] };
-    live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
-    const { sandboxes } = codingSandboxes(sandbox);
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop.generator.generate("r_1", 1);
-    assert.equal(sizes.length, 1);
-    assert.equal(db.llm_histories.length, 1);
-
-    writeFileSync(path.join(sandbox.home, "blob"), Buffer.alloc(3 * 1024 * 1024));
-    db.agent.workspace_mib = 50;
-    const previous = process.env.WORKSPACE_MAX_MIB;
-    process.env.WORKSPACE_MAX_MIB = "2";
-    try {
-      await loop.generator.generate("r_1", 2);
-    } finally {
-      if (previous === undefined) {
-        delete process.env.WORKSPACE_MAX_MIB;
-      } else {
-        process.env.WORKSPACE_MAX_MIB = previous;
-      }
-    }
-    assert.equal(db.llm_histories.length, 1);
-    const errors = db.run.errors as Array<Record<string, unknown>>;
-    assert.equal(errors.at(-1)?.operation, "workspace.full");
-    assert.match(String(errors.at(-1)?.message), /above the 2 MiB limit; free space from the CLI tab/);
-  });
-
   test("a generation uses the agent's max_workspace_mib when it is below the host cap", async () => {
     const sandbox = readySandbox();
     writeFileSync(path.join(sandbox.home, "blob"), Buffer.alloc(3 * 1024 * 1024));
-    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]) as RepoDB & {
+    const db = withRepositories(new FakeDB(subscriptionSnapshot()), ["shop", "admin"]) as RepoDB & {
       setAgentWorkspaceMib(id: string, mib: number): Promise<void>;
     };
     db.setAgentWorkspaceMib = async () => {};
-    db.agent.config = { ...CODER, max_workspace_mib: 2, repositories: ["shop", "admin"] };
+    db.agent.config = { ...SUBSCRIBER, max_workspace_mib: 2, repositories: ["shop", "admin"] };
     db.agent.workspace_mib = 50;
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes } = codingSandboxes(sandbox);
@@ -260,9 +226,9 @@ describe("coding runs in the generation loop", () => {
     assert.match(String(errors.at(-1)?.message), /above the 2 MiB limit; free space from the CLI tab/);
   });
 
-  test("a coding run without a harness fails at start, naming the fix; a run with coding off is unaffected", async () => {
+  test("a subscription run without a harness fails at start, naming the fix; a run on a key is unaffected", async () => {
     const sandbox = new HostCodeSandbox();
-    const legacy = { ...AGENT_CONFIG, coding: true };
+    const legacy = { ...AGENT_CONFIG, model: null, harness: null };
     const db = new FakeDB(configSnapshot(legacy, { tools: [], secrets: [], mcp: [] }, "schedule"));
     db.agent.config = { ...legacy };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
@@ -294,24 +260,10 @@ describe("coding runs in the generation loop", () => {
     assert.match(String(errors.at(-1)?.message), /this agent has no repository: pick one in its Settings under Repositories/);
   });
 
-  test("a coding run of an agent that picks no repository fails at start, naming where to pick one", async () => {
+  test("a subscription run of an agent that picks a repository it can no longer use fails at start, naming it", async () => {
     const sandbox = readySandbox();
-    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop"]);
-    db.agent.config = { ...CODER };
-    live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
-    const { sandboxes, machines } = codingSandboxes(sandbox);
-    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes).generator.generate("r_1", 1);
-    assert.equal(db.llm_histories.length, 0);
-    assert.equal(machines.length, 0, "the machine is not woken");
-    const errors = db.run.errors as Array<Record<string, unknown>>;
-    assert.equal(errors.at(-1)?.operation, "coding.repositories_missing");
-    assert.match(String(errors.at(-1)?.message), /pick one in its Settings under Repositories/);
-  });
-
-  test("a coding run of an agent that picks a repository it can no longer use fails at start, naming it", async () => {
-    const sandbox = readySandbox();
-    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop"]);
-    db.agent.config = { ...CODER, repositories: ["shop", "billing"] };
+    const db = withRepositories(new FakeDB(subscriptionSnapshot()), ["shop"]);
+    db.agent.config = { ...SUBSCRIBER, repositories: ["shop", "billing"] };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes, machines } = codingSandboxes(sandbox);
     await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes).generator.generate("r_1", 1);
@@ -322,17 +274,17 @@ describe("coding runs in the generation loop", () => {
     assert.match(String(errors.at(-1)?.message), /this agent picks billing, which it can no longer use/);
   });
 
-  test("a coding run whose harness has no credential fails at start, before the model, and forgets the login", async () => {
+  test("a subscription run whose harness has no credential fails at start and forgets the login", async () => {
     const sandbox = new HostCodeSandbox();
     answerOps(sandbox, { check: { installed: true, version: "9.9.9", credential: null } });
-    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]) as RepoDB & {
+    const db = withRepositories(new FakeDB(subscriptionSnapshot()), ["shop", "admin"]) as RepoDB & {
       clearHarnessLogin(agentId: string, harness: string): Promise<void>;
     };
     const cleared: string[] = [];
     db.clearHarnessLogin = async (_agentId, harness) => {
       cleared.push(harness);
     };
-    db.agent.config = { ...CODER, repositories: ["shop", "admin"] };
+    db.agent.config = { ...SUBSCRIBER, repositories: ["shop", "admin"] };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes).generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
@@ -342,11 +294,11 @@ describe("coding runs in the generation loop", () => {
     assert.deepEqual(cleared, ["claude-code"]);
   });
 
-  test("a coding run whose harness is not in the machine's image fails at start, naming the image to build", async () => {
+  test("a subscription run whose harness is not in the machine's image fails at start, naming the image to build", async () => {
     const sandbox = new HostCodeSandbox();
     answerOps(sandbox, { check: { installed: false, version: null, credential: null } });
-    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]);
-    db.agent.config = { ...CODER, repositories: ["shop", "admin"] };
+    const db = withRepositories(new FakeDB(subscriptionSnapshot()), ["shop", "admin"]);
+    db.agent.config = { ...SUBSCRIBER, repositories: ["shop", "admin"] };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes).generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
@@ -407,7 +359,7 @@ describe("coding runs in the generation loop", () => {
   });
 });
 
-describe("repositories in a coding generation", () => {
+describe("repositories in a subscription generation", () => {
   afterEach(() => {
     live.streamCompletion = originalStream;
   });
@@ -454,8 +406,8 @@ describe("repositories in a coding generation", () => {
 
   function setup(url: string) {
     const sandbox = readySandbox({ clones: true });
-    const db = withRepositories(new FakeDB(configSnapshot(CODER, { tools: [], secrets: [], mcp: [] }, "schedule")), ["shop"], url);
-    db.agent.config = { ...CODER, repositories: ["shop"] };
+    const db = withRepositories(new FakeDB(configSnapshot(SUBSCRIBER, { tools: [], secrets: [], mcp: [] }, "schedule")), ["shop"], url);
+    db.agent.config = { ...SUBSCRIBER, repositories: ["shop"] };
     const sandboxes = new FakeSandboxes();
     sandboxes.ensure = (async (machine: MachineSpec) => {
       sandboxes.running.add(machine.id);
