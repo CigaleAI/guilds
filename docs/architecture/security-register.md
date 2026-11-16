@@ -238,6 +238,7 @@ generation ended answers 401.
 machine while agents share a machine. An operator gives an agent that
 holds connector access, or writes that matter, a machine of its own.
 
+## SEC-63 — On Docker Desktop every sandbox reaches the operator app
 
 **Status:** open.
 
