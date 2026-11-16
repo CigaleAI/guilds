@@ -122,6 +122,10 @@ the rule is the one that guards changing the secret.
 
 ### Removing a repository
 
+Removing a repository from the guild, or taking it out of a GitHub
+login's pick, unpicks it from each agent that picks it and can no
+longer use it, in the same transaction. An agent that still reaches
+it, through another login or another of the guild's rows, keeps it.
 Removing a repository leaves the working trees already cloned in the
 agents' homes. Deleting a guild deletes its repositories. Deleting a
 GitHub connection deletes the repositories added through it, and
@@ -209,7 +213,7 @@ The coding strip counts the repositories
 | Clone timeout | 600 seconds per repository |
 | Token refresh | Replaced within 10 minutes of expiry |
 | Commit author email | Empty, or one email address of at most 254 characters, not on a `.invalid` domain |
-| Removing | Leaves existing clones in place |
+| Removing | Unpicks it from each agent that can no longer use it; leaves existing clones in place |
 
 ## Reference
 
@@ -301,6 +305,8 @@ and returns 201 with the repository.
 
 `DELETE` returns 204, or 404 for an unknown repository. A repository
 added with this guild's own login also leaves the login's selection.
+In the same transaction, each agent of the guild that picks the name
+and can no longer use it unpicks it.
 
 `PUT /api/guilds/:id` accepts `git_author_email`. Omitted leaves the
 stored value. An empty string or null clears it. Otherwise it is

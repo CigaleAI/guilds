@@ -16,7 +16,7 @@ import {
   type McpConnectionRow,
 } from "../db/mcp.js";
 import { getMembership } from "../db/orgs.js";
-import { isUniqueViolation, type Queryable } from "../db/pg.js";
+import { isUniqueViolation, withTransaction, type Queryable } from "../db/pg.js";
 import type { RepositorySelection } from "../db/schema/index.js";
 import {
   GITHUB_SLUG,
@@ -32,6 +32,7 @@ import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
+import { unpickUnusableRepositories } from "./agent-repositories.js";
 import type { McpPool } from "../mcp/pool.js";
 import type { LoginRetirement } from "../mcp/service.js";
 import type { RepositorySecretCheck } from "../secrets/service.js";
@@ -303,27 +304,29 @@ export async function addGuildRepository(
   }
 }
 
-/** Removes a repository from a guild, and from its own login's selection. */
+/**
+ * Removes a repository from a guild, and from its own login's selection, and unpicks it from each
+ * agent of the guild that can no longer use it, in one transaction.
+ */
 export async function removeGuildRepository(
   db: Queryable,
   guild: GuildRow,
   repositoryId: string,
 ): Promise<void> {
-  const deleted = await deleteGuildRepository(db, guild.id, repositoryId);
-  if (deleted === null) {
-    throw new RepositoryValidationError("repository not found", 404);
-  }
-  const connectionId = deleted.connection_id ?? null;
-  const connection = connectionId === null ? null : await getMcpConnection(db, connectionId);
-  if (
-    connection === null ||
-    connection.owner_scope !== "guild" ||
-    String(connection.owner_id ?? "") !== guild.id
-  ) {
-    return;
-  }
-  const next = githubRepositoriesOf(connection).filter((item) => item.name !== deleted.name);
-  await updateMcpConnectionGithubRepositories(db, connection.id, next, new Date());
+  await withTransaction(db, async (client) => {
+    const now = new Date();
+    const deleted = await deleteGuildRepository(client, guild.id, repositoryId);
+    if (deleted === null) {
+      throw new RepositoryValidationError("repository not found", 404);
+    }
+    const connectionId = deleted.connection_id ?? null;
+    const connection = connectionId === null ? null : await getMcpConnection(client, connectionId);
+    if (connection !== null && connection.owner_scope === "guild" && String(connection.owner_id ?? "") === guild.id) {
+      const next = githubRepositoriesOf(connection).filter((item) => item.name !== deleted.name);
+      await updateMcpConnectionGithubRepositories(client, connection.id, next, now);
+    }
+    await unpickUnusableRepositories(client, { owner_scope: "guild", owner_id: guild.id }, [deleted.name], now);
+  });
 }
 
 /** The selection with each repository's GitHub id, and its default branch where the request gave none. */
@@ -345,8 +348,10 @@ function matchSelection(
 
 /**
  * Replaces the repositories a GitHub login picks, among those its installation reaches, and
- * returns them. The login's tool session, whose token is scoped to its previous pick, is
- * dropped, and a guild's own login replaces that guild's repositories with the pick.
+ * returns them. A guild's own login replaces that guild's repositories with the pick, and each
+ * agent the login reaches unpicks a repository the login no longer picks that it can no longer
+ * use, in one transaction. The login's tool session, whose token is scoped to its previous pick,
+ * is then dropped.
  */
 export async function pickGithubRepositories(
   services: RepositoryServices,
@@ -358,11 +363,16 @@ export async function pickGithubRepositories(
   const validated = validateGithubRepositories(repositories);
   const reached = await reachableRepositories(services, connection);
   const selected = matchSelection(validated, reached, repositories);
-  if ((await updateMcpConnectionGithubRepositories(db, connection.id, selected, now)) === null) {
-    throw new RepositoryValidationError("connection not found", 404);
-  }
+  const kept = new Set(selected.map((item) => item.name));
+  const unpicked = githubRepositoriesOf(connection).flatMap((item) => (kept.has(item.name) ? [] : [item.name]));
+  await withTransaction(db, async (client) => {
+    if ((await updateMcpConnectionGithubRepositories(client, connection.id, selected, now)) === null) {
+      throw new RepositoryValidationError("connection not found", 404);
+    }
+    await replaceLoginGuildRepositories(client, connection, selected, now);
+    await unpickUnusableRepositories(client, connection, unpicked, now);
+  });
   services.mcp?.drop(connection.id);
-  await replaceLoginGuildRepositories(db, connection, selected, now);
   return selected;
 }
 

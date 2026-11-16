@@ -24,6 +24,10 @@ before. `GET /api/agents/:id/harness` lists the picks a run clones as
 `repositories` unpicks them all. Rebuild the orchestrator and the
 operator app together.
 
+**Rebuild.** Removing a repository from a guild, or taking it out of
+a GitHub login's pick, unpicks it from each agent that picks it and
+can no longer use it, in the same transaction.
+
 **Rebuild.** A recipe that lists repositories no longer asks for a
 GitHub connection: applying it adds no `conn:github` step of its own,
 and its preview names no GitHub App to set up for them. Each

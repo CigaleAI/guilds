@@ -1,4 +1,10 @@
-import type { AgentPlaceRow, AgentRow } from "../db/agents.js";
+import {
+  lockAgentsPickingRepositories,
+  setAgentRepositories,
+  type AgentPlaceRow,
+  type AgentRow,
+  type AgentsOwner,
+} from "../db/agents.js";
 import { listGuildRepositories } from "../db/guilds.js";
 import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
@@ -87,4 +93,28 @@ export function agentRepositoriesProblem(picked: PickedRepositories): AgentRepos
     );
   }
   return null;
+}
+
+/**
+ * Unpicks each of `names` from every agent within `owner`'s reach that picks it and can no longer
+ * use it, on `client`: the transaction that took them from the guild or from a GitHub login. An
+ * agent that still reaches a name, through another login or another row, keeps it.
+ */
+export async function unpickUnusableRepositories(
+  client: Queryable,
+  owner: AgentsOwner,
+  names: string[],
+  now: Date,
+): Promise<void> {
+  if (!names.length) {
+    return;
+  }
+  const db = codingRepositoriesDatabase(client);
+  for (const agent of await lockAgentsPickingRepositories(client, owner, names)) {
+    const usable = new Set((await loadUsableRepositories(db, agent)).map((repository) => repository.name));
+    const kept = agent.config.repositories.filter((name) => usable.has(name) || !names.includes(name));
+    if (kept.length !== agent.config.repositories.length) {
+      await setAgentRepositories(client, agent.id, kept, now);
+    }
+  }
 }
