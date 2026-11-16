@@ -15,7 +15,7 @@ import type {
   MachineInput,
   AgentHarness,
   Harness,
-  HarnessCatalog,
+  HarnessOffer,
   HarnessCheck,
   MachineUpdate,
   NewAgent,
@@ -71,14 +71,23 @@ export function useAgent(agentId: string) {
   });
 }
 
-/** The models each harness offers, and the efforts they run at; fixed while the server runs. */
-export function useHarnessCatalog() {
-  return useQuery({
+/** What the box offers of harnesses: each one's models and efforts, and whether subscription agents are on; fixed while the server runs. */
+function harnessOfferQuery() {
+  return {
     queryKey: agentKeys.harnesses,
-    queryFn: () => api<{ harnesses: HarnessCatalog[] }>("/api/harnesses"),
-    select: (data) => data.harnesses,
+    queryFn: () => api<HarnessOffer>("/api/harnesses"),
     staleTime: Infinity,
-  });
+  };
+}
+
+/** The models each harness offers, and the efforts they run at. */
+export function useHarnessCatalog() {
+  return useQuery({ ...harnessOfferQuery(), select: (data: HarnessOffer) => data.harnesses });
+}
+
+/** Whether the box offers subscription agents. */
+export function useSubscriptionAgentsOn() {
+  return useQuery({ ...harnessOfferQuery(), select: (data: HarnessOffer) => data.subscription_agents });
 }
 
 /** Each harness's credentials for the agent; read fresh, since grants and logins change elsewhere. */

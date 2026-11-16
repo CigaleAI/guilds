@@ -13,7 +13,7 @@ import {
 import { useOrgModels } from "../../../api/queries/models";
 import { useRunStream } from "../../../api/streams";
 import { progressLineCount } from "../../../api/toolProgress";
-import type { AgentDetail } from "../../../api/types/agents";
+import type { AgentConfig, AgentDetail } from "../../../api/types/agents";
 import type { OrgModels } from "../../../api/types/models";
 import type { LiveTurn } from "../../../api/liveTurn";
 import type { ToolProgress } from "../../../api/toolProgress";
@@ -43,8 +43,15 @@ import { runIsCapped, runTitle } from "../runState";
 
 const bottomSlack = 64;
 
-/** Why the composer takes no images with this model; undefined when the model takes them. */
-export function attachmentsNote(models: OrgModels | undefined, model: string): string | undefined {
+/**
+ * Why the composer takes no images with this model; undefined when the model takes them. A
+ * subscription agent has no model to take them.
+ */
+export function attachmentsNote(
+  models: OrgModels | undefined,
+  model: AgentConfig["model"],
+): string | undefined {
+  if (model === null) return "A subscription agent takes no images";
   const listed = models?.models.find((item) => item.id === model);
   if (listed?.attachments === true) return undefined;
   if (!models) return "Checking whether this model accepts images";

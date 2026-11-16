@@ -311,7 +311,7 @@ The keys live in the agent's `config` ([Agents](../agents.md)).
 | Key | Values | Rules |
 | --- | --- | --- |
 | `coding` | boolean, default `false` | Makes the agent a coding agent: the code tools and the `coding` section of the system prompt. It is not a binding. An update cannot turn it off on a coding agent: 422 `coding cannot be switched off on a coding agent` |
-| `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null | Only with `coding` on: 422 `harness is only for coding agents`. Any other value: 422 `harness must be one of: claude-code, codex, cursor, antigravity`. Every create and update with `coding` on and no harness: 422 `coding agents need a harness: claude-code, codex, cursor, antigravity`. A harness the box turns off, unless the agent is already on it: 422 `<Harness> is turned off on this box: pick another harness in the agent's Settings` ([Harnesses](harnesses.md)) |
+| `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null | With a model, only with `coding` on: 422 `harness is for a coding agent, or a subscription agent, which has no model` ([Agents](../agents.md#configuration-keys)). Any other value: 422 `harness must be one of: claude-code, codex, cursor, antigravity`. Every create and update with `coding` on and no harness: 422 `coding agents need a harness: claude-code, codex, cursor, antigravity`. A harness the box turns off, unless the agent is already on it: 422 `<Harness> is turned off on this box: pick another harness in the agent's Settings` ([Harnesses](harnesses.md)) |
 | `harness_model` | a model name, or null | Needs a `harness` ([Harnesses](harnesses.md#model-and-effort)) |
 | `harness_effort` | an effort, or null | Needs a `harness`, and must be one the model runs at ([Harnesses](harnesses.md#model-and-effort)) |
 | `secret_aliases` | variable name to secret name | Points the harness's token variable at a secret of another name ([Secrets](../secrets.md)) |
@@ -362,9 +362,12 @@ agent's live `coding` flag ([Code tools](code-tools.md#tools)).
 ### Policy
 
 The organisation policy's `maxCodingAgents` bounds how many of its
-agents have `coding` on. Core sets no bound. Where an extension's policy
-sets one, creating a coding agent, or turning `coding` on, is refused
-above it with 409 `<source> limit reached: coding agents`. The
+agents have `coding` on or run on a subscription
+([Agents](../agents.md#model-source)): each holds a harness. Core sets
+no bound. Where an extension's policy sets one, creating a coding
+agent or a subscription agent, turning `coding` on, or switching an
+agent to a subscription, is refused above it with 409
+`<source> limit reached: coding agents`. The
 capabilities payload reports `max_coding_agents` and the remaining
 `coding_agents`.
 

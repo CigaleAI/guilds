@@ -15,6 +15,7 @@ import {
   harnessSubscriptionNote,
   isHarnessEffort,
   listedHarnessModel,
+  runsSubscription,
   showsHarnessImageNote,
 } from "../harness";
 import { HarnessLogo } from "../HarnessLogo";
@@ -201,8 +202,9 @@ type HarnessChoiceFieldsProps = {
 
 /**
  * A button with its logo for each harness the box offers and, once one is picked, its model and
- * effort. A harness the machine's image lacks is disabled with a note; one the box turns off shows
- * only while the agent is on it. Picking another harness clears the model and effort.
+ * effort. A subscription is offered only the harnesses that run one. A harness the machine's image
+ * lacks is disabled with a note; one the box turns off shows only while the agent is on it.
+ * Picking another harness clears the model and effort.
  */
 export function HarnessChoiceFields({ form, onChange, errors, carried }: HarnessChoiceFieldsProps) {
   const pick = (value: Harness) =>
@@ -213,8 +215,10 @@ export function HarnessChoiceFields({ form, onChange, errors, carried }: Harness
       harness_effort: value === form.harness ? form.harness_effort : "",
     });
   const catalog = useHarnessCatalog();
-  const items = HARNESS_ITEMS.filter((item) =>
-    harnessOffered(catalog.data, item.value, form.harness),
+  const items = HARNESS_ITEMS.filter(
+    (item) =>
+      harnessOffered(catalog.data, item.value, form.harness) &&
+      (form.model_source === "key" || runsSubscription(catalog.data, item.value)),
   );
   return (
     <div className="flex flex-col gap-3">
@@ -223,7 +227,7 @@ export function HarnessChoiceFields({ form, onChange, errors, carried }: Harness
         <div
           className="grid grid-cols-2 gap-2 sm:grid-cols-4"
           role="radiogroup"
-          aria-label="Coding harness"
+          aria-label="Harness"
         >
           {items.map((item) => (
             <HarnessCard
@@ -262,8 +266,8 @@ type HarnessFieldProps = {
 };
 
 /**
- * The coding agent's harness and the model it runs, with a note that it runs on the operator's own
- * subscription; for an existing agent, what its code tasks still need under it.
+ * The harness of a coding or subscription agent and the model it runs, with a note that it runs on
+ * the operator's own subscription; for an existing agent, what the harness still needs to run.
  */
 export function HarnessField({ form, onChange, errors, agent, carried }: HarnessFieldProps) {
   const missing = form.harness ? harnessCarried(carried, form.harness) === false : false;
@@ -272,8 +276,8 @@ export function HarnessField({ form, onChange, errors, agent, carried }: Harness
       <HarnessChoiceFields form={form} onChange={onChange} errors={errors} carried={carried} />
       {missing ? (
         <p className="text-sm text-t-ochre-fg">
-          This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness || null)}, so its
-          code tasks fail. Pick another harness, or move the agent to a machine that has it.
+          This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness || null)}, so it
+          can&apos;t run there. Pick another harness, or move the agent to a machine that has it.
         </p>
       ) : agent && form.harness ? (
         <HarnessReadiness

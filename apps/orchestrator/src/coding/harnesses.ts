@@ -1,7 +1,7 @@
 /**
- * The coding harnesses a coding agent delegates code work to. Each runs headless in the
- * agent's sandbox on the user's own subscription: a token granted to the agent as a secret,
- * or a login stored in the agent's home.
+ * The coding harnesses a coding agent delegates code work to, and a subscription agent runs every
+ * turn on. Each runs headless in the agent's sandbox on the user's own subscription: a token
+ * granted to the agent as a secret, or a login stored in the agent's home.
  */
 import {
   HARNESSES,
@@ -73,6 +73,36 @@ export function isHarnessOff(harness: Harness): boolean {
 export function harnessesOn(): Harness[] {
   return HARNESSES.filter((harness) => !harnessesOff.has(harness));
 }
+
+/** The harnesses a subscription agent may run on. */
+export const SUBSCRIPTION_HARNESSES: readonly Harness[] = ["claude-code", "codex"];
+
+/** Whether a subscription agent may run on the harness. */
+export function isSubscriptionHarness(harness: Harness): boolean {
+  return SUBSCRIPTION_HARNESSES.includes(harness);
+}
+
+/** Why a subscription agent cannot run on a harness it may not run on. */
+export function subscriptionHarnessMessage(harness: Harness): string {
+  const offered = SUBSCRIPTION_HARNESSES.map((item) => HARNESS_INFO[item].label).join(" or ");
+  return `${HARNESS_INFO[harness].label} cannot run a subscription agent: pick ${offered}, or give the agent a model`;
+}
+
+/** Whether the box offers subscription agents; it does not until boot installs the setting. */
+let offersSubscriptionAgents = false;
+
+/** Sets whether the box offers subscription agents, once at boot. */
+export function installSubscriptionAgents(offered: boolean): void {
+  offersSubscriptionAgents = offered;
+}
+
+export function areSubscriptionAgentsOn(): boolean {
+  return offersSubscriptionAgents;
+}
+
+/** Why an agent cannot be created on, or switched to, a subscription while the box turns them off. */
+export const SUBSCRIPTION_AGENTS_OFF_MESSAGE =
+  "subscription agents are turned off on this box: give the agent a model on a key";
 
 /** Why an agent cannot pick, or run on, a harness the box turns off. */
 export function harnessOffMessage(harness: Harness): string {

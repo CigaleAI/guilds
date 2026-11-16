@@ -12,7 +12,7 @@ import { writeLog } from "../observability/log.js";
 import { agentSandbox, applyRunScripts, prepareBrowserWorkspace, prepareWorkspace, seatEnvironment } from "../sandbox/index.js";
 import type { SandboxHandle } from "../sandbox/sdk.js";
 import type { Scripts } from "../scripts/catalog.js";
-import type { RunConfigSnapshot, RunScriptSnapshot, ToolCall } from "../db/schema/index.js";
+import { modelSourceOf, type RunConfigSnapshot, type RunScriptSnapshot, type ToolCall } from "../db/schema/index.js";
 import { harnessMissingError } from "../toolbox/harness-setup.js";
 import { createToolRun, type ToolHooks, type ToolRun } from "../toolbox/index.js";
 import { isText } from "../toolbox/schema.js";
@@ -27,12 +27,13 @@ import {
   type CodingRepositoriesDatabase,
 } from "../coding/agent-repositories.js";
 import type { CodingRuns } from "./coding.js";
-import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
+import { completionRequest, historyTokens, type KeyRunConfigSnapshot, type ModelCompletion } from "./completion.js";
 import {
   GenerationBlocked,
   GenerationCancelled,
   logOperationFailure,
   RunLimitError,
+  SubscriptionRunUnavailable,
   type OperationFailure,
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
@@ -57,7 +58,7 @@ const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to con
 const SCHEDULE_WAKE_PREFIX = "Schedule wake-up: ";
 
 /** A generation under way: its run and agent as it started, and the snapshot it runs with. */
-export type Generation = RunGeneration & { run: RunRow; agent: AgentRow; snapshot: RunConfigSnapshot };
+export type Generation = RunGeneration & { run: RunRow; agent: AgentRow; snapshot: KeyRunConfigSnapshot };
 
 /** The containers a generation runs in: its machine's, and the agent's on it with the run's environment. */
 type RunSandboxes = { machine: SandboxHandle; agent: SandboxHandle };
@@ -220,7 +221,10 @@ export class RunGenerator {
     }
   }
 
-  /** The generation with its run and agent, its log fields naming them; null when either is gone. */
+  /**
+   * The generation with its run and agent, its log fields naming them, and the model its snapshot
+   * runs on; null when either is gone, or when the run is a subscription agent's, which fails here.
+   */
   private async startedGeneration(turn: RunGeneration): Promise<Generation | null> {
     const { db, events } = this.services;
     const run = await db.getRun(turn.runId);
@@ -233,7 +237,13 @@ export class RunGenerator {
       return null;
     }
     turn.log = { run_id: turn.runId, agent_id: agent.id, guild_id: agent.guild_id };
-    return { ...turn, run, agent, snapshot: run.config_snapshot };
+    const source = modelSourceOf(run.config_snapshot);
+    if (source.kind === "subscription") {
+      const refused = new SubscriptionRunUnavailable();
+      await events.recordError(turn, refused.code, refused);
+      return null;
+    }
+    return { ...turn, run, agent, snapshot: { ...run.config_snapshot, model: source.model } };
   }
 
   /**

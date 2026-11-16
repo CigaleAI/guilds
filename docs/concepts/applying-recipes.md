@@ -137,17 +137,19 @@ it shows:
   the recipe's agents add, and its `machine.*` findings.
 - the plan, as on the recipe's page, with only the sections that have
   entries. Each agent's card adds its **Agent name**, its **Model**,
-  and for a coding agent its **Harness**. The model list is the
-  organisation's chosen models, with a hint naming the recipe's
-  recommendation. The agent's **Coding** chip names the harness
-  picked. A taken name says *An agent already has this name. Rename
+  and for a coding agent its **Harness**. A subscription agent's card
+  has a **Harness** among Claude Code and Codex, and no **Model**. The
+  model list is the organisation's chosen models, with a hint naming
+  the recipe's recommendation. The agent's **Coding** or
+  **Subscription** chip names the harness picked. A taken name says *An agent already has this name. Rename
   it before creating.* Each connector card adds a **Login**: a live
   login to reuse, or **Connect after the guild exists**.
 
-**Create guild** waits until every agent has a model, every coding
-agent has a harness, and, with several machines, one is chosen. While
-no model provider is connected, a guide to
-[Model keys](model-keys.md) stands in for the model pickers. The
+**Create guild** waits until every agent on a key has a model, every
+coding or subscription agent has a harness, and, with several
+machines, one is chosen. While no model provider is connected and an
+agent is on a key, a guide to [Model keys](model-keys.md) stands in
+for the model pickers. The
 preview leaves out `connection.missing`, which is a note on how the
 recipe is written.
 
@@ -269,7 +271,7 @@ and nothing is created while a role has none (`choose a model for …`).
 A chosen model must be `{provider}/{model}` and offered to that role,
 or it is refused. The Builder writes the coach's model into the roles
 it drafts without one. Capturing a guild keeps each agent's live
-model.
+model; a subscription agent's role carries its harness and no model.
 
 A coding role's `config.harness` works the same way, with no default.
 The preview shows a harness picker per coding role, preselected with
@@ -284,6 +286,15 @@ condition, and only when its model runs at that effort; otherwise the
 model runs at its default effort. A role's `secret_aliases` apply as written when they
 validate; otherwise apply leaves them out.
 
+A subscription role ([Recipe format](recipe-format.md)) takes no
+model: the preview lists none for it, and a model chosen for it is
+refused with `models.<role>: a subscription role takes no model`. It
+takes a harness as a coding role does, from Claude Code and Codex
+only: a recipe's Cursor or Antigravity is not preselected, and a
+chosen one is refused. Its agent is created with no model, `coding`
+off, and its harness. While the box turns subscription agents off, a
+subscription role is the blocking error `subscription.off`.
+
 Agents from roles with `config.coding: true` are created with coding
 on.
 
@@ -296,13 +307,15 @@ on.
 - each role's name: the operator's, else `name_suggestion`, against the
   charset and reserved `user`. A name any agent on the box already
   holds is listed in `collisions`
-- each role's model and each coding role's harness, as
-  [Models and harnesses](#models-and-harnesses) describes. The
-  preview's `models` lists each role's `recommended` and resolved
-  `model`; its `harnesses` lists each coding role's `recommended` and
-  resolved `harness`
+- each role's model and each coding or subscription role's harness,
+  as [Models and harnesses](#models-and-harnesses) describes. The
+  preview's `models` lists each role's but a subscription role's
+  `recommended` and resolved `model`; its `harnesses` lists each
+  coding or subscription role's `recommended` and resolved `harness`,
+  and `subscription`, whether the role runs on a subscription
 - the organisation's remaining capacity for the whole batch: agents,
-  browser agents, and coding agents (roles with `config.coding: true`),
+  browser agents, and coding agents (roles with `config.coding: true`,
+  and subscription roles),
   each against the organisation's limit, `null` where nothing caps it.
   The preview's `remaining` carries `agents`, `browser_agents`, and
   `coding_agents`
@@ -316,8 +329,9 @@ on.
   `planned_mib`, number of `agents`, and `fits`, whether it meets that
   minimum. `adds_cpu` and `adds_mib` are the planned load the roles
   add. On the chosen machine it is a blocking finding when the machine
-  is below a role's minimum (`machine.size`, one per role), when the
-  roles would take the machine past 32 agents or the policy's agents
+  is below a role's minimum (`machine.size`, one per role), when its
+  image lacks the harness of a subscription role (`machine.harness`,
+  one per role), when the roles would take the machine past 32 agents or the policy's agents
   per machine (`machine.full`), and when the machine hosts an agent of
   a guild the operator cannot see (`machine.private`). An unknown
   `machine_id` is 404. Apply without a machine is refused

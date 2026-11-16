@@ -20,7 +20,15 @@ import type {
   RecipeDocument,
   RecipeRole,
 } from "../db/schema/index.js";
-import { harnessesOn, harnessOffMessage, harnessOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
+import {
+  harnessesOn,
+  harnessOffMessage,
+  harnessOf,
+  isHarness,
+  isHarnessOff,
+  isSubscriptionHarness,
+  subscriptionHarnessMessage,
+} from "../coding/harnesses.js";
 import { listServers } from "../connectors/servers.js";
 import { agentNameTaken, listAgents } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
@@ -41,6 +49,8 @@ import {
   agentMinimum,
   agentsMinimum,
   belowMinimumMessage,
+  carriesHarness,
+  harnessMissingMessage,
   machineSize,
   machineWithAgentsFromRow,
   plannedLoad,
@@ -62,7 +72,16 @@ import { validationContext } from "./apply.js";
 import { RecipeError } from "./errors.js";
 import { recommendedModelOf } from "./parse-roles.js";
 import type { ValidationContext } from "./findings.js";
-import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
+import {
+  prepareRecipeForApply,
+  roleBrowses,
+  roleCodes,
+  roleRunsOnSubscription,
+  roleTakesHarness,
+  roleTaskText,
+  schedulesForRole,
+  subscriptionHarnessOf,
+} from "./prepare.js";
 import { unreviewedFields } from "./review.js";
 import { applyBlockingErrors, validateRecipe } from "./validate.js";
 
@@ -90,14 +109,20 @@ function machineChoice(machine: MachineWithAgents, minimum: MachineSize): Machin
   };
 }
 
-/** What each role of the recipe has on that sets its minimum. */
+/** What each role of the recipe needs of its machine. */
 function rolesNeeds(recipe: RecipeDocument): Array<AgentNeeds & { role: string }> {
-  return recipe.roles.map((role) => ({ role: role.role, browser: roleBrowses(role), coding: roleCodes(role) }));
+  return recipe.roles.map((role) => ({
+    role: role.role,
+    browser: roleBrowses(role),
+    coding: roleCodes(role),
+    harness: subscriptionHarnessOf(role),
+  }));
 }
 
 /**
- * What blocks the roles on a machine: a role whose minimum the machine is below, more roles than
- * the machine has room for under `maxAgents`, or agents of a guild the operator cannot see on it.
+ * What blocks the roles on a machine: a role whose minimum the machine is below, a role whose
+ * harness the machine's image lacks, more roles than the machine has room for under `maxAgents`,
+ * or agents of a guild the operator cannot see on it.
  */
 export function machineFindings(
   recipe: RecipeDocument,
@@ -113,6 +138,14 @@ export function machineFindings(
         severity: "error",
         path: "machine_id",
         message: belowMinimumMessage(needs.role, needs, machine),
+      });
+    }
+    if (needs.harness !== null && !carriesHarness(machine, needs.harness)) {
+      findings.push({
+        code: "machine.harness",
+        severity: "error",
+        path: "machine_id",
+        message: harnessMissingMessage(needs.role, needs.harness, machine),
       });
     }
   }
@@ -375,12 +408,19 @@ function modelFits(role: RecipeRole, connected: Set<string>, id: string | null):
 type ModelOffer = { connected: Set<string>; defaultModel: string | null };
 
 /**
- * The model each role is created with: the operator's choice, else the recommendation when the
- * organisation has its provider, else the organisation's default, else none.
+ * The model each role on a key is created with: the operator's choice, else the recommendation
+ * when the organisation has its provider, else the organisation's default, else none. A
+ * subscription role has no model.
  */
 function resolveModels(recipe: RecipeDocument, decisions: ModelDecision[], offer: ModelOffer): RoleModel[] {
   const chosen = new Map(decisions.map((item) => [item.role, String(item.model ?? "").trim()]));
-  return recipe.roles.map((role) => {
+  for (const [role, model] of chosen) {
+    const found = recipe.roles.find((item) => item.role === role);
+    if (model && found && roleRunsOnSubscription(found)) {
+      throw new RecipeError(`models.${role}: a subscription role takes no model`);
+    }
+  }
+  return recipe.roles.filter((role) => !roleRunsOnSubscription(role)).map((role) => {
     const fits = (id: string | null): id is string => modelFits(role, offer.connected, id);
     const recommended = recommendedModelOf(role.config);
     const choice = chosen.get(role.role) || null;
@@ -395,39 +435,47 @@ function resolveModels(recipe: RecipeDocument, decisions: ModelDecision[], offer
   });
 }
 
-/** The harness the recipe names for a coding role; null when it names none, or one the box turns off. */
-function recommendedHarness(role: RecipeRole): Harness | null {
-  const harness = harnessOf(role.config);
-  return harness !== null && !isHarnessOff(harness) ? harness : null;
+/** Whether apply can create the role on the harness: one the box does not turn off, and that runs a subscription role. */
+function harnessFits(role: RecipeRole, harness: Harness): boolean {
+  return !isHarnessOff(harness) && (!roleRunsOnSubscription(role) || isSubscriptionHarness(harness));
 }
 
-/** The harness the operator chose for a role, or null; refuses one that is unknown or turned off. */
-function chosenHarness(role: string, choice: string | null): Harness | null {
+/** The harness the recipe names for a role; null when it names none, or one apply cannot create the role on. */
+function recommendedHarness(role: RecipeRole): Harness | null {
+  const harness = harnessOf(role.config);
+  return harness !== null && harnessFits(role, harness) ? harness : null;
+}
+
+/** The harness the operator chose for a role, or null; refuses one that is unknown, turned off, or not for its subscription. */
+function chosenHarness(role: RecipeRole, choice: string | null): Harness | null {
   if (choice === null) {
     return null;
   }
   if (!isHarness(choice)) {
-    throw new RecipeError(`harnesses.${role}: harness must be one of ${harnessesOn().join(", ")}`);
+    throw new RecipeError(`harnesses.${role.role}: harness must be one of ${harnessesOn().join(", ")}`);
   }
   if (isHarnessOff(choice)) {
-    throw new RecipeError(`harnesses.${role}: ${harnessOffMessage(choice)}`);
+    throw new RecipeError(`harnesses.${role.role}: ${harnessOffMessage(choice)}`);
+  }
+  if (!harnessFits(role, choice)) {
+    throw new RecipeError(`harnesses.${role.role}: ${subscriptionHarnessMessage(choice)}`);
   }
   return choice;
 }
 
-/** The harness each coding role is created with: the operator's choice, else the recipe's. */
+/** The harness each coding or subscription role is created with: the operator's choice, else the recipe's. */
 function resolveHarnesses(recipe: RecipeDocument, decisions: HarnessDecision[]): RoleHarness[] {
   const chosen = new Map(decisions.map((item) => [item.role, String(item.harness ?? "").trim()]));
   for (const role of chosen.keys()) {
     const found = recipe.roles.find((item) => item.role === role);
-    if (!found || !roleCodes(found)) {
-      throw new RecipeError(`harnesses.${role}: only a coding role takes a harness`);
+    if (!found || !roleTakesHarness(found)) {
+      throw new RecipeError(`harnesses.${role}: only a coding role or a subscription role takes a harness`);
     }
   }
-  return recipe.roles.filter(roleCodes).map((role) => {
+  return recipe.roles.filter(roleTakesHarness).map((role) => {
     const recommended = recommendedHarness(role);
-    const choice = chosenHarness(role.role, chosen.get(role.role) || null);
-    return { role: role.role, recommended, harness: choice ?? recommended };
+    const choice = chosenHarness(role, chosen.get(role.role) || null);
+    return { role: role.role, recommended, harness: choice ?? recommended, subscription: roleRunsOnSubscription(role) };
   });
 }
 

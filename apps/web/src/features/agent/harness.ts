@@ -142,14 +142,21 @@ function pickedHarnessProblems(status: AgentHarness, harness: Harness): CodingPr
 }
 
 /**
- * What stands between a coding agent and its first code task: no harness picked, a machine image
- * without the harness's CLI, a harness without a credential, or no repository picked that the
- * agent can use.
- * Empty when nothing does.
+ * What stands between an agent and its harness running: no harness picked, a machine image
+ * without the harness's CLI, or a harness without a credential. Empty when nothing does.
+ */
+export function harnessProblems(status: AgentHarness): CodingProblem[] {
+  return status.harness === null
+    ? [{ kind: "harness" }]
+    : pickedHarnessProblems(status, status.harness);
+}
+
+/**
+ * What stands between a coding agent and its first code task: what its harness lacks, or no
+ * repository picked that the agent can use. Empty when nothing does.
  */
 export function codingProblems(status: AgentHarness): CodingProblem[] {
-  const harness: CodingProblem[] =
-    status.harness === null ? [{ kind: "harness" }] : pickedHarnessProblems(status, status.harness);
+  const harness = harnessProblems(status);
   return status.repositories.length ? harness : [...harness, { kind: "repositories" }];
 }
 
@@ -210,6 +217,17 @@ export function harnessOffered(
   current: Harness | "",
 ): boolean {
   return catalogFor(catalog, harness)?.enabled !== false || harness === current;
+}
+
+/**
+ * Whether a subscription agent's Settings offer a harness: one the catalogue says runs a
+ * subscription. Before the catalogue loads, every harness is offered.
+ */
+export function runsSubscription(
+  catalog: readonly HarnessCatalog[] | undefined,
+  harness: Harness,
+): boolean {
+  return catalogFor(catalog, harness)?.subscription !== false;
 }
 
 /** The token picker's value for no alias: the variable's own secret, else a login. Not a secret name. */

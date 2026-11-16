@@ -51,7 +51,7 @@ const catalog: OrgModels = {
   ],
 };
 
-const browsing = { ...configFormOf(defaultAgentConfig), browser: true };
+const browsing = { ...configFormOf(defaultAgentConfig, "key"), browser: true };
 
 test("switching the browser off turns off the agent-optimized browser and clears its model", () => {
   const form = { ...browsing, browser_optimized: true, browser_model: "openai/gpt-5-mini" };

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConfigError, decodeMasterKey, loadConfig, loadToolConfig, parseHarnessesOff } from "../../src/config/index.js";
+import {
+  ConfigError,
+  decodeMasterKey,
+  loadConfig,
+  loadToolConfig,
+  parseHarnessesOff,
+} from "../../src/config/index.js";
 import { HEX_MASTER_KEY, tempDir, testEnv } from "../helpers/env.js";
 
 test("loadConfig requires env, existing dirs, and a 32-byte master key", () => {
@@ -181,4 +187,10 @@ test("a name in HARNESSES_OFF that is not a harness fails the configuration", ()
     () => loadConfig(testEnv("postgresql://example", { HARNESSES_OFF: "claude" })),
     /HARNESSES_OFF names an unknown harness claude/,
   );
+});
+
+test("SUBSCRIPTION_AGENTS=1 offers subscription agents; unset or any other value does not", () => {
+  assert.equal(loadConfig(testEnv("postgresql://example", { SUBSCRIPTION_AGENTS: "1" })).offersSubscriptionAgents, true);
+  assert.equal(loadConfig(testEnv("postgresql://example")).offersSubscriptionAgents, false);
+  assert.equal(loadConfig(testEnv("postgresql://example", { SUBSCRIPTION_AGENTS: "on" })).offersSubscriptionAgents, false);
 });

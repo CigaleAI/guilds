@@ -5,6 +5,7 @@ import {
   PenLine,
   Plug,
   Repeat,
+  SquareTerminal,
   TriangleAlert,
   Wrench,
   type LucideIcon,
@@ -236,6 +237,7 @@ function MetricEntries({ metric, metrics }: MetricEntriesProps) {
 const capabilityIcon: Record<AgentCapability["id"], LucideIcon> = {
   browser: Globe,
   coding: Code2,
+  subscription: SquareTerminal,
 };
 
 type CapabilityListProps = { capabilities: readonly AgentCapability[] };

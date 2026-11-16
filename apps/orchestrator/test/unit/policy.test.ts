@@ -12,6 +12,7 @@ import {
   assertCanEnableCodingThrough,
   assertCanPlaceAgentsThrough,
   claimCoachRunThrough,
+  countsAsCodingAgent,
   machineCap,
   remaining,
   type OrgCounts,
@@ -36,6 +37,8 @@ function countsOf(counts: { agents?: number; browsers?: number; coders?: number;
   };
 }
 
+const MODEL = "deepinfra/zai-org/GLM-5.3-Flash";
+
 const limitOn = (cap: string) => (error: unknown) =>
   error instanceof LimitError &&
   error.status === 409 &&
@@ -56,9 +59,9 @@ test("the open policy caps nothing and bars no one", async () => {
 
 test("agent caps count what is being added", async () => {
   const policy = policyOf({ maxAgents: 3, maxBrowserAgents: 1, maxCodingAgents: 1 });
-  await assertCanCreateAgentThrough(policy, countsOf({ agents: 2 }), "org_1", { browser: false, coding: false });
+  await assertCanCreateAgentThrough(policy, countsOf({ agents: 2 }), "org_1", { browser: false, coding: false, model: MODEL });
   await assert.rejects(
-    () => assertCanCreateAgentThrough(policy, countsOf({ agents: 3 }), "org_1", { browser: false, coding: false }),
+    () => assertCanCreateAgentThrough(policy, countsOf({ agents: 3 }), "org_1", { browser: false, coding: false, model: MODEL }),
     limitOn("agents"),
   );
   await assert.rejects(
@@ -66,15 +69,30 @@ test("agent caps count what is being added", async () => {
     limitOn("agents"),
   );
   await assert.rejects(
-    () => assertCanCreateAgentThrough(policy, countsOf({ browsers: 1 }), "org_1", { browser: true, coding: false }),
+    () => assertCanCreateAgentThrough(policy, countsOf({ browsers: 1 }), "org_1", { browser: true, coding: false, model: MODEL }),
     limitOn("browser-enabled agents"),
   );
   await assert.rejects(
-    () => assertCanCreateAgentThrough(policy, countsOf({ coders: 1 }), "org_1", { browser: false, coding: true }),
+    () => assertCanCreateAgentThrough(policy, countsOf({ coders: 1 }), "org_1", { browser: false, coding: true, model: MODEL }),
     limitOn("coding agents"),
   );
   // A full browser cap does not stop an agent without a browser.
-  await assertCanCreateAgentThrough(policy, countsOf({ browsers: 1 }), "org_1", { browser: false, coding: false });
+  await assertCanCreateAgentThrough(policy, countsOf({ browsers: 1 }), "org_1", { browser: false, coding: false, model: MODEL });
+});
+
+test("a coding agent and a subscription agent count as coding agents; an agent on a key does not", () => {
+  assert.equal(countsAsCodingAgent({ coding: true, model: MODEL }), true);
+  assert.equal(countsAsCodingAgent({ coding: false, model: null }), true);
+  assert.equal(countsAsCodingAgent({ coding: false, model: MODEL }), false);
+});
+
+test("a new subscription agent takes one of the coding agents cap", async () => {
+  const policy = policyOf({ maxCodingAgents: 1 });
+  await assertCanCreateAgentThrough(policy, countsOf({ coders: 0 }), "org_1", { browser: false, coding: false, model: null });
+  await assert.rejects(
+    () => assertCanCreateAgentThrough(policy, countsOf({ coders: 1 }), "org_1", { browser: false, coding: false, model: null }),
+    limitOn("coding agents"),
+  );
 });
 
 test("enabling browser or coding on an agent takes one more of the cap", async () => {
@@ -94,7 +112,7 @@ test("a barred organisation is refused before any cap, except for guilds and coa
   const counts = countsOf({ guilds: 1 });
   const isBarred = (error: unknown) => error === barred;
   await assert.rejects(
-    () => assertCanCreateAgentThrough(policy, counts, "org_1", { browser: false, coding: false }),
+    () => assertCanCreateAgentThrough(policy, counts, "org_1", { browser: false, coding: false, model: MODEL }),
     isBarred,
   );
   await assert.rejects(() => assertCanEnableBrowserThrough(policy, counts, "org_1", false), isBarred);

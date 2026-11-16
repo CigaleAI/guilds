@@ -36,7 +36,7 @@ export type WakeWindow = {
   max_wakes: number;
 };
 
-/** The coding harnesses a coding agent delegates code work to. */
+/** The coding harnesses a coding agent delegates code work to, and a subscription agent runs every turn on. */
 export const HARNESSES = ["claude-code", "codex", "cursor", "antigravity"] as const;
 export type Harness = (typeof HARNESSES)[number];
 
@@ -53,7 +53,8 @@ export type HarnessLogins = Partial<Record<Harness, HarnessLogin>>;
 
 /** An agent's settings, as `agents.config` stores them: every key present. */
 export type AgentConfig = {
-  model: string;
+  /** The `{provider}/{model}` the agent's turns run on, on a key of its organisation; null for a subscription agent. */
+  model: string | null;
   temperature: number;
   max_tokens: number;
   max_steps: number;
@@ -96,6 +97,17 @@ export type AgentConfig = {
   thinking_level: ThinkingLevel;
 };
 
+/**
+ * Where an agent's turns run: a model on one of its organisation's keys, or its harness on the
+ * operator's own subscription. A subscription agent stores no model.
+ */
+export type ModelSource = { kind: "key"; model: string } | { kind: "subscription" };
+
+/** The model source an agent's config, or a run's snapshot of it, states: a subscription when it has no model. */
+export function modelSourceOf(config: Pick<AgentConfig, "model">): ModelSource {
+  return config.model === null ? { kind: "subscription" } : { kind: "key", model: config.model };
+}
+
 /** The settings an agent's runs take: its config with every setting it leaves to its guild taken from the guild. */
 export type ResolvedAgentConfig = Omit<AgentConfig, "keep_tool_result_generations"> & {
   keep_tool_result_generations: number;
@@ -121,10 +133,10 @@ export type RunScriptSnapshot = {
 };
 
 /**
- * `runs.config_snapshot`: the settings a run is created with, the tools it is offered
- * (each an OpenAI function schema, passed to the model as is), the connections and secrets it
- * reaches, and the scripts it pins. A coding run reads its repositories from its agent when it
- * starts, as it reads the guild's.
+ * `runs.config_snapshot`: the settings a run is created with, whose `model` states its model
+ * source as `modelSourceOf` reads it, the tools it is offered (each an OpenAI function schema,
+ * passed to the model as is), the connections and secrets it reaches, and the scripts it pins.
+ * A coding run reads its repositories from its agent when it starts, as it reads the guild's.
  */
 export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib" | "repositories"> & {
   projection_policy_version: number;

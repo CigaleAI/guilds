@@ -40,7 +40,7 @@
           "content-length": "3101",
           "content-type": "text/html; charset=utf-8"
         },
-        "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Authorization Cancelled · guilds.run</title>\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap\" rel=\"stylesheet\" />\n  <style>\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body {\n      min-height: 100vh;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      background: #090714;\n      color: #f1f5f9;\n      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;\n      padding: 24px;\n    }\n    .card {\n      background: #131022;\n      border: 1px solid rgba(255, 255, 255, 0.1);\n      border-radius: 16px;\n      padding: 36px 32px;\n      max-width: 440px;\n      width: 100%;\n      text-align: center;\n      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);\n    }\n    .icon-wrap {\n      width: 58px;\n      height: 58px;\n      margin: 0 auto 20px;\n      border-radius: 50%;\n      background: rgba(239, 68, 68, 0.12);\n      border: 1px solid rgba(239, 68, 68, 0.3);\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      color: #ef4444;\n    }\n    h1 {\n      font-size: 20px;\n      font-weight: 700;\n      margin-bottom: 8px;\n      color: #ffffff;\n    }\n    p {\n      color: #94a3b8;\n      font-size: 14px;\n      line-height: 1.5;\n      margin-bottom: 24px;\n    }\n    .btn {\n      display: inline-flex;\n      align-items: center;\n      justify-content: center;\n      padding: 10px 22px;\n      background: #a855f7;\n      color: #ffffff;\n      border: none;\n      border-radius: 8px;\n      font-size: 13px;\n      font-weight: 600;\n      cursor: pointer;\n      text-decoration: none;\n      transition: background 0.15s ease;\n    }\n    .btn:hover {\n      background: #9333ea;\n    }\n    .status-hint {\n      margin-top: 14px;\n      font-size: 12px;\n      color: #64748b;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"icon-wrap\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"></line><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"></line></svg></div>\n    <h1>Authorization Cancelled</h1>\n    <p>The authorization request was cancelled or incomplete.</p>\n    <button class=\"btn\" onclick=\"tryClose()\">Close tab</button>\n    <div class=\"status-hint\">You can safely close this window and return to guilds.run.</div>\n  </div>\n  <script>\n    function tryClose() {\n      window.close();\n      setTimeout(() => {\n        if (!window.closed) window.location.href = \"/\";\n      }, 300);\n    }\n    if (window.opener) {\n      try {\n        window.opener.postMessage({ type: \"oauth_complete\", success: false }, \"*\");\n      } catch(e) {}\n      setTimeout(tryClose, 1600);\n    }\n  </script>\n</body>\n</html>"
+        "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Authorization Cancelled \u00b7 guilds.run</title>\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap\" rel=\"stylesheet\" />\n  <style>\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body {\n      min-height: 100vh;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      background: #090714;\n      color: #f1f5f9;\n      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;\n      padding: 24px;\n    }\n    .card {\n      background: #131022;\n      border: 1px solid rgba(255, 255, 255, 0.1);\n      border-radius: 16px;\n      padding: 36px 32px;\n      max-width: 440px;\n      width: 100%;\n      text-align: center;\n      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);\n    }\n    .icon-wrap {\n      width: 58px;\n      height: 58px;\n      margin: 0 auto 20px;\n      border-radius: 50%;\n      background: rgba(239, 68, 68, 0.12);\n      border: 1px solid rgba(239, 68, 68, 0.3);\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      color: #ef4444;\n    }\n    h1 {\n      font-size: 20px;\n      font-weight: 700;\n      margin-bottom: 8px;\n      color: #ffffff;\n    }\n    p {\n      color: #94a3b8;\n      font-size: 14px;\n      line-height: 1.5;\n      margin-bottom: 24px;\n    }\n    .btn {\n      display: inline-flex;\n      align-items: center;\n      justify-content: center;\n      padding: 10px 22px;\n      background: #a855f7;\n      color: #ffffff;\n      border: none;\n      border-radius: 8px;\n      font-size: 13px;\n      font-weight: 600;\n      cursor: pointer;\n      text-decoration: none;\n      transition: background 0.15s ease;\n    }\n    .btn:hover {\n      background: #9333ea;\n    }\n    .status-hint {\n      margin-top: 14px;\n      font-size: 12px;\n      color: #64748b;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"icon-wrap\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"></line><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"></line></svg></div>\n    <h1>Authorization Cancelled</h1>\n    <p>The authorization request was cancelled or incomplete.</p>\n    <button class=\"btn\" onclick=\"tryClose()\">Close tab</button>\n    <div class=\"status-hint\">You can safely close this window and return to guilds.run.</div>\n  </div>\n  <script>\n    function tryClose() {\n      window.close();\n      setTimeout(() => {\n        if (!window.closed) window.location.href = \"/\";\n      }, 300);\n    }\n    if (window.opener) {\n      try {\n        window.opener.postMessage({ type: \"oauth_complete\", success: false }, \"*\");\n      } catch(e) {}\n      setTimeout(tryClose, 1600);\n    }\n  </script>\n</body>\n</html>"
       }
     },
     {
@@ -61,7 +61,7 @@
           "content-length": "3124",
           "content-type": "text/html; charset=utf-8"
         },
-        "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Session Expired · guilds.run</title>\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap\" rel=\"stylesheet\" />\n  <style>\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body {\n      min-height: 100vh;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      background: #090714;\n      color: #f1f5f9;\n      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;\n      padding: 24px;\n    }\n    .card {\n      background: #131022;\n      border: 1px solid rgba(255, 255, 255, 0.1);\n      border-radius: 16px;\n      padding: 36px 32px;\n      max-width: 440px;\n      width: 100%;\n      text-align: center;\n      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);\n    }\n    .icon-wrap {\n      width: 58px;\n      height: 58px;\n      margin: 0 auto 20px;\n      border-radius: 50%;\n      background: rgba(239, 68, 68, 0.12);\n      border: 1px solid rgba(239, 68, 68, 0.3);\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      color: #ef4444;\n    }\n    h1 {\n      font-size: 20px;\n      font-weight: 700;\n      margin-bottom: 8px;\n      color: #ffffff;\n    }\n    p {\n      color: #94a3b8;\n      font-size: 14px;\n      line-height: 1.5;\n      margin-bottom: 24px;\n    }\n    .btn {\n      display: inline-flex;\n      align-items: center;\n      justify-content: center;\n      padding: 10px 22px;\n      background: #a855f7;\n      color: #ffffff;\n      border: none;\n      border-radius: 8px;\n      font-size: 13px;\n      font-weight: 600;\n      cursor: pointer;\n      text-decoration: none;\n      transition: background 0.15s ease;\n    }\n    .btn:hover {\n      background: #9333ea;\n    }\n    .status-hint {\n      margin-top: 14px;\n      font-size: 12px;\n      color: #64748b;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"icon-wrap\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"></line><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"></line></svg></div>\n    <h1>Session Expired</h1>\n    <p>This authorization request has expired or was already completed. Please try connecting again.</p>\n    <button class=\"btn\" onclick=\"tryClose()\">Close tab</button>\n    <div class=\"status-hint\">You can safely close this window and return to guilds.run.</div>\n  </div>\n  <script>\n    function tryClose() {\n      window.close();\n      setTimeout(() => {\n        if (!window.closed) window.location.href = \"/\";\n      }, 300);\n    }\n    if (window.opener) {\n      try {\n        window.opener.postMessage({ type: \"oauth_complete\", success: false }, \"*\");\n      } catch(e) {}\n      setTimeout(tryClose, 1600);\n    }\n  </script>\n</body>\n</html>"
+        "text": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n  <title>Session Expired \u00b7 guilds.run</title>\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />\n  <link href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap\" rel=\"stylesheet\" />\n  <style>\n    * { box-sizing: border-box; margin: 0; padding: 0; }\n    body {\n      min-height: 100vh;\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      background: #090714;\n      color: #f1f5f9;\n      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;\n      padding: 24px;\n    }\n    .card {\n      background: #131022;\n      border: 1px solid rgba(255, 255, 255, 0.1);\n      border-radius: 16px;\n      padding: 36px 32px;\n      max-width: 440px;\n      width: 100%;\n      text-align: center;\n      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);\n    }\n    .icon-wrap {\n      width: 58px;\n      height: 58px;\n      margin: 0 auto 20px;\n      border-radius: 50%;\n      background: rgba(239, 68, 68, 0.12);\n      border: 1px solid rgba(239, 68, 68, 0.3);\n      display: flex;\n      align-items: center;\n      justify-content: center;\n      color: #ef4444;\n    }\n    h1 {\n      font-size: 20px;\n      font-weight: 700;\n      margin-bottom: 8px;\n      color: #ffffff;\n    }\n    p {\n      color: #94a3b8;\n      font-size: 14px;\n      line-height: 1.5;\n      margin-bottom: 24px;\n    }\n    .btn {\n      display: inline-flex;\n      align-items: center;\n      justify-content: center;\n      padding: 10px 22px;\n      background: #a855f7;\n      color: #ffffff;\n      border: none;\n      border-radius: 8px;\n      font-size: 13px;\n      font-weight: 600;\n      cursor: pointer;\n      text-decoration: none;\n      transition: background 0.15s ease;\n    }\n    .btn:hover {\n      background: #9333ea;\n    }\n    .status-hint {\n      margin-top: 14px;\n      font-size: 12px;\n      color: #64748b;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"card\">\n    <div class=\"icon-wrap\"><svg width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle><line x1=\"15\" y1=\"9\" x2=\"9\" y2=\"15\"></line><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"15\"></line></svg></div>\n    <h1>Session Expired</h1>\n    <p>This authorization request has expired or was already completed. Please try connecting again.</p>\n    <button class=\"btn\" onclick=\"tryClose()\">Close tab</button>\n    <div class=\"status-hint\">You can safely close this window and return to guilds.run.</div>\n  </div>\n  <script>\n    function tryClose() {\n      window.close();\n      setTimeout(() => {\n        if (!window.closed) window.location.href = \"/\";\n      }, 300);\n    }\n    if (window.opener) {\n      try {\n        window.opener.postMessage({ type: \"oauth_complete\", success: false }, \"*\");\n      } catch(e) {}\n      setTimeout(tryClose, 1600);\n    }\n  </script>\n</body>\n</html>"
       }
     },
     {
@@ -1107,6 +1107,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -1600,7 +1601,7 @@
                           "items": {
                             "type": "string"
                           },
-                          "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                          "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                         }
                       },
                       "required": [
@@ -1859,7 +1860,7 @@
                   {
                     "name": "coingecko_coin",
                     "remote_name": "coin",
-                    "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                    "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -2831,7 +2832,7 @@
                 ],
                 "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
                 "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
                 "oauth_strategy": "none",
                 "oauth_setup_state": "not_applicable",
                 "auth_fields": [
@@ -3420,6 +3421,7 @@
           "avatar_color": "#7c5cff",
           "browser": true,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -3913,7 +3915,7 @@
                           "items": {
                             "type": "string"
                           },
-                          "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                          "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                         }
                       },
                       "required": [
@@ -4172,7 +4174,7 @@
                   {
                     "name": "coingecko_coin",
                     "remote_name": "coin",
-                    "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                    "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -5144,7 +5146,7 @@
                 ],
                 "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
                 "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
                 "oauth_strategy": "none",
                 "oauth_setup_state": "not_applicable",
                 "auth_fields": [
@@ -5733,6 +5735,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -6226,7 +6229,7 @@
                           "items": {
                             "type": "string"
                           },
-                          "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                          "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                         }
                       },
                       "required": [
@@ -6485,7 +6488,7 @@
                   {
                     "name": "coingecko_coin",
                     "remote_name": "coin",
-                    "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                    "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -7457,7 +7460,7 @@
                 ],
                 "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
                 "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
                 "oauth_strategy": "none",
                 "oauth_setup_state": "not_applicable",
                 "auth_fields": [
@@ -8030,6 +8033,7 @@
             "avatar_color": "#7c5cff",
             "browser": false,
             "coding": false,
+            "model_source": "key",
             "machine_id": "<id:mach:1>",
             "machine": {
               "id": "<id:mach:1>",
@@ -8047,6 +8051,7 @@
             "avatar_color": "#7c5cff",
             "browser": true,
             "coding": false,
+            "model_source": "key",
             "machine_id": "<id:mach:1>",
             "machine": {
               "id": "<id:mach:1>",
@@ -8064,6 +8069,7 @@
             "avatar_color": "#7c5cff",
             "browser": false,
             "coding": false,
+            "model_source": "key",
             "machine_id": "<id:mach:1>",
             "machine": {
               "id": "<id:mach:1>",
@@ -8102,6 +8108,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -8595,7 +8602,7 @@
                           "items": {
                             "type": "string"
                           },
-                          "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                          "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                         }
                       },
                       "required": [
@@ -8854,7 +8861,7 @@
                   {
                     "name": "coingecko_coin",
                     "remote_name": "coin",
-                    "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                    "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -9826,7 +9833,7 @@
                 ],
                 "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
                 "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
                 "oauth_strategy": "none",
                 "oauth_setup_state": "not_applicable",
                 "auth_fields": [
@@ -10415,6 +10422,7 @@
           "avatar_color": "#7c5cff",
           "browser": false,
           "coding": false,
+          "model_source": "key",
           "machine_id": "<id:mach:1>",
           "machine": {
             "id": "<id:mach:1>",
@@ -10908,7 +10916,7 @@
                           "items": {
                             "type": "string"
                           },
-                          "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                          "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                         }
                       },
                       "required": [
@@ -11167,7 +11175,7 @@
                   {
                     "name": "coingecko_coin",
                     "remote_name": "coin",
-                    "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                    "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -12139,7 +12147,7 @@
                 ],
                 "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
                 "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+                "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
                 "oauth_strategy": "none",
                 "oauth_setup_state": "not_applicable",
                 "auth_fields": [
@@ -13685,7 +13693,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -13711,7 +13719,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -13749,7 +13757,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -13776,7 +13784,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -14542,7 +14550,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -14568,7 +14576,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -14606,7 +14614,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -14633,7 +14641,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -15512,7 +15520,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -15538,7 +15546,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -15576,7 +15584,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -15603,7 +15611,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -16370,7 +16378,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -16396,7 +16404,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -16434,7 +16442,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -16461,7 +16469,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -17230,7 +17238,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -17256,7 +17264,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -17294,7 +17302,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -17321,7 +17329,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -18755,7 +18763,7 @@
                         "items": {
                           "type": "string"
                         },
-                        "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                        "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                       }
                     },
                     "required": [
@@ -19014,7 +19022,7 @@
                 {
                   "name": "coingecko_coin",
                   "remote_name": "coin",
-                  "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                  "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -19986,7 +19994,7 @@
               ],
               "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
               "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
               "oauth_strategy": "none",
               "oauth_setup_state": "not_applicable",
               "auth_fields": [
@@ -21006,7 +21014,7 @@
                         "items": {
                           "type": "string"
                         },
-                        "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                        "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                       }
                     },
                     "required": [
@@ -21265,7 +21273,7 @@
                 {
                   "name": "coingecko_coin",
                   "remote_name": "coin",
-                  "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                  "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -22237,7 +22245,7 @@
               ],
               "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
               "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
               "oauth_strategy": "none",
               "oauth_setup_state": "not_applicable",
               "auth_fields": [
@@ -23257,7 +23265,7 @@
                         "items": {
                           "type": "string"
                         },
-                        "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                        "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                       }
                     },
                     "required": [
@@ -23516,7 +23524,7 @@
                 {
                   "name": "coingecko_coin",
                   "remote_name": "coin",
-                  "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                  "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -24488,7 +24496,7 @@
               ],
               "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
               "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
               "oauth_strategy": "none",
               "oauth_setup_state": "not_applicable",
               "auth_fields": [
@@ -25508,7 +25516,7 @@
                         "items": {
                           "type": "string"
                         },
-                        "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+                        "description": "Tweet ids: snowflake, tweet_\u2026, or status URL. Max 100."
                       }
                     },
                     "required": [
@@ -25767,7 +25775,7 @@
                 {
                   "name": "coingecko_coin",
                   "remote_name": "coin",
-                  "description": "Coin id or platform+address → contract addresses and lean market data. Pass id, or platform and address.",
+                  "description": "Coin id or platform+address \u2192 contract addresses and lean market data. Pass id, or platform and address.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -26739,7 +26747,7 @@
               ],
               "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
               "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
               "oauth_strategy": "none",
               "oauth_setup_state": "not_applicable",
               "auth_fields": [
@@ -27862,7 +27870,7 @@
               "auth": "token",
               "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
               "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
-              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+              "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations \u2192 API key.",
               "enabled": true,
               "owner_org_id": null,
               "tool_prefix": "qonto",
@@ -28790,7 +28798,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -28816,7 +28824,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -28854,7 +28862,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -28881,7 +28889,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -29649,7 +29657,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -29675,7 +29683,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -29713,7 +29721,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -29740,7 +29748,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -30507,7 +30515,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -30533,7 +30541,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -30571,7 +30579,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -30598,7 +30606,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -31366,7 +31374,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -31392,7 +31400,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -31430,7 +31438,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -31457,7 +31465,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -32224,7 +32232,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -32250,7 +32258,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -32288,7 +32296,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -32315,7 +32323,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [
@@ -33274,7 +33282,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value; needs collection"
                       },
                       "limit": {
                         "type": "integer",
@@ -33300,7 +33308,7 @@
                       },
                       "where": {
                         "type": "object",
-                        "description": "column → term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
+                        "description": "column \u2192 term, for example {\"status\": \"new\", \"score\": {\"gte\": 80}, \"id\": 42}: text and an open array item match by substring or similar spelling, a column with allowed values exactly (a term outside the list is an error), number and datetime exactly or by {gte, lte}, boolean and id exactly, null a missing value"
                       },
                       "since": {
                         "type": "string",
@@ -33338,7 +33346,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the declared columns"
+                        "description": "column \u2192 value for the declared columns"
                       }
                     },
                     "required": [
@@ -33365,7 +33373,7 @@
                       },
                       "body": {
                         "type": "object",
-                        "description": "column → value for the columns that change; null clears an optional column"
+                        "description": "column \u2192 value for the columns that change; null clears an optional column"
                       }
                     },
                     "required": [

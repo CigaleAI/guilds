@@ -3,7 +3,7 @@ import type pg from "pg";
 import { LastOrgOwner, RowMissing } from "./errors.js";
 import { insertDefaultMachine } from "./machines.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { orgMembers, orgModelProviders, orgs, users } from "./schema/index.js";
+import { orgMembers, orgModelProviders, orgs, users, type AgentConfig } from "./schema/index.js";
 
 /** What an extension does with a new organisation, inside the transaction that creates it. */
 export type OrgCreatedHook = (
@@ -280,16 +280,19 @@ export async function countOrgBrowserAgents(pool: Queryable, orgId: string): Pro
   return result.rows[0]?.count ?? 0;
 }
 
-export async function countOrgCodingAgents(pool: Queryable, orgId: string): Promise<number> {
-  const result = await pool.query<{ count: number }>(
-    `SELECT COUNT(*)::int AS count
+/** The settings of an agent of the organisation that say whether it holds a harness. */
+export type OrgAgentHarnessConfig = Pick<AgentConfig, "coding" | "model">;
+
+/** The settings of each agent of the organisation that say whether it holds a harness. */
+export async function listOrgAgentHarnessConfigs(pool: Queryable, orgId: string): Promise<OrgAgentHarnessConfig[]> {
+  const result = await pool.query<OrgAgentHarnessConfig>(
+    `SELECT COALESCE((a.config->>'coding')::boolean, FALSE) AS coding, a.config->'model' AS model
      FROM agents a
      JOIN guilds p ON p.id = a.guild_id
-     WHERE p.org_id = $1
-       AND COALESCE((a.config->>'coding')::boolean, FALSE)`,
+     WHERE p.org_id = $1`,
     [orgId],
   );
-  return result.rows[0]?.count ?? 0;
+  return result.rows;
 }
 
 export async function listOrgModelProviders(

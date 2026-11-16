@@ -451,8 +451,14 @@ export type ApplyConnectionChoice = {
 /** A role's model on the apply preview: what the recipe recommends, and what apply will create it with. */
 export type RoleModel = { role: string; recommended: string | null; model: string | null };
 
-/** A coding role's harness on the apply preview: what the recipe names, and what apply will create it with. */
-export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null };
+/** A coding or subscription role's harness on the apply preview: what the recipe names, and what apply will create it with. */
+export type RoleHarness = {
+  role: string;
+  recommended: Harness | null;
+  harness: Harness | null;
+  /** Whether the role runs on a subscription, which only some harnesses run. */
+  subscription: boolean;
+};
 
 /** What the operator decides before apply: the guild's name, each agent's name and model, each coding agent's harness, and each login. */
 export type ApplyChoices = {

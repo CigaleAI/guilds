@@ -1,5 +1,5 @@
 import { HARNESSES, type Harness } from "../db/schema/index.js";
-import { HARNESS_INFO, isHarnessOff } from "./harnesses.js";
+import { areSubscriptionAgentsOn, HARNESS_INFO, isHarnessOff, isSubscriptionHarness } from "./harnesses.js";
 import { EFFORTS, type AgentConfig, type Effort, type RecipeRole } from "../db/schema/index.js";
 
 
@@ -130,6 +130,8 @@ export type HarnessCatalog = {
   label: string;
   /** False when the box turns the harness off: Settings offers it only to an agent already on it. */
   enabled: boolean;
+  /** Whether a subscription agent may run on the harness. */
+  subscription: boolean;
   models: { id: string; label: string; efforts: readonly Effort[]; default_effort: Effort | null }[];
   unlisted_efforts: readonly Effort[];
 };
@@ -140,7 +142,16 @@ export function harnessCatalog(): HarnessCatalog[] {
     harness,
     label: HARNESS_INFO[harness].label,
     enabled: !isHarnessOff(harness),
+    subscription: isSubscriptionHarness(harness),
     models: HARNESS_MODELS[harness].map(({ id, label, efforts, default_effort }) => ({ id, label, efforts, default_effort })),
     unlisted_efforts: UNLISTED_EFFORTS[harness],
   }));
+}
+
+/** The harnesses the box offers, and whether it offers subscription agents. */
+export type HarnessOffer = { harnesses: HarnessCatalog[]; subscription_agents: boolean };
+
+/** What Settings and the create flow offer: every harness's catalog, and whether subscription agents are on. */
+export function harnessOffer(): HarnessOffer {
+  return { harnesses: harnessCatalog(), subscription_agents: areSubscriptionAgentsOn() };
 }

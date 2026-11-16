@@ -24,7 +24,7 @@ import { GuildNameTaken, RowMissing } from "../db/errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
-import type { AgentConfig } from "../db/schema/index.js";
+import { modelSourceOf, type AgentConfig } from "../db/schema/index.js";
 import { codingRepositoriesDatabase, loadUsableRepositories, type RepositoryPlace } from "../coding/agent-repositories.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
@@ -33,18 +33,21 @@ import { assertGuildAgentRoom } from "../guilds/service.js";
 import { integrationState, SYSTEM_ONE } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
 import { assertModelConnected, type ModelCredentialsProvider } from "../llm/credentials.js";
+import { agentNeedsOf } from "../machines/index.js";
 import { freeSlot, placeAgent, placementMachine, type Placement } from "../machines/placement.js";
 import type { NotesStore } from "../notes/store.js";
 import {
   assertCanCreateAgent,
   assertCanEnableBrowser,
   assertCanEnableCoding,
+  countsAsCodingAgent,
   type OrgPolicy,
 } from "../policy/index.js";
 import { AgentError } from "./errors.js";
 import {
   AgentValidationError,
   assertCodingAgent,
+  assertSubscriptionAgent,
   assertUsableRepositories,
   validateAgentConfig,
   validateNewAgentConfig,
@@ -101,6 +104,21 @@ export type AgentSettingsPatch = {
 
 /** An agent's validated config and the profile fields it changes. */
 export type AgentSettings = { config: AgentConfig; profile: AgentConfigPatch };
+
+/**
+ * Refuses a model on a key whose provider the organisation has not connected; a subscription
+ * agent has no model to connect.
+ */
+async function assertModelSourceConnected(
+  services: AgentServices,
+  orgId: string,
+  config: AgentConfig,
+): Promise<void> {
+  const source = modelSourceOf(config);
+  if (source.kind === "key") {
+    await assertModelConnected(services.modelCredentials, orgId, source.model);
+  }
+}
 
 /**
  * Refuses the agent-optimized browser while the System One key is not on, or while its model's
@@ -224,10 +242,7 @@ export async function addAgent(
     if (!row) {
       throw new RowMissing("agent insert failed: guild not found");
     }
-    const machine = await placementMachine(client, row.org_id, placement.machineId, {
-      browser: agent.config.browser === true,
-      coding: agent.config.coding === true,
-    });
+    const machine = await placementMachine(client, row.org_id, placement.machineId, agentNeedsOf(agent.config));
     const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
     const inserted = await insertAgent(
       client,
@@ -266,10 +281,11 @@ export async function addAgent(
 }
 
 /**
- * Creates an agent in the guild: validated, on a model the organisation has connected, with the
- * agent-optimized browser only while it is ready, with repositories it can use, within its
- * policy's caps and the guild's agent limit, and on the machine the request names or the
- * organisation's only one. Only a guild admin gives it tool-result turns of its own.
+ * Creates an agent in the guild: validated, on a model the organisation has connected or on a
+ * subscription the box offers, with the agent-optimized browser only while it is ready, with
+ * repositories it can use, within its policy's caps and the guild's agent limit, and on the
+ * machine the request names or the organisation's only one. Only a guild admin gives it
+ * tool-result turns of its own.
  */
 export async function createAgent(
   services: AgentServices,
@@ -288,14 +304,15 @@ export async function createAgent(
   const avatarColor = validateAvatarColor(request.avatarColor);
   const config = validateNewAgentConfig(request.config);
   assertCodingAgent(config);
+  assertSubscriptionAgent(config);
   if (config.keep_tool_result_generations !== null) {
     await requireAdministeredGuild(db, guild.id, operator.actorId);
   }
-  await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
+  await assertModelSourceConnected(services, guild.org_id, config);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
   await assertRepositoriesUsable(db, { id: null, guild_id: guild.id, org_id: guild.org_id }, config);
-  const needs = { browser: config.browser, coding: config.coding };
-  await assertCanCreateAgent(policy, db, guild.org_id, needs);
+  await assertCanCreateAgent(policy, db, guild.org_id, config);
+  const needs = agentNeedsOf(config);
   await assertGuildAgentRoom(db, guild.id, 1);
   const { machine, maxAgentsPerMachine } = await placeAgent(
     services,
@@ -332,7 +349,10 @@ function validateAgentProfile(patch: AgentSettingsPatch): AgentConfigPatch {
   };
 }
 
-/** Refuses switching on a browser or coding the agent did not have when the policy's caps are reached. */
+/**
+ * Refuses switching on a browser the agent did not have, or what makes it count as a coding agent
+ * when it did not, when the policy's caps are reached.
+ */
 async function assertCanEnable(
   services: AgentServices,
   agent: AgentRow,
@@ -342,7 +362,7 @@ async function assertCanEnable(
   if (config.browser && !previous.browser) {
     await assertCanEnableBrowser(services.policy, services.db, agent.org_id, false);
   }
-  if (config.coding && !previous.coding) {
+  if (countsAsCodingAgent(config) && !countsAsCodingAgent(previous)) {
     await assertCanEnableCoding(services.policy, services.db, agent.org_id);
   }
 }
@@ -368,7 +388,7 @@ async function writeAgentSettings(
   change: AgentSettings,
 ): Promise<void> {
   const { machine, maxAgentsPerMachine, moves } = placement;
-  const needs = { browser: change.config.browser, coding: change.config.coding };
+  const needs = agentNeedsOf(change.config);
   if (moves) {
     await generationOf(services).machines.moveAgent(agent.id, machine.id, { maxAgentsPerMachine, needs });
   }
@@ -382,9 +402,8 @@ async function writeAgentSettings(
     );
   } catch (error) {
     if (moves) {
-      const previous = agent.config;
       await generationOf(services).machines.moveAgent(agent.id, agent.machine_id, {
-        needs: { browser: Boolean(previous.browser), coding: Boolean(previous.coding) },
+        needs: agentNeedsOf(agent.config),
       });
     }
     throw isNameConflict(error) ? nameConflictError(error) : error;
@@ -410,7 +429,8 @@ async function moveAgentNotes(
 }
 
 /**
- * Changes an agent's config and profile. A new config is validated and its model connected; the
+ * Changes an agent's config and profile. A new config is validated and its model connected, or its
+ * subscription offered by the box unless the agent is already on one; the
  * agent-optimized browser turned on, or given another browser model, must be ready, while an edit
  * that leaves both alone saves without the check; a repository newly picked is one the agent can
  * use; a browser or coding switched on is
@@ -428,13 +448,14 @@ export async function reconfigureAgent(
   const config = validateAgentConfig(patch.config);
   const previous = agent.config;
   assertCodingAgent(config, previous);
+  assertSubscriptionAgent(config, previous);
   if (config.keep_tool_result_generations !== previous.keep_tool_result_generations) {
     await requireAdministeredGuild(services.db, agent.guild_id, userId);
   }
-  await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
+  await assertModelSourceConnected(services, agent.org_id, config);
   await assertBrowserOptimizedChangeReady(services, agent.org_id, config, previous);
   await assertRepositoriesUsable(services.db, agent, config, previous);
-  const needs = { browser: config.browser, coding: config.coding };
+  const needs = agentNeedsOf(config);
   const placement = await placeAgent(services, agent.org_id, userId, {
     requested: patch.machineId,
     needs,
@@ -477,10 +498,9 @@ export async function moveAgentToMachine(
   if (machineId === undefined || machineId === null) {
     throw new AgentError(422, "machine_id is required");
   }
-  const config = agent.config;
   const { machine, maxAgentsPerMachine, moves } = await placeAgent(services, agent.org_id, userId, {
     requested: machineId,
-    needs: { browser: config.browser === true, coding: config.coding === true },
+    needs: agentNeedsOf(agent.config),
     machineId: agent.machine_id,
   });
   if (moves) {

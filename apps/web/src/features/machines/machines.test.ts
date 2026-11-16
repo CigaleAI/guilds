@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Machine } from "../../api/types/agents";
+import type { Machine, ModelSource } from "../../api/types/agents";
 import {
   agentMinimum,
   agentMinimums,
@@ -43,23 +43,48 @@ function machine(patch: Partial<Machine> = {}): Machine {
   };
 }
 
-const agent = (id: string, browser: boolean, coding: boolean) => ({
+const agent = (
+  id: string,
+  browser: boolean,
+  coding: boolean,
+  model_source: ModelSource = "key",
+) => ({
   id,
   name: id,
   guild_id: "g",
   guild_name: "guild",
   browser,
   coding,
+  model_source,
 });
 
 test("an agent's minimum is the largest of its capabilities' minimums, not their sum", () => {
-  assert.deepEqual(agentMinimum({ browser: false, coding: false }), agentMinimums.base);
-  assert.deepEqual(agentMinimum({ browser: true, coding: false }), agentMinimums.browser);
-  assert.deepEqual(agentMinimum({ browser: true, coding: true }), agentMinimums.coding);
+  assert.deepEqual(
+    agentMinimum({ browser: false, coding: false, model_source: "key" }),
+    agentMinimums.base,
+  );
+  assert.deepEqual(
+    agentMinimum({ browser: true, coding: false, model_source: "key" }),
+    agentMinimums.browser,
+  );
+  assert.deepEqual(
+    agentMinimum({ browser: true, coding: true, model_source: "key" }),
+    agentMinimums.coding,
+  );
   assert.deepEqual(
     agentsMinimum([agent("a", true, false), agent("b", false, false)]),
     agentMinimums.browser,
   );
+  assert.deepEqual(
+    agentMinimum({ browser: false, coding: false, model_source: "subscription" }),
+    agentMinimums.coding,
+  );
+  assert.deepEqual(
+    agentsMinimum([agent("a", true, false), agent("b", false, false, "subscription")]),
+    agentMinimums.coding,
+    "a subscription agent's harness needs what Coding does",
+  );
+  assert.deepEqual(agentsMinimum([]), agentMinimums.base);
   assert.equal(sizeMeets(machine(), agentMinimums.browser), true);
   assert.equal(sizeMeets(machine(), agentMinimums.coding), false);
 });
@@ -70,20 +95,26 @@ test("a placement starts from the server's plan, counts an agent already there o
     planned_mib: 4096,
     agents: [agent("a", true, false), agent("b", true, false)],
   });
-  assert.deepEqual(placementBudget(host, { browser: true, coding: false }), {
+  assert.deepEqual(placementBudget(host, { browser: true, coding: false, model_source: "key" }), {
     fits: true,
     minimum: agentMinimums.browser,
     planned: { cpu: 2, memory_mib: 4096 },
     adds: agentMinimums.browser,
   });
   // An agent already on the machine is not counted twice, and its new needs count.
-  const moved = placementBudget(host, { id: "a", browser: true, coding: true });
+  const moved = placementBudget(host, {
+    id: "a",
+    browser: true,
+    coding: true,
+    model_source: "key",
+  });
   assert.deepEqual(moved.planned, { cpu: 1, memory_mib: 2048 });
   assert.equal(moved.fits, false);
   // Agents of guilds the viewer cannot see are in the server's plan though not listed.
   const shared = placementBudget(machine({ planned_cpu: 1.5, hidden_agents: 1 }), {
     browser: false,
     coding: false,
+    model_source: "key",
   });
   assert.equal(shared.planned.cpu, 1.5);
 });

@@ -7,9 +7,9 @@ import {
   machineHint,
   machineMove,
   readinessProblems,
+  readinessTitle,
   settingsNameError,
 } from "./AgentSettings";
-import { defaultAgentConfig } from "./configForm";
 
 const machine: Machine = {
   id: "m_2",
@@ -54,18 +54,21 @@ test("the harnesses carried are the new machine's on a move, else the harness ch
   assert.deepEqual(carriedHarnesses(machine, undefined, undefined), ["codex"]);
 });
 
-test("the machine's hint says a move happens on save, or what a coding agent needs", () => {
-  assert.match(machineHint("m_2", true) ?? "", /^Saving moves the agent/);
-  assert.equal(machineHint(undefined, true), "Coding agents need a Code machine.");
-  assert.equal(machineHint(undefined, false), undefined);
+test("the machine's hint says a move happens on save, or what a coding or subscription agent needs", () => {
+  assert.match(machineHint("m_2", "coding") ?? "", /^Saving moves the agent/);
+  assert.equal(machineHint(undefined, "coding"), "Coding agents need a Code machine.");
+  assert.equal(machineHint(undefined, "subscription"), "Subscription agents need a Code machine.");
+  assert.equal(machineHint(undefined, "key"), undefined);
 });
 
-test("only a saved coding agent has readiness problems", () => {
-  const coding = { ...defaultAgentConfig, coding: true };
-  assert.deepEqual(readinessProblems(coding, status), [
+test("a saved coding agent's readiness needs repositories; a subscription agent's only its harness", () => {
+  assert.deepEqual(readinessProblems("coding", status), [
     { kind: "harness" },
     { kind: "repositories" },
   ]);
-  assert.deepEqual(readinessProblems(defaultAgentConfig, status), []);
-  assert.deepEqual(readinessProblems(coding, undefined), []);
+  assert.deepEqual(readinessProblems("subscription", status), [{ kind: "harness" }]);
+  assert.deepEqual(readinessProblems("key", status), []);
+  assert.deepEqual(readinessProblems("coding", undefined), []);
+  assert.equal(readinessTitle("coding"), "Coding isn't ready");
+  assert.equal(readinessTitle("subscription"), "The subscription isn't ready");
 });

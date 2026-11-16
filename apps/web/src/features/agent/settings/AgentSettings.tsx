@@ -8,13 +8,7 @@ import {
 } from "../../../api/queries/agents";
 import { useGuild } from "../../../api/queries/guilds";
 import { useOrgModels } from "../../../api/queries/models";
-import type {
-  AgentConfig,
-  AgentDetail,
-  AgentHarness,
-  Harness,
-  Machine,
-} from "../../../api/types/agents";
+import type { AgentDetail, AgentHarness, Harness, Machine } from "../../../api/types/agents";
 import { hasConnectedProvider } from "../../../api/types/models";
 import { useIdentity } from "../../../app/identity";
 import {
@@ -26,10 +20,10 @@ import {
   Stepper,
   toast,
 } from "@guildsrun/ui";
-import { MachineGroup, ModelStep } from "../AgentSteps";
+import { MachineGroup, ModelStep, SubscriptionStep } from "../AgentSteps";
 import { CodingReadinessBanner } from "../CodingReadiness";
 import { CodingRepositories } from "../CodingRepositories";
-import { codingProblems, type CodingProblem } from "../harness";
+import { codingProblems, harnessProblems, type CodingProblem } from "../harness";
 import { focusMax } from "../IdentityFields";
 import { chosenMachine } from "../../machines/machines";
 import { agentHandleError, handleHint } from "../../../app/names";
@@ -40,10 +34,12 @@ import { HarnessField } from "./HarnessFields";
 import {
   openSection,
   problemSection,
-  sectionErrors,
+  sectionErrorKeys,
   sectionHasErrors,
   sectionLabel,
+  settingsKindOf,
   settingsSections,
+  type SettingsKind,
   type SettingsSection,
 } from "./sections";
 
@@ -60,7 +56,7 @@ type Form = ConfigForm & {
 
 function formOf(agent: AgentDetail): Form {
   return {
-    ...configFormOf(agent.config, agent.machine_id),
+    ...configFormOf(agent.config, agent.model_source, agent.machine_id),
     name: agent.name,
     focus: agent.focus,
     wakeTriggers: agent.wake_triggers,
@@ -157,19 +153,29 @@ export function carriedHarnesses(
   return status?.machine_harnesses ?? machine?.harnesses;
 }
 
-/** The hint under the machine: that saving moves the agent, or that a coding agent needs a Code machine. */
-export function machineHint(moveTo: string | undefined, coding: boolean): string | undefined {
+/** The hint under the machine: that saving moves the agent, or that a coding or subscription agent needs a Code machine. */
+export function machineHint(moveTo: string | undefined, kind: SettingsKind): string | undefined {
   if (moveTo)
     return "Saving moves the agent and its home there. It can't move while it is generating.";
-  return coding ? "Coding agents need a Code machine." : undefined;
+  if (kind === "coding") return "Coding agents need a Code machine.";
+  return kind === "subscription" ? "Subscription agents need a Code machine." : undefined;
 }
 
-/** What a saved coding agent still lacks to run code tasks; nothing for any other agent. */
+/**
+ * What a saved agent still lacks for its harness: a coding agent's to run code tasks, a
+ * subscription agent's to run at all; nothing for an agent on a key.
+ */
 export function readinessProblems(
-  config: AgentConfig,
+  kind: SettingsKind,
   status: AgentHarness | undefined,
 ): CodingProblem[] {
-  return config.coding && status ? codingProblems(status) : [];
+  if (!status || kind === "key") return [];
+  return kind === "coding" ? codingProblems(status) : harnessProblems(status);
+}
+
+/** The title of the readiness banner of a saved agent of this kind. */
+export function readinessTitle(kind: SettingsKind): string {
+  return kind === "subscription" ? "The subscription isn't ready" : "Coding isn't ready";
 }
 
 type SettingsFooterProps = {
@@ -242,11 +248,15 @@ export function AgentSettings() {
   const noProvider = hasConnectedProvider(models.data) === false;
   const step = { form, setConfig, errors, machine };
 
-  const sections = settingsSections(form.coding);
-  const section = openSection(search.section, form.coding);
-  const problems = readinessProblems(agent.data.config, harness.data);
+  const kind = settingsKindOf(form);
+  const savedKind = settingsKindOf(saved);
+  const sections = settingsSections(kind);
+  const section = openSection(search.section, kind);
+  const problems = readinessProblems(savedKind, harness.data);
   const needsAttention = (key: SettingsSection) =>
-    (key === "identity" ? Boolean(nameError) : sectionHasErrors(sectionErrors[key], errors)) ||
+    (key === "identity"
+      ? Boolean(nameError)
+      : sectionHasErrors(sectionErrorKeys(key, kind), errors)) ||
     problems.some((problem) => problemSection(problem) === key);
   const flagged = sections.flatMap((key, index) => (needsAttention(key) ? [index] : []));
   const open = (next: SettingsSection) =>
@@ -314,19 +324,28 @@ export function AgentSettings() {
           machineId: agent.data.machine_id,
           diskMib: agent.data.config.max_workspace_mib,
         }}
-        hint={machineHint(moveTo, form.coding)}
+        hint={machineHint(moveTo, kind)}
       />,
     ),
     harness: fields(
-      <Group title="Harness">
-        <HarnessField
-          form={form}
-          onChange={setConfig}
-          errors={errors}
+      kind === "subscription" ? (
+        <SubscriptionStep
+          {...step}
+          models={models.data}
           agent={{ guildId, agentId }}
           carried={carriedHarnesses(machine, moveTo, harness.data)}
         />
-      </Group>,
+      ) : (
+        <Group title="Harness">
+          <HarnessField
+            form={form}
+            onChange={setConfig}
+            errors={errors}
+            agent={{ guildId, agentId }}
+            carried={carriedHarnesses(machine, moveTo, harness.data)}
+          />
+        </Group>
+      ),
     ),
     repositories: (
       <CodingRepositories
@@ -343,10 +362,10 @@ export function AgentSettings() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
         <div className="mx-auto flex max-w-240 flex-col gap-7">
-          {agent.data.config.coding ? <CodingReadinessBanner agentId={agentId} /> : null}
+          <CodingReadinessBanner title={readinessTitle(savedKind)} problems={problems} />
           <Stepper
             aria-label="Settings sections"
-            steps={sections.map((key) => sectionLabel(key, form.coding))}
+            steps={sections.map((key) => sectionLabel(key, kind))}
             current={sections.indexOf(section)}
             onSelect={(index) => {
               const next = sections[index];

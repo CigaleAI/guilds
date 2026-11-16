@@ -44,6 +44,7 @@ import {
   type EvidenceRef,
   type EvidenceRefKind,
   type EvidenceWarning,
+  modelSourceOf,
 } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 import { Type } from "typebox";
@@ -402,7 +403,11 @@ export class StudioDrafts implements StudioDraftService {
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
-    const tokens = countInputTokens(config.model, [{ role: "system", content: composed }], tools.schemas);
+    const source = modelSourceOf(config);
+    if (source.kind === "subscription") {
+      throw new StudioUnprocessableError("a subscription agent has no model to check the composed prompt against");
+    }
+    const tokens = countInputTokens(source.model, [{ role: "system", content: composed }], tools.schemas);
     if (tokens > config.max_input_tokens) {
       throw new StudioUnprocessableError("composed prompt exceeds the target agent's max_input_tokens");
     }

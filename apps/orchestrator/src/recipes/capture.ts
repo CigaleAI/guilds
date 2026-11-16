@@ -34,6 +34,7 @@ import { listSchedules } from "../db/schedules.js";
 import { listSecrets, type SecretRow } from "../db/secrets.js";
 import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import { countsAsCodingAgent } from "../policy/index.js";
 
 /** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -93,18 +94,18 @@ const HARNESS_TOKEN_VARIABLES = new Set(
 );
 
 /**
- * The secrets a coding agent's harnesses read their subscription tokens from. They are the
- * operator's own subscription, so a recipe leaves them out: the applying operator sets one up
- * for the harness they pick.
+ * The secrets the harnesses of a coding or subscription agent read their subscription tokens
+ * from. They are the operator's own subscription, so a recipe leaves them out: the applying
+ * operator sets one up for the harness they pick.
  */
 function harnessTokenSecrets(config: AgentConfig): Set<string> {
-  if (!config.coding) return new Set();
+  if (!countsAsCodingAgent(config)) return new Set();
   return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, config.secret_aliases) ?? []));
 }
 
-/** The role's secret aliases a recipe carries: a coding role's harness token aliases stay behind. */
+/** The role's secret aliases a recipe carries: a coding or subscription role's harness token aliases stay behind. */
 function portableSecretAliases(config: AgentConfig): Record<string, string> {
-  if (!config.coding) return config.secret_aliases;
+  if (!countsAsCodingAgent(config)) return config.secret_aliases;
   return Object.fromEntries(
     Object.entries(config.secret_aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)),
   );
@@ -115,17 +116,17 @@ function clippedHint(value: string | null | undefined): string {
 }
 
 /**
- * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A harness,
- * harness model or harness effort left unset, tool-result turns left to the guild, no
- * repositories, and secret aliases a recipe carries none of, leave their key out; apply settles
- * them. The agent-optimized
+ * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A
+ * subscription agent's absent model, a harness, harness model or harness effort left unset,
+ * tool-result turns left to the guild, no repositories, and secret aliases a recipe carries none
+ * of, leave their key out; apply settles them. The agent-optimized
  * browser stays behind: it needs the applying instance's System One key and a model of the
  * applying organisation, so a role browses with the step-by-step browser tools.
  */
 export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
   const aliases = portableSecretAliases(config);
   return {
-    model: config.model,
+    ...(config.model === null ? {} : { model: config.model }),
     temperature: config.temperature,
     max_tokens: config.max_tokens,
     max_steps: config.max_steps,

@@ -17,8 +17,8 @@ import { schemasFor } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
 import { firstClassScriptSchemas } from "../toolbox/script.js";
 
-// The config a run is created with. A run reads its model, limits, tools and secrets from this
-// snapshot for its whole life, whatever the agent's settings become.
+// The config a run is created with. A run reads its model source, limits, tools and secrets from
+// this snapshot for its whole life, whatever the agent's settings become.
 
 /** A run's kind: opened by an operator, delivered from the group chat, or woken by a schedule. */
 export type RunKind = RunRow["kind"];
