@@ -30,7 +30,6 @@ export const defaultAgentConfig: AgentConfig = {
   browser_language: "en-US",
   browser_optimized: false,
   browser_model: null,
-  coding: false,
   harness: null,
   harness_model: null,
   harness_effort: null,
@@ -40,9 +39,6 @@ export const defaultAgentConfig: AgentConfig = {
   memory: true,
   thinking_level: "none",
 };
-
-/** The step and tool-call budgets a new coding agent starts with, as the server defaults them. */
-export const codingLimits = { max_steps: 200, max_tool_calls: 200 } as const;
 
 export const limitFields = [
   { key: "max_tokens", label: "Max output tokens", hint: "Per model reply." },
@@ -106,14 +102,13 @@ export type ConfigForm = {
   browser_optimized: boolean;
   /** The model the agent-optimized browser plans and reads with; empty until one is picked. */
   browser_model: string;
-  coding: boolean;
-  /** The harness of a coding or subscription agent; empty until one is picked. */
+  /** The harness of a subscription agent; empty until one is picked. */
   harness: Harness | "";
   /** The model the harness runs; empty for its subscription's default. */
   harness_model: string;
   /** The effort the harness runs its model at; empty for the harness's default. */
   harness_effort: HarnessEffort | "";
-  /** The repositories a coding or subscription agent works on, by name, in this order. */
+  /** The repositories a subscription agent works on, by name, in this order. */
   repositories: string[];
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
@@ -161,7 +156,6 @@ export function configFormOf(config: AgentConfig, source: ModelSource, machineId
     browser_language: config.browser_language ?? "en-US",
     browser_optimized: config.browser_optimized === true,
     browser_model: config.browser_model ?? "",
-    coding: config.coding,
     harness: isHarness(config.harness) ? config.harness : "",
     harness_model: config.harness_model ?? "",
     harness_effort: config.harness_effort ?? "",
@@ -208,9 +202,9 @@ function budgetErrors(form: ConfigForm): ConfigErrors {
   return errors;
 }
 
-/** Whether the form's agent has a harness: a coding agent delegates to it, a subscription agent runs on it. */
-export function takesHarness(form: Pick<ConfigForm, "coding" | "model_source">): boolean {
-  return form.coding || form.model_source === "subscription";
+/** Whether the form's agent has a harness: a subscription agent runs on it. */
+export function takesHarness(form: Pick<ConfigForm, "model_source">): boolean {
+  return form.model_source === "subscription";
 }
 
 /** Whether the form's subscription agent is on a harness that needs a repository, and picks none. */
@@ -224,8 +218,8 @@ export function missesRepository(form: ConfigForm, catalog: readonly HarnessCata
 }
 
 /**
- * What is wrong with the harness and its model of a coding or subscription agent, a subscription
- * agent's harness that needs a repository it does not pick included; nothing for any other.
+ * What is wrong with the harness and its model of a subscription agent, a harness that needs a
+ * repository it does not pick included; nothing for any other.
  */
 function harnessErrors(form: ConfigForm, catalog: readonly HarnessCatalog[] | undefined): ConfigErrors {
   const errors: ConfigErrors = {};
@@ -238,14 +232,14 @@ function harnessErrors(form: ConfigForm, catalog: readonly HarnessCatalog[] | un
 }
 
 /**
- * What is wrong with the agent's model on a key: none chosen, a coding plan's without Coding, or its
- * provider not connected. A subscription sends no model.
+ * What is wrong with the agent's model on a key: none chosen, a coding plan's, which runs no
+ * agent, or its provider not connected. A subscription sends no model.
  */
 function modelError(form: ConfigForm, models: OrgModels | undefined): string | undefined {
   if (form.model_source === "subscription") return undefined;
   if (!form.model) return "Choose a model.";
-  if (isCodingOnlyModel(form.model, models) && !form.coding) {
-    return "Turn Coding on to use this model.";
+  if (isCodingOnlyModel(form.model, models)) {
+    return "A coding plan's model runs no agent. Pick another.";
   }
   if (modelProviderConnected(models, form.model) === false) {
     return `Connect a ${providerLabel(models, form.model)} key on Model keys first.`;
@@ -302,7 +296,7 @@ function harnessEffortOf(form: ConfigForm): HarnessEffort | null {
 
 /**
  * The form on another model source. A subscription keeps the harness picked unless that harness
- * needs a repository the form does not pick; a model on a key, without Coding, has no harness.
+ * needs a repository the form does not pick; a model on a key has no harness.
  * The model stays in the form for a switch back.
  */
 export function withModelSource(
@@ -349,7 +343,7 @@ export function withHarnessModel(
 
 /**
  * The config to send, without the machine; a model that does not reason gets thinking off, only
- * a coding or subscription agent carries a harness, its model, and its repositories, and only an
+ * a subscription agent carries a harness, its model, and its repositories, and only an
  * agent with the browser carries the agent-optimized browser and its model. A subscription sends no model and the model loop's settings at their defaults.
  */
 export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
@@ -362,7 +356,6 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     browser_language: form.browser_language,
     browser_optimized: browserOptimizedOf(form),
     browser_model: browserModelOf(form),
-    coding: form.coding,
     harness: takesHarness(form) && form.harness ? form.harness : null,
     harness_model: harnessModelOf(form),
     harness_effort: harnessEffortOf(form),
@@ -393,40 +386,11 @@ export type FieldsProps = {
 
 /** Whether a capability is on. Missing `scripting` and `memory` mean on. */
 export function capabilityOn(
-  config: Partial<Pick<AgentConfig, "browser" | "coding" | "scripting" | "memory">> | undefined,
-  key: "browser" | "coding" | "scripting" | "memory",
+  config: Partial<Pick<AgentConfig, "browser" | "scripting" | "memory">> | undefined,
+  key: "browser" | "scripting" | "memory",
 ): boolean {
   if (key === "scripting" || key === "memory") return config?.[key] !== false;
   return Boolean(config?.[key]);
-}
-
-/**
- * A new agent's form with coding switched: limits still at the defaults move to the coding
- * budgets, and back when coding is switched off again. Turning coding on also turns on
- * scripting; turning it off clears the harness, its model, its effort, and the repositories.
- */
-export function withCoding(
-  form: ConfigForm,
-  coding: boolean,
-  models?: OrgModels | undefined,
-): ConfigForm {
-  const from = coding ? defaultAgentConfig : codingLimits;
-  const to = coding ? codingLimits : defaultAgentConfig;
-  return {
-    ...form,
-    coding,
-    ...(coding
-      ? { scripting: true }
-      : { harness: "" as const, harness_model: "", harness_effort: "" as const, repositories: [] }),
-    ...(!coding && isCodingOnlyModel(form.model, models)
-      ? { model: models?.default ?? "", thinking: "none" as const }
-      : {}),
-    max_steps: form.max_steps === String(from.max_steps) ? String(to.max_steps) : form.max_steps,
-    max_tool_calls:
-      form.max_tool_calls === String(from.max_tool_calls)
-        ? String(to.max_tool_calls)
-        : form.max_tool_calls,
-  };
 }
 
 /** The agent an existing agent's settings edit, for the links and credentials they show. */

@@ -51,7 +51,6 @@ export type PlacedAgent = { id: string; machineId: string; diskMib: number };
 
 type MachineGroupProps = StepProps & {
   machines: ReturnType<typeof useOrgMachines>;
-  coding: boolean;
   hint?: string | undefined;
   placed?: PlacedAgent | undefined;
   onDiskTyped?: () => void;
@@ -68,7 +67,6 @@ export function MachineGroup({
   errors,
   machine,
   machines,
-  coding,
   hint,
   placed,
   onDiskTyped,
@@ -88,7 +86,6 @@ export function MachineGroup({
             agent={{
               id: placed?.id,
               browser: form.browser,
-              coding,
               model_source: form.model_source,
             }}
             error={errors.machine}
@@ -114,41 +111,23 @@ export function MachineGroup({
 }
 
 type ModelStepProps = StepProps & {
-  lead: boolean;
-  codingToggle?: boolean;
-  savedCoding?: boolean;
   models: OrgModels | undefined;
   noProvider: boolean;
 };
 
 /**
- * The model that runs the agent, its capabilities, and its run limits behind a disclosure. A
- * coding agent's model is its lead model, beside the harness that writes the code; any other
- * agent's step starts with the choice of model source. With `codingToggle`, the capabilities carry
- * Coding, as an existing agent's Settings has it, kept on when `savedCoding`.
+ * The choice of model source, the model that runs the agent, its capabilities, and its run limits
+ * behind a disclosure.
  */
-export function ModelStep({
-  lead,
-  codingToggle = false,
-  savedCoding = false,
-  models,
-  noProvider,
-  ...step
-}: ModelStepProps) {
+export function ModelStep({ models, noProvider, ...step }: ModelStepProps) {
   const { form, setConfig, errors, machine } = step;
   const patch = (next: Partial<ConfigForm>) => setConfig({ ...form, ...next });
   return (
     <>
-      <Group title={lead ? "Lead model" : "Model"}>
-        {lead ? null : <ModelSourceField form={form} onChange={setConfig} />}
-        {lead ? (
-          <p className="text-sm text-fg-2">
-            Two models work here. The lead model plans, talks to you, and reviews the work, on the
-            organisation&apos;s key. The harness writes the code on your subscription.
-          </p>
-        ) : null}
+      <Group title="Model">
+        <ModelSourceField form={form} onChange={setConfig} />
         {noProvider ? (
-          <ConnectProviderGuide what={lead ? "a coding agent" : "an agent"} />
+          <ConnectProviderGuide what="an agent" />
         ) : (
           <ModelFields form={form} onChange={patch} errors={errors} />
         )}
@@ -160,8 +139,6 @@ export function ModelStep({
           models={models}
           errors={errors}
           machine={machine}
-          codingToggle={codingToggle}
-          savedCoding={savedCoding}
         />
       </Group>
       <details className="flex flex-col gap-4">
@@ -187,7 +164,7 @@ type SubscriptionStepProps = StepProps & {
 /**
  * A subscription agent's step: the choice of model source, the harness it runs on with that
  * harness's model and effort (and, for an existing agent, its credential and readiness), its
- * capabilities without Coding, and the run limits its harness keeps.
+ * capabilities, and the run limits its harness keeps.
  */
 export function SubscriptionStep({ models, agent, carried, ...step }: SubscriptionStepProps) {
   const { form, setConfig, errors, machine } = step;
@@ -211,7 +188,6 @@ export function SubscriptionStep({ models, agent, carried, ...step }: Subscripti
           models={models}
           errors={errors}
           machine={machine}
-          codingToggle={false}
         />
       </Group>
       <details className="flex flex-col gap-4">

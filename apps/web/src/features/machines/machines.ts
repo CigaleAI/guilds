@@ -37,7 +37,7 @@ export type MachineSize = { cpu: number; memory_mib: number };
 export const agentMinimums = {
   base: { cpu: 0.5, memory_mib: 256 },
   browser: { cpu: 1, memory_mib: 2048 },
-  coding: { cpu: 2, memory_mib: 4096 },
+  harness: { cpu: 2, memory_mib: 4096 },
 } as const satisfies Record<string, MachineSize>;
 
 /**
@@ -47,8 +47,8 @@ export const agentMinimums = {
  */
 export const overcommit = { cpu: 5, memory: 3 } as const;
 
-/** What an agent has on that sets its minimum; a subscription agent's harness needs what Coding does. */
-export type AgentNeeds = { browser: boolean; coding: boolean; model_source: ModelSource };
+/** What an agent has on that sets its minimum: its browser, and a subscription agent's harness. */
+export type AgentNeeds = { browser: boolean; model_source: ModelSource };
 
 /** The server's rule for a machine's name. */
 export const machineNamePattern = /^[a-z][a-z0-9-]{0,62}$/;
@@ -75,7 +75,7 @@ export function agentMinimum(needs: AgentNeeds): MachineSize {
   const parts: MachineSize[] = [
     agentMinimums.base,
     ...(needs.browser ? [agentMinimums.browser] : []),
-    ...(needs.coding || needs.model_source === "subscription" ? [agentMinimums.coding] : []),
+    ...(needs.model_source === "subscription" ? [agentMinimums.harness] : []),
   ];
   return {
     cpu: Math.max(...parts.map((part) => part.cpu)),
@@ -123,7 +123,7 @@ export function machineSizeLabel(machine: MachineSize): string {
 export const sizingNote =
   `Each agent counts its minimum: ${machineSizeLabel(agentMinimums.base)}, ` +
   `${machineSizeLabel(agentMinimums.browser)} with a browser, ` +
-  `${machineSizeLabel(agentMinimums.coding)} with coding or on a subscription. A machine takes up to ` +
+  `${machineSizeLabel(agentMinimums.harness)} on a subscription. A machine takes up to ` +
   `${overcommit.cpu}× its CPUs and ${overcommit.memory}× its memory in minimums before it warns, ` +
   `since few agents work at once.`;
 

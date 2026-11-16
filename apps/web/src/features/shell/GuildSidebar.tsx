@@ -126,7 +126,7 @@ export function GuildSidebar({ onRetract }: GuildSidebarProps) {
                       {...(look.src ? { src: look.src } : {})}
                       state={agentStateOf(agent, disablingIssues.get(agent.id))}
                       browser={agent.browser}
-                      coding={agent.coding}
+                      subscription={agent.model_source === "subscription"}
                       {...(brokenEmbeds.has(agent.id)
                         ? { brokenLinks: brokenEmbeds.get(agent.id) ?? [] }
                         : {})}

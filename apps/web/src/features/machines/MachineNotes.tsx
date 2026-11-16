@@ -44,7 +44,7 @@ export function NoMachines({ action }: NoMachinesProps) {
 type TooSmallNoteProps = {
   machine: Pick<Machine, "name" | "cpu" | "memory_mib">;
   minimum: MachineSize;
-  /** Who needs the minimum: "This agent", "Coding". */
+  /** Who needs the minimum: "This agent", "Browser". */
   what: string;
 };
 

@@ -1,11 +1,11 @@
-import { Bookmark, Code2, FileCode, Globe, type LucideIcon } from "lucide-react";
+import { Bookmark, FileCode, Globe, type LucideIcon } from "lucide-react";
 import type { Machine } from "../../../api/types/agents";
 import type { OrgModels } from "../../../api/types/models";
 import { cn, Icon } from "@guildsrun/ui";
 import { agentMinimum, sizeMeets, type MachineSize } from "../../machines/machines";
 import { TooSmallNote } from "../../machines/MachineNotes";
 import { BrowserFields, withBrowser } from "./BrowserFields";
-import { withCoding, type ConfigErrors, type ConfigForm } from "./configForm";
+import type { ConfigErrors, ConfigForm } from "./configForm";
 
 type CapabilityFieldProps = {
   label: string;
@@ -42,65 +42,14 @@ function CapabilityField({ label, hint, checked, onChange, disabled, icon }: Cap
   );
 }
 
-/** A capability, off today, that the chosen machine is below the minimum for, with that minimum. */
-export type BlockedCapability = { what: "Coding" | "Browser"; minimum: MachineSize };
+/** The Browser capability, off today, when the chosen machine is below the minimum it would set, with that minimum. */
+export type BlockedCapability = { what: "Browser"; minimum: MachineSize };
 
-/**
- * The capabilities, off today, that the chosen machine is too small to turn on, Coding first; Coding
- * only where the form offers its card. None before a machine is chosen.
- */
-export function blockedCapabilities(
-  form: ConfigForm,
-  machine: MachineSize | undefined,
-  codingToggle: boolean,
-): BlockedCapability[] {
+/** The Browser capability when the chosen machine is too small to turn it on; none before a machine is chosen. */
+export function blockedCapabilities(form: ConfigForm, machine: MachineSize | undefined): BlockedCapability[] {
   if (!machine) return [];
-  const coding = agentMinimum({
-    browser: form.browser,
-    coding: true,
-    model_source: form.model_source,
-  });
-  const browser = agentMinimum({
-    browser: true,
-    coding: form.coding,
-    model_source: form.model_source,
-  });
-  return [
-    ...(codingToggle && !form.coding && !sizeMeets(machine, coding)
-      ? [{ what: "Coding" as const, minimum: coding }]
-      : []),
-    ...(!form.browser && !sizeMeets(machine, browser)
-      ? [{ what: "Browser" as const, minimum: browser }]
-      : []),
-  ];
-}
-
-type CodingCapabilityProps = {
-  form: ConfigForm;
-  onChange: (next: ConfigForm) => void;
-  models: OrgModels | undefined;
-  /** The saved agent codes, which keeps Coding on. */
-  savedCoding: boolean;
-  /** The machine is below what Coding needs. */
-  blocked: boolean;
-};
-
-/** The Coding card: it turns on scripting with it, and stays on once an agent codes. */
-function CodingCapability({ form, onChange, models, savedCoding, blocked }: CodingCapabilityProps) {
-  return (
-    <CapabilityField
-      label="Coding"
-      hint={
-        savedCoding
-          ? "Shell, and a harness for code work. A coding agent stays one."
-          : "Shell, and a harness for code work. Turns on scripting. Uses a coding slot."
-      }
-      icon={Code2}
-      checked={form.coding}
-      disabled={savedCoding || blocked}
-      onChange={(coding) => onChange(withCoding(form, coding, models))}
-    />
-  );
+  const browser = agentMinimum({ browser: true, model_source: form.model_source });
+  return !form.browser && !sizeMeets(machine, browser) ? [{ what: "Browser", minimum: browser }] : [];
 }
 
 type CapabilitiesFieldsProps = {
@@ -110,17 +59,12 @@ type CapabilitiesFieldsProps = {
   errors?: ConfigErrors;
   /** The machine the agent goes on; undefined while none is chosen. */
   machine?: Pick<Machine, "name" | "cpu" | "memory_mib"> | undefined;
-  codingToggle?: boolean;
-  /** Whether the saved agent codes, which keeps Coding on. */
-  savedCoding?: boolean;
 };
 
 /**
- * Browser, Coding, scripting, and Memory. Every agent has the CLI, so it has no card. Browser and
- * Coding are greyed out while off when the machine is below the minimum they would set, with a
- * line that points to Settings → Machines; Coding stays on once saved: a coding agent stays one.
- * `codingToggle` false leaves the Coding card out, where the kind of agent was chosen before the form.
- * With the browser on, its settings follow the cards.
+ * Browser, scripting, and Memory. Every agent has the CLI, so it has no card. Browser is greyed
+ * out while off when the machine is below the minimum it would set, with a line that points to
+ * Settings → Machines. With the browser on, its settings follow the cards.
  */
 export function CapabilitiesFields({
   form,
@@ -128,17 +72,13 @@ export function CapabilitiesFields({
   models,
   errors = {},
   machine,
-  codingToggle = true,
-  savedCoding = false,
 }: CapabilitiesFieldsProps) {
-  const blocked = blockedCapabilities(form, machine, codingToggle);
+  const blocked = blockedCapabilities(form, machine);
   const isBlocked = (what: BlockedCapability["what"]) => blocked.some((item) => item.what === what);
   const [first] = blocked;
   return (
     <>
-      <div
-        className={cn("grid grid-cols-2 gap-2", codingToggle ? "sm:grid-cols-4" : "sm:grid-cols-3")}
-      >
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <CapabilityField
           label="Browser"
           hint="Browser tab and tools. Uses a browser slot."
@@ -147,15 +87,6 @@ export function CapabilitiesFields({
           disabled={isBlocked("Browser")}
           onChange={(browser) => onChange(withBrowser(form, browser))}
         />
-        {codingToggle ? (
-          <CodingCapability
-            form={form}
-            onChange={onChange}
-            models={models}
-            savedCoding={savedCoding}
-            blocked={isBlocked("Coding")}
-          />
-        ) : null}
         <CapabilityField
           label="Scripting"
           hint="The Scripts tab and the script tools."

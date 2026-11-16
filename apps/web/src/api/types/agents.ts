@@ -22,8 +22,6 @@ export type Agent = {
   /** `#rrggbb`. */
   avatar_color: string;
   browser: boolean;
-  /** Code work through a harness, with Node.js, build tools and git on its machine. */
-  coding: boolean;
   model_source: ModelSource;
   /** The organisation's machine it runs on. */
   machine_id: string;
@@ -50,7 +48,6 @@ export type MachineAgent = {
   guild_id: string;
   guild_name: string;
   browser: boolean;
-  coding: boolean;
   model_source: ModelSource;
 };
 
@@ -87,7 +84,7 @@ export type MachineInput = {
 /** The fields to change on one machine. */
 export type MachineUpdate = { machineId: string; input: Partial<MachineInput> };
 
-/** The coding CLI a coding agent delegates code work to through `code_task`, and a subscription agent runs every turn on. */
+/** The coding CLI a subscription agent runs every turn on. */
 export type Harness = "claude-code" | "codex" | "cursor" | "antigravity";
 
 /** The reasoning efforts a harness can run a model at, lowest first. */
@@ -148,14 +145,13 @@ export type AgentConfig = {
   browser_optimized: boolean;
   /** The `{provider}/{model}` the agent-optimized browser plans and reads with; null unless `browser_optimized`. */
   browser_model: string | null;
-  coding: boolean;
-  /** The harness a coding agent delegates to, or a subscription agent runs on; null for any other agent. */
+  /** The harness a subscription agent runs on; null for an agent on a key. */
   harness: Harness | null;
   /** The model the harness runs; null leaves it to the harness's subscription. */
   harness_model: string | null;
   /** The effort the harness runs its model at; null leaves it to the harness. */
   harness_effort: HarnessEffort | null;
-  /** The repositories a coding agent works on, by name, in this order; empty on any other agent. */
+  /** The repositories a subscription agent works on, by name, in this order; empty on an agent on a key. */
   repositories: string[];
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
@@ -195,8 +191,8 @@ export type AgentHarness = {
   /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
   machine_harnesses: Harness[] | null;
   /**
-   * The repositories a coding run clones, by name: those the agent picks and can use, in its
-   * order. A coding run fails at start without one, or while the agent picks one it cannot use.
+   * The repositories a subscription turn clones, by name: those the agent picks and can use, in
+   * its order. A turn fails at start while the agent picks one it cannot use.
    */
   repositories: string[];
   /** The repositories the agent can use, by name: its guild's, and those picked on its GitHub login. */

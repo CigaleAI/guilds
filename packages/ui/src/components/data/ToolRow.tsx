@@ -23,7 +23,7 @@ export type ToolRowProps = Omit<ComponentProps<"div">, "children"> & {
   source?: string;
   /** Where the switch's value comes from at the scope being edited. */
   origin?: BindingOrigin;
-  /** Omit when the tool is not a binding, such as browser and coding tools. */
+  /** Omit when the tool is not a binding, such as the browser tools. */
   onEnabledChange?: (enabled: boolean) => void;
   disabled?: boolean;
   /** Overrides the Active/Disabled via-scope line. */
