@@ -186,8 +186,8 @@ A collection opens at `/tables/<id>` on **Records**.
     keeps its other values and the server applies every rule of a
     record write to it alone. The first save fixes the value: the
     field stays off while the records save and after. After a save the
-    server refuses for some records, the dialog names the records
-    saved and lists the refused ones with its reasons, and **Retry
+    server refuses for some records, the dialog names every record
+    saved so far and lists the refused ones with its reasons, and **Retry
     failed** sends them the same value, to them only. The dialog does
     not close while the records save.
   - The delete button on a row removes the record after a confirm.

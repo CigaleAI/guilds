@@ -22,8 +22,8 @@ sets that column to the same value on each, checked as the record
 dialog checks it; a unique column takes a value on one record only,
 and a column the table loses is named instead of saved. The records
 save one at a time, and the first save fixes the value: the field
-stays off while it runs and after. The dialog names the records saved
-and lists those the server refuses with its reasons, and **Retry
+stays off while it runs and after. The dialog names every record saved
+so far and lists those the server refuses with its reasons, and **Retry
 failed** sends them the same value, to them only; the records re-read
 after every edit, refused ones included. Each change of the table, the
 search, the filters, the sort or the page clears the selection, and

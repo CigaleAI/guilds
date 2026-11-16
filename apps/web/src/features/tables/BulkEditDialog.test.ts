@@ -44,7 +44,7 @@ function record(id: number): CollectionRecord {
 /** A PATCH the panel sent: its path and its JSON body. */
 type SentPatch = { path: string; body: string };
 
-test("selection mode takes a column before any record and selects the page's records apart from opening them, another column, table or view clears the selection, a view still loading selects none of the previous view's rows, and a bulk edit names its column and records, sends one typed PATCH per record, in turn, fixes its value from the first save, keeps the refused ones to retry alone with that value, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
+test("selection mode takes a column before any record and selects the page's records apart from opening them, another column, table or view clears the selection, a view still loading selects none of the previous view's rows, and a bulk edit names its column and records, sends one typed PATCH of that column alone per record, in turn, sends the records after a refused or unanswered one, fixes its value from the first save, keeps the refused ones with the server's reason to retry alone with that value, once however often pressed, keeps listing the records saved across retries, refreshes after every save, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
   const window = new Window({ url: "http://localhost/" });
   const globals = {
     window,
@@ -82,10 +82,11 @@ test("selection mode takes a column before any record and selects the page's rec
       Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
     }
     // The server: three records on every page of a listing of a hundred in either table, a search
-    // that finds the one whose id it names, the ids whose PATCH it refuses, a gate that holds each
-    // PATCH while set, every PATCH it got, and how many it answered at once at most.
+    // that finds the one whose id it names, the ids whose PATCH it refuses with a status and a
+    // reason or never answers, a gate that holds each PATCH while set, every PATCH it got, and how
+    // many it answered at once at most.
     const stored = [record(1), record(2), record(3)];
-    const refused = new Map<number, string>();
+    const refused = new Map<number, { status: number; detail: string } | "unreachable">();
     let gate: Promise<void> | null = null;
     const patches: SentPatch[] = [];
     let inFlight = 0;
@@ -104,8 +105,9 @@ test("selection mode takes a column before any record and selects the page's rec
         if (gate) await gate;
         inFlight -= 1;
         const recordId = Number(url.pathname.split("/").at(-1));
-        const reason = refused.get(recordId);
-        if (reason) return Response.json({ detail: reason }, { status: 409 });
+        const refusal = refused.get(recordId);
+        if (refusal === "unreachable") throw new TypeError("Failed to fetch");
+        if (refusal) return Response.json({ detail: refusal.detail }, { status: refusal.status });
         return Response.json({ record: record(recordId), warnings: [] });
       }
       if (/^\/api\/collections\/c[12]\/records$/.test(url.pathname)) {
@@ -439,46 +441,76 @@ test("selection mode takes a column before any record and selects the page's rec
       ],
     );
 
-    // A refused record is listed with the server's reason and the dialog stays open, its value
-    // fixed; the others are saved, and the records are fetched again all the same.
+    // A record the server refuses, or never answers, is listed with the reason and the dialog
+    // stays open, its value fixed; the records after it are still sent and saved, each PATCH holds
+    // the one column alone, and the records are fetched again all the same.
     patches.length = 0;
+    const scoreOnly = (recordId: number) => ({
+      path: `/api/collections/c1/records/${recordId}`,
+      body: JSON.stringify({ body: { score: 9 } }),
+    });
+    const dialogText = () => dialog()?.textContent ?? "";
     await choose("Column to edit", "score");
     await press("Select this page");
     assert.equal(toolbar(), "3 selected");
-    refused.set(2, "The record changed meanwhile.");
-    const fetchesBefore = listFetches;
+    refused.set(1, { status: 403, detail: "no write access to Leads" });
+    refused.set(2, "unreachable");
+    let fetchesBefore = listFetches;
     await press("Edit selected");
     await typeValue("9");
     await press("Save changes");
-    await until(
-      () => /Couldn't save 1 record/.test(dialog()?.textContent ?? ""),
-      "the refused record",
-    );
-    assert.match(dialog()?.textContent ?? "", /#2: The record changed meanwhile\./);
-    assert.match(dialog()?.textContent ?? "", /Saved #1, #3/);
-    assert.match(dialog()?.textContent ?? "", /Edit 1 record/);
-    assert.match(dialog()?.textContent ?? "", /Records #2/);
-    assert.deepEqual(
-      patches.map((patch) => patch.path),
-      [
-        "/api/collections/c1/records/1",
-        "/api/collections/c1/records/2",
-        "/api/collections/c1/records/3",
-      ],
-    );
-    assert.equal(toastTitles().at(-1), "Saved score on 2 records");
+    await until(() => /Couldn't save 2 records/.test(dialogText()), "the refused records");
+    assert.match(dialogText(), /#1: no write access to Leads/);
+    assert.match(dialogText(), /#2: Failed to fetch/);
+    assert.match(dialogText(), /Saved #3/);
+    assert.match(dialogText(), /Edit 2 records/);
+    assert.match(dialogText(), /Records #1, #2/);
+    assert.deepEqual(patches, [scoreOnly(1), scoreOnly(2), scoreOnly(3)]);
+    assert.equal(toastTitles().at(-1), "Saved score on 1 record");
     await until(() => listFetches > fetchesBefore, "the records are fetched again after a refusal");
     assert.equal(dialog()?.querySelector("input")?.disabled, true, "no value after a refusal");
 
-    // Retry sends the first save's value, whatever the field holds, to the refused record only,
-    // and closes once it is saved.
+    // A retry sends the first save's value, whatever the field holds, to the refused records only,
+    // once however often it is pressed; records saved before stay listed while others are refused
+    // again, and the records are fetched again after each retry.
     await typeValue("11");
+    refused.set(1, { status: 404, detail: "record 1 not found" });
+    refused.set(2, { status: 409, detail: "The record changed meanwhile." });
+    const toastsBefore = toastTitles().length;
+    fetchesBefore = listFetches;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    await settle(() => {
+      button("Retry failed")?.click();
+      button("Retry failed")?.click();
+    });
+    await settle(() => button("Saving…")?.click());
+    gate = null;
+    release();
+    await until(() => /#1: record 1 not found/.test(dialogText()), "the retry's refusals");
+    assert.match(dialogText(), /#2: The record changed meanwhile\./);
+    assert.match(dialogText(), /Couldn't save 2 records/);
+    assert.match(dialogText(), /Saved #3/);
+    assert.deepEqual(patches.slice(3), [scoreOnly(1), scoreOnly(2)]);
+    assert.equal(toastTitles().length, toastsBefore, "no toast when nothing is saved");
+    await until(() => listFetches > fetchesBefore, "the records are fetched again after a retry");
+
+    refused.delete(1);
+    fetchesBefore = listFetches;
+    await press("Retry failed");
+    await until(() => /Couldn't save 1 record/.test(dialogText()), "the record refused again");
+    assert.match(dialogText(), /Saved #3, #1/);
+    assert.match(dialogText(), /Records #2/);
+    assert.deepEqual(patches.slice(5), [scoreOnly(1), scoreOnly(2)]);
+    assert.equal(toastTitles().at(-1), "Saved score on 1 record");
+    await until(() => listFetches > fetchesBefore, "the records are fetched again");
+
+    // The last retry saves the last refused record and closes the dialog.
     refused.clear();
     await press("Retry failed");
     await until(() => dialog() === null, "the retry closes the dialog");
-    assert.deepEqual(patches.slice(3), [
-      { path: "/api/collections/c1/records/2", body: JSON.stringify({ body: { score: 9 } }) },
-    ]);
+    assert.deepEqual(patches.slice(7), [scoreOnly(2)]);
     assert.equal(toastTitles().at(-1), "Saved score on 1 record");
     assert.equal(mostInFlight, 1);
 

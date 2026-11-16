@@ -238,15 +238,31 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
     setOffset(0);
   };
 
+  const boxesOff = !target || records.isPlaceholderData;
   const columns: DataTableColumn<CollectionRecord>[] = [
-    ...selectionColumns({
-      selecting,
-      disabled: !target || records.isPlaceholderData,
-      page: selectable,
-      selectedCount: selection.length,
-      selectionIds,
-      onSelectionChange: setSelectionIds,
-    }),
+    ...(selecting
+      ? [
+          {
+            id: "select",
+            header: (
+              <PageRecordsBox
+                pageIds={selectable.map((row) => row.id)}
+                selectedCount={selection.length}
+                disabled={boxesOff}
+                onSelectionChange={setSelectionIds}
+              />
+            ),
+            cell: (row: CollectionRecord) => (
+              <RecordBox
+                recordId={row.id}
+                selectionIds={selectionIds}
+                disabled={boxesOff}
+                onSelectionChange={setSelectionIds}
+              />
+            ),
+          },
+        ]
+      : []),
     { id: "id", header: "#", sortable: !query, cell: (row) => <IdCell value={row.id} /> },
     ...collection.columns.map((column) => ({
       id: column.name,
@@ -432,51 +448,6 @@ function RecordCell({ collectionId, record, column, editable }: RecordCellProps)
       {value}
     </EditableCell>
   );
-}
-
-type SelectionColumnsOptions = {
-  selecting: boolean;
-  /** Whether the boxes are off: before a column is chosen, and while a new view loads. */
-  disabled: boolean;
-  /** The records the page shows. */
-  page: readonly CollectionRecord[];
-  /** How many of them are selected. */
-  selectedCount: number;
-  selectionIds: ReadonlySet<number>;
-  onSelectionChange: (selectionIds: ReadonlySet<number>) => void;
-};
-
-/** The selection's column in selection mode: the page's box in the header and each row's box; none outside it. */
-function selectionColumns({
-  selecting,
-  disabled,
-  page,
-  selectedCount,
-  selectionIds,
-  onSelectionChange,
-}: SelectionColumnsOptions): DataTableColumn<CollectionRecord>[] {
-  if (!selecting) return [];
-  return [
-    {
-      id: "select",
-      header: (
-        <PageRecordsBox
-          pageIds={page.map((row) => row.id)}
-          selectedCount={selectedCount}
-          disabled={disabled}
-          onSelectionChange={onSelectionChange}
-        />
-      ),
-      cell: (row) => (
-        <RecordBox
-          recordId={row.id}
-          selectionIds={selectionIds}
-          disabled={disabled}
-          onSelectionChange={onSelectionChange}
-        />
-      ),
-    },
-  ];
 }
 
 type RecordBoxProps = {

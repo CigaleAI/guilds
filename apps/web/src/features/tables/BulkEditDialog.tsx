@@ -41,7 +41,8 @@ type BulkEditDialogProps = {
  * Sets the selection's column to the same value on its records, checked as the record dialog checks
  * it. Each record is saved by its own request, one at a time. The first save fixes the value: the
  * field stays off from then on, the records the server refuses are listed with its reasons and stay
- * in the dialog, and the next save sends them the same value, to them only. A second save while one
+ * in the dialog, and the next save sends them the same value, to them only; the records any save
+ * saved stay listed until the dialog closes. A second save while one
  * runs sends nothing more, and the dialog stays open until it ends. A column the table loses is
  * named, and nothing is sent.
  */
@@ -75,7 +76,10 @@ export function BulkEditDialog({ collection, edit, onClose }: BulkEditDialogProp
     setSent(body);
     void update.mutateAsync({ recordIds: targets, body }).then((next) => {
       running.current = false;
-      setOutcome(next);
+      setOutcome((previous) => ({
+        updated: [...(previous?.updated ?? []), ...next.updated],
+        failed: next.failed,
+      }));
       if (next.updated.length) toast(recordsUpdatedToast(column.name, next.updated));
       if (!next.failed.length) close();
     });
@@ -182,8 +186,8 @@ function BulkEditSaveButton({ saving, retrying, disabled }: BulkEditSaveButtonPr
 type RecordsUpdateStatusProps = { outcome: RecordsUpdateOutcome | null };
 
 /**
- * What the last save did to each record: those it saved, and those it could not with the server's
- * reason; nothing before a save or when every record was saved.
+ * What the saves did to each record: those any of them saved, and those the last could not with the
+ * server's reason; nothing before a save or when every record was saved.
  */
 function RecordsUpdateStatus({ outcome }: RecordsUpdateStatusProps) {
   if (!outcome?.failed.length) return null;
