@@ -1,5 +1,3 @@
-import { subscriptionHarnessMessage } from "../coding/harnesses.js";
-import type { Harness } from "../db/schema/index.js";
 import { errorName, writeLog, type LogFields, type LogLevel } from "../observability/log.js";
 
 /** The named errors a generation throws, and the failures it carries on past. */
@@ -41,19 +39,6 @@ export class GenerationBlocked extends Error {
   constructor(issueId: string) {
     super(`the agent reported blocking issue ${issueId}; it is disabled until the issue is resolved`);
     this.name = "GenerationBlocked";
-  }
-}
-
-/**
- * A run of a subscription agent on a harness whose CLI does not run a subscription agent's turns,
- * which fails at start.
- */
-export class SubscriptionRunUnavailable extends Error {
-  readonly code = "subscription.not_runnable";
-
-  constructor(harness: Harness) {
-    super(subscriptionHarnessMessage(harness));
-    this.name = "SubscriptionRunUnavailable";
   }
 }
 

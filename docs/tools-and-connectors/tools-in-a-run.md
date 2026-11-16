@@ -56,7 +56,8 @@ offered, connectors included, less the five code tools (`shell`,
 has its own. The run's snapshot records that offer. The harness calls
 those tools on the orchestrator's MCP server
 ([MCP server](#the-mcp-server)), which Claude Code and Codex name
-`mcp__guilds__<tool>`, and the run's prompt names each tool that way.
+`mcp__guilds__<tool>`, Antigravity `mcp_guilds_<tool>`, and Cursor by
+the tool's own name, and the run's prompt names each tool that way.
 Each list and each call re-reads the agent's bindings and flags, and
 offers no tool its generation did not offer. A connector tool reaches
 the harness this way too, under the connector's own login: a GitHub

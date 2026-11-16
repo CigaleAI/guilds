@@ -59,6 +59,9 @@ A subscription is often personal. In an organisation, everyone who
 can start the agent's runs uses it. Whether that complies with the
 vendor's terms is the operator's call
 ([SEC-30](../../architecture/security-register.md#sec-30--personal-harness-subscriptions-used-inside-a-shared-organisation-may-fall-outside-the-vendors-terms)).
+Whether Google's terms for an Antigravity sign-in allow it to run
+every turn of a subscription agent is an open question the operator
+answers before picking it.
 A token or login on the agent's machine is readable by what runs there
 ([SEC-27](../../architecture/security-register.md#sec-27--harness-subscription-tokens-and-logins-are-readable-on-the-agents-machine)).
 
@@ -142,18 +145,23 @@ harness check, and readiness read the same way. It has no code tools.
 It may pick repositories, which its turns work in
 ([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
 
-- Only Claude Code and Codex run a subscription agent. Cursor and
-  Antigravity stay harnesses of coding agents only.
+- Each harness runs a subscription agent's turns: each generation of
+  its run is one turn of the CLI in the agent's home, or in its one
+  repository, on the run's system prompt, resuming the run's session
+  ([Runs](../runs.md#harness-turns)). The CLI is given the
+  orchestrator's MCP server for that one call ([Drivers](#drivers))
+  and calls the run's Guilds tools there, beside its own.
+- Claude Code and Codex take the run's system prompt in place of
+  their own. Cursor and Antigravity keep their vendor's system prompt,
+  which the operator does not control, and read the run's as rules
+  beside it, so they run a subscription agent only with a repository:
+  an agent that does code work
+  ([SEC-67](../../architecture/security-register.md#sec-67--cursor-and-antigravity-run-a-subscription-agents-turn-under-their-vendors-own-system-prompt)).
+  A create or update of such an agent without one is refused, and a
+  run of one whose repositories are all gone fails at start
+  ([Agents](../agents.md#configuration-keys)).
 - A harness turned off with `HARNESSES_OFF` is refused as a new pick
   for a subscription agent as for a coding agent.
-- Claude Code and Codex run a subscription agent's turns: each
-  generation of its run is one turn of the CLI in the agent's home, or
-  in its one repository, on
-  the run's system prompt in place of the CLI's own, resuming the
-  run's session ([Runs](../runs.md#harness-turns)). The CLI is given
-  the orchestrator's MCP server for that one call
-  ([Drivers](#drivers)) and calls the run's Guilds tools there, beside
-  its own.
 
 ### Managed configuration
 
@@ -298,8 +306,8 @@ machine that has it."
 | --- | --- |
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
-| Subscription harness | Claude Code or Codex |
-| Subscription agents | Each generation one turn of Claude Code or Codex of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
+| Subscription harness | Any of the four; Cursor and Antigravity only with a repository |
+| Subscription agents | Each generation one turn of its harness of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |
@@ -367,8 +375,9 @@ POST /api/agents/:id/harness/check
 
 `GET /api/harnesses` returns `{ harnesses }` for any signed-in user:
 the catalogue. Each entry holds `harness`, `label`, `enabled`
-(false when the box turns it off), `subscription` (whether a
-subscription agent runs on it), `models`, and `unlisted_efforts`: the
+(false when the box turns it off), `needs_repository` (whether a
+subscription agent on it needs a repository), `models`, and
+`unlisted_efforts`: the
 efforts the default model or a custom name runs at. Each model holds
 `id`, `label`, `efforts`, and `default_effort` (null leaves it to the
 harness). The CLI names a Cursor model starts under stay on the server.
@@ -638,10 +647,9 @@ What a repository can still steer is recorded in
 ### Code
 
 `apps/orchestrator/src/coding/harnesses.ts` (the harnesses, the ones
-the box turns off, `TURN_HARNESSES`, the ones that run a subscription
-agent's turns and that alone a subscription agent, a recipe's
-subscription role, and Settings' model source offer, credential
-fixes),
+the box turns off, how each takes a subscription agent's system
+prompt and whether it therefore needs a repository, its MCP tool
+prefix and turn limit, credential fixes),
 `apps/orchestrator/src/coding/harness-models.ts` (the catalogue),
 `apps/orchestrator/src/config/index.ts` (reading `HARNESSES_OFF`),
 `apps/orchestrator/src/toolbox/harness-setup.ts` (the harness checks

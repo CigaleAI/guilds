@@ -95,9 +95,9 @@ test("the catalogue lists every harness's models without the CLI names they star
   const cursor = catalog.find((item) => item.harness === "cursor")!;
   assert.equal(cursor.label, "Cursor");
   assert.deepEqual(
-    catalog.filter((item) => item.subscription).map((item) => item.harness),
-    ["claude-code", "codex"],
-    "a subscription agent runs on Claude Code or Codex",
+    catalog.filter((item) => item.needs_repository).map((item) => item.harness),
+    ["cursor", "antigravity"],
+    "a subscription agent on Cursor or Antigravity needs a repository",
   );
   assert.deepEqual(cursor.unlisted_efforts, []);
   assert.ok(cursor.models.every((entry) => !("ids" in entry)));

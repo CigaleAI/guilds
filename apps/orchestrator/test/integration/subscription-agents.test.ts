@@ -81,16 +81,16 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     const machines = await app.inject({ method: "GET", url: "/api/orgs/org_home/machines", headers: AUTH });
     const defaultMachineId = String(machines.json().find((item: { name: string }) => item.name === "default").id);
 
-    // An agent without a model runs on its harness: Claude Code or Codex.
+    // An agent without a model runs on its harness; on Cursor or Antigravity only with a repository.
     const catalog = await app.inject({ method: "GET", url: "/api/harnesses", headers: AUTH });
     assert.deepEqual(Object.keys(catalog.json()), ["harnesses"]);
     assert.deepEqual(
-      catalog.json().harnesses.filter((item: { subscription: boolean }) => item.subscription).map((item: { harness: string }) => item.harness),
-      ["claude-code", "codex"],
+      catalog.json().harnesses.filter((item: { needs_repository: boolean }) => item.needs_repository).map((item: { harness: string }) => item.harness),
+      ["cursor", "antigravity"],
     );
     const cursor = await createAgent("cursor", { model: null, harness: "cursor" });
     assert.equal(cursor.statusCode, 422, cursor.body);
-    assert.match(cursor.json().detail, /Cursor cannot run a subscription agent: pick Claude Code or Codex/);
+    assert.match(cursor.json().detail, /Cursor runs a subscription agent only with a repository, since it keeps its own system prompt/);
     const tuned = await createAgent("tuned", { ...SUBSCRIPTION, temperature: 0.3 });
     assert.equal(tuned.statusCode, 422, tuned.body);
     assert.match(tuned.json().detail, /a subscription agent takes no temperature/);

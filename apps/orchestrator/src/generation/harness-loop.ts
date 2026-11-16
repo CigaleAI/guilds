@@ -1,6 +1,6 @@
 import type { AttachmentService } from "../attachments/store.js";
 import { AttachmentError } from "../attachments/types.js";
-import { HARNESS_INFO, HARNESS_TAKES_MAX_TURNS, type TurnHarness } from "../coding/harnesses.js";
+import { HARNESS_INFO, HARNESS_TAKES_MAX_TURNS } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import {
@@ -70,7 +70,7 @@ import { maintenanceRun } from "./workspace.js";
 export const harnessTurnTiming = { pollMs: 1000, minuteMs: 60_000 };
 
 /** A run's snapshot as the harness loop reads it: a subscription agent's, on the harness that runs its turns. */
-export type HarnessRunConfigSnapshot = RunConfigSnapshot & { model: null; harness: TurnHarness };
+export type HarnessRunConfigSnapshot = RunConfigSnapshot & { model: null; harness: Harness };
 
 /** A generation of a subscription agent's run, as it started, which its harness runs. */
 export type SubscriptionGeneration = RunGeneration & {
@@ -90,7 +90,7 @@ type PendingCall = { call: ToolCall; seen: number };
 
 /** A subscription agent's turn on its harness: what it runs under, and what its polls have seen so far. */
 type HarnessRunTurn = {
-  harness: TurnHarness;
+  harness: Harness;
   /** The run the harness ops run under. */
   ops: ToolRun;
   /** The turn's grant on the orchestrator's MCP server, where its harness calls its Guilds tools. */

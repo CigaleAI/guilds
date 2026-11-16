@@ -296,12 +296,12 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal(calls().length, 0);
   });
 
-  test("a subscription agent on a harness that runs no turn fails at start, before its machine wakes", async () => {
+  test("a subscription agent on a harness that needs a repository, whose agent picks none, fails at start, before its machine wakes", async () => {
     const { loop, db, errors, machines } = subscriptionLoop(recordedEvents("claude-code"));
     db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), harness: "cursor" };
     await loop.generator.generate("r_1", 1);
-    assert.equal(errors().at(-1)?.operation, "subscription.not_runnable");
-    assert.match(String(errors().at(-1)?.message), /^Cursor cannot run a subscription agent: pick Claude Code or Codex/);
+    assert.equal(errors().at(-1)?.operation, "coding.repositories_missing");
+    assert.match(String(errors().at(-1)?.message), /^this agent has no repository: pick one in its Settings under Repositories/);
     assert.equal(machines.length, 0);
   });
 });

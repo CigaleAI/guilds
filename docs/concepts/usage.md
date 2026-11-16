@@ -37,7 +37,8 @@ A [subscription agent](agents.md#model-source)'s turn runs on the
 operator's own subscription, which charges no price per token. Its
 harness reports the tokens the turn spent over every model call it
 made, and the turn's reply records them, a cost of 0, marked
-`subscription` ([Harness turns](runs.md#harness-turns)). The reply
+`subscription` ([Harness turns](runs.md#harness-turns)). A turn whose
+CLI reports no tokens, as Cursor's may not, records none. The reply
 counts in the totals as one call. No price is computed and the usage
 callback is not called.
 

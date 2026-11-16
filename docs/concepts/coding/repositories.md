@@ -5,7 +5,8 @@ A guild's repositories are the git repositories its
 Each such agent picks the ones it works on, in its config's
 `repositories`. It clones each one it picks into its own
 [home](../agent-home.md), and the [harness](harnesses.md) runs there.
-A coding agent needs at least one before it can run; a subscription
+A coding agent needs at least one before it can run, and so does a
+subscription agent on Cursor or Antigravity; any other subscription
 agent that picks none works in its home. An agent on a key that does
 not code picks none.
 
@@ -93,7 +94,9 @@ A subscription agent's turn works in the repositories its agent picks,
 in its harness's CLI. At each generation the run checks the agent's
 picks first: one it can no longer use fails the run with
 `coding.repositories_gone`, naming it. An agent that picks none skips
-the rest, and its turn starts in its home. Then, once the harness
+the rest, and its turn starts in its home; on Cursor or Antigravity,
+which need a repository, the run fails instead with
+`coding.repositories_missing`. Then, once the harness
 check passes, for each repository it picks:
 
 1. **Tokens**, as a coding run's, with one difference: a GitHub
@@ -271,7 +274,7 @@ The coding strip counts the repositories a coding run clones
 | Rule | Value or behaviour |
 | --- | --- |
 | Name | `^[a-z][a-z0-9_-]{0,62}$`, unique in the guild; also the folder under `repos/` |
-| An agent's picks | Only on a coding agent or a subscription agent; each a repository it can use, once; a pick it can no longer use stays until it is unpicked |
+| An agent's picks | Only on a coding agent or a subscription agent; each a repository it can use, once; a pick it can no longer use stays until it is unpicked; at least one on a subscription agent on Cursor or Antigravity |
 | URL | `https` on any host, without credentials, query, or fragment; SSH is refused |
 | Credential | One at most: a GitHub login, or an access token's secret and username |
 | With a GitHub login | `https://github.com/<owner>/<repository>`, reachable by that login's installation |

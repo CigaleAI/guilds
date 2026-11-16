@@ -1,6 +1,6 @@
 import { isOptimizedBrowserOn } from "../agents/config.js";
 import { agentActor } from "../artifacts/actors.js";
-import { isTurnHarness } from "../coding/harnesses.js";
+import { harnessNeedsRepository } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
@@ -35,7 +35,6 @@ import {
   logOperationFailure,
   RunLimitError,
   STEP_LIMIT_MESSAGE,
-  SubscriptionRunUnavailable,
   TOOL_CALL_LIMIT_MESSAGE,
   type OperationFailure,
 } from "./errors.js";
@@ -251,8 +250,7 @@ export class RunGenerator {
 
   /**
    * The generation on the model source its snapshot states: the model on a key, or the harness of
-   * a subscription; null when a subscription names no harness that runs its turns, and the run
-   * says why.
+   * a subscription; null when a subscription names no harness, and the run says why.
    */
   private async generationOf(turn: RunGeneration, run: RunRow, agent: AgentRow): Promise<Generation | null> {
     const snapshot = run.config_snapshot;
@@ -261,9 +259,9 @@ export class RunGenerator {
       return { ...turn, run, agent, source: "key", snapshot: { ...snapshot, model: source.model } };
     }
     const harness = snapshot.harness;
-    if (harness === null || !isTurnHarness(harness)) {
-      const refused = harness === null ? harnessMissingError() : new SubscriptionRunUnavailable(harness);
-      await this.services.events.recordError(turn, refused.code, refused);
+    if (harness === null) {
+      const missing = harnessMissingError();
+      await this.services.events.recordError(turn, missing.code, missing);
       return null;
     }
     return { ...turn, run, agent, source: "subscription", snapshot: { ...snapshot, model: null, harness } };
@@ -406,11 +404,13 @@ export class RunGenerator {
 
   /**
    * A coding run starts only with a harness picked and repositories its agent picks and can use;
-   * a subscription run whose agent picks repositories, only when it can use each of them.
+   * a subscription run whose agent picks repositories, or whose harness needs one, only when its
+   * agent picks one and can use each of them.
    */
   private async isStartable(gen: Generation): Promise<boolean> {
     if (gen.source === "subscription") {
-      return !gen.agent.config.repositories.length || this.canUseItsRepositories(gen);
+      const inRepositories = gen.agent.config.repositories.length > 0 || harnessNeedsRepository(gen.snapshot.harness);
+      return !inRepositories || this.canUseItsRepositories(gen);
     }
     if (!gen.snapshot.coding) {
       return true;

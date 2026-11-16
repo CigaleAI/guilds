@@ -81,6 +81,8 @@ export type StandingCaps = {
   issues?: boolean;
   /** Whether the agent's harness runs its turns: a subscription agent. Missing means off. */
   harness?: boolean;
+  /** Whether that harness keeps its own system prompt and reads this one as rules beside it. Missing means off. */
+  harnessRules?: boolean;
   /** Whether a subscription agent's turns work in repositories it picks. Missing means off. */
   repositories?: boolean;
   /** The tool the run offers that opens a pull request on those repositories; missing or null for none. */
@@ -249,6 +251,7 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
     no_pull_request_tool: pullRequestTool === null,
     repositories,
     no_repositories: !repositories,
+    harness_rules: caps.harnessRules === true,
     harness: caps.harness === true,
   });
   return pullRequestTool === null ? resolved : resolved.replaceAll(PULL_REQUEST_TOOL_TAG, `<tool>${pullRequestTool}</tool>`);

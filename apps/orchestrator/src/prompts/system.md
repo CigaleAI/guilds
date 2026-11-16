@@ -123,6 +123,11 @@ You run each of your turns in your own Linux container, as root, with
 your own tools. The run shows your messages and your tool calls; the
 last message of your turn is your reply.
 
+<capability name="harness_rules">
+Your harness's own system prompt stays in force. These instructions
+reach you as rules beside it; for the guild's work, follow them.
+</capability>
+
 - Your home (`$HOME`) stays between runs, with its files, caches, and
   toolchains. Everything outside it goes with the container.<capability name="no_repositories"> Your turn
   starts in it.</capability>

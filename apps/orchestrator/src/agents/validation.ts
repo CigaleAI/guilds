@@ -2,11 +2,11 @@ import { normalizeAvatarColor, normalizeAvatarShape } from "../avatars/index.js"
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import {
   HARNESS_MODEL_RE,
+  harnessNeedsRepository,
   harnessOffMessage,
   isHarness,
   isHarnessOff,
-  isTurnHarness,
-  subscriptionHarnessMessage,
+  subscriptionRepositoryMessage,
 } from "../coding/harnesses.js";
 import { REPOSITORY_NAME_RE } from "../coding/repositories.js";
 import { SECRET_NAME } from "../credentials/validate.js";
@@ -206,7 +206,7 @@ function requireHarness(value: unknown): Harness | null {
 /**
  * An agent has one model source: a model on a key, or, without a model, a subscription on its
  * harness. A coding agent has both its lead model and its harness; any other agent with a harness
- * is a subscription agent, on a harness that runs one.
+ * is a subscription agent.
  */
 function rejectUnsoundModelSource(model: string | null, coding: boolean, harness: Harness | null): void {
   if (model !== null) {
@@ -220,9 +220,6 @@ function rejectUnsoundModelSource(model: string | null, coding: boolean, harness
   }
   if (harness === null) {
     throw new AgentValidationError("an agent without a model is a subscription agent: it needs a harness");
-  }
-  if (!isTurnHarness(harness)) {
-    throw new AgentValidationError(subscriptionHarnessMessage(harness));
   }
 }
 
@@ -405,13 +402,18 @@ function assertHarnessPickable(harness: Harness, previous?: AgentConfig): void {
 
 /**
  * A subscription agent needs a harness the box does not turn off: every create, and every switch
- * to that harness, is refused on one it does. An agent already on the harness keeps it.
+ * to that harness, is refused on one it does. An agent already on the harness keeps it. On a
+ * harness that needs a repository, every create and update is refused without one. A stored
+ * agent whose repositories are all gone still validates; its runs fail at start until it picks one.
  */
 export function assertSubscriptionAgent(config: AgentConfig, previous?: AgentConfig): void {
   if (modelSourceOf(config).kind === "key" || config.harness === null) {
     return;
   }
   assertHarnessPickable(config.harness, previous);
+  if (harnessNeedsRepository(config.harness) && !config.repositories.length) {
+    throw new AgentValidationError(subscriptionRepositoryMessage(config.harness));
+  }
 }
 
 function rejectCodingOnlyModelWithoutCoding(model: string | null, coding: boolean): void {
