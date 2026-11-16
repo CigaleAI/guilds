@@ -1,5 +1,6 @@
 import { enabledToolNames, resolvedTools, type ResolvableBinding } from "../access/index.js";
-import type { RunMcpConnection, RunScriptSnapshot } from "../db/schema/index.js";
+import type { AgentConfig, RunMcpConnection, RunScriptSnapshot } from "../db/schema/index.js";
+import type { RunRow } from "../db/runs.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import { REGISTRY } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
@@ -60,6 +61,19 @@ export type OfferedToolSettings = {
   schedules: boolean;
   direct: boolean;
 };
+
+/** What decides the offer of a generation of a run of `kind`, beside its bindings, from its agent's live `config`. */
+export function offeredToolSettings(config: AgentConfig, kind: RunRow["kind"]): OfferedToolSettings {
+  return {
+    browser: config.browser,
+    browserOptimized: config.browser_optimized === true,
+    coding: config.coding,
+    scripting: config.scripting,
+    memory: config.memory,
+    schedules: kind !== "schedule",
+    direct: kind === "direct",
+  };
+}
 
 /**
  * The snapshot's tool names that the live bindings of `scope`, in `rows`, still grant under

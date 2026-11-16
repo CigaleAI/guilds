@@ -9,6 +9,7 @@ import type { JsonObject } from "../lib/json.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
 import { callTool } from "../mcp/service.js";
 import { errorMessage } from "../observability/log.js";
+import { redact } from "../secrets/index.js";
 import { callSegment, repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
 import {
   identityOutput,
@@ -146,6 +147,21 @@ export function pendingToolCalls(
 /** A tool call's result as a run keeps it: the message the model reads, and its metadata. */
 export type ToolRecord = [ToolMessage, ToolResultMetadata];
 
+/** A tool call's result as a run keeps it, with the budget of tool calls it leaves. */
+export type KeptToolRecord = [ToolMessage, ToolResultMetadata & { remaining_tool_calls: number }];
+
+/**
+ * The assistant message that holds a call a run's harness made through the orchestrator's MCP
+ * server, its arguments redacted with `secrets`, as a model's message holds its calls.
+ */
+export function harnessMcpCallMessage(call: ToolCall, secrets: Record<string, string>): AssistantMessage {
+  return {
+    role: "assistant",
+    content: "",
+    tool_calls: [{ ...call, function: { ...call.function, arguments: redact(call.function.arguments, secrets) } }],
+  };
+}
+
 /** The result of a call whose execution was lost, as the run keeps it under a generation's number. */
 export type InterruptedToolRecord = [ToolMessage, ToolResultMetadata & { generation: number }];
 
@@ -208,6 +224,12 @@ export type GenerationTools = {
 /** A connection's answer to a tool call: its text, or the failure the model reads as the call's result. */
 type ConnectionAnswer = { ok: true; text: string } | { ok: false; failure: OperationFailure };
 
+/**
+ * What the next tool calls of a run are kept against: how many calls the run has made, the agent
+ * whose connections they reach, and the reads its results record.
+ */
+type CallLedger = { executed: number; owner: AgentRow | null; reads: ReadRow[] };
+
 /** What tool calls are made with, built once by the loop. */
 export type ToolCallsServices = {
   db: ToolCallsDatabase;
@@ -231,28 +253,71 @@ export class ToolCalls {
    * one, and a call that filed a blocking issue ends the generation with `GenerationBlocked`.
    */
   async execute(turn: RunGeneration, tools: GenerationTools, calls: ToolCall[]): Promise<void> {
-    const { db, events, generations } = this.services;
-    const history = await db.listMessages(turn.runId);
-    let executed = executedToolCalls(history);
-    const owner = await db.getAgent(tools.run.agent_id);
-    const reads = history
-      .filter((row) => row.payload.role === "tool")
-      .map((row) => ({ seq: row.seq, metadata: row.metadata }));
+    const ledger = await this.callLedger(turn.runId, tools);
     for (const call of calls) {
-      if (generations.isCancelled(turn.runId)) {
+      if (this.services.generations.isCancelled(turn.runId)) {
         throw new GenerationCancelled();
       }
-      executed += 1;
-      const [payload, metadata] = stampToolResult(
-        ...(await this.callTool(call, tools, owner, reads)),
-        remainingAfter(tools.maxToolCalls, executed),
-      );
-      const row = await events.commitMessage(turn.runId, payload, { generation: turn.generation, ...metadata });
-      reads.push({ seq: row.seq, metadata });
+      const [, metadata] = await this.keepCall(turn, tools, call, ledger);
       if (metadata.blocking_issue_id !== undefined) {
         throw new GenerationBlocked(metadata.blocking_issue_id);
       }
     }
+  }
+
+  /**
+   * Runs a call the run's harness made through the orchestrator's MCP server, kept as a model's
+   * call is: its assistant row, then its result with the budget it leaves. A call whose result
+   * could not be kept gets the interrupted one before the failure is thrown. Returns the result.
+   */
+  async executeHarnessCall(turn: RunGeneration, tools: GenerationTools, call: ToolCall): Promise<KeptToolRecord> {
+    const { events } = this.services;
+    await events.commitMessage(turn.runId, harnessMcpCallMessage(call, tools.secrets), { generation: turn.generation });
+    try {
+      return await this.keepCall(turn, tools, call, await this.callLedger(turn.runId, tools));
+    } catch (error) {
+      await this.keepInterrupted(turn, tools, call);
+      throw error;
+    }
+  }
+
+  /** What the run's next calls are kept against, read from its history. */
+  private async callLedger(runId: string, tools: GenerationTools): Promise<CallLedger> {
+    const { db } = this.services;
+    const history = await db.listMessages(runId);
+    return {
+      executed: executedToolCalls(history),
+      owner: await db.getAgent(tools.run.agent_id),
+      reads: history.filter((row) => row.payload.role === "tool").map((row) => ({ seq: row.seq, metadata: row.metadata })),
+    };
+  }
+
+  /** Runs `call` and keeps its result with the budget it leaves; the call and its read join `ledger`. */
+  private async keepCall(
+    turn: RunGeneration,
+    tools: GenerationTools,
+    call: ToolCall,
+    ledger: CallLedger,
+  ): Promise<KeptToolRecord> {
+    ledger.executed += 1;
+    const [payload, metadata] = stampToolResult(
+      ...(await this.callTool(call, tools, ledger.owner, ledger.reads)),
+      remainingAfter(tools.maxToolCalls, ledger.executed),
+    );
+    const row = await this.services.events.commitMessage(turn.runId, payload, { generation: turn.generation, ...metadata });
+    ledger.reads.push({ seq: row.seq, metadata });
+    return [payload, metadata];
+  }
+
+  /** Keeps the interrupted result of `call`, with the budget it leaves. */
+  private async keepInterrupted(turn: RunGeneration, tools: GenerationTools, call: ToolCall): Promise<void> {
+    const { db, events } = this.services;
+    const executed = executedToolCalls(await db.listMessages(turn.runId)) + 1;
+    const [payload, metadata] = stampToolResult(
+      ...interruptionRecord(call, turn.generation),
+      remainingAfter(tools.maxToolCalls, executed),
+    );
+    await events.commitMessage(turn.runId, payload, metadata);
   }
 
   /**

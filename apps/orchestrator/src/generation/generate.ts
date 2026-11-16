@@ -35,6 +35,7 @@ import {
   logOperationFailure,
   RunLimitError,
   SubscriptionRunUnavailable,
+  TOOL_CALL_LIMIT_MESSAGE,
   type OperationFailure,
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
@@ -44,6 +45,7 @@ import { agentSeat, type AgentMachines } from "./machines.js";
 import {
   liveOfferedNames,
   mcpIndex,
+  offeredToolSettings,
   snapshotOfferedNames,
   toolSchemaName,
   withFirstClassScriptTools,
@@ -56,7 +58,6 @@ import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } 
 import type { RunWakes } from "./wakes.js";
 import type { WorkspaceLimits } from "./workspace.js";
 
-const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 const SCHEDULE_WAKE_PREFIX = "Schedule wake-up: ";
 
 /** A generation of a run on a model on a key, as it started, which the model loop runs. */
@@ -539,17 +540,8 @@ export class RunGenerator {
     const { agent, run } = gen;
     const scope: ToolBindingScope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
     const rows = await this.services.db.listBindingsCovering(scope);
-    const live = agent.config;
     await this.warnBrowseKeyMissing(gen);
-    return liveOfferedNames(snapshotOfferedNames(frozen), rows, scope, {
-      browser: live.browser,
-      browserOptimized: live.browser_optimized === true,
-      coding: live.coding,
-      scripting: live.scripting,
-      memory: live.memory,
-      schedules: run.kind !== "schedule",
-      direct: run.kind === "direct",
-    });
+    return liveOfferedNames(snapshotOfferedNames(frozen), rows, scope, offeredToolSettings(agent.config, run.kind));
   }
 
   /**
