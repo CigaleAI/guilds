@@ -152,15 +152,13 @@ test("tools filter by state and by name or description", () => {
   );
 });
 
-test("native tools group by what they work on, including browser, coding and issues", () => {
+test("native tools group by what they work on, including browser and issues", () => {
   const groups = toolFamilyGroups([
     binding("note_find"),
     binding("group_post"),
     binding("wake_cancel"),
     binding("wake_after"),
     binding("browser_navigate"),
-    binding("shell"),
-    binding("code_search"),
     binding("report_issue"),
     binding("new_tool"),
     binding("file_fetch"),
@@ -173,7 +171,6 @@ test("native tools group by what they work on, including browser, coding and iss
       ["Group chat", ["group_post"]],
       ["Wake-ups", ["wake_cancel", "wake_after"]],
       ["Browser", ["browser_navigate"]],
-      ["Coding", ["shell", "code_search"]],
       ["Issues", ["report_issue"]],
       ["Other", ["new_tool"]],
     ],
@@ -184,7 +181,7 @@ test("capability native tools are listed when the access payload omits them", ()
   const names = withCapabilityNativeTools([binding("note_find")]).map((tool) => tool.name);
   assert.ok(names.includes("note_find"));
   assert.ok(names.includes("browser_navigate"));
-  assert.ok(names.includes("shell"));
+  assert.ok(!names.includes("shell"));
   assert.ok(names.includes("report_issue"));
   assert.equal(
     withCapabilityNativeTools([binding("browser_navigate")]).filter(
@@ -245,29 +242,14 @@ test("browser and coding tools follow the agent's capability, not a binding", ()
     caption: "Offered when browser is on",
     bindable: false,
   });
-  assert.deepEqual(nativeToolDisplay(binding("shell"), "agent", { coding: false }), {
-    enabled: false,
-    caption: "Offered when coding is on",
-    bindable: false,
-  });
-  assert.deepEqual(nativeToolDisplay(binding("code_task"), "agent", { coding: true }), {
-    enabled: true,
-    caption: "Active via coding",
-    bindable: false,
-  });
-  assert.deepEqual(nativeToolDisplay(binding("shell"), "org"), {
-    enabled: true,
-    caption: "Offered when an agent has coding on",
-    bindable: false,
-  });
   assert.deepEqual(nativeToolDisplay(binding("report_issue"), "agent"), {
     enabled: true,
     caption: "Always offered",
     bindable: false,
   });
   assert.equal(isCapabilityNativeTool("browser_click"), true);
-  assert.equal(isCapabilityNativeTool("shell"), true);
-  assert.equal(isCapabilityNativeTool("code_task"), true);
+  assert.equal(isCapabilityNativeTool("shell"), false);
+  assert.equal(isCapabilityNativeTool("code_task"), false);
   assert.equal(isCapabilityNativeTool("file_edit"), false);
   assert.equal(isCapabilityNativeTool("report_issue"), true);
   assert.equal(isCapabilityNativeTool("note_find"), false);

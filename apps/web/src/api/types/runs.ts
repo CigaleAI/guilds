@@ -88,16 +88,8 @@ export type RunMessageInput = { runId: string; content: string; files?: File[] }
 /** A turn's diff in one repository, cut at the server's limit. */
 export type RunDiff = { repository: string; diff: string; truncated: boolean };
 
-/**
- * `tool.progress` on a run's stream: the lines a running tool call reported since the last event,
- * and the harness session it runs in when it has one.
- */
-export type ToolProgressEvent = {
-  run_id: string;
-  tool_call_id: string;
-  lines: string[];
-  session_id?: string | null;
-};
+/** `tool.progress` on a run's stream: the lines a running tool call reported since the last event. */
+export type ToolProgressEvent = { run_id: string; tool_call_id: string; lines: string[] };
 
 /**
  * `assistant.delta` or `assistant.reasoning.delta` on a run's or a coach session's stream: the text
@@ -151,18 +143,6 @@ export type RecordToolArguments = { collection?: string; query?: string; id?: nu
 
 /** A file tool's arguments (`file_find`, `file_fetch`, `file_put`, `file_delete`): the search, the file, and the home path it shares. */
 export type FileToolArguments = { query?: string; path?: string; home_path?: string };
-
-/** A `shell` call's arguments: the command, and whether it runs in the background. */
-export type ShellArguments = { command?: string; background?: boolean };
-
-/** A `shell_status` call's arguments: the background command it checks, and whether it stops it. */
-export type ShellStatusArguments = { id?: string; stop?: boolean };
-
-/** A `file_read` call's arguments: the file, and the line it reads from. */
-export type FileReadArguments = { path?: string; offset?: number };
-
-/** A `code_search` call's arguments: the pattern, whether it matches lines or file names, and where. */
-export type CodeSearchArguments = { pattern?: string; mode?: string; path?: string };
 
 /**
  * A call of a harness's own tool's arguments (Claude Code's Bash, Read, Edit, Grep, …), as far as
@@ -274,30 +254,10 @@ export type BrowserUsageMetadata = {
 
 /** The fields a native tool reports about its call, kept on the call's result. */
 export type ReportedToolMetadata = {
+  /** The exit code of the command a script or browser tool ran. */
   exit_code?: number | null;
-  /** The directory a `shell` command ended in. */
-  cwd?: string;
-  path?: string;
-  /** The first and last line a `file_read` returned; null for a binary or empty file. */
-  range?: [number, number] | null;
-  content_hash?: string;
-  lines?: number;
-  log_path?: string | null;
-  timed_out?: boolean;
-  background_id?: string;
-  /** A background command's state, as `shell_status` read it. */
-  state?: string;
-  matches?: number;
-  files?: number;
-  harness?: Harness;
+  /** How a `browse` call ended. */
   status?: string;
-  session_id?: string | null;
-  repository?: string | null;
-  files_changed?: number;
-  insertions?: number;
-  deletions?: number;
-  start_sha?: string | null;
-  end_sha?: string | null;
   /** The page a `browse` call ended on; null when it never loaded one. */
   final_url?: string | null;
   /** The browser actions a `browse` call took. */
@@ -318,8 +278,6 @@ export type ToolResultMetadata = {
   error: string | null;
   /** The tool calls the run has left after this one. */
   remaining_tool_calls?: number;
-  /** The step whose result a repeated read of an unchanged range points to. */
-  repeat_of?: number;
 } & ReportedToolMetadata;
 
 /** Where a run's system or user message came from. */

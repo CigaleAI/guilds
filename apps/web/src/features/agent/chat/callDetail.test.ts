@@ -42,31 +42,19 @@ function flowCall(
   };
 }
 
-const codeTask: MessageMetadata = {
-  tool_name: "code_task",
-  status: "completed",
-  harness: "codex",
-  repository: "guilds/web",
-  session_id: "sess_1",
-  files_changed: 2,
-  insertions: 14,
-  deletions: 3,
-  start_sha: "1111111aaaa",
-  end_sha: "2222222bbbb",
-  log_path: "runs/r1/harness.log",
-};
+const codeTask: MessageMetadata = { tool_name: "code_task", duration_ms: 64_000 };
 
 test("a call opens on its result once it failed", () => {
   assert.equal(openingView(flowCall("shell", null, { error: "boom" }), undefined), "result");
 });
 
 test("a call opens on its result once it reported progress", () => {
-  const progress = { lines: ["read a.py"], session_id: null };
+  const progress = { lines: ["read a.py"] };
   assert.equal(openingView(flowCall("code_task", null), progress), "result");
 });
 
 test("a call opens on its arguments before it fails or reports anything", () => {
-  const progress = { lines: [], session_id: null };
+  const progress = { lines: [] };
   assert.equal(openingView(flowCall("code_task", null), progress), "arguments");
   assert.equal(openingView(flowCall("code_task", null), undefined), "arguments");
 });
@@ -75,7 +63,7 @@ test("an old code_task call lists only the facts any tool call has", () => {
   assert.deepEqual(toolCallFacts(flowCall("code_task", codeTask)), [
     ["Call", "call_1"],
     ["Tool", "code_task"],
-    ["Full output", "runs/r1/harness.log"],
+    ["Duration", "1m 04s"],
     ["Committed", "2026-05-01T12:00:00Z"],
   ]);
 });
@@ -85,26 +73,16 @@ test("a tool lists how it ran", () => {
     duration_ms: 1200,
     output_filter: "tail",
     exit_code: 0,
-    log_path: "runs/r1/out.log",
-    cwd: "/home/agent",
-    path: "a.py",
-    range: [3, 9],
-    repeat_of: 2,
     original_bytes: 9000,
     stored_bytes: 4000,
     remaining_tool_calls: 12,
   };
-  assert.deepEqual(toolCallFacts(flowCall("shell", metadata, { id: "" })), [
+  assert.deepEqual(toolCallFacts(flowCall("script_run", metadata, { id: "" })), [
     ["Call", "—"],
-    ["Tool", "shell"],
+    ["Tool", "script_run"],
     ["Duration", "1.2s"],
     ["Output filter", "tail"],
     ["Exit code", "0"],
-    ["Full output", "runs/r1/out.log"],
-    ["Working directory", "/home/agent"],
-    ["File", "a.py"],
-    ["Lines", "3–9"],
-    ["Same as step", "2"],
     ["Bytes", "9000 → 4000 stored"],
     ["Tool calls left", "12"],
     ["Committed", "2026-05-01T12:00:00Z"],

@@ -256,7 +256,7 @@ Every scope's **Tools** has two sub-tabs:
   guild, or agent.
 - **Native tools**: grouped by family (**Notes**, **Tables** for the
   record tools, **Files**, **Memory**, **Scripts**, **Routines**, **Group chat**,
-  **Wake-ups**, **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
+  **Wake-ups**, **Secrets**, **Browser**, **Issues**, and **Other**),
   each family collapsible.
 
 Each switchable item is an on/off switch captioned with where its
@@ -268,9 +268,7 @@ offers a reset that removes it, so the value is inherited again. A
 server card offers **Reset to inherit** for its tools set at this
 scope.
 
-Browser and coding tools show without a switch. The coding tools
-listed are `code_task`, `shell`, `shell_status`, `file_read`, and
-`code_search`.
+Browser tools show without a switch.
 
 A server shows **Connect** at the current scope, or **Use own login**
 when it already uses an inherited one. It shows **Disconnect** when

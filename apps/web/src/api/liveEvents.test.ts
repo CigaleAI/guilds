@@ -171,12 +171,9 @@ test("isLiveDelta admits a run's text and a coach's content, and refuses anythin
   assert.equal(isLiveDelta(null), false);
 });
 
-test("isToolProgressEvent admits a call's lines, with or without its session", () => {
+test("isToolProgressEvent admits a call's lines", () => {
   const progress = { run_id: "r1", tool_call_id: "c1", lines: ["read a.py"] };
   assert.equal(isToolProgressEvent(progress), true);
-  assert.equal(isToolProgressEvent({ ...progress, session_id: null }), true);
-  assert.equal(isToolProgressEvent({ ...progress, session_id: "s1" }), true);
-  assert.equal(isToolProgressEvent({ ...progress, session_id: 3 }), false);
 });
 
 test("isToolProgressEvent refuses an event that names no call or holds lines that are not text", () => {

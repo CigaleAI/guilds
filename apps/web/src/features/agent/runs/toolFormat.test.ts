@@ -189,30 +189,9 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
 });
 
 test("a known tool's call whose arguments do not fit its schema reads as its name", () => {
-  assert.equal(friendlyToolCall(callWith("file_read", { path: 7 })), "");
-  assert.equal(friendlyToolCall(callWith("shell", { command: "ls", background: "yes" })), "");
+  assert.equal(friendlyToolCall(callWith("Read", { file_path: 7 })), "");
+  assert.equal(friendlyToolCall(callWith("Bash", { command: ["ls"] })), "");
   assert.equal(summarizeCalls([callWith("record_update", { id: "42" })]), "record_update");
-});
-
-test("code tools read as the command, the file, or the background job they touch", () => {
-  const call = (name: string, args: Record<string, unknown>) =>
-    friendlyToolCall(callWith(name, args));
-  assert.equal(
-    call("shell", { command: "npm test -- --watch=false\necho done" }),
-    "Run npm test -- --watch=false",
-  );
-  assert.equal(call("shell", { command: "npm run dev", background: true }), "Start npm run dev");
-  assert.equal(call("shell_status", {}), "List background commands");
-  assert.equal(call("shell_status", { id: "b2", stop: true }), "Stop b2");
-  assert.equal(
-    call("file_read", { path: "src/app.ts", offset: 120 }),
-    "Read src/app.ts from line 120",
-  );
-  assert.equal(
-    call("code_search", { pattern: "refund", mode: "content", path: "src" }),
-    'Search lines "refund" in src',
-  );
-  assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
 });
 
 test("browse reads as where the delegated web task starts", () => {
@@ -226,12 +205,12 @@ test("browse reads as where the delegated web task starts", () => {
 
 test("summarizeCalls names what a batch did, merging calls that share a verb", () => {
   const call = callWith;
-  assert.equal(summarizeCalls([call("file_read", { path: "a.md" })]), "Read a.md");
+  assert.equal(summarizeCalls([call("Read", { file_path: "a.md" })]), "Read a.md");
   assert.equal(
     summarizeCalls([
-      call("file_read", { path: "a.md" }),
-      call("file_read", { path: "b.md" }),
-      call("shell", { command: "ls" }),
+      call("Read", { file_path: "a.md" }),
+      call("Read", { file_path: "b.md" }),
+      call("Bash", { command: "ls" }),
     ]),
     "Read a.md, b.md · Run ls",
   );
@@ -239,7 +218,7 @@ test("summarizeCalls names what a batch did, merging calls that share a verb", (
     summarizeCalls([
       call("note_write", {}),
       call("note_write", {}),
-      call("file_read", { path: "a.md" }),
+      call("Read", { file_path: "a.md" }),
     ]),
     "Wrote note · Read a.md",
   );
@@ -258,11 +237,8 @@ test("summarizeCalls names what a batch did, merging calls that share a verb", (
   assert.equal(summarizeCalls([]), "");
 });
 
-test("toolOutcome names a failing exit and a repeated read", () => {
-  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 0 }), "");
-  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 2 }), "exit 2");
-  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 124, timed_out: true }), "timed out");
-  assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
+test("toolOutcome says nothing of a tool other than browse", () => {
+  assert.equal(toolOutcome({ tool_name: "script_run", exit_code: 2 }), "");
   assert.equal(toolOutcome(undefined), "");
 });
 

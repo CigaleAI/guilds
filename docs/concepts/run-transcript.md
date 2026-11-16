@@ -137,8 +137,7 @@ on, starts open.
   flow.
 
 Tracked state is a note, memory, record, collection, or script that a
-call created, edited, or deleted, or source code changed through
-`code_task`. Commands, script runs, posts, schedules, and browser
+call created, edited, or deleted. Commands, script runs, posts, schedules, and browser
 actions are not writes.
 
 ### Tool calls
@@ -152,10 +151,6 @@ place of its result mark.
 - A `note_write`, `memory_write`, or `script_create` call carries a
   chip naming the note, memory, or script it wrote. The chip opens it
   in the agent's State tab.
-- A `shell` call reads **Run**, or **Start** for a background command,
-  and the command's first line, then its exit code when it is not 0.
-- A `file_read` call reads **Read** and the path. A repeated read
-  names the step it points to.
 - A `secret_store` call reads **Stored NAME**. A `secret_request` call
   reads **Asked for NAME**.
 - A `browse` call reads **Browse**, or **Browse from** and its start
@@ -166,10 +161,8 @@ card, such as each step of a `browse` call.
 
 Opening a call expands its card onto its arguments and result. Each
 shows as a folding JSON tree or raw text, with a copy button. Its
-metadata follows: call id, duration, output filter, exit code, the
-full-output log path, the working directory, the file and its lines,
-the step a repeated read points to, stored bytes, and tool calls
-left. The call's kind and level sit beside the views.
+metadata follows: call id, the harness that called it, duration,
+output filter, exit code, stored bytes, and tool calls left. The call's kind and level sit beside the views.
 
 Progress lines are live only. They stream while the run view is open
 and are not stored, so a reload shows the call without them until the
@@ -266,8 +259,7 @@ opens that run and step in Studio's **History**
 ### Live updates
 
 The transcript renders committed rows. Reasoning, text deltas, and
-the progress lines of a running call, such as `code_task` or
-`browse`, stream over the run's SSE stream before
+the progress lines of a running `browse` call stream over the run's SSE stream before
 their row lands ([Runs](runs.md#streaming)). On reconnect the view
 reloads the ordered history, then consumes new events.
 

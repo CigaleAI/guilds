@@ -42,10 +42,6 @@ export function openingView(call: FlowCall, progress: CallProgress | undefined):
   return call.error || progress?.lines.length ? "result" : "arguments";
 }
 
-function lineRange(range: StepMetadata["range"]): string {
-  return range ? `${range[0]}–${range[1]}` : "";
-}
-
 /** How much the output pipeline stored of a result, "original → stored stored"; empty if untouched. */
 function storedBytes(meta: StepMetadata): string {
   return meta.original_bytes === undefined
@@ -63,11 +59,6 @@ export function toolCallFacts(call: FlowCall): CallFact[] {
     ["Duration", meta.duration_ms === undefined ? "" : formatDuration(meta.duration_ms)],
     ["Output filter", meta.output_filter ?? ""],
     ["Exit code", numberText(meta.exit_code)],
-    ["Full output", meta.log_path ?? ""],
-    ["Working directory", meta.cwd ?? ""],
-    ["File", meta.path ?? ""],
-    ["Lines", lineRange(meta.range)],
-    ["Same as step", numberText(meta.repeat_of)],
     ["Bytes", storedBytes(meta)],
     ["Tool calls left", numberText(meta.remaining_tool_calls)],
     ["Committed", call.result?.created_at ?? ""],

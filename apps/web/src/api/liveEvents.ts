@@ -189,8 +189,7 @@ export function isToolProgressEvent(data: unknown): data is ToolProgressEvent {
   return (
     isJsonObject(data) &&
     hasFields(data, ["run_id", "tool_call_id"], isString) &&
-    isStringList(data.lines) &&
-    (data.session_id === undefined || isStringOrNull(data.session_id))
+    isStringList(data.lines)
   );
 }
 

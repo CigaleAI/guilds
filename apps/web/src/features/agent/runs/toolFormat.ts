@@ -8,10 +8,8 @@ import {
   isBrowseArguments,
   isBrowserToolArguments,
   isBuilderToolArguments,
-  isCodeSearchArguments,
   isConnectorToolArguments,
   isFileChangeArguments,
-  isFileReadArguments,
   isFileToolArguments,
   isHarnessToolArguments,
   isJsonObject,
@@ -19,8 +17,6 @@ import {
   isNoteToolArguments,
   isRecordToolArguments,
   isReportIssueArguments,
-  isShellArguments,
-  isShellStatusArguments,
   isString,
   isStudioToolArguments,
   isWakeAfterArguments,
@@ -274,26 +270,6 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
   ),
   browser_screenshot: () => "Take screenshot",
   browser_eval: () => "Run page script",
-  shell: summaryOf(isShellArguments, (args) => {
-    const command = firstCommandLine(args.command ?? "");
-    return command ? `${args.background === true ? "Start" : "Run"} ${command}` : "Run command";
-  }),
-  shell_status: summaryOf(isShellStatusArguments, (args) => {
-    if (!args.id) return "List background commands";
-    return args.stop === true ? `Stop ${args.id}` : `Check ${args.id}`;
-  }),
-  file_read: summaryOf(isFileReadArguments, (args) => {
-    if (!args.path) return "Read file";
-    const from = args.offset ?? 0;
-    return Number.isInteger(from) && from > 1
-      ? `Read ${args.path} from line ${from}`
-      : `Read ${args.path}`;
-  }),
-  code_search: summaryOf(isCodeSearchArguments, (args) => {
-    const where = args.path ? ` in ${args.path}` : "";
-    const how = args.mode === "content" ? "Search lines" : "Search files";
-    return args.pattern ? `${how} "${args.pattern}"${where}` : how;
-  }),
   script_run: summaryOf(isNamedToolArguments, (args) =>
     args.name ? `Run ${args.name}` : "Run script",
   ),
@@ -428,20 +404,10 @@ export function summarizeCalls(calls: readonly ToolCall[]): string {
     .join(" · ");
 }
 
-/**
- * What a tool's result metadata says at a glance: how a browse ended and what it spent, a
- * command's non-zero exit code, or the step a repeated read points back to; empty otherwise.
- */
+/** What a tool's result metadata says at a glance: how a browse ended and what it spent; empty otherwise. */
 export function toolOutcome(metadata: StepMetadata | undefined): string {
   if (!metadata) return "";
-  if (metadata.tool_name === "browse") return browseOutcome(metadata);
-  if (metadata.repeat_of !== undefined) return `unchanged since step ${metadata.repeat_of}`;
-  if (metadata.tool_name === "shell") {
-    if (metadata.timed_out === true) return "timed out";
-    const code = metadata.exit_code;
-    if (code !== undefined && code !== null && code !== 0) return `exit ${code}`;
-  }
-  return "";
+  return metadata.tool_name === "browse" ? browseOutcome(metadata) : "";
 }
 
 /** A browse call's status when it did not complete, and what it spent. */
