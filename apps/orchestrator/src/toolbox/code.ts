@@ -72,17 +72,24 @@ type SentRequest = HelperRequest & { run_id: string; agent_id: string; call_id: 
 
 /** The command that runs `helper` on `request`: inline, or through a request file when it is too large. */
 async function helperCommand(run: ToolRun, helper: string, request: SentRequest): Promise<string> {
-  const json = JSON.stringify(request);
-  const encoded = Buffer.from(json, "utf8").toString("base64");
+  const encoded = Buffer.from(JSON.stringify(request), "utf8").toString("base64");
   if (encoded.length <= INLINE_REQUEST_MAX) {
     return `python3 ${helper} ${encoded}`;
   }
+  return requestFileCommand(run, helper, request);
+}
+
+/**
+ * The command that runs `helper` on `request` written to a request file through the sandbox's
+ * file API; the helper reads the file and removes it.
+ */
+async function requestFileCommand(run: ToolRun, helper: string, request: SentRequest): Promise<string> {
   const files = run.sandbox?.files;
   if (!files) {
-    throw new ToolLimitError("request is too large for this sandbox");
+    throw new ToolLimitError("this sandbox takes no request file");
   }
   const requestPath = `${CODE_REQUEST_DIR}/${run.run_id}-${request.call_id}.json`;
-  await files.writeFiles([{ path: requestPath, data: json }]);
+  await files.writeFiles([{ path: requestPath, data: JSON.stringify(request) }]);
   return `python3 ${helper} @${requestPath}`;
 }
 
@@ -138,7 +145,28 @@ export async function runCodeHelper(
   request: HelperRequest,
   options: HelperSettings = {},
 ): Promise<CodeResult> {
-  const sent: SentRequest = {
+  const command = await helperCommand(run, options.helper ?? CODE_HELPER, sentRequest(run, request, options));
+  return helperResult(await executeHelper(run, hooks, command, options));
+}
+
+/**
+ * Runs one op of a sandbox helper on a request that holds a credential: the request always
+ * travels through a request file under `/run/guilds`, which only root reads and the helper
+ * removes once read, and never on a command line, where any process on the machine sees it.
+ */
+export async function runCodeHelperFromFile(
+  run: ToolRun,
+  hooks: ToolHooks,
+  request: HelperRequest,
+  options: HelperSettings = {},
+): Promise<CodeResult> {
+  const command = await requestFileCommand(run, options.helper ?? CODE_HELPER, sentRequest(run, request, options));
+  return helperResult(await executeHelper(run, hooks, command, options));
+}
+
+/** A request as the helper is sent it, for the run and the call it names. */
+function sentRequest(run: ToolRun, request: HelperRequest, options: HelperSettings): SentRequest {
+  return {
     ...request,
     run_id: run.run_id,
     agent_id: run.agent_id,
@@ -146,11 +174,13 @@ export async function runCodeHelper(
     default_cwd: run.code_default_cwd,
     max_bytes: options.maxBytes ?? codeResultMaxBytes(),
   };
-  const command = await helperCommand(run, options.helper ?? CODE_HELPER, sent);
-  const execution = await executeCommand(run, hooks, command, {
+}
+
+/** Runs a helper's command in the run's sandbox, within the op's time. */
+function executeHelper(run: ToolRun, hooks: ToolHooks, command: string, options: HelperSettings): Promise<CommandResult> {
+  return executeCommand(run, hooks, command, {
     timeoutSeconds: options.timeoutSeconds ?? CODE_HELPER_TIMEOUT_SECONDS,
   });
-  return helperResult(execution);
 }
 
 /** How long a `shell` command may run, in seconds: the default when the call gives none, kept within the range. */

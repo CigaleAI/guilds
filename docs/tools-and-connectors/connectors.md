@@ -97,7 +97,7 @@ A connector has an endpoint, an adapter, or both:
 | `settings_schema` | The login's settings document ([Login settings](#login-settings)) |
 | `state` | `{ key, intro }`: the State key the adapter's `state` hook fills |
 | `builder` | `{ searchable, role, guidance }` for the guild builder |
-| `prompt.guidance` | A paragraph the agent prompt adds when one of the connector's tools is offered |
+| `prompt.guidance` | A paragraph the agent prompt adds when one of the connector's tools is offered. It names a tool as `<tool>name</tool>` ([Tool names](../concepts/system-prompt.md#tool-names)) |
 
 TypeBox validates each manifest at load, and its slug against its
 folder. The loaded manifest gives every tool it lists an

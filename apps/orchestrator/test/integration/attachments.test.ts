@@ -51,6 +51,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     mcp: mcpPool(db),
     notes,
     workspaceRoot,
+    harnessMcpUrl: "http://127.0.0.1:8090",
     sandboxes: new ExportSandboxes(workspaceRoot),
     attachments,
     artifacts,

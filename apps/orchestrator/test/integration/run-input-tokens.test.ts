@@ -63,6 +63,7 @@ test("a run counts every model step with one encoding load, and its local count 
       mcp: mcpPool(db),
       notes,
       workspaceRoot,
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes: new ExportSandboxes(workspaceRoot),
       artifacts,
     });

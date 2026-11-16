@@ -65,6 +65,11 @@ variable, and boot stops.
   default)
 - `HOST` (default `0.0.0.0`)
 - `PORT` (default 8080)
+- `HARNESS_MCP_HOST` (default `127.0.0.1`), `HARNESS_MCP_PORT`
+  (default 8090), and `HARNESS_MCP_URL` (the URL a sandbox is given
+  for the MCP listener; `http://host.docker.internal:<port>` by
+  default, and refused unless an `http` or `https` URL with no
+  credentials, query, or fragment)
 
 [Configure](../operations/configure.md) explains each one. The model
 catalog reads `MODELS_DEV_URL` on its own
@@ -210,11 +215,13 @@ sequenceDiagram
    capabilities, recipe apply, and Builder; reconcile Builder
    sessions
 9. build the Fastify app (`buildApp`, `src/app.ts`), each extension's
-   routes first
+   routes first, then the MCP listener (`buildHarnessMcpApp`), a
+   Fastify app of its own on the loop's `HarnessMcpServer`
 
 `runServer` logs whether Sentry is on and installs the fatal error
 handlers before it calls `createServer`. It then listens on `HOST`
-and `PORT`.
+and `PORT`, and the MCP listener on `HARNESS_MCP_HOST` and
+`HARNESS_MCP_PORT`.
 
 Run reconciliation:
 
@@ -247,7 +254,8 @@ and the session goes idle.
 
 Graceful shutdown (SIGTERM or SIGINT) runs once, in this order:
 
-1. close the HTTP server, sockets and streams included
+1. close the HTTP server, sockets and streams included, then the MCP
+   listener
 2. stop the scheduler, cancel the machines' idle timers, and stop
    the group dispatchers
 3. ask every in-flight generation to stop and interrupt its sandbox
@@ -942,17 +950,27 @@ harness (`generation/harness-loop.ts`). The set-up, the cancel
 settlement, the finish, and the events around either loop are shared.
 A subscription generation on no harness fails with `harness.missing`,
 and on any harness but Claude Code with `subscription.not_runnable`,
-before the machine is woken. It offers no tool and resolves no model
-credential; its harness is checked as a coding run's is. Its turn
-starts the CLI with the run's first row as its system prompt
-(`--system-prompt-file`) and the user messages since the run's last
-reply on stdin, polls every second, keeps each poll's Claude Code
+before the machine is woken. Its tools are narrowed as a key
+generation's are, and no model credential is resolved; its harness is
+checked as a coding run's is. Its turn opens a grant on the
+`HarnessMcpServer` (`generation/harness-mcp.ts`), starts the CLI with
+the run's first row as its system prompt (`--system-prompt-file`), the
+server's URL and the grant's token (`--mcp-config`), and the user
+messages since the run's last reply on stdin, polls every second, keeps each poll's Claude Code
 events as rows through `events.commitMessage`
 (`generation/parse-claude-code.ts`, `generation/harness-rows.ts`),
 keeps the session in `metadata.harness_turn` for the next generation
 to resume, and ends with `harness.start`, `harness.failed`,
 `harness.lost`, `harness.unresponsive`, or `harness.timed_out` when
-it does not exit cleanly. The start, the poll, the stop, the result,
+it does not exit cleanly. The server runs the harness's calls through
+`ToolCalls.executeHarnessCall`, one at a time per grant; a call past
+`max_tool_calls` or one that files a blocking issue asks the turn to
+stop, and the loop stops the harness and records
+`generation.max_tool_calls` or `generation.blocked`. A run's
+`events.commitMessage` appends one row at a time, so the poll's rows
+and the server's take the next sequence number each. The grant is
+revoked, once its running call is kept, before the turn's own calls
+without a result get theirs. The start, the poll, the stop, the result,
 and the log are the `guilds-harness` ops `code_task` calls too
 (`toolbox/harness-ops.ts`). Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
@@ -1004,6 +1022,29 @@ encoding the daemon names answers 502.
 Client frames on either socket count as activity and restart the
 machine's idle timer, and the agent's Chrome timer, at most once
 every 30 seconds.
+
+### The MCP listener
+
+A second listener, apart from the API's, serves the orchestrator's MCP
+server to subscription agents' harnesses
+(`src/http/harness-mcp-routes.ts`, built by `buildHarnessMcpApp`). It
+serves nothing else:
+
+| Route | Answer |
+| --- | --- |
+| `POST /mcp/:agent_id` | A JSON-RPC message of MCP's Streamable HTTP transport: a request is answered with its JSON response, a notification with 202 and no body |
+| `GET`, `DELETE /mcp/:agent_id` | 405, `Allow: POST`: no server stream and no session |
+| `GET /health` | `{ "status": "ok" }`, with no check of the database |
+| anything else | 404 |
+
+A request is answered only with the bearer token of the running
+generation of the agent its path names (`HarnessMcpServer`,
+`src/generation/harness-mcp.ts`). Any other answers 401 with
+`WWW-Authenticate: Bearer`, whatever the reason. A body over 1 MiB
+answers 413, and one that is not a JSON-RPC message 400. Each error
+answers `{ "error": <the status's name> }` and nothing more; a 5xx is
+logged. The listener passes no host or origin check: it is no page's
+API, and the token is its only gate.
 
 ## Observability
 

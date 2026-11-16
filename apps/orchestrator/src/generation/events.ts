@@ -3,6 +3,7 @@ import { appendRunError, insertMessage, nextSeq, type MessageRow } from "../db/r
 import type { MessageMetadata, MessagePayload, RunError } from "../db/schema/index.js";
 import { messageItem, type MessageView } from "../db/views.js";
 import { EventQueue, type StreamEvent } from "../lib/event.js";
+import { KeyedLock } from "../lib/lock.js";
 import { errorMessage, errorName, redactText, writeLog } from "../observability/log.js";
 import type { ToolProgress } from "../toolbox/services.js";
 import type { RunWakeChange } from "../wakes/item.js";
@@ -69,6 +70,8 @@ export type RunGeneration = {
  */
 export class RunEventBus {
   private readonly subscribers = new Map<string, Set<EventQueue<RunEvent>>>();
+  /** Each run's message appends, one at a time. */
+  private readonly commits = new KeyedLock();
 
   constructor(private readonly db: RunEventsDatabase) {}
 
@@ -101,16 +104,22 @@ export class RunEventBus {
     }
   }
 
-  /** Appends the message to the run's history and publishes it. */
+  /**
+   * Appends the message to the run's history and publishes it. A run's messages are appended one
+   * at a time, so two parts of a generation that keep rows at once, such as a harness's own events
+   * and a call it makes through the orchestrator's MCP server, each take the next sequence number.
+   */
   async commitMessage(
     runId: string,
     payload: MessagePayload,
     metadata: MessageMetadata,
   ): Promise<MessageRow> {
-    const seq = await this.db.nextSeq(runId);
-    const row = await this.db.insertMessage({ runId, seq, payload, metadata }, new Date());
-    await this.publishCommitted(row);
-    return row;
+    return this.commits.run(runId, async () => {
+      const seq = await this.db.nextSeq(runId);
+      const row = await this.db.insertMessage({ runId, seq, payload, metadata }, new Date());
+      await this.publishCommitted(row);
+      return row;
+    });
   }
 
   /** Publishes a row already committed to its run's history as `message.committed`. */

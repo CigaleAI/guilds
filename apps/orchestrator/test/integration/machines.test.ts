@@ -44,6 +44,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     {
       notes,
       workspaceRoot,
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes,
       mcp: mcpPool(db),
       artifacts,

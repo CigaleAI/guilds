@@ -9,6 +9,8 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-64](#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools) | A subscription agent's MCP token lets any process on its machine call its Guilds tools | Open |
+| [SEC-63](#sec-63--on-docker-desktop-every-sandbox-reaches-the-operator-app) | On Docker Desktop every sandbox reaches the operator app | Open |
 | [SEC-62](#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network) | A subscription agent's harness holds its whole prompt beside its secrets and the network | Open |
 | [SEC-61](#sec-61--a-repositorys-access-token-is-long-lived-and-written-to-its-agents-machine) | A repository's access token is long-lived and written to its agents' machine | Open |
 | [SEC-60](#sec-60--text-holding-a-nul-or-an-unpaired-surrogate-failed-the-write-of-a-message) | Text holding a NUL or an unpaired surrogate failed the write of a message | Fixed 2026-11-15 |
@@ -72,6 +74,92 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
 
+## SEC-64 — A subscription agent's MCP token lets any process on its machine call its Guilds tools
+
+**Status:** open.
+
+**Found:** 2026-11-16, serving a subscription agent's harness its
+Guilds tools.
+
+**Where:** `HarnessMcpServer` in
+`apps/orchestrator/src/generation/harness-mcp.ts`, its listener
+(`buildHarnessMcpApp`, `apps/orchestrator/src/http/harness-mcp-routes.ts`)
+published by `docker-compose.yml`, and `<call id>.mcp.json` in the
+turn's run folder, `.runs/<run id>/` in the agent's home, written by
+`start` in `runtime/guilds-harness`.
+
+**Exposure:** the MCP listener is reachable from every sandbox on the
+host: on a Linux engine every container reaches the bridge's gateway,
+and on Docker Desktop every container reaches the host's loopback
+(SEC-63). While a subscription agent's generation runs, its bearer
+token sits in the configuration file in the agent's home. Any process
+on the agent's machine can read it: the harness itself, a command it
+runs, a package install (SEC-4), a steered harness (SEC-8), and every
+other agent placed on the machine (SEC-24), as it can read a
+repository token (SEC-10). With the token, a process calls every
+Guilds tool the run offers, as the agent: it writes and deletes notes,
+records, and files the agent may write, posts to the group chat, sets
+routines and wake-ups, reads and runs scripts, drives the agent's
+browser, stores secrets, files issues, and calls every connector tool
+the agent's logins offer, such as a GitHub write, until the generation
+ends, for up to 30 minutes.
+
+**Control in place:** the token is 32 bytes from the platform's
+random source, one per generation, kept only in the orchestrator's
+memory, compared by its SHA-256 digest in constant time, and redacted
+from the run's rows. It is
+valid only at its own agent's path, only while that generation runs:
+it is revoked when the generation ends, however it ends, and a
+restart revokes every token. Each request that holds no grant answers
+401 and nothing more. The listener is a port of its own, apart from
+the operator app, and serves `/mcp/<agent id>` and `/health` alone; a
+body over 1 MiB is refused. Each call goes through the run's offer
+gate, narrowed to the agent's live bindings on every list and call,
+never a tool the generation was not offered nor a code tool; through
+redaction and the byte cap; counts toward `max_tool_calls`; and is
+kept in the run as the agent's own call. The URL and the token are in
+no environment and on no command line: the start request travels
+through a request file only root reads, and the configuration file is
+mode 0600, removed with the turn's other private files. A token found
+after the generation ended answers 401.
+
+**Fix to make:** none of a token's reach can be narrowed below the
+machine while agents share a machine. An operator gives an agent that
+holds connector access, or writes that matter, a machine of its own.
+
+
+**Status:** open.
+
+**Found:** 2026-11-16, publishing the MCP listener where a sandbox
+reaches it.
+
+**Where:** the operator app's port, published on
+`127.0.0.1:${ORCHESTRATOR_PORT}` by `docker-compose.yml`, on a box
+whose Docker engine is Docker Desktop.
+
+**Exposure:** Docker Desktop resolves `host.docker.internal` in every
+container and forwards it to the host's loopback, so every container,
+every agent's machine included, reaches every port published on
+`127.0.0.1`. A process on any machine reaches the operator app. In
+`compat-cookie` mode whoever reaches the port is the operator, and a
+request that names `127.0.0.1` as its `Host` passes the host check
+(SEC-15), which guards a browser, not a process that writes its own
+headers. Such a process can then act as the operator: read and change
+every guild, agent, secret's access, and connection, and start runs.
+A Linux engine is not exposed: a container on the bridge does not
+reach a port published on loopback.
+
+**Control in place:** none in `compat-cookie` mode. `trusted-header`
+mode takes the user from a proxy that sends a secret
+(`TRUSTED_PROXY_SECRET`) a sandbox does not hold, so a box in that
+mode refuses such a request.
+
+**Fix to make:** an operator app that a container on the host's
+bridge cannot reach on Docker Desktop, or a credential every API
+request carries. Until then, a box on Docker Desktop is a development
+box: run agents whose content is untrusted on a Linux engine, or in
+`trusted-header` mode.
+
 ## SEC-62 — A subscription agent's harness holds its whole prompt beside its secrets and the network
 
 **Status:** open.
@@ -97,12 +185,18 @@ its secrets, State, or Memory wherever the container reaches (SEC-8).
 The prompt leaves the box for the vendor's API on the operator's
 subscription. While the turn runs, the system prompt is also a file in
 the agent's home, readable by any process on the machine (SEC-24).
+Since 2026-11-16 the harness also calls the run's Guilds tools,
+connector tools included, on the orchestrator's MCP server (SEC-64):
+steered text can make it write the agent's notes, records, files, and
+Memory, post to the group chat, set routines, and call its connectors.
 
-**Control in place:** the harness is offered no tool and no connection
-of the platform, so it writes no note, record, file, or Memory, posts
-nothing to the group chat, and reaches no connection's credentials.
-What it writes into the run is redacted with the run's secret values
-before it is stored, and each tool result is capped. The system prompt
+**Control in place:** until 2026-11-16 the harness was offered no tool
+and no connection of the platform. The tools it calls now go through
+the run's offer gate, narrowed to the agent's live bindings, and count
+toward `max_tool_calls`; the code tools are never among them, and it
+reaches no connection's credentials. What it writes into the run is
+redacted with the run's secret values before it is stored, and each
+tool result is capped. The system prompt
 file is mode 0600 and goes with the turn's state. The driver removes
 the variables that would move the CLI onto a metered key and turns
 off hooks, plugins, and project MCP servers. A turn stops after 30
@@ -110,7 +204,8 @@ minutes. The organisation's model keys never reach the sandbox.
 
 **Fix to make:** start the harness with only its own credential in its
 environment, and limit what the agent's container reaches. Until then,
-grant a subscription agent only the secrets its work needs.
+grant a subscription agent only the secrets, tools, and connectors its
+work needs.
 
 ## SEC-61 — A repository's access token is long-lived and written to its agents' machine
 

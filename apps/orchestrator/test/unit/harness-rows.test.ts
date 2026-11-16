@@ -52,6 +52,42 @@ test("a tool result whose content is not text parses with no output", () => {
   assert.deepEqual(event, { type: "user", results: [{ tool_use_id: "t", output: null }] });
 });
 
+test("a call of a tool of the orchestrator's MCP server makes no tool call of the message", () => {
+  const message: ClaudeCodeMessage = {
+    type: "assistant",
+    content: [
+      { type: "text", text: "Writing the note." },
+      { type: "tool_use", id: "toolu_mcp", name: "mcp__guilds__note_write", input: { path: "a.md" } },
+      { type: "tool_use", id: "toolu_own", name: "Bash", input: { command: "ls" } },
+    ],
+  };
+  const payload = claudeCodeAssistantMessage(message, {});
+  assert.deepEqual(
+    payload?.tool_calls?.map((call) => call.id),
+    ["toolu_own"],
+    "the server keeps that call as the run's own",
+  );
+  assert.equal(payload?.content, "Writing the note.");
+});
+
+test("a message holding only a call of the orchestrator's MCP server makes no row", () => {
+  const message: ClaudeCodeMessage = {
+    type: "assistant",
+    content: [{ type: "tool_use", id: "toolu_mcp", name: "mcp__guilds__group_post", input: { content: "hi" } }],
+  };
+  assert.equal(claudeCodeAssistantMessage(message, {}), null);
+});
+
+test("a call of another MCP server's tool stays a call of the harness's own", () => {
+  const message: ClaudeCodeMessage = {
+    type: "assistant",
+    content: [{ type: "tool_use", id: "toolu_other", name: "mcp__guildsx__note_write", input: {} }],
+  };
+  assert.deepEqual(claudeCodeAssistantMessage(message, {})?.tool_calls?.map((call) => call.function.name), [
+    "mcp__guildsx__note_write",
+  ]);
+});
+
 test("a message's text becomes an assistant row, and its tool uses its tool calls, both redacted", () => {
   const message: ClaudeCodeMessage = {
     type: "assistant",

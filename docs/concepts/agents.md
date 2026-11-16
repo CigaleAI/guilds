@@ -86,11 +86,12 @@ generation resumes the same session. A subscription agent:
 
 - runs only on Claude Code: on Codex, its runs fail at start with
   `subscription.not_runnable`;
-- is offered no tool of the platform and no connection: it cannot
-  write notes, records, files, or Memory, post to the group chat, set
-  routines or wake-ups, report issues, or ask for a secret. It reads
-  its Task, State, and Memory in its system prompt, and acts with the
-  harness's own tools;
+- is offered the tools a model on a key would be, connectors
+  included, but the code tools: its harness calls them on the
+  orchestrator's MCP server, under a token of the generation's
+  ([Tools in a run](../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)),
+  beside the harness's own tools. Each call counts toward
+  `max_tool_calls`, with every call of the harness's own;
 - takes no attachments and has no repositories or code tools;
 - records no usage or cost for its turns, and stops a turn after 30
   minutes.
@@ -207,8 +208,9 @@ is disabled once the guild is full. Each agent row shows:
 2. **Model**: while the box offers subscription agents, it starts with
    **Model source**: **Model on a key** or **Subscription**. Under
    **Subscription** a line reads "Claude Code runs every turn on your
-   own subscription, with its own tools only. Codex subscription agents
-   can't run yet: their runs fail at start." On a key, the
+   own subscription, with its own tools and the guild's tools this
+   agent is given. Codex subscription agents can't run yet: their runs
+   fail at start." On a key, the
    model, from the organisation's chosen models grouped by provider,
    preselected with its default when it has one. With no provider
    connected, the step shows a guide to **Model keys** in its place.
@@ -344,7 +346,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
-| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; each generation one turn of Claude Code, with no tool of the platform; on Codex its runs fail at start |
+| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; each generation one turn of Claude Code, offered the platform's tools but the code tools through the orchestrator's MCP server; on Codex its runs fail at start |
 | Repositories | only on a coding agent; each one the agent can use ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |

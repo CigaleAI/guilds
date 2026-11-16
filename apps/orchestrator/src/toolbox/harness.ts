@@ -194,6 +194,7 @@ async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHoo
     prompt: turn.prompt,
     repository: turn.repository,
     system_prompt: null,
+    mcp: null,
     session_id: turn.session,
     model: run.harness_model,
     effort: run.harness_effort,

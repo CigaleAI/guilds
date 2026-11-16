@@ -106,6 +106,20 @@ export class GenerationCancelled extends Error {
   }
 }
 
+/**
+ * A request to the orchestrator's MCP server that holds no grant: no token, or one that is not
+ * the token of the running generation of the agent its path names. It says nothing more.
+ */
+export class HarnessMcpRefused extends Error {
+  constructor() {
+    super("unauthorized");
+    this.name = "HarnessMcpRefused";
+  }
+}
+
+/** What a run that made its last tool call tells its model, and records as its run error. */
+export const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
+
 export class RunLimitError extends Error {
   operation: string;
 

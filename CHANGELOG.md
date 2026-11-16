@@ -8,6 +8,64 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A Claude Code subscription agent calls its Guilds tools:
+its run is offered what a run on a key with the same access would be,
+connectors included, less the code tools, and its snapshot records
+that offer. Each generation's turn gets the orchestrator's MCP server
+in a private `--mcp-config` file in its run folder, with a token that
+lasts as long as the generation; Claude Code names each tool
+`mcp__guilds__<tool>`, and the run's system prompt names them so,
+with the Guidelines parts of the tools it is offered. A call is kept
+as a model's call is, an assistant row and its tool row with the
+`remaining_tool_calls` trailer, counted toward `max_tool_calls` with
+the harness's own calls; a call past the limit ends the generation
+with `generation.max_tool_calls`, and one that files a blocking issue
+with `generation.blocked`, each stopping the harness. The Model source
+note says Claude Code runs with its own tools and the guild's tools
+the agent is given. The runtime image must be rebuilt: `guilds-harness
+start` takes `mcp_url` and `mcp_token`
+([SEC-64](docs/architecture/security-register.md#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools)).
+
+**Rebuild.** The orchestrator listens on a second port,
+`HARNESS_MCP_PORT` (8090 by default), apart from the operator app's:
+the MCP listener a subscription agent's harness reaches from its
+sandbox. It serves `/mcp/<agent id>` and `/health` and nothing else,
+and answers 401 to a request without a running generation's token.
+The Compose file publishes it at `HARNESS_MCP_PUBLISH`, and a sandbox
+is given `HARNESS_MCP_URL`, by default
+`http://<HARNESS_MCP_SANDBOX_HOST>:<HARNESS_MCP_PORT>`. `./setup.sh`
+writes the address and the host for the Docker engine it finds:
+loopback and `host.docker.internal` on Docker Desktop, the default
+bridge's gateway on a Linux engine; run it again on an existing box.
+On Docker Desktop every sandbox also reaches the operator app's port
+([SEC-63](docs/architecture/security-register.md#sec-63--on-docker-desktop-every-sandbox-reaches-the-operator-app)).
+
+**Rebuild.** A Claude Code subscription agent runs: each generation
+of its run is one turn of Claude Code in the agent's sandbox, started
+with the run's composed system prompt in place of Claude Code's own
+and the messages that opened the generation on stdin, polled every
+second, and stopped after 30 minutes. The run shows the CLI's messages
+as assistant rows and each tool it uses (Bash, Read, Edit, …) as a
+call with its result, marked `from_harness`, redacted and capped as
+tool results are. The run's next generation resumes the session kept
+in `metadata.harness_turn`. A turn that does not end cleanly records
+`harness.start`, `harness.failed`, `harness.lost`,
+`harness.unresponsive`, or `harness.timed_out`; a cancel stops the
+CLI. A subscription agent's run is offered no tool and no connection,
+and its Guidelines leave out the tool budget and every part on a tool
+the run does not offer, and gain the facts its harness needs: where
+it runs, its home, its ports. A Codex subscription agent's runs still
+fail at start with `subscription.not_runnable`, which now reads "Codex
+cannot run a subscription agent's turns yet". The runtime image must
+be rebuilt: `guilds-harness start` takes a `system_prompt` and runs in
+the home without a repository, and `poll` returns the raw events it
+read ([SEC-62](docs/architecture/security-register.md#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network)).
+In the operator app, a harness turn reads as a run flow: Claude Code's
+own tools read as what they did, such as **Run** a command, **Read**
+or **Edit** a file, or **Search lines**, coloured by kind, and a call's
+Metadata names the harness under **Called by**. The Model source note
+says Claude Code runs a subscription agent's turns and Codex ones
+cannot run yet.
 **Breaking.** A coding agent works on the repositories it picks, not
 on every repository of its guild. Agent config gains `repositories`, a
 list of names in the order a run clones them; a create or a settings

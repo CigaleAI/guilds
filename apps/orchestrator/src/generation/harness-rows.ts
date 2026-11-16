@@ -6,6 +6,7 @@ import type {
   ToolMessage,
   ToolResultMetadata,
 } from "../db/schema/index.js";
+import { HARNESS_MCP_TOOL_PREFIX } from "../coding/harnesses.js";
 import { redact } from "../secrets/index.js";
 import { identityOutput, processOutput, toolResultMaxBytes } from "../toolbox/index.js";
 import type {
@@ -17,7 +18,8 @@ import { interruptionRecord } from "./tool-calls.js";
 
 // The rows a subscription agent's run keeps of its harness's events: each message the harness
 // writes, and each call of the harness's own tools with its result, in the shapes a model's
-// messages and tool calls take, marked as the harness's.
+// messages and tool calls take, marked as the harness's. A call of a tool of the orchestrator's
+// MCP server is kept as a tool call of the run where the server runs it, so its events make no row.
 
 /** What a result row holds when the harness's tool returned something other than text. */
 export const NOT_TEXT_OUTPUT = "(the tool returned no text)";
@@ -34,9 +36,15 @@ function claudeCodeToolCall(use: ClaudeCodeToolUse, secrets: Record<string, stri
   };
 }
 
+/** Whether Claude Code called one of its own tools, rather than one of the orchestrator's MCP server. */
+function isClaudeCodeOwnTool(use: ClaudeCodeToolUse): boolean {
+  return !use.name.startsWith(HARNESS_MCP_TOOL_PREFIX["claude-code"]);
+}
+
 /**
  * The assistant message a message of Claude Code's makes: its text, redacted with `secrets`, and
- * its calls of its own tools; null for a message with neither.
+ * its calls of its own tools; null for a message with neither. Its calls of the orchestrator's
+ * MCP server's tools are left out.
  */
 export function claudeCodeAssistantMessage(
   message: ClaudeCodeMessage,
@@ -46,7 +54,7 @@ export function claudeCodeAssistantMessage(
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n");
   const calls = message.content.flatMap((block) =>
-    block.type === "tool_use" ? [claudeCodeToolCall(block, secrets)] : [],
+    block.type === "tool_use" && isClaudeCodeOwnTool(block) ? [claudeCodeToolCall(block, secrets)] : [],
   );
   if (!text.trim() && !calls.length) {
     return null;

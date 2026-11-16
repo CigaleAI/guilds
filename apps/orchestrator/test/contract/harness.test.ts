@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import type { Harness } from "../../src/db/schema/index.js";
+import type { AddressInfo } from "node:net";
+import { buildHarnessMcpApp } from "../../src/app.js";
 import { RunEventBus } from "../../src/generation/events.js";
 import { HarnessLoop } from "../../src/generation/harness-loop.js";
+import { HarnessMcpServer } from "../../src/generation/harness-mcp.js";
+import { ToolCalls, type GenerationTools } from "../../src/generation/tool-calls.js";
 import { agentHome } from "../../src/lib/agent-file.js";
 import {
   RunSandboxes,
@@ -13,13 +17,14 @@ import {
   type AgentSeat,
   type MachineSpec,
 } from "../../src/sandbox/index.js";
-import { invokeTool } from "../../src/toolbox/index.js";
+import { invokeTool, schemasFor } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensandbox-server.js";
 import { toolFixture } from "../helpers/toolbox.js";
 
-// A live turn of each harness in the runtime image, on a real subscription, and a live turn of a
-// Claude Code subscription agent. Each runs when its credential is in the environment:
+// A live turn of each harness in the runtime image, on a real subscription, and live turns of a
+// Claude Code subscription agent, one of which calls a Guilds tool on the orchestrator's MCP
+// server. Each runs when its credential is in the environment:
 // CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, or for Codex CODEX_AUTH_JSON, the path of an auth.json
 // from `codex login`.
 const IMAGE = process.env.CONTRACT_RUNTIME_IMAGE ?? "agent-runtime:0.4";
@@ -101,31 +106,49 @@ for (const { harness, credential } of LIVE) {
 
 const claudeSkip = imageMissing || (process.env.CLAUDE_CODE_OAUTH_TOKEN ? false : "set CLAUDE_CODE_OAUTH_TOKEN to run the live subscription turn");
 
-test("a live Claude Code subscription turn answers under the system prompt that replaces its own", { skip: claudeSkip, timeout: 600_000 }, async () => {
-  process.env.SECRETS_MASTER_KEY ??= HEX_MASTER_KEY;
+type Row = { seq: number; payload: Record<string, unknown>; metadata: Record<string, unknown> };
+
+/**
+ * Where this host's MCP listener binds for a sandbox on the default bridge, and the host the
+ * sandbox reaches it by: loopback and host.docker.internal on Docker Desktop, the bridge's gateway
+ * on a Linux engine (docs/architecture/deployment.md).
+ */
+function sandboxReach(): { bind: string; host: string } {
+  if (run("docker", ["info", "--format", "{{.OperatingSystem}}"]).stdout.trim() === "Docker Desktop") {
+    return { bind: "127.0.0.1", host: "host.docker.internal" };
+  }
+  const gateway = run("docker", ["network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}"]).stdout.trim();
+  return { bind: gateway, host: gateway };
+}
+
+/**
+ * One live turn of a Claude Code subscription agent on run `r_live_turn`, opened by `prompt` under
+ * the system prompt `system`, whose harness is served the native tools `offered` on a listener of
+ * the orchestrator's MCP server, with `postFromRun` as its guild chat. The run's rows, its errors,
+ * and its metadata.
+ */
+async function liveSubscriptionTurn(system: string, prompt: string, offered: string[], posted: string[]) {
   const server = await startOpenSandboxServer();
   const sandboxes = new RunSandboxes({ url: server.url, apiKey: server.apiKey, image: IMAGE, workspaceRoot: server.workspaceRoot });
   await sandboxes.start();
   const agentId = "a_live_subscription";
   const seat: AgentSeat = { agentId, machineId: MACHINE.id, slot: 0, browserLanguage: "en-US" };
+  const reach = sandboxReach();
+  const rows: Row[] = [
+    { seq: 0, payload: { role: "system", content: system }, metadata: {} },
+    { seq: 1, payload: { role: "user", content: prompt }, metadata: { generation: 1, source: "ui" } },
+  ];
+  const metadata: Record<string, unknown> = {};
+  const errors: unknown[] = [];
+  const listening: Array<{ close(): Promise<void> }> = [];
   try {
     prepareWorkspace(server.workspaceRoot, MACHINE.id, agentId);
     const machine = await sandboxes.ensure(MACHINE);
     const secrets = { CLAUDE_CODE_OAUTH_TOKEN: String(process.env.CLAUDE_CODE_OAUTH_TOKEN) };
     const sandbox = agentSandbox(machine, agentHome(agentId), { ...secrets, ...seatEnvironment(seat) });
-    const rows: Array<{ seq: number; payload: Record<string, unknown>; metadata: Record<string, unknown> }> = [
-      {
-        seq: 0,
-        payload: { role: "system", content: "You are Quill, an agent of a test guild. Answer every message with the single word PINEAPPLE, then stop." },
-        metadata: {},
-      },
-      { seq: 1, payload: { role: "user", content: "Run `echo ready` in the shell, then answer." }, metadata: { generation: 1, source: "ui" } },
-    ];
-    const metadata: Record<string, unknown> = {};
-    const errors: unknown[] = [];
     const events = new RunEventBus({
       nextSeq: async () => rows.length,
-      insertMessage: async (message: { seq: number; payload: Record<string, unknown>; metadata: Record<string, unknown> }) => {
+      insertMessage: async (message: Row) => {
         rows.push(message);
         return { ...message, id: rows.length, run_id: "r_live_turn", created_at: new Date().toISOString(), cost_usd: null };
       },
@@ -134,9 +157,44 @@ test("a live Claude Code subscription turn answers under the system prompt that 
         return [];
       },
     } as never);
+    const group_chat = {
+      postFromRun: async (_runId: string, _agentId: string, _guildId: string, _name: string, content: string) => {
+        posted.push(content);
+        return "posted to the guild chat";
+      },
+    };
+    const ctx = toolFixture({
+      run_id: "r_live_turn",
+      agent_id: agentId,
+      guild_id: "g_1",
+      sandbox,
+      secrets,
+      harness: "claude-code",
+      offered_tools: new Set(offered),
+      group_chat: group_chat as never,
+    });
+    const schemas = schemasFor(offered);
+    const tools: GenerationTools = { run: ctx.run, hooks: ctx.hooks, schemas, secrets, connections: new Map(), maxToolCalls: 50 };
+    const agent = { id: agentId, org_id: "org_contract", guild_id: "g_1", config: { model: null, harness: "claude-code", browser: false, coding: false, scripting: false, memory: false } };
+    const toolCalls = new ToolCalls({
+      db: { getAgent: async () => null, getRun: async () => null, listMessages: async () => rows },
+      events,
+      tools: ctx.services,
+    } as never);
+    const mcpDb = { getAgent: async () => agent, listBindingsCovering: async () => [], listMessages: async () => rows };
+    const probe = await buildHarnessMcpApp(new HarnessMcpServer({ db: mcpDb as never, toolCalls }, "http://unused"));
+    await probe.listen({ host: reach.bind, port: 0 });
+    const port = (probe.server.address() as AddressInfo).port;
+    await probe.close();
+    const mcp = new HarnessMcpServer({ db: mcpDb as never, toolCalls }, `http://${reach.host}:${port}`);
+    const listener = await buildHarnessMcpApp(mcp);
+    await listener.listen({ host: reach.bind, port });
+    listening.push(listener);
     const loop = new HarnessLoop({
       db: {
         getAgent: async () => null,
+        getRun: async () => null,
+        completeRun: async () => undefined,
         listMessages: async () => rows,
         mergeRunMetadata: async (_runId: string, extra: Record<string, unknown>) => {
           Object.assign(metadata, extra);
@@ -144,27 +202,59 @@ test("a live Claude Code subscription turn answers under the system prompt that 
       } as never,
       events,
       machines: null as never,
+      mcp,
     });
-    const ctx = toolFixture({ run_id: "r_live_turn", agent_id: agentId, guild_id: "g_1", sandbox, secrets, harness: "claude-code" });
     const gen = {
       runId: "r_live_turn",
       generation: 1,
       log: { run_id: "r_live_turn" },
-      run: { id: "r_live_turn", metadata: {} },
-      agent: { id: agentId },
+      run: { id: "r_live_turn", kind: "direct", metadata: {} },
+      agent,
       source: "subscription",
-      snapshot: { model: null, harness: "claude-code", harness_model: null, harness_effort: null },
+      snapshot: { model: null, harness: "claude-code", harness_model: null, harness_effort: null, tools: schemas },
     };
-    await loop.runTurn(gen as never, { run: ctx.run, hooks: ctx.hooks, schemas: [], secrets, connections: new Map(), maxToolCalls: 50 });
-    assert.deepEqual(errors, []);
-    const kept = rows.slice(2);
-    assert.ok(kept.every((row) => row.metadata.from_harness === "claude-code"));
-    assert.match(String(kept.at(-1)?.payload.content), /PINEAPPLE/, "the run's system prompt replaced Claude Code's own");
-    assert.ok(kept.some((row) => row.payload.role === "tool"), "the shell call and its result are rows");
-    assert.ok(typeof (metadata.harness_turn as { session_id?: unknown })?.session_id === "string");
+    await loop.runTurn(gen as never, tools);
+    return { rows: rows.slice(2), errors, metadata };
   } finally {
+    for (const listener of listening) {
+      await listener.close();
+    }
     await sandboxes.destroy(MACHINE.id).catch(() => undefined);
     await sandboxes.close();
     await server.stop();
   }
+}
+
+test("a live Claude Code subscription turn answers under the system prompt that replaces its own", { skip: claudeSkip, timeout: 600_000 }, async () => {
+  const { rows, errors, metadata } = await liveSubscriptionTurn(
+    "You are Quill, an agent of a test guild. Answer every message with the single word PINEAPPLE, then stop.",
+    "Run `echo ready` in the shell, then answer.",
+    [],
+    [],
+  );
+  assert.deepEqual(errors, []);
+  assert.ok(rows.every((row) => row.metadata.from_harness === "claude-code"));
+  assert.match(String(rows.at(-1)?.payload.content), /PINEAPPLE/, "the run's system prompt replaced Claude Code's own");
+  assert.ok(rows.some((row) => row.payload.role === "tool"), "the shell call and its result are rows");
+  assert.ok(typeof (metadata.harness_turn as { session_id?: unknown })?.session_id === "string");
+});
+
+test("a live Claude Code subscription turn calls a Guilds tool on the orchestrator's MCP server", { skip: claudeSkip, timeout: 600_000 }, async () => {
+  const posted: string[] = [];
+  const { rows, errors } = await liveSubscriptionTurn(
+    "You are Quill, an agent of a test guild. Your tool `mcp__guilds__group_post` posts to the guild's chat. " +
+      "Call it exactly once with the content PINEAPPLE, then answer with the single word done.",
+    "Tell the guild.",
+    ["group_post"],
+    posted,
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(posted, ["PINEAPPLE"], "the call reached the guild chat through the server");
+  const call = rows.find((row) => JSON.stringify(row.payload.tool_calls ?? []).includes('"name":"group_post"'));
+  assert.ok(call, "the call is the run's own tool call");
+  assert.equal(call.metadata.from_harness, undefined);
+  const result = rows.find((row) => row.seq === call.seq + 1);
+  assert.equal(result?.payload.role, "tool");
+  assert.match(String(result?.payload.content), /remaining_tool_calls: 49$/);
+  assert.ok(!rows.some((row) => JSON.stringify(row.payload).includes("mcp__guilds__group_post")), "the harness's own events for it make no row");
 });

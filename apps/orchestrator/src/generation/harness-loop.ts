@@ -1,7 +1,15 @@
 import { HARNESS_INFO, type TurnHarness } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
-import { listMessages, mergeRunMetadata, type ActiveRunRow, type MessageRow, type RunRow } from "../db/runs.js";
+import {
+  completeRun,
+  getRun,
+  listMessages,
+  mergeRunMetadata,
+  type ActiveRunRow,
+  type MessageRow,
+  type RunRow,
+} from "../db/runs.js";
 import {
   modelSourceOf,
   type Harness,
@@ -22,13 +30,21 @@ import {
   pollHarness,
   stopHarness,
   stringOrNull,
+  type HarnessMcpAccess,
   type HarnessPollResult,
   type Settled,
   type TurnEnding,
 } from "../toolbox/harness-ops.js";
 import { failureDetail } from "../toolbox/harness-result.js";
 import type { ToolRun } from "../toolbox/index.js";
-import { GenerationCancelled, HarnessTurnError } from "./errors.js";
+import { completeIfActive } from "./chain.js";
+import {
+  GenerationBlocked,
+  GenerationCancelled,
+  HarnessTurnError,
+  RunLimitError,
+  TOOL_CALL_LIMIT_MESSAGE,
+} from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
 import {
@@ -36,6 +52,7 @@ import {
   claudeCodeToolRecord,
   interruptedHarnessToolRecord,
 } from "./harness-rows.js";
+import type { HarnessGrant, HarnessMcpServer } from "./harness-mcp.js";
 import {
   parseClaudeCodeEvents,
   type ClaudeCodeMessage,
@@ -88,6 +105,8 @@ type HarnessRunTurn = {
   harness: TurnHarness;
   /** The run the harness ops run under. */
   ops: ToolRun;
+  /** The turn's grant on the orchestrator's MCP server, where its harness calls its Guilds tools. */
+  grant: HarnessGrant;
   /** The id that names the turn's state and log on the machine. */
   call_id: string;
   log_path: string;
@@ -98,9 +117,15 @@ type HarnessRunTurn = {
   pending: Map<string, PendingCall>;
 };
 
+/** How a subscription agent's turn's poll loop ends: as a harness's does, or stopped because the run's tool calls asked. */
+type TurnSettled = Settled | "stopped";
+
+/** How a subscription agent's turn ended: as a harness's turn does, or stopped at its run's tool calls' asking. */
+export type HarnessTurnEnding = Omit<TurnEnding, "settled"> & { settled: TurnEnding["settled"] | "stopped" };
+
 /** The run error each way a started turn can end other than a clean exit or a cancel. */
 const SETTLED_CODE: Record<
-  Exclude<TurnEnding["settled"], "exited" | "cancelled" | "not_started">,
+  Exclude<HarnessTurnEnding["settled"], "exited" | "cancelled" | "not_started" | "stopped">,
   HarnessTurnError["code"]
 > = {
   missing: "harness.lost",
@@ -121,11 +146,12 @@ const SETTLED_MESSAGE: Record<keyof typeof SETTLED_CODE, (label: string) => stri
 
 /**
  * The run error a turn that ended `ending` fails its generation with; null for a turn whose CLI
- * exited cleanly. A harness that did not stop is named with its log.
+ * exited cleanly, that was cancelled, or that its run's tool calls stopped, which ends the
+ * generation with their own error. A harness that did not stop is named with its log.
  */
 export function harnessTurnFailure(
   harness: Harness,
-  ending: TurnEnding,
+  ending: HarnessTurnEnding,
   logPath: string,
 ): HarnessTurnError | null {
   const label = HARNESS_INFO[harness].label;
@@ -142,7 +168,7 @@ export function harnessTurnFailure(
           `${label}'s turn failed (${failureDetail(harness, result, null)})`,
         );
   }
-  if (ending.settled === "cancelled" || ending.settled === "not_started") {
+  if (ending.settled === "cancelled" || ending.settled === "not_started" || ending.settled === "stopped") {
     return null;
   }
   return new HarnessTurnError(
@@ -151,34 +177,43 @@ export function harnessTurnFailure(
   );
 }
 
-/** The db/ functions a subscription agent's turns read the run and keep its session through. */
+/** The db/ functions a subscription agent's turns read the run, keep its session, and complete it through. */
 export type HarnessLoopDatabase = {
   getAgent: BoundQuery<typeof getAgent>;
+  getRun: BoundQuery<typeof getRun>;
+  completeRun: BoundQuery<typeof completeRun>;
   listMessages: BoundQuery<typeof listMessages>;
   mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
 };
 
-/** The db/ functions a subscription agent's turns read the run and keep its session through, on `db`. */
+/** The db/ functions a subscription agent's turns read the run, keep its session, and complete it through, on `db`. */
 export function harnessLoopDatabase(db: Queryable): HarnessLoopDatabase {
   return {
     getAgent: bindQuery(db, getAgent),
+    getRun: bindQuery(db, getRun),
+    completeRun: bindQuery(db, completeRun),
     listMessages: bindQuery(db, listMessages),
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
   };
 }
 
-/** What subscription agents' turns are run with, built once by the loop: the machines a lost turn is stopped on. */
+/**
+ * What subscription agents' turns are run with, built once by the loop: the machines a lost turn
+ * is stopped on, and the MCP server each turn's harness calls its Guilds tools on.
+ */
 export type HarnessLoopServices = {
   db: HarnessLoopDatabase;
   events: RunEventBus;
   machines: AgentMachines;
+  mcp: HarnessMcpServer;
 };
 
 /**
  * The harness loop: each generation of a subscription agent's run is one turn of its harness's
  * CLI in the agent's sandbox, on the run's system prompt and the messages that opened it, in the
- * run's session. The harness's messages and its own tool calls are kept as the run's rows while
- * the turn runs.
+ * run's session, given the orchestrator's MCP server under the generation's token. The harness's
+ * messages and its own tool calls are kept as the run's rows while the turn runs; the calls it
+ * makes of its Guilds tools are kept by the server.
  */
 export class HarnessLoop {
   constructor(private readonly services: HarnessLoopServices) {}
@@ -186,16 +221,20 @@ export class HarnessLoop {
   /**
    * Runs the generation's turn on its harness until the CLI exits. A turn that does not start,
    * fails, is lost, stops answering, or runs past its time ends the generation with its run
-   * error; a cancel stops the harness and throws `GenerationCancelled`. However it ends, each
-   * call of the harness's own tools left without a result gets the interrupted one.
+   * error; a turn whose tool calls reached the run's limit or filed a blocking issue is stopped,
+   * and ends it as the model loop does; a cancel stops the harness and throws
+   * `GenerationCancelled`. However it ends, the generation's token is revoked once its last call
+   * is kept, and each call of the harness's own tools left without a result gets the interrupted
+   * one.
    */
   async runTurn(gen: SubscriptionGeneration, tools: GenerationTools): Promise<void> {
     if (tools.run.cancel_event?.aborted) {
       throw new GenerationCancelled();
     }
-    const turn = this.openTurn(gen, tools);
+    const { grant, access } = this.services.mcp.open(gen, tools);
+    const turn = this.openTurn(gen, tools, grant);
     try {
-      if (!(await this.startTurn(gen, turn))) {
+      if (!(await this.startTurn(gen, turn, access))) {
         return;
       }
       const ending = await this.pollToEnd(gen, tools, turn);
@@ -203,12 +242,36 @@ export class HarnessLoop {
       if (ending.settled === "cancelled") {
         throw new GenerationCancelled();
       }
-      const failure = harnessTurnFailure(turn.harness, ending, turn.log_path);
-      if (failure !== null) {
-        await this.services.events.recordError(gen, failure.code, failure);
-      }
+      await this.recordEnding(gen, turn, ending);
     } finally {
+      await this.services.mcp.close(grant);
       await this.resolveHarnessCalls(gen.runId, turn.harness);
+    }
+  }
+
+  /**
+   * Ends the generation as its turn ended: with the stop the run's tool calls asked for, the way
+   * the model loop ends on them, else with the run error of a turn that did not exit cleanly.
+   */
+  private async recordEnding(gen: SubscriptionGeneration, turn: HarnessRunTurn, ending: HarnessTurnEnding): Promise<void> {
+    const { db, events } = this.services;
+    const stop = turn.grant.stop;
+    if (stop?.kind === "blocked") {
+      await events.recordError(gen, "generation.blocked", new GenerationBlocked(stop.issueId));
+      return;
+    }
+    if (stop?.kind === "max_tool_calls") {
+      await events.recordError(
+        gen,
+        "generation.max_tool_calls",
+        new RunLimitError("generation.max_tool_calls", TOOL_CALL_LIMIT_MESSAGE),
+      );
+      await completeIfActive(db, gen.runId);
+      return;
+    }
+    const failure = harnessTurnFailure(turn.harness, ending, turn.log_path);
+    if (failure !== null) {
+      await events.recordError(gen, failure.code, failure);
     }
   }
 
@@ -263,21 +326,26 @@ export class HarnessLoop {
     }
   }
 
-  /** Gives each call of the harness's own tools in the run's history that has no result the interrupted one. */
+  /**
+   * Gives each call of the harness's own tools in the run's history that has no result the
+   * interrupted one; the calls of its Guilds tools are the run's own, resolved as a model's are.
+   */
   private async resolveHarnessCalls(runId: string, harness: Harness): Promise<void> {
     const { db, events } = this.services;
-    for (const [call, generation] of pendingToolCalls(await db.listMessages(runId))) {
+    const harnessRows = (await db.listMessages(runId)).filter((row) => row.metadata.from_harness !== undefined);
+    for (const [call, generation] of pendingToolCalls(harnessRows)) {
       const [payload, metadata] = interruptedHarnessToolRecord(call, generation, harness);
       await events.commitMessage(runId, payload, metadata);
     }
   }
 
-  /** The turn of the generation, its clock started, resuming the session the run's last turn left. */
-  private openTurn(gen: SubscriptionGeneration, tools: GenerationTools): HarnessRunTurn {
+  /** The turn of the generation under `grant`, its clock started, resuming the session the run's last turn left. */
+  private openTurn(gen: SubscriptionGeneration, tools: GenerationTools, grant: HarnessGrant): HarnessRunTurn {
     const callId = callSegment(`turn_${gen.generation}_${gen.runId}`);
     return {
       harness: gen.snapshot.harness,
       ops: opsRun(tools.run),
+      grant,
       call_id: callId,
       log_path: harnessLogPath(gen.runId, callId),
       deadline: Date.now() + HARNESS_TURN_MINUTES * harnessTurnTiming.minuteMs,
@@ -289,10 +357,10 @@ export class HarnessLoop {
   }
 
   /**
-   * Starts the CLI on the run's system prompt with the generation's messages; false when it did
-   * not start, and the run says why.
+   * Starts the CLI on the run's system prompt with the generation's messages, given the MCP server
+   * at `mcp`; false when it did not start, and the run says why.
    */
-  private async startTurn(gen: SubscriptionGeneration, turn: HarnessRunTurn): Promise<boolean> {
+  private async startTurn(gen: SubscriptionGeneration, turn: HarnessRunTurn, mcp: HarnessMcpAccess): Promise<boolean> {
     const { system, prompt } = harnessTurnPrompt(await this.services.db.listMessages(gen.runId));
     try {
       await launchHarness(turn.ops, turn.call_id, {
@@ -300,6 +368,7 @@ export class HarnessLoop {
         prompt,
         repository: null,
         system_prompt: system,
+        mcp,
         session_id: turn.session,
         model: gen.snapshot.harness_model,
         effort: gen.snapshot.harness_effort,
@@ -325,14 +394,17 @@ export class HarnessLoop {
     gen: SubscriptionGeneration,
     tools: GenerationTools,
     turn: HarnessRunTurn,
-  ): Promise<TurnEnding> {
-    let settled: Settled;
+  ): Promise<HarnessTurnEnding> {
+    let settled: TurnSettled;
     try {
       await this.rememberTurn(gen.runId, turn);
       settled = await this.pollUntilSettled(gen, tools, turn);
     } catch (error) {
       await stopHarness(turn.ops, turn.call_id, turn.harness);
       throw error;
+    }
+    if (settled === "stopped") {
+      return { settled, ...(await stopHarness(turn.ops, turn.call_id, turn.harness)) };
     }
     return endHarnessTurn(turn.ops, turn.call_id, turn.harness, settled);
   }
@@ -342,9 +414,9 @@ export class HarnessLoop {
     gen: SubscriptionGeneration,
     tools: GenerationTools,
     turn: HarnessRunTurn,
-  ): Promise<Settled> {
+  ): Promise<TurnSettled> {
     for (;;) {
-      const settled = turnInterruption(tools.run, turn) ?? (await this.pollTurnOnce(gen, tools, turn));
+      const settled = turnInterruption(tools.run, turn) ?? (await this.pollTurnOnce(gen, turn));
       if (settled !== null) {
         return settled;
       }
@@ -355,11 +427,8 @@ export class HarnessLoop {
     }
   }
 
-  private async pollTurnOnce(
-    gen: SubscriptionGeneration,
-    tools: GenerationTools,
-    turn: HarnessRunTurn,
-  ): Promise<Settled | null> {
+  /** One poll of the turn, its new events kept as rows redacted with the turn's secrets and token. */
+  private async pollTurnOnce(gen: SubscriptionGeneration, turn: HarnessRunTurn): Promise<Settled | null> {
     let polled: HarnessPollResult;
     try {
       polled = await pollHarness(turn.ops, turn.call_id, turn.harness, turn.offset);
@@ -372,7 +441,7 @@ export class HarnessLoop {
     }
     turn.offset = polled.poll.offset ?? turn.offset;
     await this.noteSession(gen.runId, turn, stringOrNull(polled.poll.session_id));
-    await this.keepEvents(gen, tools.secrets, turn, polled.events);
+    await this.keepEvents(gen, turn.grant.tools.secrets, turn, polled.events);
     return polled.poll.exited === true ? "exited" : null;
   }
 
@@ -463,9 +532,13 @@ export class HarnessLoop {
   }
 }
 
-function turnInterruption(run: ToolRun, turn: HarnessRunTurn): Settled | null {
+/** Why the turn must end before its next poll: a cancel, the run's tool calls asking for its stop, or its time; null for none. */
+function turnInterruption(run: ToolRun, turn: HarnessRunTurn): TurnSettled | null {
   if (run.cancel_event?.aborted) {
     return "cancelled";
+  }
+  if (turn.grant.stop !== null) {
+    return "stopped";
   }
   return Date.now() >= turn.deadline ? "timed_out" : null;
 }

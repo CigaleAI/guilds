@@ -59,6 +59,7 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     {
       notes,
       workspaceRoot: tempDir("guilds-subscription-ws-"),
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes: sandboxes as unknown as GenerationSandboxes,
       mcp: mcpPool(db),
       artifacts,
@@ -112,7 +113,10 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     const first = await settled(runId);
     assert.deepEqual(first.errors, []);
     assert.equal(first.config_snapshot.model, null);
-    assert.deepEqual(first.config_snapshot.tools, [], "the run offers its harness no tool");
+    assert.ok(
+      first.config_snapshot.tools.some((tool: { function: { name: string } }) => tool.function.name === "report_issue"),
+      "the run offers its harness the Guilds tools, through the MCP server",
+    );
     const rows = await messages(runId);
     assert.deepEqual(
       rows.map((row) => row.payload.role),
@@ -127,7 +131,7 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     const [call] = stub.calls();
     assert.ok(call);
     assert.equal(call.system_prompt, rows[0]?.payload.content, "the run's composed system prompt replaces Claude Code's own");
-    assert.ok(!call.system_prompt?.includes("remaining_tool_calls"));
+    assert.ok(call.system_prompt?.includes("`mcp__guilds__report_issue`"), "it names each tool as Claude Code calls it");
     assert.ok(call.system_prompt?.includes("$GUILDS_PORTS"));
     assert.equal(call.stdin, "Make the greeting name the guild.");
     assert.ok(!call.argv.includes("--resume"));

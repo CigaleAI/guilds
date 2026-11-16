@@ -22,12 +22,15 @@ Compose file names itself:
 - The Compose file sets these, and `.env` cannot change them:
   `DATABASE_URL`, `OPENSANDBOX_URL`, `NOTES_ROOT`, `WORKSPACE_ROOT`,
   `ATTACHMENTS_ROOT`, `CONNECTORS_ROOT` (each under `STATE_ROOT`),
-  `TOOL_RESULT_MAX_BYTES` (`65536`), `HOST`, and `PORT`.
+  `TOOL_RESULT_MAX_BYTES` (`65536`), `HOST`, `PORT`, and
+  `HARNESS_MCP_HOST` (`0.0.0.0` inside the container).
 - The Compose file reads these from the shell first, then from
   `.env`: `STATE_ROOT`, `SECRETS_MASTER_KEY`, `POSTGRES_PASSWORD`,
   `OPENSANDBOX_API_KEY`, `ORCHESTRATOR_PORT`, `ORCHESTRATOR_IMAGE`,
-  `SANDBOX_IMAGE`, `AUTH_MODE`, and `SENTRY_ENVIRONMENT`. A value
-  exported in the shell wins over `.env`.
+  `SANDBOX_IMAGE`, `AUTH_MODE`, `SENTRY_ENVIRONMENT`,
+  `HARNESS_MCP_PORT`, `HARNESS_MCP_PUBLISH`,
+  `HARNESS_MCP_SANDBOX_HOST`, and `HARNESS_MCP_URL`. A value exported
+  in the shell wins over `.env`.
 
 A variable exported in the shell and not named in the Compose file
 does not reach the container.
@@ -105,6 +108,25 @@ its own keys under **Settings**, **Model keys**
 | `TRUSTED_HEADER_EMAIL` | `X-Forwarded-Email` | The header the proxy sends the email in |
 | `OPERATOR_EMAIL` | | Your own email. Boot gives it to the box's first user. Required by `trusted-header` |
 | `ADAPTER_PROXY_URL` | empty | A forward proxy for the HTTP calls of connector adapters, remote MCP servers, and the GitHub App. Empty, they go direct |
+
+## Reaching the MCP server from a sandbox
+
+A subscription agent's harness calls its Guilds tools on the
+orchestrator's MCP server, a listener of its own apart from the
+operator app ([Deployment](../architecture/deployment.md#the-mcp-listener)).
+
+| Variable | Default | Role |
+|---|---|---|
+| `HARNESS_MCP_PORT` | `8090` | The port the listener listens on, and the Compose file publishes it on |
+| `HARNESS_MCP_HOST` | `127.0.0.1` | The address the listener binds. The Compose file sets `0.0.0.0` inside the container, and `HARNESS_MCP_PUBLISH` bounds who reaches it |
+| `HARNESS_MCP_PUBLISH` | `127.0.0.1` | The host address the Compose file publishes the port on. `./setup.sh` writes it for the Docker engine it finds: `127.0.0.1` on Docker Desktop, the default bridge's gateway (`172.17.0.1` unless the daemon sets another) on a Linux engine |
+| `HARNESS_MCP_SANDBOX_HOST` | `host.docker.internal` | The host a sandbox reaches the published port by. `./setup.sh` writes `host.docker.internal` on Docker Desktop and the bridge's gateway on a Linux engine |
+| `HARNESS_MCP_URL` | `http://<HARNESS_MCP_SANDBOX_HOST>:<HARNESS_MCP_PORT>` | The URL a sandbox is given, without a trailing slash; each agent's path, `/mcp/<agent id>`, follows it. An `http` or `https` URL with no credentials, query, or fragment, or the box does not start. Set it where a sandbox reaches the listener another way, such as through a network of the deployment's own. Outside Compose its default is `http://host.docker.internal:<HARNESS_MCP_PORT>` |
+
+`./setup.sh` writes `HARNESS_MCP_PUBLISH` and `HARNESS_MCP_SANDBOX_HOST`
+each while `.env` has none. While `.env` has neither, the Compose file
+publishes the port on loopback, which a sandbox reaches on Docker
+Desktop and not on a Linux engine, and `./setup.sh` writes both.
 
 Connectors that sign in with OAuth return to
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`. While `PUBLIC_BASE_URL`

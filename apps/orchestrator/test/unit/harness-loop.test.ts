@@ -7,7 +7,7 @@ import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 import type { MessageRow } from "../../src/db/runs.js";
 import type { ResolvedAgentConfig } from "../../src/db/schema/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
-import { answerOps, helperRequest, type HostCodeSandbox } from "../helpers/code-sandbox.js";
+import { answerOps, sandboxHelperRequest, type HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 import { toolFixture } from "../helpers/toolbox.js";
@@ -65,7 +65,7 @@ function subscriptionLoop(lines: string[], check: Record<string, unknown> = HARN
 function failOp(sandbox: HostCodeSandbox, op: string, error: string): void {
   const run = sandbox.commands.run;
   sandbox.commands.run = async (command, opts) => {
-    if (helperRequest(command)?.op !== op) {
+    if (sandboxHelperRequest(sandbox, command)?.op !== op) {
       return run(command, opts);
     }
     const envelope = Buffer.from(JSON.stringify({ ok: false, error }), "utf8").toString("base64");
@@ -135,6 +135,27 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.ok(call.argv.includes("--strict-mcp-config"));
     assert.equal(call.stdin, "use bash twice", "the message that opened the generation is the prompt");
     assert.ok(!call.argv.includes("--resume"), "a new run starts a new session");
+  });
+
+  test("the CLI's events for a call of the orchestrator's MCP server make no row of their own", async () => {
+    const session = { parent_tool_use_id: null, session_id: RECORDED_SESSION };
+    const mcpCall = JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "toolu_mcp", name: "mcp__guilds__note_write", input: { path: "a.md" } }] },
+      ...session,
+    });
+    const mcpResult = JSON.stringify({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_mcp", content: "wrote a.md" }] },
+      ...session,
+    });
+    const [init, ...rest] = recordedEvents("claude-code");
+    const { loop, rows, errors } = subscriptionLoop([init!, mcpCall, mcpResult, ...rest]);
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(errors(), []);
+    const kept = rows();
+    assert.equal(kept.length, 7, "the recorded turn's rows alone");
+    assert.ok(!kept.some((row) => JSON.stringify(row.payload).includes("toolu_mcp")));
   });
 
   test("the run's next generation resumes the session with the messages added since its reply", async () => {

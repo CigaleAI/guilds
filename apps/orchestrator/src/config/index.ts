@@ -23,6 +23,12 @@ export type AppConfig = {
   authMode: AuthMode;
   host: string;
   port: number;
+  /** The address the MCP server subscription agents' harnesses call their tools on listens on. */
+  harnessMcpHost: string;
+  /** The port that server listens on, apart from the API's. */
+  harnessMcpPort: number;
+  /** The URL a sandbox reaches that server at, without a trailing slash; each agent's path follows it. */
+  harnessMcpUrl: string;
   toolResultMaxBytes: number;
   publicBaseUrl: string;
   trustedHeaderName: string;
@@ -189,6 +195,40 @@ function readSecretsMasterKey(env: NodeJS.ProcessEnv): string {
   return secretsMasterKey;
 }
 
+/** `HARNESS_MCP_PORT`, a TCP port; 8090 when it is unset. */
+function readHarnessMcpPort(env: NodeJS.ProcessEnv): number {
+  const port = Number(env.HARNESS_MCP_PORT ?? "8090");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new ConfigError("HARNESS_MCP_PORT", "HARNESS_MCP_PORT must be a TCP port, 1 to 65535");
+  }
+  return port;
+}
+
+/** An `http` or `https` URL with a host, an optional port and path, and no credentials, query or fragment. */
+const HARNESS_MCP_URL = /^https?:\/\/[A-Za-z0-9.:[\]_-]+(\/[A-Za-z0-9._~/-]*)?$/;
+
+/**
+ * `HARNESS_MCP_URL` without its trailing slashes; `http://host.docker.internal:<port>` when it is
+ * unset, which a sandbox on Docker Desktop reaches the host's loopback through.
+ */
+function readHarnessMcpUrl(env: NodeJS.ProcessEnv, port: number): string {
+  const url = (readTrimmed(env, "HARNESS_MCP_URL") || `http://host.docker.internal:${port}`).replace(/\/+$/, "");
+  if (!HARNESS_MCP_URL.test(url)) {
+    throw new ConfigError("HARNESS_MCP_URL", "HARNESS_MCP_URL must be an http or https URL with no credentials, query, or fragment");
+  }
+  return url;
+}
+
+/** The MCP listener's settings: the address it binds, its port, and the URL a sandbox reaches it at. */
+function readHarnessMcp(env: NodeJS.ProcessEnv): Pick<AppConfig, "harnessMcpHost" | "harnessMcpPort" | "harnessMcpUrl"> {
+  const harnessMcpPort = readHarnessMcpPort(env);
+  return {
+    harnessMcpHost: env.HARNESS_MCP_HOST ?? "127.0.0.1",
+    harnessMcpPort,
+    harnessMcpUrl: readHarnessMcpUrl(env, harnessMcpPort),
+  };
+}
+
 function readMaxConcurrentGenerations(env: NodeJS.ProcessEnv): number {
   const maxConcurrentGenerations = Number(env.MAX_CONCURRENT_GENERATIONS ?? "0");
   if (!Number.isInteger(maxConcurrentGenerations) || maxConcurrentGenerations < 0) {
@@ -258,6 +298,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, extension: Conf
     authMode,
     host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? "8080"),
+    ...readHarnessMcp(env),
     toolResultMaxBytes: Number(env.TOOL_RESULT_MAX_BYTES ?? "65536"),
     publicBaseUrl,
     trustedHeaderName: readTrimmed(env, "TRUSTED_HEADER_EMAIL") || "X-Forwarded-Email",

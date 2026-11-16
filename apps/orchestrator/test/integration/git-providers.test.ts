@@ -88,7 +88,7 @@ test("a private repository on another host clones, checkpoints and pushes a bran
   }) as unknown as FakeSandboxes["ensure"];
   const loop = generationLoop(
     db,
-    { notes, workspaceRoot: tempDir("guilds-git-providers-ws-"), sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
+    { notes, workspaceRoot: tempDir("guilds-git-providers-ws-"), harnessMcpUrl: "http://127.0.0.1:8090", sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
   const app = await buildApp(database, { db, notes, artifacts, scripts: agentScripts(db), schedules: agentSchedules(db), generation: loop });

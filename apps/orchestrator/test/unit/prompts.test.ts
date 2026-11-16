@@ -5,10 +5,12 @@ import { test } from "node:test";
 import { EMPTY_MEMORY } from "../../src/artifacts/memory.js";
 import { renderMemorySection } from "../../src/memory/index.js";
 import {
+  OWN_TOOL_NAMES,
   PromptError,
   STATE_INTRO,
   TASK_INTRO,
   composeSystemPrompt,
+  nameTools,
   formatStateRoster,
   hydratePrompts,
   promptHash,
@@ -140,7 +142,7 @@ test("hydrate compose is exact against the R0 fixture", () => {
   assert.equal(task, "Do the work.\n");
   assert.equal(composed, loadTextFixture("prompts/compose.txt"));
   assert.equal(promptHash(composed), hashes.composed);
-  assert.equal(hashes.task_intro_present, composed.includes(TASK_INTRO));
+  assert.equal(hashes.task_intro_present, composed.includes(nameTools(TASK_INTRO, OWN_TOOL_NAMES)));
   assert.equal(hashes.state_intro_present, composed.includes(STATE_INTRO));
 });
 
@@ -157,7 +159,7 @@ test("system template explains special messages", () => {
   assert.ok(text.includes("asking another agent for help"));
   assert.ok(text.includes("asking another agent a question"));
   assert.ok(text.includes("talking with an operator"));
-  assert.ok(text.includes("Call `report_issue` when"));
+  assert.ok(text.includes("Call `<tool>report_issue</tool>` when"));
   assert.ok(text.includes("compare the requested action with your Task"));
   assert.ok(text.includes("Work products stay in their canonical artifact"));
   assert.ok(text.includes("ELI5"));
@@ -232,7 +234,7 @@ test("the coding block replaces the scripts-only line for coding agents", () => 
   assert.ok(coding.includes("code_task"));
   assert.ok(coding.includes("agent/<your name>/<topic>"));
   assert.ok(!coding.includes("file_edit"));
-  assert.ok(coding.includes("run one-off commands with `shell`"));
+  assert.ok(coding.includes("run one-off commands with `<tool>shell</tool>`"));
   assert.ok(!coding.includes("A script is the only way to execute code"));
   assert.ok(!coding.includes("<capability"));
   const noScripts = standingForCapabilities(text, {
@@ -304,7 +306,7 @@ test("compose omits the memory section when memory is off", () => {
   assert.ok(composed.includes("<task>"));
   assert.equal(
     taskIntroForCapabilities(caps),
-    TASK_INTRO.replace("; it is not yours to edit with memory_write", ""),
+    TASK_INTRO.replace("; it is not yours to edit with <tool>memory_write</tool>", ""),
   );
   assert.equal(taskIntroForCapabilities({ ...caps, memory: true }), TASK_INTRO);
 });
@@ -330,7 +332,7 @@ test("compose keeps memory but omits memory_write when the write tool is off", (
   assert.ok(composed.includes("private place for whatever"));
   assert.equal(
     taskIntroForCapabilities(caps),
-    TASK_INTRO.replace("; it is not yours to edit with memory_write", ""),
+    TASK_INTRO.replace("; it is not yours to edit with <tool>memory_write</tool>", ""),
   );
 });
 
@@ -403,7 +405,7 @@ test("a key agent without group_post, schedules, or report_issue loses only thos
   const without = standingForCapabilities(text, { ...caps, groupPost: false, schedules: false, issues: false });
   assert.ok(all.includes("It is only for coordination") && !without.includes("It is only for coordination"));
   assert.ok(all.includes("Schedule wake-up:") && !without.includes("Schedule wake-up:"));
-  assert.ok(all.includes("Call `report_issue`") && !without.includes("report_issue"));
+  assert.ok(all.includes("Call `<tool>report_issue</tool>`") && !without.includes("report_issue"));
   assert.ok(without.includes("remaining_tool_calls: N"));
   assert.ok(without.includes("one canonical home"));
 });
@@ -489,4 +491,31 @@ test("compose_system_prompt has four parts", () => {
   assert.ok(!composed.includes("## Facts"));
   assert.ok(!composed.includes("## Pending"));
   assert.ok(renderMemorySection(EMPTY_MEMORY).includes("<memory>"));
+});
+
+test("a key run's prompt names each tool by its own name, and a subscription run's as its harness calls it", () => {
+  const standing = "Call `<tool>report_issue</tool>` when a tool fails.\n";
+  const caps = { scripts: false, notes: false, browser: false, coding: false, memory: true };
+  const own = composeSystemPrompt(standing, "Assist.\n", emptyRunState(), EMPTY_MEMORY, caps, ["Use `<tool>tavily_search</tool>`."]);
+  assert.ok(own.includes("Call `report_issue` when"));
+  assert.ok(own.includes("Use `tavily_search`."));
+  assert.ok(own.includes("edit with memory_write."), "the Task's intro");
+  assert.ok(own.includes("Rewrite it with memory_write."), "the Memory section's");
+  assert.ok(!own.includes("<tool>"));
+  const harness = composeSystemPrompt(standing, "Assist.\n", emptyRunState(), EMPTY_MEMORY, {
+    ...caps,
+    toolNaming: { prefix: "mcp__guilds__" },
+  }, ["Use `<tool>tavily_search</tool>`."]);
+  assert.ok(harness.includes("Call `mcp__guilds__report_issue` when"));
+  assert.ok(harness.includes("Use `mcp__guilds__tavily_search`."));
+  assert.ok(harness.includes("edit with mcp__guilds__memory_write."));
+  assert.ok(harness.includes("Rewrite it with mcp__guilds__memory_write."));
+  assert.ok(!harness.includes("<tool>"));
+});
+
+test("a tool tag names one tool; other text is left as it is", () => {
+  const naming = { prefix: "mcp__guilds__" };
+  assert.equal(nameTools("`<tool>note_write</tool>` and <tool>group_post</tool>", naming), "`mcp__guilds__note_write` and mcp__guilds__group_post");
+  assert.equal(nameTools("<tool>not a name</tool> <tool></tool>", naming), "<tool>not a name</tool> <tool></tool>");
+  assert.equal(nameTools("`<tool>note_write</tool>`", OWN_TOOL_NAMES), "`note_write`");
 });

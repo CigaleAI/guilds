@@ -5,6 +5,8 @@ import { isJsonObject, type JsonObject } from "../lib/json.js";
 import { hereDir } from "../lib/paths.js";
 import { MEMORY_INTRO } from "../memory/index.js";
 import {
+  nameTools,
+  OWN_TOOL_NAMES,
   REPOSITORIES_INTRO,
   TASK_INTRO,
   standingForCapabilities,
@@ -68,13 +70,14 @@ export function readSharedTaskShape(metaUrl = import.meta.url): string {
   return readTemplate(SHARED_TASK_SHAPE, metaUrl);
 }
 
-/** What every agent already reads: the four sections, their intros, and the Guidelines. */
+/** What every agent already reads: the four sections, their intros, and the Guidelines, each tool by its own name. */
 export function readSharedAgentPrompt(options: CoachTemplateOptions = {}, metaUrl = import.meta.url): string {
-  return readTemplate(SHARED_AGENT_PROMPT, metaUrl)
+  const prompt = readTemplate(SHARED_AGENT_PROMPT, metaUrl)
     .replace("{{TASK_INTRO}}", () => TASK_INTRO)
     .replace("{{STATE_INTRO}}", () => `${stateIntroForCapabilities(EVERY_CAPABILITY)} ${REPOSITORIES_INTRO}`)
     .replace("{{MEMORY_RULES}}", () => MEMORY_INTRO)
     .replace("{{AGENT_GUIDELINES}}", () => readAgentGuidelines(options.guidelinesPath, metaUrl));
+  return nameTools(prompt, OWN_TOOL_NAMES);
 }
 
 export function readBuilderWriteExample(metaUrl = import.meta.url): JsonObject {

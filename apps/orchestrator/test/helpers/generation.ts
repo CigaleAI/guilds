@@ -1128,6 +1128,7 @@ export function makeLoop(
       wakes,
       notes: notes as NotesStore,
       workspaceRoot,
+      harnessMcpUrl: "http://127.0.0.1:8090",
       sandboxes: sandboxes as GenerationSandboxes,
       credentials: TEST_CREDENTIALS,
       // A loop's runs reach no connector until a test gives them a pool that does.

@@ -772,19 +772,26 @@ describe("generation", { concurrency: 1 }, () => {
     });
   });
 
-  test("a subscription agent's prepared prompt describes no tool and tells its harness where it runs", async () => {
+  test("a subscription agent's prepared prompt describes the tools its run offers by the names its harness calls them, and where it runs", async () => {
     const { loop, db } = await seededLoop();
     db.agent.config = agentConfig({ model: null, harness: "claude-code" });
     const keyed = await seededLoop();
     const subscription = await loop.preparation.prepare("a_1", null);
     const key = await keyed.loop.preparation.prepare("a_1", null);
-    for (const text of ["remaining_tool_calls", "tool-invocation budget", "It is only for coordination", "report_issue", "memory_write"]) {
+    for (const text of ["remaining_tool_calls", "tool-invocation budget", "It is only for coordination"]) {
       assert.ok(key.system.includes(text), `a key agent reads ${text}`);
-      assert.ok(!subscription.system.includes(text), `a subscription agent does not read ${text}`);
+      assert.ok(subscription.system.includes(text), `a subscription agent reads ${text}`);
     }
+    for (const tool of ["report_issue", "memory_write"]) {
+      assert.ok(key.system.includes(`\`${tool}\``), `a key agent reads ${tool}`);
+      assert.ok(subscription.system.includes(`\`mcp__guilds__${tool}\``), `a subscription agent reads ${tool} as Claude Code calls it`);
+      assert.ok(!subscription.system.includes(`\`${tool}\``));
+    }
+    assert.ok(!subscription.system.includes("<tool>"));
     assert.ok(subscription.system.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
+    assert.ok(subscription.system.includes("from the platform's MCP server, `guilds`"));
     assert.ok(!key.system.includes("$GUILDS_PORTS"));
-    assert.ok(subscription.system.includes("### Your Memory"), "Memory still reaches it, to read");
+    assert.ok(subscription.system.includes("### Your Memory"));
   });
 
   test("add_message_rejects_group_runs", async () => {

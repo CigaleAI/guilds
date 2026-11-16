@@ -25,6 +25,6 @@
     }
   ],
   "prompt": {
-    "guidance": "When this run offers `tavily_search`, search the live web. `query` is natural language. The result is title, URL, and snippet for each source."
+    "guidance": "When this run offers `<tool>tavily_search</tool>`, search the live web. `query` is natural language. The result is title, URL, and snippet for each source."
   }
 }

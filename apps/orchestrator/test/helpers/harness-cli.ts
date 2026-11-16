@@ -11,13 +11,20 @@ const STUB = path.join(HERE, "harness/stub-cli");
 /** The session id of the recorded Claude Code turn, `harness/claude-code.jsonl`. */
 export const RECORDED_SESSION = "0f9c2a64-5b1e-4c3d-9a8e-2f1d7c6b5a40";
 
-/** One start of the stand-in CLI: its command line, working directory, stdin, system prompt file, and the variables it shows. */
+/**
+ * One start of the stand-in CLI: its command line, working directory, stdin, system prompt file,
+ * MCP configuration file and its mode, the variables it shows, and the variables whose value
+ * holds `HARNESS_STUB_SEEK`.
+ */
 export type StubCall = {
   argv: string[];
   cwd: string;
   stdin: string;
   system_prompt: string | null;
+  mcp_config: { mcpServers: Record<string, { type: string; url: string; headers: Record<string, string> }> } | null;
+  mcp_config_mode: number | null;
   env: Record<string, string | null>;
+  env_holding_seek: string[];
 };
 
 /** The recorded event stream of a harness under `harness/`, one event per line. */
@@ -27,6 +34,14 @@ export function recordedEvents(name: string): string[] {
 
 /** A stand-in line that makes the CLI sleep until it is stopped. */
 export const HANG = JSON.stringify({ stub: "hang" });
+
+/** A stand-in line that makes the CLI send the JSON-RPC request `method` to the orchestrator's MCP server, numbered `id`. */
+export function mcpLine(method: string, params: Record<string, unknown> = {}, id = 1): string {
+  return JSON.stringify({ stub: "mcp", method, params, id });
+}
+
+/** What the stand-in CLI's request of the orchestrator's MCP server got: the method, the HTTP status, and the JSON-RPC answer. */
+export type StubMcpAnswer = { method: string; status: number; answer: { result?: Record<string, unknown>; error?: { code: number; message: string } } | null };
 
 /**
  * A sandbox on this machine with the stand-in CLI on PATH as `binary`, replaying `lines`; each
@@ -38,6 +53,7 @@ export function stubCliSandbox(binary: string, lines: string[], env: Record<stri
   chmodSync(path.join(bin, binary), 0o755);
   const scratch = tempDir("harness-stub-");
   const record = path.join(scratch, "record.jsonl");
+  const mcpRecord = path.join(scratch, "mcp.jsonl");
   const eventsFile = path.join(scratch, "events.jsonl");
   const replay = (next: string[]) => writeFileSync(eventsFile, next.join("\n") + "\n");
   replay(lines);
@@ -45,6 +61,7 @@ export function stubCliSandbox(binary: string, lines: string[], env: Record<stri
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     HARNESS_STUB_EVENTS: eventsFile,
     HARNESS_STUB_RECORD: record,
+    HARNESS_STUB_MCP_RECORD: mcpRecord,
     HARNESS_STUB_DELAY: "0.02",
     ...env,
   });
@@ -55,7 +72,14 @@ export function stubCliSandbox(binary: string, lines: string[], env: Record<stri
           .filter(Boolean)
           .map((line) => JSON.parse(line) as StubCall)
       : [];
-  return { sandbox, calls, replay, bin };
+  const mcpAnswers = (): StubMcpAnswer[] =>
+    existsSync(mcpRecord)
+      ? readFileSync(mcpRecord, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as StubMcpAnswer)
+      : [];
+  return { sandbox, calls, replay, bin, mcpAnswers };
 }
 
 /** Whether a process of the stand-in CLI in `bin` still runs. */
