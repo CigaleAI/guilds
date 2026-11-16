@@ -18,6 +18,7 @@ import {
   repositoryDiff,
   taskDiff,
   taskLog,
+  turnDiff,
   type RunReviewServices,
 } from "../generation/run-review.js";
 import { requireVisibleGuild } from "../guilds/access.js";
@@ -40,6 +41,9 @@ const TaskParams = Type.Object({ run_id: Type.String(), call_id: Type.String() }
 
 /** The path of one repository a run changed. */
 const RunRepositoryParams = Type.Object({ run_id: Type.String(), repository: Type.String() });
+
+/** The path of one repository one turn of a subscription agent's run changed. */
+const TurnRepositoryParams = Type.Object({ run_id: Type.String(), call_id: Type.String(), repository: Type.String() });
 
 /** The harness a check is run for. */
 const HarnessCheckSchema = Type.Object({ harness: Type.Optional(Type.String()) });
@@ -156,6 +160,16 @@ export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Prom
       const user = await currentUser(db, request, deps);
       const run = await requireVisibleRun(db, request.params.run_id, user.id);
       return taskLog(review, run, request.params.call_id);
+    },
+  );
+
+  app.get(
+    "/api/runs/:run_id/turns/:call_id/changes/:repository/diff",
+    { schema: { params: TurnRepositoryParams } },
+    async (request) => {
+      const user = await currentUser(db, request, deps);
+      const run = await requireVisibleRun(db, request.params.run_id, user.id);
+      return turnDiff(review, run, request.params.call_id, request.params.repository);
     },
   );
 

@@ -112,6 +112,11 @@ export class RepositoryTokens {
   }
 }
 
+/** Empties the agent's tokens file, so the credential helper answers for no repository until a run writes it again. */
+export async function eraseRepositoryTokens(files: SandboxFiles, agentId: string): Promise<void> {
+  await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: {} }) }]);
+}
+
 /** The tokens of a run's `repositories` within `scope`, minted and recorded on `db` through each one's git provider. */
 export function repositoryTokens(db: Queryable, repositories: CodingRepository[], scope: GitTokenScope): RepositoryTokens {
   return new RepositoryTokens({ github: githubProvider(db), access_token: accessTokenProvider(db) }, repositories, scope);
