@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentHarness, Machine } from "../../../api/types/agents";
+import type { AgentHarness, HarnessCatalog, Machine } from "../../../api/types/agents";
 import { handleHint } from "../../../app/names";
 import {
   carriedHarnesses,
   machineHint,
   machineMove,
+  missingRepositoriesNote,
   readinessProblems,
   readinessTitle,
   settingsNameError,
 } from "./AgentSettings";
+import { configFormOf, defaultAgentConfig } from "./configForm";
 
 const machine: Machine = {
   id: "m_2",
@@ -71,4 +73,21 @@ test("a saved coding agent's readiness needs repositories; a subscription agent'
   assert.deepEqual(readinessProblems("coding", undefined), []);
   assert.equal(readinessTitle("coding"), "Coding isn't ready");
   assert.equal(readinessTitle("subscription"), "The subscription isn't ready");
+});
+
+test("the Repositories section says what picking none does: home turns, failed coding runs, or a harness that cannot run", () => {
+  const catalog: HarnessCatalog[] = [
+    { harness: "antigravity", label: "Antigravity", enabled: true, needs_repository: true, models: [], unlisted_efforts: [] },
+  ];
+  const onCodex = configFormOf({ ...defaultAgentConfig, model: null, harness: "codex" }, "subscription");
+  const onAntigravity = { ...onCodex, harness: "antigravity" as const };
+  assert.equal(missingRepositoriesNote(onCodex, "subscription", catalog), "No repository picked, so this agent's turns run in its home.");
+  assert.equal(
+    missingRepositoriesNote(onAntigravity, "subscription", catalog),
+    "No repository picked. Antigravity keeps its own system prompt, so it runs a subscription agent only with a repository.",
+  );
+  assert.equal(
+    missingRepositoriesNote(configFormOf({ ...defaultAgentConfig, coding: true, harness: "antigravity" }, "key"), "coding", catalog),
+    "No repository picked, so this agent's coding runs fail at start.",
+  );
 });

@@ -334,7 +334,7 @@ test("harness is one of the coding harnesses, and only a coding agent has one", 
   );
 });
 
-test("an agent without a model is a subscription agent on its harness, which is Claude Code or Codex", () => {
+test("an agent without a model is a subscription agent on its harness, any of the four", () => {
   const subscription = validateAgentConfig({ model: null, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "high" });
   assert.equal(subscription.model, null);
   assert.equal(subscription.coding, false);
@@ -347,11 +347,8 @@ test("an agent without a model is a subscription agent on its harness, which is 
     () => validateAgentConfig({ model: null, coding: true, harness: "codex" }),
     /a coding agent needs a model: the lead model it runs on a key/,
   );
-  assert.throws(
-    () => validateAgentConfig({ model: null, harness: "cursor" }),
-    /Cursor cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model/,
-  );
-  assert.throws(() => validateAgentConfig({ model: null, harness: "antigravity" }), /Antigravity cannot run a subscription agent/);
+  assert.equal(validateAgentConfig({ model: null, harness: "cursor" }).harness, "cursor", "a stored agent whose repositories are gone still validates");
+  assert.equal(validateAgentConfig({ model: null, harness: "antigravity", repositories: ["app"] }).harness, "antigravity");
   assert.throws(() => validateAgentConfig({ model: "  " }), /model must be a non-empty string, or null for a subscription agent/);
   assert.throws(() => validateAgentConfig({ harness: "codex" }), /missing keys: model/);
 });
@@ -395,6 +392,23 @@ test("a subscription agent is created or switched to on a harness the box does n
     assert.doesNotThrow(() => assertSubscriptionAgent({ ...subscription, harness: null }), "a config without a harness is no subscription to offer");
   } finally {
     installHarnessesOff([]);
+  }
+});
+
+test("a subscription agent on Cursor or Antigravity is created and updated only with a repository", () => {
+  for (const [harness, label] of [["cursor", "Cursor"], ["antigravity", "Antigravity"]] as const) {
+    const working = validateAgentConfig({ model: null, harness, repositories: ["app"] });
+    const refusal = new RegExp(
+      `${label} runs a subscription agent only with a repository, since it keeps its own system prompt: pick a repository, or another harness$`,
+    );
+    assert.doesNotThrow(() => assertSubscriptionAgent(working));
+    assert.throws(() => assertSubscriptionAgent({ ...working, repositories: [] }), refusal, "a create without one");
+    assert.throws(() => assertSubscriptionAgent({ ...working, repositories: [] }, working), refusal, "an update that removes the last one");
+    const codex = validateAgentConfig({ model: null, harness: "codex" });
+    assert.throws(() => assertSubscriptionAgent({ ...codex, harness }, codex), refusal, "a switch to it without one");
+    assert.doesNotThrow(() => assertSubscriptionAgent(codex), "Claude Code and Codex run without one");
+    const keyed = validateAgentConfig({ model: VALID_CONFIG.model, coding: true, harness });
+    assert.doesNotThrow(() => assertSubscriptionAgent(keyed), "a coding agent's harness is no subscription");
   }
 });
 

@@ -4,7 +4,7 @@ import { isOptimizedBrowserOn, resolveAgentConfig } from "../agents/config.js";
 import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { HARNESS_MCP_TOOL_PREFIX, isTurnHarness } from "../coding/harnesses.js";
+import { HARNESS_INFO, HARNESS_MCP_TOOL_PREFIX } from "../coding/harnesses.js";
 import { pullRequestToolOf } from "../coding/git.js";
 import { stateRepositories, type CodingRepository } from "../coding/repositories.js";
 import { modelSourceOf, type AgentConfig, type ResolvedAgentConfig, type RunTaskSource } from "../db/schema/index.js";
@@ -114,6 +114,7 @@ export type PromptCapabilities = {
   schedules: boolean;
   issues: boolean;
   harness: boolean;
+  harnessRules: boolean;
   repositories: boolean;
   pullRequestTool: string | null;
   toolNaming: ToolNaming;
@@ -125,7 +126,7 @@ export type PromptCapabilities = {
  */
 export function runToolNaming(config: Pick<AgentConfig, "model" | "harness">): ToolNaming {
   const harness = config.harness;
-  if (modelSourceOf(config).kind === "key" || harness === null || !isTurnHarness(harness)) {
+  if (modelSourceOf(config).kind === "key" || harness === null) {
     return OWN_TOOL_NAMES;
   }
   return { prefix: HARNESS_MCP_TOOL_PREFIX[harness] };
@@ -134,7 +135,8 @@ export function runToolNaming(config: Pick<AgentConfig, "model" | "harness">): T
 /**
  * What the standing prompt of a run with `offer` tells an agent with `config`, which works in
  * `repositories`: a subscription agent with repositories also reads how it works in them, and
- * the tool its run offers that opens their pull requests.
+ * the tool its run offers that opens their pull requests; one on a harness that keeps its own
+ * system prompt reads that the prompt comes beside it, as rules.
  */
 function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: CodingRepository[]): PromptCapabilities {
   const { tools } = offer;
@@ -157,6 +159,7 @@ function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: 
     schedules: offers(SCHEDULE_TOOLS),
     issues: tools.includes("report_issue"),
     harness,
+    harnessRules: harness && config.harness !== null && HARNESS_INFO[config.harness].prompt === "rules",
     repositories: worksInRepositories,
     pullRequestTool: worksInRepositories ? pullRequestToolOf(repositories, offer.mcp) : null,
     toolNaming: runToolNaming(config),

@@ -59,6 +59,9 @@ A subscription is often personal. In an organisation, everyone who
 can start the agent's runs uses it. Whether that complies with the
 vendor's terms is the operator's call
 ([SEC-30](../../architecture/security-register.md#sec-30--personal-harness-subscriptions-used-inside-a-shared-organisation-may-fall-outside-the-vendors-terms)).
+Whether Google's terms for an Antigravity sign-in allow it to run
+every turn of a subscription agent is an open question the operator
+answers before picking it.
 A token or login on the agent's machine is readable by what runs there
 ([SEC-27](../../architecture/security-register.md#sec-27--harness-subscription-tokens-and-logins-are-readable-on-the-agents-machine)).
 
@@ -142,18 +145,23 @@ harness check, and readiness read the same way. It has no code tools.
 It may pick repositories, which its turns work in
 ([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
 
-- Only Claude Code and Codex run a subscription agent. Cursor and
-  Antigravity stay harnesses of coding agents only.
+- Each harness runs a subscription agent's turns: each generation of
+  its run is one turn of the CLI in the agent's home, or in its one
+  repository, on the run's system prompt, resuming the run's session
+  ([Runs](../runs.md#harness-turns)). The CLI is given the
+  orchestrator's MCP server for that one call ([Drivers](#drivers))
+  and calls the run's Guilds tools there, beside its own.
+- Claude Code and Codex take the run's system prompt in place of
+  their own. Cursor and Antigravity keep their vendor's system prompt,
+  which the operator does not control, and read the run's as rules
+  beside it, so they run a subscription agent only with a repository:
+  an agent that does code work
+  ([SEC-67](../../architecture/security-register.md#sec-67--cursor-and-antigravity-run-a-subscription-agents-turn-under-their-vendors-own-system-prompt)).
+  A create or update of such an agent without one is refused, and a
+  run of one whose repositories are all gone fails at start
+  ([Agents](../agents.md#configuration-keys)).
 - A harness turned off with `HARNESSES_OFF` is refused as a new pick
   for a subscription agent as for a coding agent.
-- Claude Code and Codex run a subscription agent's turns: each
-  generation of its run is one turn of the CLI in the agent's home, or
-  in its one repository, on
-  the run's system prompt in place of the CLI's own, resuming the
-  run's session ([Runs](../runs.md#harness-turns)). The CLI is given
-  the orchestrator's MCP server for that one call
-  ([Drivers](#drivers)) and calls the run's Guilds tools there, beside
-  its own.
 
 ### Managed configuration
 
@@ -193,7 +201,13 @@ coding agent's Settings show the same choice:
 - **Harness**: a button with its logo for each harness the box offers,
   **Claude Code** (Anthropic), **Codex** (OpenAI), **Cursor** (Cursor),
   and **Antigravity** (Google). A harness the machine's image lacks is
-  greyed and marked "Not on machine".
+  greyed and marked "Not on machine". For a subscription agent that
+  picks no repository, Cursor and Antigravity are greyed and marked
+  "Needs a repository", with a line under the buttons: "Cursor and
+  Antigravity keep their own system prompt, so they run a subscription
+  agent only with a repository." A subscription agent already on one
+  of them that picks none shows that line, for its harness, as the
+  harness's error, and cannot save.
 - **Harness model**, once a harness is picked: a select of
   "Subscription default", the harness's listed models by name with
   their id beneath, and "Custom…". Its hint reads "Custom takes any
@@ -250,8 +264,8 @@ the same way.
 
 A subscription agent's Settings have **Identity**, **Harness**, and
 **Machine**. Its **Harness** section starts with **Model source**, to
-move it to a model on a key, then the harness buttons, Claude Code and
-Codex only, with the harness's model and effort, then **Agent
+move it to a model on a key, then the harness buttons, with the
+harness's model and effort, then **Agent
 capabilities** without Coding and **Run limits** without the model
 loop's: max steps, max tool calls, max wake-ups, and **Max scripts**.
 A subscription agent that is not ready opens on the banner "The
@@ -298,8 +312,8 @@ machine that has it."
 | --- | --- |
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
-| Subscription harness | Claude Code or Codex |
-| Subscription agents | Each generation one turn of Claude Code or Codex of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
+| Subscription harness | Any of the four; Cursor and Antigravity only with a repository |
+| Subscription agents | Each generation one turn of its harness of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |
@@ -367,8 +381,9 @@ POST /api/agents/:id/harness/check
 
 `GET /api/harnesses` returns `{ harnesses }` for any signed-in user:
 the catalogue. Each entry holds `harness`, `label`, `enabled`
-(false when the box turns it off), `subscription` (whether a
-subscription agent runs on it), `models`, and `unlisted_efforts`: the
+(false when the box turns it off), `needs_repository` (whether a
+subscription agent on it needs a repository), `models`, and
+`unlisted_efforts`: the
 efforts the default model or a custom name runs at. Each model holds
 `id`, `label`, `efforts`, and `default_effort` (null leaves it to the
 harness). The CLI names a Cursor model starts under stay on the server.
@@ -495,30 +510,42 @@ pinned to the CLI version the image installs.
 | Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, then `--effort <effort>`, then `--max-turns <n>`, before `--resume` | `--resume <session id>` | stdin |
 | Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>`, then `-c model_reasoning_effort="<effort>"`, after the managed flags and before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) |
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
-| Antigravity | `agy --output-format stream-json --dangerously-skip-permissions --disable-slash-commands --add-dir <run folder> -p "Read your task in <prompt file> and follow it."` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | the prompt file, named in `-p`; `--add-dir` lets the CLI's tools reach it outside the repository |
+| Antigravity | `agy --output-format stream-json --input-format stream-json --dangerously-skip-permissions --disable-slash-commands` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | stdin, one stream-json message: `{"event": "user", "message": {"content": "<prompt>"}}` |
 
-A request with a `system_prompt` writes it to
-`<run folder>/<call id>.system.md`, with mode 0600 beside the prompt
-file, and `result` removes both with the call's state. Claude Code
-starts with `--system-prompt-file <file>`, after `--settings` and
-before the model; Codex with `-c model_instructions_file="<file>"`,
-after the managed flags and before the model. Either way that text
-replaces the CLI's own system prompt, Codex's base instructions
-included. Cursor and Antigravity refuse a system prompt (`<harness>
-takes no system prompt`) before the call starts.
+A request with a `system_prompt` writes it with mode 0600, and
+`result` removes it with the call's state, the prompt file too:
+
+| Harness | The file | How the CLI reads it |
+| --- | --- | --- |
+| Claude Code | `<run folder>/<call id>.system.md` | `--system-prompt-file <file>`, after `--settings` and before the model; it replaces the CLI's own system prompt |
+| Codex | `<run folder>/<call id>.system.md` | `-c model_instructions_file="<file>"`, after the managed flags and before the model; it replaces Codex's base instructions |
+| Cursor | `~/.cursor/rules/guilds.mdc`, the text after a front matter of `description` and `alwaysApply: true` | a user rule that applies wherever the CLI runs, on top of Cursor's own system prompt |
+| Antigravity | `~/.gemini/GEMINI.md` | a global rule, on top of Antigravity's own system prompt |
+
+Cursor's and Antigravity's files sit where each CLI reads its own
+rules in the home, outside every repository's working tree, so no
+repository's `git status` shows them. The removal before each call,
+listed below, clears that place first, and clears it again when a call
+ended without `result`. Antigravity caps one rules file at
+24,000 bytes and cuts a longer one at a line.
 
 A request with an `mcp_url` and its `mcp_token` gives the CLI one
 HTTP MCP server, `guilds`, at that URL, with the token as its
-`Authorization: Bearer` header, and no other. `start` writes
-`<run folder>/<call id>.mcp.json` with mode 0600 beside the prompt
-files, and `result` removes it with them:
+`Authorization: Bearer` header, and no other. `start` writes a file
+with mode 0600, and `result` removes it with the call's state:
 
-| Harness | The file holds | Command line, after the system prompt |
+| Harness | The file, and what it holds | Command line, after the system prompt |
 | --- | --- | --- |
-| Claude Code | `mcpServers.guilds`: the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
-| Codex | the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
+| Claude Code | `<run folder>/<call id>.mcp.json`: `mcpServers.guilds`, the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
+| Codex | `<run folder>/<call id>.mcp.json`: the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
+| Cursor | `~/.cursor/mcp.json`: `mcpServers.guilds`, its `url` and the header | none: the CLI reads its user configuration, which needs no approval |
+| Antigravity | `~/.gemini/config/mcp_config.json`: `mcpServers.guilds`, its `serverUrl` and the header | none: the CLI reads its MCP configuration |
 
-Claude Code reads the token from the file. Codex reads it from
+Cursor and Antigravity read an MCP configuration only in the home,
+never from a path a call names, so theirs sits there for the call; the
+removal before each call clears what any earlier call or the agent left
+there. Claude Code, Cursor, and Antigravity read the token from the
+file. Codex reads it from
 `GUILDS_MCP_TOKEN`, which the supervisor sets from the file in the
 CLI's own environment alone, never its own or `guilds-harness`'s, and
 which Codex leaves out of the commands its model runs. Codex's
@@ -526,10 +553,10 @@ configuration in the home holds no server: the overrides last one
 call. The URL must be an `http` or `https` URL with no query, the
 token 43 to 128 URL-safe base64 characters, and each comes with the
 other (`mcp_url is invalid`, `mcp_token is invalid`, `mcp_url and
-mcp_token go together` otherwise). Cursor and Antigravity refuse one
-(`<harness> takes no MCP server`) before the call starts. The
-orchestrator sends such a request through a request file, never on
-the command line, and the token is on no command line.
+mcp_token go together` otherwise). The orchestrator sends such a
+request through a request file, never on the command line, and the
+token is on no command line and in no environment the CLI's commands
+inherit.
 
 A request with a `max_turns`, a count of 1 or more, starts Claude Code
 with `--max-turns <n>`, which ends its turn after that many model
@@ -546,9 +573,9 @@ or an effort, no flag is passed for it. `guilds-harness` checks the
 model against the same rule as the configuration (`model is invalid`
 otherwise), the effort against the efforts (`effort is invalid`), and
 refuses an effort for Cursor (`cursor takes its effort in the model
-name`), before the call starts. The Cursor and Antigravity CLIs read no
-prompt on stdin, so their command line names the prompt file in the
-agent's home; the prompt itself never appears on a command line.
+name`), before the call starts. The Cursor CLI reads no prompt on
+stdin, so its command line names the prompt file in the agent's home;
+the prompt itself never appears on a command line.
 
 Driver environment:
 
@@ -593,8 +620,8 @@ it:
 | --- | --- |
 | Claude Code | `~/.claude/` `settings.json`, `settings.local.json`, `CLAUDE.md`, `CLAUDE.local.md`, `rules/`, `hooks/`, `plugins/`, `skills/`, `commands/`, `agents/`, `output-styles/`, and each project's `memory/` under `projects/` |
 | Codex | `~/.codex/` `AGENTS.md`, `AGENTS.override.md`, `skills/`, `prompts/`, `rules/`, `memories/` and its `memories_*.sqlite` databases, `hooks.json` |
-| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/` |
-| Antigravity | `~/.gemini/` `GEMINI.md`, `AGENTS.md`, and under `config/`: `hooks.json`, `mcp_config.json`, `skills/`, `skills.json`, `plugins/`, `plugins.json`, `workflows/`, `workflows.json`, `global_workflows/`, `sidecars/` |
+| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
+| Antigravity | `~/.gemini/` `GEMINI.md`, `AGENTS.md`, and under `config/`: `GEMINI.md`, `AGENTS.md`, `rules/`, `hooks.json`, `mcp_config.json`, `skills/`, `skills.json`, `plugins/`, `plugins.json`, `workflows/`, `workflows.json`, `global_workflows/`, `sidecars/` |
 
 A path whose link resolves outside the home is left alone. The logins
 and account state (`~/.claude.json`, `~/.claude/.credentials.json`,
@@ -626,10 +653,9 @@ What a repository can still steer is recorded in
 ### Code
 
 `apps/orchestrator/src/coding/harnesses.ts` (the harnesses, the ones
-the box turns off, `TURN_HARNESSES`, the ones that run a subscription
-agent's turns and that alone a subscription agent, a recipe's
-subscription role, and Settings' model source offer, credential
-fixes),
+the box turns off, how each takes a subscription agent's system
+prompt and whether it therefore needs a repository, its MCP tool
+prefix and turn limit, credential fixes),
 `apps/orchestrator/src/coding/harness-models.ts` (the catalogue),
 `apps/orchestrator/src/config/index.ts` (reading `HARNESSES_OFF`),
 `apps/orchestrator/src/toolbox/harness-setup.ts` (the harness checks

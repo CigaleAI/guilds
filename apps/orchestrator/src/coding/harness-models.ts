@@ -1,5 +1,5 @@
 import { HARNESSES, type Harness } from "../db/schema/index.js";
-import { HARNESS_INFO, isHarnessOff, isTurnHarness } from "./harnesses.js";
+import { HARNESS_INFO, harnessNeedsRepository, isHarnessOff } from "./harnesses.js";
 import { EFFORTS, type AgentConfig, type Effort, type RecipeRole } from "../db/schema/index.js";
 
 
@@ -130,8 +130,8 @@ export type HarnessCatalog = {
   label: string;
   /** False when the box turns the harness off: Settings offers it only to an agent already on it. */
   enabled: boolean;
-  /** Whether a subscription agent may run on the harness. */
-  subscription: boolean;
+  /** Whether a subscription agent on the harness needs a repository. */
+  needs_repository: boolean;
   models: { id: string; label: string; efforts: readonly Effort[]; default_effort: Effort | null }[];
   unlisted_efforts: readonly Effort[];
 };
@@ -142,7 +142,7 @@ export function harnessCatalog(): HarnessCatalog[] {
     harness,
     label: HARNESS_INFO[harness].label,
     enabled: !isHarnessOff(harness),
-    subscription: isTurnHarness(harness),
+    needs_repository: harnessNeedsRepository(harness),
     models: HARNESS_MODELS[harness].map(({ id, label, efforts, default_effort }) => ({ id, label, efforts, default_effort })),
     unlisted_efforts: UNLISTED_EFFORTS[harness],
   }));

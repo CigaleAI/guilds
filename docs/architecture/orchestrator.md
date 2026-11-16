@@ -945,23 +945,27 @@ through `guilds-harness`).
 A generation is typed by its model source (`generation/generate.ts`):
 a key generation, whose snapshot has a `model`, runs the model loop,
 and a subscription generation, whose snapshot has none and names a
-harness that runs a subscription agent's turns, runs one turn of that
-harness (`generation/harness-loop.ts`). The set-up, the cancel
+harness, runs one turn of that harness (`generation/harness-loop.ts`). The set-up, the cancel
 settlement, the finish, and the events around either loop are shared.
 A subscription generation on no harness fails with `harness.missing`,
-and on any harness but Claude Code and Codex
-(`TURN_HARNESSES`, `coding/harnesses.ts`) with
-`subscription.not_runnable`, before the machine is woken. Its tools are narrowed as a key
+and one whose agent picks repositories, or whose harness needs one
+(`harnessNeedsRepository`, `coding/harnesses.ts`: Cursor and
+Antigravity), with `coding.repositories_missing` or
+`coding.repositories_gone` as a coding run does, before the machine is
+woken. Its tools are narrowed as a key
 generation's are, and no model credential is resolved; its harness is
 checked as a coding run's is. Its turn opens a grant on the
 `HarnessMcpServer` (`generation/harness-mcp.ts`), starts the CLI with
-the run's first row as its system prompt, the server's URL and the
+the run's first row as its system prompt (in place of the CLI's own,
+or as rules beside it on a harness whose `HARNESS_INFO` prompt is
+`rules`), the server's URL and the
 grant's token, and the user messages since the run's last reply on
 stdin, polls every second, and keeps each poll's events as rows
 through `events.commitMessage`: one parser per CLI
-(`generation/parse-claude-code.ts`, `generation/parse-codex.ts`) and
-the steps `HARNESS_TURN_STEPS` makes of its events
-(`generation/harness-rows.ts`), the reply holding the turn's usage
+(`generation/parse-claude-code.ts`, `generation/parse-codex.ts`,
+`generation/parse-cursor.ts`, `generation/parse-antigravity.ts`) and
+the steps the turn's reader from `HARNESS_TURN_STEPS` makes of its
+events (`generation/harness-rows.ts`), the reply holding the turn's usage
 at `cost_source: subscription`. It keeps the session in
 `metadata.harness_turn` for the next generation to resume, stops the
 harness after the snapshot's `max_turn_minutes`, gives Claude Code

@@ -491,8 +491,8 @@ describe("coding runs in the generation loop", () => {
     assert.equal(plain.llm_histories.length, 1);
   });
 
-  test("a subscription agent's run on a harness that runs no turn fails at start, before its machine wakes or a model is called", async () => {
-    const config: ResolvedAgentConfig = { ...AGENT_CONFIG, model: null, harness: "cursor" };
+  test("a subscription agent's run on a harness that needs a repository fails at start without one, before its machine wakes or a model is called", async () => {
+    const config: ResolvedAgentConfig = { ...AGENT_CONFIG, model: null, harness: "antigravity" };
     const db = new FakeDB(configSnapshot(config, { tools: [], secrets: [], mcp: [] }, "schedule"));
     db.agent.config = { ...config };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
@@ -501,8 +501,8 @@ describe("coding runs in the generation loop", () => {
     assert.equal(db.llm_histories.length, 0);
     assert.equal(machines.length, 0, "the machine is not woken");
     const errors = db.run.errors as Array<Record<string, unknown>>;
-    assert.equal(errors.at(-1)?.operation, "subscription.not_runnable");
-    assert.match(String(errors.at(-1)?.message), /Cursor cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model/);
+    assert.equal(errors.at(-1)?.operation, "coding.repositories_missing");
+    assert.match(String(errors.at(-1)?.message), /this agent has no repository: pick one in its Settings under Repositories/);
   });
 
   test("a secret alias reaches the run's commands with the value of the secret it names", async () => {

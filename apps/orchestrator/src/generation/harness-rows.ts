@@ -8,16 +8,14 @@ import type {
   ToolMessage,
   ToolResultMetadata,
 } from "../db/schema/index.js";
-import { HARNESS_MCP_TOOL_PREFIX, type TurnHarness } from "../coding/harnesses.js";
+import { HARNESS_MCP_SERVER, HARNESS_MCP_TOOL_PREFIX } from "../coding/harnesses.js";
 import type { JsonObject } from "../lib/json.js";
 import { redact } from "../secrets/index.js";
 import { identityOutput, processOutput, toolResultMaxBytes } from "../toolbox/index.js";
-import {
-  parseClaudeCodeEvents,
-  type ClaudeCodeMessage,
-  type ClaudeCodeToolUse,
-} from "./parse-claude-code.js";
+import { parseClaudeCodeEvents, type ClaudeCodeMessage } from "./parse-claude-code.js";
+import { parseAntigravityEvents, type AntigravityText, type AntigravityToolUse } from "./parse-antigravity.js";
 import { parseCodexEvents, type CodexToolItem } from "./parse-codex.js";
+import { parseCursorEvents } from "./parse-cursor.js";
 import { interruptionRecord } from "./tool-calls.js";
 
 // The rows a subscription agent's run keeps of its harness's events: each message the harness
@@ -25,6 +23,7 @@ import { interruptionRecord } from "./tool-calls.js";
 // messages and tool calls take, marked as the harness's, and the tokens its turn spent, kept on the
 // turn's reply as a model call's are on its message. A call of a tool of the orchestrator's MCP
 // server is kept as a tool call of the run where the server runs it, so its events make no row.
+// Where a harness reports no tokens, its turn records none.
 
 /** What a result row holds when the harness's tool returned something other than text. */
 export const NOT_TEXT_OUTPUT = "(the tool returned no text)";
@@ -51,18 +50,17 @@ export type HarnessUsageStep = { kind: "turn_usage"; usage: TokenUsage } | { kin
  */
 export type HarnessTurnStep = { kind: "message"; payload: AssistantMessage } | HarnessResultStep | HarnessUsageStep;
 
-/** Whether `harness` called one of its own tools, named `name` to its model, rather than one of the orchestrator's MCP server. */
-function isHarnessOwnTool(harness: TurnHarness, name: string): boolean {
+/**
+ * Whether a harness that names the orchestrator's MCP server's tools under a prefix, `harness`,
+ * called one of its own tools, named `name` to its model, rather than one of that server's.
+ */
+function isHarnessOwnTool(harness: Exclude<Harness, "cursor">, name: string): boolean {
   return !name.startsWith(HARNESS_MCP_TOOL_PREFIX[harness]);
 }
 
-/** A call of one of Claude Code's own tools, as a tool call of the run, its input redacted with `secrets`. */
-function claudeCodeToolCall(use: ClaudeCodeToolUse, secrets: Record<string, string>): ToolCall {
-  return {
-    id: use.id,
-    type: "function",
-    function: { name: use.name, arguments: redact(JSON.stringify(use.input), secrets) },
-  };
+/** A call of a harness's tool as a tool call of the run under `id`: its name, and its input redacted with `secrets`. */
+function harnessToolCall(id: string, name: string, input: JsonObject, secrets: Record<string, string>): ToolCall {
+  return { id, type: "function", function: { name, arguments: redact(JSON.stringify(input), secrets) } };
 }
 
 /**
@@ -78,7 +76,7 @@ export function claudeCodeAssistantMessage(
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n");
   const calls = message.content.flatMap((block) =>
-    block.type === "tool_use" && isHarnessOwnTool("claude-code", block.name) ? [claudeCodeToolCall(block, secrets)] : [],
+    block.type === "tool_use" && isHarnessOwnTool("claude-code", block.name) ? [harnessToolCall(block.id, block.name, block.input, secrets)] : [],
   );
   if (!text.trim() && !calls.length) {
     return null;
@@ -158,11 +156,7 @@ export function codexTurnSteps(raw: string, secrets: Record<string, string>, tur
     if (!isHarnessOwnTool("codex", use.name)) {
       return [];
     }
-    const call: ToolCall = {
-      id: `${turnId}.${event.item.id}`,
-      type: "function",
-      function: { name: use.name, arguments: redact(JSON.stringify(use.input), secrets) },
-    };
+    const call = harnessToolCall(`${turnId}.${event.item.id}`, use.name, use.input, secrets);
     if (event.type === "tool_started") {
       return [{ kind: "message", payload: { role: "assistant", content: "", tool_calls: [call] } }];
     }
@@ -171,15 +165,95 @@ export function codexTurnSteps(raw: string, secrets: Record<string, string>, tur
 }
 
 /**
- * The steps each harness that runs a subscription agent's turns makes of the raw lines of its log,
- * redacted with the turn's secrets, under the turn's call id.
+ * The steps Cursor's `stream-json` lines in `raw` make, in order, redacted with `secrets`: each
+ * message with text, each call of one of its own tools, when it starts and with its result when it
+ * completes, and the tokens of its invocation, the turn's own. A call's id is Cursor's under
+ * `turnId`, the turn's call id, so a resumed chat's calls never share one.
  */
-export const HARNESS_TURN_STEPS: Record<
-  TurnHarness,
-  (raw: string, secrets: Record<string, string>, turnId: string) => HarnessTurnStep[]
-> = {
-  "claude-code": claudeCodeTurnSteps,
-  codex: codexTurnSteps,
+export function cursorTurnSteps(raw: string, secrets: Record<string, string>, turnId: string): HarnessTurnStep[] {
+  return parseCursorEvents(raw).flatMap((event): HarnessTurnStep[] => {
+    if (event.type === "message") {
+      return event.text.trim() ? [{ kind: "message", payload: { role: "assistant", content: redact(event.text, secrets) } }] : [];
+    }
+    if (event.type === "turn_usage") {
+      return [{ kind: "turn_usage", usage: event.usage }];
+    }
+    if (event.tool.server === HARNESS_MCP_SERVER) {
+      return [];
+    }
+    const call = harnessToolCall(`${turnId}.${event.call_id}`, event.tool.name, event.tool.args, secrets);
+    if (event.type === "tool_started") {
+      return [{ kind: "message", payload: { role: "assistant", content: "", tool_calls: [call] } }];
+    }
+    return [{ kind: "result", result: { harness: "cursor", tool_use_id: call.id, output: event.tool.output }, call }];
+  });
+}
+
+/** Whether Antigravity's call `tool` is of a tool of the orchestrator's MCP server, under its MCP prefix or through `call_mcp_tool`. */
+function isAntigravityGuildsCall(tool: AntigravityToolUse): boolean {
+  return tool.server === HARNESS_MCP_SERVER || !isHarnessOwnTool("antigravity", tool.name);
+}
+
+/**
+ * The message a piece of Antigravity's response text makes: none until its step is done, the
+ * pieces kept in `drafts` by step meanwhile; then the step's whole text, redacted with `secrets`,
+ * when it holds any.
+ */
+function antigravityMessage(piece: AntigravityText, secrets: Record<string, string>, drafts: Map<number, string>): HarnessTurnStep[] {
+  const text = (drafts.get(piece.step) ?? "") + piece.text;
+  if (!piece.done) {
+    drafts.set(piece.step, text);
+    return [];
+  }
+  drafts.delete(piece.step);
+  return text.trim() ? [{ kind: "message", payload: { role: "assistant", content: redact(text.trimEnd(), secrets) } }] : [];
+}
+
+/**
+ * The steps Antigravity's `stream-json` lines in `raw` make, in order, redacted with `secrets`:
+ * each response with text once its step is done, its pieces kept in `drafts` until then, each call
+ * of one of its own tools, when it starts and with its output when it ends, and the tokens of its
+ * conversation, the session's. A call's id is its step's under `turnId`, the turn's call id.
+ */
+export function antigravityTurnSteps(
+  raw: string,
+  secrets: Record<string, string>,
+  turnId: string,
+  drafts: Map<number, string>,
+): HarnessTurnStep[] {
+  return parseAntigravityEvents(raw).flatMap((event): HarnessTurnStep[] => {
+    if (event.type === "text") {
+      return antigravityMessage(event, secrets, drafts);
+    }
+    if (event.type === "session_usage") {
+      return [{ kind: "session_usage", usage: event.usage }];
+    }
+    if (isAntigravityGuildsCall(event.tool)) {
+      return [];
+    }
+    const call = harnessToolCall(`${turnId}.step_${event.step}`, event.tool.name, event.tool.parameters, secrets);
+    if (event.type === "tool_started") {
+      return [{ kind: "message", payload: { role: "assistant", content: "", tool_calls: [call] } }];
+    }
+    return [{ kind: "result", result: { harness: "antigravity", tool_use_id: call.id, output: event.output }, call }];
+  });
+}
+
+/** What reads a turn's log as its polls bring it: the steps the raw lines in `raw` make, redacted with `secrets`. */
+export type HarnessTurnReader = (raw: string, secrets: Record<string, string>) => HarnessTurnStep[];
+
+/**
+ * Each harness's reader of one turn's log, the turn named by its call id. Antigravity's keeps the
+ * text of a response it streams over several polls until the response is done.
+ */
+export const HARNESS_TURN_STEPS: Record<Harness, (turnId: string) => HarnessTurnReader> = {
+  "claude-code": () => claudeCodeTurnSteps,
+  codex: (turnId) => (raw, secrets) => codexTurnSteps(raw, secrets, turnId),
+  cursor: (turnId) => (raw, secrets) => cursorTurnSteps(raw, secrets, turnId),
+  antigravity: (turnId) => {
+    const drafts = new Map<number, string>();
+    return (raw, secrets) => antigravityTurnSteps(raw, secrets, turnId, drafts);
+  },
 };
 
 /** The tokens of `usages` together; cache writes only when one of them reports them. */

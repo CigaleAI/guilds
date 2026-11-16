@@ -285,12 +285,13 @@ test("a subscription role is refused while the box turns them off, warned on Cur
   assert.deepEqual(findings({ harness: "codex" }), []);
   assert.deepEqual(findings({ harness: "cursor" }), [
     [
-      "subscription.harness",
+      "subscription.repository",
       "warning",
       `roles.${role.role}.config.harness`,
-      "Cursor cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model; apply asks for another",
+      "Cursor runs a subscription agent only with a repository, since it keeps its own system prompt: pick a repository, or another harness; apply asks for another harness",
     ],
   ]);
+  assert.deepEqual(findings({ harness: "antigravity", repositories: ["app"] }), [], "a role that lists a repository runs on it");
   assert.deepEqual(findings({ harness: "codex", temperature: 1, thinking_level: "high" }), [
     [
       "subscription.setting",

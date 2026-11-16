@@ -239,9 +239,11 @@ the recipe records.
   coding role's Task names its repositories, the checks it runs, and
   how work reaches its reviewer.
 - **Subscription.** When the operator asks for an agent on their own
-  Claude Code or Codex subscription, the coach writes a subscription
-  role: `config.harness` `claude-code` or `codex`, no `config.model`,
-  `config.coding` off, and no model-loop settings. Apply creates it
+  harness subscription, the coach writes a subscription role:
+  `config.harness` `claude-code` or `codex`, or `cursor` or
+  `antigravity` only for a role that lists the repositories it works
+  in, no `config.model`, `config.coding` off, and no model-loop
+  settings. Apply creates it
   as a subscription agent ([Agents](agents.md#model-source)); it
   counts against the coding agents, as a coding role does.
 - **Scripts.** Builder-written scripts are documents. They cannot run

@@ -1,6 +1,6 @@
 import type { AttachmentService } from "../attachments/store.js";
 import { AttachmentError } from "../attachments/types.js";
-import { HARNESS_INFO, HARNESS_TAKES_MAX_TURNS, type TurnHarness } from "../coding/harnesses.js";
+import { HARNESS_INFO, HARNESS_TAKES_MAX_TURNS } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import {
@@ -57,6 +57,7 @@ import {
   sessionTurnUsage,
   subscriptionUsageRecord,
   type HarnessResultStep,
+  type HarnessTurnReader,
   type HarnessUsageStep,
 } from "./harness-rows.js";
 import { harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
@@ -69,7 +70,7 @@ import { maintenanceRun } from "./workspace.js";
 export const harnessTurnTiming = { pollMs: 1000, minuteMs: 60_000 };
 
 /** A run's snapshot as the harness loop reads it: a subscription agent's, on the harness that runs its turns. */
-export type HarnessRunConfigSnapshot = RunConfigSnapshot & { model: null; harness: TurnHarness };
+export type HarnessRunConfigSnapshot = RunConfigSnapshot & { model: null; harness: Harness };
 
 /** A generation of a subscription agent's run, as it started, which its harness runs. */
 export type SubscriptionGeneration = RunGeneration & {
@@ -89,7 +90,7 @@ type PendingCall = { call: ToolCall; seen: number };
 
 /** A subscription agent's turn on its harness: what it runs under, and what its polls have seen so far. */
 type HarnessRunTurn = {
-  harness: TurnHarness;
+  harness: Harness;
   /** The run the harness ops run under. */
   ops: ToolRun;
   /** The turn's grant on the orchestrator's MCP server, where its harness calls its Guilds tools. */
@@ -99,6 +100,8 @@ type HarnessRunTurn = {
   /** The repository the CLI starts in: the agent's one repository, or null for its home when it has none or several. */
   repository: string | null;
   log_path: string;
+  /** What reads the turn's log into its rows' steps, as its polls bring it. */
+  read: HarnessTurnReader;
   deadline: number;
   session: string | null;
   offset: number;
@@ -298,6 +301,7 @@ export class HarnessLoop {
       call_id: callId,
       repository: placed.length === 1 ? (placed[0] ?? null) : null,
       log_path: harnessLogPath(gen.runId, callId),
+      read: HARNESS_TURN_STEPS[gen.snapshot.harness](callId),
       deadline: Date.now() + gen.snapshot.max_turn_minutes * harnessTurnTiming.minuteMs,
       session: gen.run.metadata.harness_turn?.session_id ?? null,
       offset: 0,
@@ -430,7 +434,7 @@ export class HarnessLoop {
     turn: HarnessRunTurn,
     raw: string,
   ): Promise<void> {
-    for (const step of HARNESS_TURN_STEPS[turn.harness](raw, secrets, turn.call_id)) {
+    for (const step of turn.read(raw, secrets)) {
       if (step.kind === "message") {
         await this.keepMessage(gen, turn, step.payload);
       } else if (step.kind === "result") {

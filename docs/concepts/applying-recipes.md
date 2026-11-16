@@ -138,7 +138,8 @@ it shows:
 - the plan, as on the recipe's page, with only the sections that have
   entries. Each agent's card adds its **Agent name**, its **Model**,
   and for a coding agent its **Harness**. A subscription agent's card
-  has a **Harness** among Claude Code and Codex, and no **Model**. The
+  has a **Harness**, Cursor and Antigravity only for a role that lists
+  a repository, and no **Model**. The
   model list is the organisation's chosen models, with a hint naming
   the recipe's recommendation. The agent's **Coding** or
   **Subscription** chip names the harness picked. A taken name says *An agent already has this name. Rename
@@ -289,10 +290,14 @@ validate; otherwise apply leaves them out.
 A subscription role ([Recipe format](recipe-format.md)) takes no
 model: the preview lists none for it, and a model chosen for it is
 refused with `models.<role>: a subscription role takes no model`. It
-takes a harness as a coding role does, from Claude Code and Codex
-only: a recipe's Cursor or Antigravity is not preselected, and a
-chosen one is refused. Its agent is created with no model, `coding`
-off, and its harness.
+takes a harness as a coding role does. Cursor and Antigravity run it
+only when it lists a repository in `config.repositories`: for a role
+that lists none, a recipe's Cursor or Antigravity is not preselected,
+and a chosen one is refused with `harnesses.<role>: <Harness> runs a
+subscription agent only with a repository, since it keeps its own
+system prompt: pick a repository, or another harness`. Its agent is
+created with no model, `coding` off, its harness, and its
+repositories.
 
 Agents from roles with `config.coding: true` are created with coding
 on.

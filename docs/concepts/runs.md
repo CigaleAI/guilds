@@ -66,7 +66,8 @@ sandbox on the run's system prompt and the messages that opened the
 generation, with its own tools and the run's Guilds tools, which it
 calls on the orchestrator's MCP server, and the run keeps what it
 writes as rows while it runs ([Harness turns](#harness-turns)).
-Claude Code and Codex run a subscription agent's turns.
+Each of the four harnesses runs a subscription agent's turns; Cursor
+and Antigravity only for an agent with a repository.
 
 ### What a run stores
 
@@ -462,9 +463,10 @@ A run whose snapshot has no `model` is a subscription agent's
 ([Agents](agents.md#model-source)). Its generation is a turn of its
 harness ([Harness turns](#harness-turns)). Before the machine is
 woken, it fails with `harness.missing` when the snapshot names no
-harness, and with `subscription.not_runnable`, "`<Harness>` cannot run
-a subscription agent: pick Claude Code or Codex, or give the agent a
-model", on any other harness.
+harness. One whose agent picks repositories, or whose harness is
+Cursor or Antigravity, fails as a coding run does when its agent
+picks none (`coding.repositories_missing`) or one it can no longer use
+(`coding.repositories_gone`).
 
 At start, the loop cancels the machine's idle timer, ensures the
 machine is up, and checks the disk caps. A home or machine over its
@@ -538,16 +540,19 @@ under the call id `turn_<generation>_<run id>`
    or in the working tree of the one repository it picks, under
    `repos/<name>` ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them)),
    on the agent's harness model and effort, with the run's first row,
-   its composed system prompt, in place of the CLI's own
-   ([Drivers](coding/harnesses.md#drivers)). Its prompt on stdin is
+   its composed system prompt: in place of the CLI's own on Claude Code
+   and Codex, and as a rules file in the agent's home beside the CLI's
+   own on Cursor and Antigravity, which keep their vendor's system
+   prompt ([Drivers](coding/harnesses.md#drivers)). Its prompt is
    every user message since the run's last assistant or tool row, in
    order, joined by a blank line: the opening message, a message the
    operator sent, a Group Chat info or Schedule wake-up message, or a
    wake-up's message, each followed by a line naming the path of each
-   image attached to it ([Attachments](#attachments)). On Claude Code the turn makes at most the
-   snapshot's `max_steps` model calls (`--max-turns`); Codex has no
-   such limit, so `max_turn_minutes` and `max_tool_calls` bound its
-   turn. A run whose `metadata.harness_turn` holds a session resumes
+   image attached to it ([Attachments](#attachments)); the CLI reads it
+   on stdin, Cursor from a file its command line names. On Claude Code the turn makes at most the
+   snapshot's `max_steps` model calls (`--max-turns`); Codex, Cursor,
+   and Antigravity have no such limit, so `max_turn_minutes` and
+   `max_tool_calls` bound their turns. A run whose `metadata.harness_turn` holds a session resumes
    it; a new run starts a new session. The run records
    `metadata.harness_turn` at the start and again once the CLI reports
    its session. The generation's grant on the orchestrator's MCP server
@@ -563,15 +568,20 @@ under the call id `turn_<generation>_<run id>`
    results are redacted with the run's secret values, and each result
    is capped as a tool's output is. Every row carries
    `from_harness`, the harness, and the generation number. A call of
-   a tool of the orchestrator's MCP server, which both CLIs name
-   `mcp__guilds__<tool>`, and its result make no row from these
-   events: the server keeps the call as the run's own, an assistant
-   row holding it and its tool row, as a model's call is kept.
+   a tool of the orchestrator's MCP server and its result make no row
+   from these events: the server keeps the call as the run's own, an
+   assistant row holding it and its tool row, as a model's call is
+   kept. Claude Code and Codex name such a tool `mcp__guilds__<tool>`,
+   Antigravity `mcp_guilds_<tool>` or calls it through
+   `call_mcp_tool` with the server `guilds`, and Cursor's event names
+   the server `guilds`.
 
    | CLI | Message | Call of its own tool | Result |
    | --- | --- | --- | --- |
    | Claude Code | each `assistant` event's text | each `tool_use` block, under its id and tool name | each `tool_result` block of a `user` event |
    | Codex | each completed `agent_message` item | each `command_execution` (its `command`), `file_change` (its `changes`) or `web_search` (its `query`) item as it starts, or as it completes when it did not announce its start, under `<call id>.<item id>` and the item's type | the completed item: a command's output, a line per changed file, nothing for a search |
+   | Cursor | each `assistant` event's text | each `tool_call` event as it starts, or as it completes when it did not announce its start, under `<call id>.<Cursor's call id>` and the tool's kind without `ToolCall` (`shell`, `read`, `write`), with its `args` | the completed event's `result`: a command's output, a file's content, an error's text, else the result as JSON |
+   | Antigravity | each `agent_response` step's text, its pieces joined once the step is `DONE` | each `tool` step as it is `ACTIVE`, or as it ends when it did not announce its start, under `<call id>.step_<step index>` and the tool's name, with its parameters | the step that ended: its output, or its error's message |
 
    Codex's other items (its reasoning, its plan, an error notice) make
    no row.
@@ -612,6 +622,8 @@ held message as it is.
 | --- | --- | --- |
 | Claude Code | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the invocation's; input counts the cache's reads and writes |
 | Codex | `turn.completed`'s `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` | the thread's total less what the run's earlier Codex replies recorded; a total below that is a new thread's, all of it the turn's |
+| Cursor | the `result` event's `usage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` | the invocation's; input counts the cache's reads and writes. A `result` without `usage` records none |
+| Antigravity | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_tokens` | the conversation's total less what the run's earlier Antigravity replies recorded, as Codex's; input counts the cache's reads |
 
 `metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
@@ -916,8 +928,9 @@ cancel and resume are, and records `cancel_reason: "operator"`.
   - `harness-loop.ts`: a subscription agent's turns on its harness;
     `harness-prompt.ts`: what a turn reads from the run's rows;
     `harness-ending.ts`: how a turn ended and the run error it fails
-    with; `parse-claude-code.ts` and `parse-codex.ts`: each CLI's
-    events; `harness-rows.ts`: the rows they make
+    with; `parse-claude-code.ts`, `parse-codex.ts`, `parse-cursor.ts`,
+    and `parse-antigravity.ts`: each CLI's events; `harness-rows.ts`:
+    the rows they make
   - `tool-calls.ts`: tool calls and interruption results
   - `events.ts`: committed rows, run errors, and stream events
   - `run-secrets.ts`: the secrets of each generation

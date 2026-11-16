@@ -456,7 +456,7 @@ export type RoleHarness = {
   role: string;
   recommended: Harness | null;
   harness: Harness | null;
-  /** Whether the role runs on a subscription, which only some harnesses run. */
+  /** Whether the role runs on a subscription, on which a harness may need a repository. */
   subscription: boolean;
 };
 

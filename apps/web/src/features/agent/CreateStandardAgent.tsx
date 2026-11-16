@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
+import { useCreateAgent, useHarnessCatalog, useOrgMachines } from "../../api/queries/agents";
 import { useOrgModels } from "../../api/queries/models";
 import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
@@ -38,6 +38,7 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
   const machines = useOrgMachines(org.id);
+  const catalog = useHarnessCatalog();
   const create = useCreateAgent(guild.id);
   const identity = useIdentityDraft();
   const [step, setStep] = useState(0);
@@ -51,7 +52,7 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
     );
   const machine = chosenMachine(machines.data, base.machine_id);
   const form = disk.seed(base, machine);
-  const errors = configErrors(form, { models: models.data, machines: machines.data });
+  const errors = configErrors(form, { models: models.data, machines: machines.data, harnesses: catalog.data });
   const noProvider = hasConnectedProvider(models.data) === false;
   const ready = [
     identityComplete(identity.draft),

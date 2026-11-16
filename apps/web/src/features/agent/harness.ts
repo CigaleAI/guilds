@@ -220,14 +220,22 @@ export function harnessOffered(
 }
 
 /**
- * Whether a subscription agent's Settings offer a harness: one the catalogue says runs a
- * subscription. Before the catalogue loads, every harness is offered.
+ * Whether a subscription agent on a harness needs a repository, as the catalogue says; none does
+ * before the catalogue loads, and the server still refuses one without.
  */
-export function runsSubscription(
+export function needsRepository(
   catalog: readonly HarnessCatalog[] | undefined,
   harness: Harness,
 ): boolean {
-  return catalogFor(catalog, harness)?.subscription !== false;
+  return catalogFor(catalog, harness)?.needs_repository === true;
+}
+
+/** Why a subscription agent cannot run on `harnesses`, which need a repository, while it picks none. */
+export function missingRepositoryText(harnesses: readonly Harness[]): string {
+  const names = harnesses.map((harness) => harnessLabels[harness]).join(" and ");
+  return harnesses.length === 1
+    ? `${names} keeps its own system prompt, so it runs a subscription agent only with a repository.`
+    : `${names} keep their own system prompt, so they run a subscription agent only with a repository.`;
 }
 
 /** The token picker's value for no alias: the variable's own secret, else a login. Not a secret name. */

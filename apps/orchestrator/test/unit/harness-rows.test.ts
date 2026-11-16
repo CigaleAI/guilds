@@ -4,22 +4,29 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import {
+  antigravityTurnSteps,
   claudeCodeAssistantMessage,
   claudeCodeTurnSteps,
   codexTurnSteps,
+  cursorTurnSteps,
+  HARNESS_TURN_STEPS,
   harnessToolRecord,
   interruptedHarnessToolRecord,
   NOT_TEXT_OUTPUT,
   sessionTurnUsage,
   subscriptionUsageRecord,
 } from "../../src/generation/harness-rows.js";
+import { parseAntigravityEvents } from "../../src/generation/parse-antigravity.js";
 import { parseCodexEvents } from "../../src/generation/parse-codex.js";
+import { parseCursorEvents } from "../../src/generation/parse-cursor.js";
 import { parseClaudeCodeEvents, type ClaudeCodeMessage } from "../../src/generation/parse-claude-code.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const RECORDED = readFileSync(path.join(HERE, "../helpers/harness/claude-code.jsonl"), "utf8");
 const RECORDED_CODEX = readFileSync(path.join(HERE, "../helpers/harness/codex.jsonl"), "utf8");
+const RECORDED_CURSOR = readFileSync(path.join(HERE, "../helpers/harness/cursor.jsonl"), "utf8");
+const RECORDED_ANTIGRAVITY = readFileSync(path.join(HERE, "../helpers/harness/antigravity.jsonl"), "utf8");
 
 test("a recorded Claude Code turn parses into its messages and its tools' results, in order", () => {
   const events = parseClaudeCodeEvents(RECORDED);
@@ -308,4 +315,166 @@ test("a session's turn spent what its total holds past the turns the run kept, o
 test("a harness turn's usage is recorded with no price, from the subscription", () => {
   const usage = { input_tokens: 12, output_tokens: 140, cache_read_tokens: 0 };
   assert.deepEqual(subscriptionUsageRecord(usage), { usage, cost_usd: 0, cost_source: "subscription" });
+});
+
+test("a recorded Cursor chat parses into its messages and its tools' calls as they start and complete", () => {
+  const events = parseCursorEvents(RECORDED_CURSOR);
+  assert.deepEqual(
+    events.map((event) => [event.type, event.type === "tool_started" || event.type === "tool_completed" ? event.tool.name : null]),
+    [
+      ["tool_started", "read"],
+      ["tool_completed", "read"],
+      ["message", null],
+      ["tool_started", "write"],
+      ["tool_completed", "write"],
+      ["tool_started", "shell"],
+      ["tool_completed", "shell"],
+      ["message", null],
+    ],
+    "the init, the prompt, and a result without usage make no row",
+  );
+  assert.deepEqual(events[6], {
+    type: "tool_completed",
+    call_id: "tool_3",
+    tool: { name: "shell", server: null, args: { command: "python3 greet.py" }, output: "hello, guild\n" },
+  });
+  assert.deepEqual(events[1]?.type === "tool_completed" ? events[1].tool.output : null, "…", "a read's output is the file's content");
+  const write = events[4];
+  assert.deepEqual(
+    write?.type === "tool_completed" ? JSON.parse(String(write.tool.output)) : null,
+    { success: { path: "/home/a_1/repos/app/greet.py", linesCreated: 1, fileSize: 22 } },
+    "a result without text is kept as its JSON",
+  );
+});
+
+test("a Cursor chat's calls are rows under the turn's id; a call of the orchestrator's MCP server makes none; its result's usage counts the cache in the input", () => {
+  const mcp = (subtype: string, server: string) =>
+    JSON.stringify({
+      type: "tool_call",
+      subtype,
+      call_id: `tool_${server}`,
+      tool_call: { mcpToolCall: { args: { name: "note_find", args: { query: "a" }, providerIdentifier: server, toolName: "note_find" } } },
+    });
+  const failed = JSON.stringify({
+    type: "tool_call",
+    subtype: "completed",
+    call_id: "tool_9",
+    tool_call: { shellToolCall: { args: { command: "false" }, result: { error: { error: "exit 1" } } } },
+  });
+  const usage = JSON.stringify({ type: "result", subtype: "success", usage: { inputTokens: 100, outputTokens: 40, cacheReadTokens: 900, cacheWriteTokens: 20 } });
+  const steps = cursorTurnSteps([RECORDED_CURSOR, mcp("started", "guilds"), mcp("completed", "guilds"), mcp("started", "docs"), failed, usage].join("\n"), { TOKEN: "guild" }, "turn_1");
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["message", "result", "message", "message", "result", "message", "result", "message", "message", "result", "turn_usage"],
+  );
+  assert.deepEqual(steps[0], {
+    kind: "message",
+    payload: {
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "turn_1.tool_1", type: "function", function: { name: "read", arguments: '{"path":"/home/a_1/.runs/r_harness/call_task.prompt.md"}' } }],
+    },
+  });
+  const other = steps[8];
+  assert.deepEqual(other?.kind === "message" ? other.payload.tool_calls?.[0]?.function.name : null, "note_find", "another server's tool is the harness's own");
+  assert.deepEqual(steps[9]?.kind === "result" ? steps[9].result : null, { harness: "cursor", tool_use_id: "turn_1.tool_9", output: "exit 1" });
+  assert.deepEqual(steps.at(-1), { kind: "turn_usage", usage: { input_tokens: 1020, output_tokens: 40, cache_read_tokens: 900, cache_write_tokens: 20 } });
+  assert.match(steps[7]?.kind === "message" ? steps[7].payload.content : "", /\[REDACTED:TOKEN\]/, "a message is redacted");
+});
+
+test("a recorded Antigravity turn parses into its responses' pieces, its tools' calls as they start and end, and the conversation's usage", () => {
+  const events = parseAntigravityEvents(RECORDED_ANTIGRAVITY);
+  assert.deepEqual(
+    events.map((event) => (event.type === "text" ? `text ${event.step}${event.done ? " done" : ""}` : `${event.type}${"tool" in event ? ` ${event.tool.name}` : ""}`)),
+    [
+      "text 1",
+      "text 1",
+      "text 1",
+      "text 1 done",
+      "tool_started run_command",
+      "tool_ended run_command",
+      "text 3 done",
+      "tool_started write_to_file",
+      "tool_ended write_to_file",
+      "text 5 done",
+      "tool_started run_command",
+      "tool_ended run_command",
+      "text 7",
+      "text 7",
+      "text 7",
+      "text 7",
+      "text 7",
+      "text 7",
+      "text 7 done",
+      "session_usage",
+    ],
+    "the init and the user's input make no row",
+  );
+  assert.deepEqual(events.at(-1), { type: "session_usage", usage: { input_tokens: 4806, output_tokens: 140, cache_read_tokens: 400 } });
+  assert.deepEqual(events[11], {
+    type: "tool_ended",
+    step: 6,
+    tool: { name: "run_command", server: null, parameters: { CommandLine: "python3 greet.py" } },
+    output: "hello, guild\n",
+  });
+});
+
+test("an Antigravity turn's responses are messages once done, its calls rows under the turn's id, and its usage the session's", () => {
+  const steps = antigravityTurnSteps(RECORDED_ANTIGRAVITY, { TOKEN: "guild" }, "turn_1", new Map());
+  assert.deepEqual(
+    steps.map((step) => (step.kind === "message" ? `message ${step.payload.tool_calls?.[0]?.function.name ?? step.payload.content}` : step.kind)),
+    [
+      "message I'll look at the greeting first.",
+      "message run_command",
+      "result",
+      "message write_to_file",
+      "result",
+      "message run_command",
+      "result",
+      'message Changed the greeting in greet.py to "hello, [REDACTED:TOKEN]" and ran it.\n\nShould the greeting also name the agent?',
+      "session_usage",
+    ],
+    "a response without text makes no row",
+  );
+  assert.deepEqual(steps[1]?.kind === "message" ? steps[1].payload.tool_calls?.[0] : null, {
+    id: "turn_1.step_2",
+    type: "function",
+    function: { name: "run_command", arguments: '{"CommandLine":"cat greet.py"}' },
+  });
+  assert.deepEqual(steps[4]?.kind === "result" ? steps[4].result : null, { harness: "antigravity", tool_use_id: "turn_1.step_4", output: null });
+});
+
+test("a response Antigravity streams over several polls becomes one message once its step is done", () => {
+  const read = HARNESS_TURN_STEPS.antigravity("turn_1");
+  const lines = RECORDED_ANTIGRAVITY.split("\n");
+  const cut = lines.findIndex((line) => line.includes('"text_delta":"greet.py to "'));
+  const replies = (steps: ReturnType<typeof read>) =>
+    steps.flatMap((step) => (step.kind === "message" && step.payload.content.startsWith("Changed") ? [step.payload.content] : []));
+  assert.deepEqual(replies(read(lines.slice(0, cut).join("\n"), {})), [], "no message while its step streams");
+  assert.deepEqual(replies(read(lines.slice(cut).join("\n"), {})), [
+    'Changed the greeting in greet.py to "hello, guild" and ran it.\n\nShould the greeting also name the agent?',
+  ]);
+});
+
+test("an Antigravity call of the orchestrator's MCP server, under its prefix or through call_mcp_tool, makes no row; a failed call's error is its output", () => {
+  const tool = (state: string, name: string, parameters: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ event: "step_update", step_update: { step_index: 4, state, step_type: "tool", tool_name: name, tool_info: { name, parameters, ...extra } } });
+  const steps = antigravityTurnSteps(
+    [
+      tool("ACTIVE", "mcp_guilds_note_find", { query: "a" }),
+      tool("DONE", "mcp_guilds_note_find", { query: "a" }, { output: "found" }),
+      tool("DONE", "call_mcp_tool", { ServerName: "guilds", ToolName: "note_find", Arguments: {} }, { output: "found" }),
+      tool("ERROR", "call_mcp_tool", { ServerName: "docs", ToolName: "search", Arguments: {} }, { error: { type: "TOOL_ERROR", message: "unknown tool" } }),
+      JSON.stringify({ event: "step_update", step_update: { step_index: 5, state: "DONE", step_type: "user_input" } }),
+      "not json",
+    ].join("\n"),
+    {},
+    "turn_2",
+    new Map(),
+  );
+  assert.deepEqual(
+    steps.map((step) => (step.kind === "result" ? [step.call?.function.name, step.result.output] : step.kind)),
+    [["call_mcp_tool", "unknown tool"]],
+  );
+  assert.deepEqual(parseAntigravityEvents(JSON.stringify({ event: "result", result: { status: "SUCCESS" } })), [], "a result without usage reads as nothing");
 });

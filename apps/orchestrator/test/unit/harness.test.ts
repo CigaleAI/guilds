@@ -669,7 +669,7 @@ describe("code_task with the Cursor driver", () => {
 });
 
 test("each call first removes the harness's local configuration and memory, never its login or sessions", async () => {
-  const cases: Array<{ harness: "claude-code" | "codex" | "cursor"; binary: string; removed: string[]; kept: string[] }> = [
+  const cases: Array<{ harness: "claude-code" | "codex" | "cursor" | "antigravity"; binary: string; removed: string[]; kept: string[] }> = [
     {
       harness: "claude-code",
       binary: "claude",
@@ -692,8 +692,14 @@ test("each call first removes the harness's local configuration and memory, neve
     {
       harness: "cursor",
       binary: "agent",
-      removed: [".cursor/hooks.json", ".cursor/mcp.json", ".cursor/rules/r.mdc"],
+      removed: [".cursor/hooks.json", ".cursor/mcp.json", ".cursor/rules/r.mdc", "AGENTS.md", "repos/AGENTS.md", "repos/.cursor/rules/r.mdc"],
       kept: [".config/cursor/auth.json", ".cursor/cli-config.json", ".cursor/chats/c/store.db"],
+    },
+    {
+      harness: "antigravity",
+      binary: "agy",
+      removed: [".gemini/GEMINI.md", ".gemini/config/GEMINI.md", ".gemini/config/rules/r.md", ".gemini/config/mcp_config.json"],
+      kept: [".gemini/antigravity-cli/antigravity-oauth-token", ".gemini/antigravity-cli/conversations/c.db"],
     },
   ];
   for (const { harness, binary, removed, kept } of cases) {
@@ -704,7 +710,8 @@ test("each call first removes the harness's local configuration and memory, neve
     }
     mkdirSync(path.join(repo, ".claude"), { recursive: true });
     writeFileSync(path.join(repo, ".claude", "settings.json"), "{}");
-    const secrets: Record<string, string> = harness === "codex" ? {} : { [harness === "cursor" ? "CURSOR_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN"]: "t" };
+    const secret = { "claude-code": "CLAUDE_CODE_OAUTH_TOKEN", codex: null, cursor: "CURSOR_API_KEY", antigravity: null }[harness];
+    const secrets: Record<string, string> = secret === null ? {} : { [secret]: "t" };
     const { metadata } = await codeTask(context(sandbox, { harness, secrets }).ctx, { brief: "x" });
     assert.equal(metadata.status, "completed", harness);
     for (const file of removed) {
@@ -825,11 +832,50 @@ describe("a harness started for a run's own turn", () => {
     assert.equal(calls().length, 0);
   });
 
-  test("a CLI that takes no system prompt refuses one and never starts", async () => {
-    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"));
-    const op = turnOps(sandbox, "call_cursor");
-    await assert.rejects(op("start", { harness: "cursor", prompt: "hello", system_prompt: "x" }), /cursor takes no system prompt/);
-    assert.equal(calls().length, 0);
+  /** Waits until the stand-in CLI of `calls` recorded its first start. */
+  async function firstCall(calls: () => Recorded[]): Promise<Recorded> {
+    for (let attempt = 0; attempt < 100 && !calls().length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const [call] = calls();
+    assert.ok(call);
+    return call;
+  }
+
+  test("a system prompt reaches Cursor as a rule that always applies, in the home outside the repository, which goes with the call", async () => {
+    const { sandbox, repo, calls } = harnessSandbox("agent", () => [JSON.stringify({ stub: "hang" })]);
+    const op = turnOps(sandbox, "call_cursor_rules");
+    await op("start", { harness: "cursor", repository: "app", prompt: "hello", system_prompt: "You are the guild's agent." });
+    const rules = path.join(sandbox.home, ".cursor", "rules", "guilds.mdc");
+    const call = await firstCall(calls);
+    assert.equal(
+      call.system_prompt,
+      "---\ndescription: The guild's instructions for this turn\nalwaysApply: true\n---\n\nYou are the guild's agent.",
+    );
+    assert.equal(statSync(rules).mode & 0o777, 0o600);
+    assert.ok(!call.argv.some((arg) => arg.includes("guilds.mdc")), "the CLI finds the rule where it reads its own");
+    assert.equal(realpathSync(call.cwd), realpathSync(repo));
+    assert.equal(git(repo, sandbox.home, ["status", "--porcelain"]), "", "nothing in the repository's working tree changed");
+    await op("stop", { harness: "cursor" });
+    await op("result", { harness: "cursor" });
+    assert.equal(existsSync(rules), false, "the rule goes with the call's state");
+  });
+
+  test("a turn of Antigravity reads its prompt as one stream-json message on stdin, and its system prompt as a global rule that goes with the call", async () => {
+    const { sandbox, repo, calls } = harnessSandbox("agy", () => [JSON.stringify({ stub: "hang" })]);
+    const op = turnOps(sandbox, "call_agy_rules");
+    await op("start", { harness: "antigravity", repository: "app", prompt: "hello", system_prompt: "You are the guild's agent." });
+    const rules = path.join(sandbox.home, ".gemini", "GEMINI.md");
+    const call = await firstCall(calls);
+    assert.equal(call.stdin, '{"event": "user", "message": {"content": "hello"}}\n');
+    assert.deepEqual(call.argv.slice(1, 7), ["--output-format", "stream-json", "--input-format", "stream-json", "--dangerously-skip-permissions", "--disable-slash-commands"]);
+    assert.ok(!call.argv.includes("-p") && !call.argv.includes("--add-dir"), "the prompt is on no command line, and the workspace is the repository alone");
+    assert.equal(call.system_prompt, "You are the guild's agent.");
+    assert.equal(statSync(rules).mode & 0o777, 0o600);
+    assert.equal(git(repo, sandbox.home, ["status", "--porcelain"]), "", "nothing in the repository's working tree changed");
+    await op("stop", { harness: "antigravity" });
+    await op("result", { harness: "antigravity" });
+    assert.equal(existsSync(rules), false, "the rule goes with the call's state");
   });
 
   /** A turn's MCP server: the URL the stand-in is given, and a token of the length the orchestrator issues. */
@@ -840,7 +886,7 @@ describe("a harness started for a run's own turn", () => {
     sandbox: HostCodeSandbox,
     callId: string,
     mcp: { url: string; token: string } | null,
-    harness: "claude-code" | "codex" = "claude-code",
+    harness: "claude-code" | "codex" | "cursor" | "antigravity" = "claude-code",
   ) {
     const ctx = toolFixture({ run_id: "r_turn", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
     await launchHarness(opsRun(ctx.run), callId, {
@@ -916,11 +962,31 @@ describe("a harness started for a run's own turn", () => {
     assert.equal(existsSync(configFile), false, "the file that carried the token goes with the call's state");
   });
 
-  test("a CLI that takes no MCP server refuses one and never starts", async () => {
-    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"));
-    const op = turnOps(sandbox, "call_cursor_mcp");
-    await assert.rejects(op("start", { harness: "cursor", prompt: "hello", mcp_url: MCP.url, mcp_token: MCP.token }), /cursor takes no MCP server/);
-    assert.equal(calls().length, 0);
+  test("an MCP server reaches Cursor and Antigravity through their own configuration in the home alone, which goes with the call", async () => {
+    const cases = [
+      { harness: "cursor" as const, binary: "agent", file: [".cursor", "mcp.json"], key: "url" },
+      { harness: "antigravity" as const, binary: "agy", file: [".gemini", "config", "mcp_config.json"], key: "serverUrl" },
+    ];
+    for (const { harness, binary, file, key } of cases) {
+      const { sandbox, calls } = harnessSandbox(binary, () => [JSON.stringify({ stub: "hang" })], { HARNESS_STUB_SEEK: MCP.token });
+      const configFile = path.join(sandbox.home, ...file);
+      mkdirSync(path.dirname(configFile), { recursive: true });
+      writeFileSync(configFile, JSON.stringify({ mcpServers: { planted: { [key]: "http://203.0.113.9/mcp" } } }));
+      await startTurn(sandbox, `call_${harness}_mcp`, MCP, harness);
+      const call = await firstCall(calls);
+      assert.deepEqual(
+        JSON.parse(readFileSync(configFile, "utf8")),
+        { mcpServers: { guilds: { [key]: MCP.url, headers: { Authorization: `Bearer ${MCP.token}` } } } },
+        `${harness}: the turn's server is the only one`,
+      );
+      assert.equal(call.mcp_config_mode, 0o600);
+      assert.ok(!call.argv.some((arg) => arg.includes(MCP.token)), `${harness}: the token is on no command line`);
+      assert.deepEqual(call.env_holding_seek, [], `${harness}: nor in the CLI's environment`);
+      const op = turnOps(sandbox, `call_${harness}_mcp`);
+      await op("stop", { harness });
+      await op("result", { harness });
+      assert.equal(existsSync(configFile), false, `${harness}: the configuration that carried the token goes with the call's state`);
+    }
   });
 
   test("an MCP server whose URL or token is malformed, or that comes without the other, is refused", async () => {

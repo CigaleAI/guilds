@@ -157,3 +157,14 @@ test("a role with a harness, no model, and no coding runs on a subscription, its
   });
   assert.equal(coder.agents[0]?.model_source, "key", "a coding role is on a key");
 });
+
+test("a role's agent lists the repositories its config names, and none for a list that is not one of names", () => {
+  const plan = planFromRecipe({
+    roles: [
+      { role: "w", config: { harness: "cursor", repositories: ["app", "site"] } },
+      { role: "x", config: { harness: "cursor", repositories: "app" } },
+      { role: "y", config: { harness: "codex" } },
+    ],
+  });
+  assert.deepEqual(plan.agents.map((agent) => agent.repositories), [["app", "site"], [], []]);
+});

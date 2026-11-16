@@ -79,7 +79,9 @@ it ([Tool names](#tool-names)). They keep a part of their own for its
 harness: where it runs, its home, its toolchains, its ports, that its
 secrets are variables it never prints, and, when the run offers a
 tool, that the guild's tools come from the platform's MCP server and
-that its own tools' calls count toward `max_tool_calls` too. A
+that its own tools' calls count toward `max_tool_calls` too. On
+Cursor and Antigravity, which keep their vendor's system prompt and
+read this one as rules beside it, the part also says so. A
 subscription agent that picks repositories also gets a part on them:
 where they are, where its turn starts, how it branches, commits, and
 pushes through git's credential helper, and the tool that opens a
@@ -242,6 +244,7 @@ without its tags, when the condition holds, and removed otherwise:
 | `no_pull_request_tool` | the run offers no such tool |
 | `repositories` | the agent is a subscription agent that picks repositories |
 | `no_repositories` | the agent picks none, or is not a subscription agent |
+| `harness_rules` | the agent is a subscription agent on Cursor or Antigravity, whose CLI keeps its own system prompt and reads this one as rules |
 | `harness` | the agent is a subscription agent, whose harness runs its turns |
 
 Inside `pull_request_tool`, `<pull_request_tool/>` becomes the tool's
@@ -267,9 +270,11 @@ that picks repositories, adds a line on `repositories`.
 Where the prompt's own text names a tool, in `system.md`, the Task and
 Memory intros, and a connector's `prompt.guidance`, it writes
 `<tool>name</tool>`. Composition writes each such tag as the name the
-run's model calls the tool by: the tool's own name on a key, and
-`mcp__guilds__<name>` for a subscription agent on Claude Code, which
-reaches the tools through the orchestrator's MCP server. The coach's
+run's model calls the tool by: the tool's own name on a key, and for
+a subscription agent, which reaches the tools through the
+orchestrator's MCP server, the name its harness gives them:
+`mcp__guilds__<name>` on Claude Code and Codex, `mcp_guilds_<name>` on
+Antigravity, and the tool's own name on Cursor. The coach's
 copy of the agent prompt in Studio and Builder names each tool by its
 own name. A tag anywhere in the composed prompt, the Task's text
 included, is written the same way.
@@ -344,8 +349,10 @@ this order:
    since the last fire ([Routines](routines.md)).
 7. A subscription agent's harness: its container, its home, its
    toolchains, its ports, its secrets as variables, and where the
-   guild's tools come from; with repositories, where they are, its
-   branch, commits and push, and how its pull request is opened.
+   guild's tools come from; on Cursor and Antigravity, that the
+   vendor's system prompt stays in force beside these rules; with
+   repositories, where they are, its branch, commits and push, and how
+   its pull request is opened.
 8. `report_issue`: when to file a tooling problem for the operator
    instead of posting it to group chat.
 

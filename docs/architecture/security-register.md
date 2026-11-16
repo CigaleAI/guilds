@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-67](#sec-67--cursor-and-antigravity-run-a-subscription-agents-turn-under-their-vendors-own-system-prompt) | Cursor and Antigravity run a subscription agent's turn under their vendor's own system prompt | Open, accepted |
 | [SEC-66](#sec-66--a-subscription-agents-harness-pushes-to-its-repositories-and-what-it-reads-can-steer-the-push) | A subscription agent's harness pushes to its repositories, and what it reads can steer the push | Open |
 | [SEC-65](#sec-65--an-image-attached-to-a-subscription-agents-message-is-a-file-every-process-on-its-machine-reads) | An image attached to a subscription agent's message is a file every process on its machine reads | Open |
 | [SEC-64](#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools) | A subscription agent's MCP token lets any process on its machine call its Guilds tools | Open |
@@ -75,6 +76,57 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-67 — Cursor and Antigravity run a subscription agent's turn under their vendor's own system prompt
+
+**Status:** open, accepted.
+
+**Found:** 2026-11-16, running a subscription agent's turns on Cursor
+and Antigravity.
+
+**Where:** the Cursor and Antigravity drivers in
+`runtime/guilds-harness`, which write the run's system prompt to
+`~/.cursor/rules/guilds.mdc` and `~/.gemini/GEMINI.md` in the agent's
+home; `harnessNeedsRepository` and `assertSubscriptionAgent` in
+`apps/orchestrator/src/coding/harnesses.ts` and
+`apps/orchestrator/src/agents/validation.ts`; and the `harness_rules`
+part of `apps/orchestrator/src/prompts/system.md`.
+
+**Exposure:** neither CLI takes a system prompt in place of its own.
+Each turn runs under the vendor's own system prompt, which the
+operator neither sees nor controls and the vendor changes with the
+CLI; the run's composed prompt reaches the model only as a rule
+beside it. Where the two disagree, the vendor's prompt can win: on
+what the agent does with its tools, what it writes, and whether it
+follows the guild's instructions on branches, pushes, and what is
+data. Antigravity caps one rules file at 24,000 bytes and cuts a
+longer one at a line, so the end of a long prompt (Memory, part of
+State) can be lost; whether Antigravity reads a global rule at all
+when the CLI runs outside Google's sign-in could not be observed. Both
+CLIs also read a repository's own instruction files (`AGENTS.md`,
+`GEMINI.md`, `.cursor/rules`, `.agents/`) beside the guild's rule
+(SEC-29, SEC-38). A repository's `.cursor/mcp.json` that names a
+server `guilds` takes the place of the platform's in Cursor's merged
+configuration; Cursor loads a repository's server only on an approval
+the driver never gives, so the turn then has no Guilds tool. Claude
+Code and Codex are not exposed: the run's prompt replaces theirs.
+
+**Control in place:** a Cursor or Antigravity subscription agent is
+created, and saved, only with a repository: one that does code work,
+whose turns the run checkpoints and records. A run of one whose
+repositories are all gone fails at start. The rule tells the model
+that the vendor's prompt stays in force and that the guild's rules
+govern the guild's work. The rules file is mode 0600, outside every
+repository's working tree, removed when the turn ends, and the place
+it sits is cleared before every call, with every other rule the CLI
+reads in the home: since 2026-11-16 also the `AGENTS.md`, `CLAUDE.md`,
+and `CLAUDE.local.md` Cursor reads in the home and in `~/repos/`, and
+Antigravity's `~/.gemini/config/` rules.
+
+**Fix to make:** none while the CLIs take no system prompt of their
+own. An operator who needs the guild's prompt to govern every turn
+picks Claude Code or Codex, or turns Cursor and Antigravity off with
+`HARNESSES_OFF`.
 
 ## SEC-66 — A subscription agent's harness pushes to its repositories, and what it reads can steer the push
 
@@ -184,7 +236,9 @@ published by `docker-compose.yml`, and `<call id>.mcp.json` in the
 turn's run folder, `.runs/<run id>/` in the agent's home, written by
 `start` in `runtime/guilds-harness`; since 2026-11-16 also the
 environment of a Codex turn's CLI, which the supervisor in
-`runtime/guilds-harness` sets from that file.
+`runtime/guilds-harness` sets from that file, and the MCP
+configuration a Cursor or Antigravity turn's CLI reads in the agent's
+home, `~/.cursor/mcp.json` or `~/.gemini/config/mcp_config.json`.
 
 **Exposure:** the MCP listener is reachable from every sandbox on the
 host: on a Linux engine every container reaches the bridge's gateway,
@@ -193,7 +247,12 @@ and on Docker Desktop every container reaches the host's loopback
 token sits in the configuration file in the agent's home, and, since
 2026-11-16 on Codex, in the environment of the Codex process, which
 every process running as root on the machine reads at
-`/proc/<pid>/environ`. Any process on the agent's machine can read
+`/proc/<pid>/environ`. Since 2026-11-16 on Cursor and Antigravity it
+sits in the CLI's own MCP configuration in the home, where each reads
+it: neither reads one from a path a call names, nor from outside the
+home. A turn whose result was never read, such as one an orchestrator
+restart cut short, leaves that file until the agent's next call clears
+it; its token is revoked by then. Any process on the agent's machine can read
 it: the harness itself, a command it runs, a package install (SEC-4), a steered harness (SEC-8), and every
 other agent placed on the machine (SEC-24), as it can read a
 repository token (SEC-10). With the token, a process calls every
@@ -231,8 +290,12 @@ server, and the token was in no environment. A Codex turn takes it as
 line and in no configuration file of Codex's home; the supervisor sets
 the variable in the CLI's own environment alone, not in its own nor in
 `guilds-harness`'s, and Codex leaves it out of the commands its model
-runs (`shell_environment_policy.exclude`). A token found after the
-generation ended answers 401.
+runs (`shell_environment_policy.exclude`). A Cursor or Antigravity
+turn's configuration file holds the one server and the token as its
+header, mode 0600; the token is on no command line and in no
+environment, the file goes with the turn's state, and every call
+first removes whatever the home holds there, so no earlier server
+survives. A token found after the generation ended answers 401.
 
 **Fix to make:** none of a token's reach can be narrowed below the
 machine while agents share a machine. An operator gives an agent that
@@ -282,7 +345,7 @@ harness.
 **Where:** `HarnessLoop` in
 `apps/orchestrator/src/generation/harness-loop.ts`, and `start` with a
 `system_prompt` and the Claude Code driver in `runtime/guilds-harness`;
-since 2026-11-16 the Codex driver as well.
+since 2026-11-16 the Codex, Cursor, and Antigravity drivers as well.
 
 **Exposure:** each turn of a subscription agent hands its harness,
 Claude Code and since 2026-11-16 Codex, the run's whole composed
@@ -297,10 +360,13 @@ prompts off (SEC-28), and the network open. Text in any of that, or in
 a file, command output, or page the CLI reads, can steer it to send
 its secrets, State, or Memory wherever the container reaches (SEC-8).
 The prompt leaves the box for the vendor's API on the operator's
-subscription: Anthropic's for Claude Code, OpenAI's for Codex. While
-the turn runs, the system prompt is also a file in the agent's home,
-readable by any process on the machine (SEC-24); Codex reads it
-through `model_instructions_file`, as its own instructions.
+subscription: Anthropic's for Claude Code, OpenAI's for Codex, and
+since 2026-11-16 Cursor's and Google's for Cursor and Antigravity.
+While the turn runs, the system prompt is also a file in the agent's
+home, readable by any process on the machine (SEC-24); Codex reads it
+through `model_instructions_file`, as its own instructions, and Cursor
+and Antigravity as a rule in their own configuration in the home,
+beside their vendor's prompt (SEC-67).
 Since 2026-11-16 the harness also calls the run's Guilds tools,
 connector tools included, on the orchestrator's MCP server (SEC-64):
 steered text can make it write the agent's notes, records, files, and
@@ -325,7 +391,8 @@ default. The organisation's model keys never reach the sandbox. Until
 2026-11-16 a box offered subscription agents only with
 `SUBSCRIPTION_AGENTS=1`; since then every box offers them to whoever
 creates agents, and a box that wants none turns Claude Code and Codex
-off with `HARNESSES_OFF`, which turns them off for coding agents too.
+off with `HARNESSES_OFF`, which turns them off for coding agents too;
+since 2026-11-16 Cursor and Antigravity as well.
 
 **Fix to make:** start the harness with only its own credential in its
 environment, and limit what the agent's container reaches. Until then,
@@ -1573,7 +1640,9 @@ Cursor calls never pass `--approve-mcps`. Before every call the driver
 removes the harness's user-level configuration and memory from the
 agent's home, so what the agent, its commands, an earlier harness
 turn, or another agent on the machine (SEC-24) wrote there does not
-reach the next call.
+reach the next call; since 2026-11-16 that includes the instruction
+files Cursor reads in every folder above the one it runs in, in the
+home and in `~/repos/`.
 
 **Residual risk:** Cursor runs a repository's hooks (SEC-31).
 Instruction files in the repository (`CLAUDE.md`, `AGENTS.md`,

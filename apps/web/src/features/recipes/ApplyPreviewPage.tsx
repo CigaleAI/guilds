@@ -22,7 +22,7 @@ import {
   harnessOptions,
   harnessSubscriptionNote,
   isHarness,
-  runsSubscription,
+  needsRepository,
 } from "../agent/harness";
 import { setupSearch } from "../instance/instance";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
@@ -41,6 +41,7 @@ import {
 } from "@guildsrun/ui";
 import { ApplyMachinePicker } from "./ApplyMachinePicker";
 import { isRecipeApproved } from "./plan/recipeDraft";
+import type { PlanAgent } from "./plan/planAgents";
 import { planFromRecipe } from "./plan/planModel";
 import { PlanView } from "./plan/PlanView";
 import { filledPlanSections } from "./plan/planSections";
@@ -142,9 +143,11 @@ export function ApplyPreviewPage() {
   const keyed = creates.agents.filter((agent) => !onSubscription(agent.role));
   const noProvider = hasConnectedProvider(orgModels.data) === false && keyed.length > 0;
   const missingModel = keyed.some((agent) => !modelOf(agent.role));
-  const subscriptionOptions = harnessOptions.filter((option) =>
-    runsSubscription(catalog.data, option.value),
-  );
+  // A subscription role that lists no repository runs on no harness that needs one.
+  const harnessChoicesOf = (agent: PlanAgent) =>
+    onSubscription(agent.role) && !agent.repositories.length
+      ? harnessOptions.filter((option) => !needsRepository(catalog.data, option.value))
+      : harnessOptions;
   const harnessOf = (role: string): Harness | "" =>
     harnesses[role] ?? roleHarness(role)?.harness ?? "";
   const missingHarness = data.harnesses.some((item) => !harnessOf(item.role));
@@ -243,7 +246,7 @@ export function ApplyPreviewPage() {
               coding={agent.coding}
               orgModels={orgModels.data}
               harness={roleHarness(agent.role) ? harnessOf(agent.role) : null}
-              harnessChoices={onSubscription(agent.role) ? subscriptionOptions : harnessOptions}
+              harnessChoices={harnessChoicesOf(agent)}
               onHarness={(value) =>
                 setHarnesses((current) => ({ ...current, [agent.role]: value }))
               }

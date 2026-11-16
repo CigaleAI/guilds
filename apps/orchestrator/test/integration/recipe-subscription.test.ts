@@ -69,7 +69,11 @@ test("a captured subscription role applies on its harness", { timeout: 60_000 },
     assert.deepEqual(preview.json().errors, []);
     const cursor = await call("POST", `/api/recipes/${recipeId}/preview`, { harnesses: [{ role: "writer", harness: "cursor" }] });
     assert.equal(cursor.statusCode, 422, cursor.body);
-    assert.match(String(cursor.json().detail), /harnesses\.writer: Cursor cannot run a subscription agent/);
+    assert.match(
+      String(cursor.json().detail),
+      /harnesses\.writer: Cursor runs a subscription agent only with a repository, since it keeps its own system prompt/,
+      "a role that lists no repository is not created on Cursor",
+    );
     const modelled = await call("POST", `/api/recipes/${recipeId}/preview`, {
       models: [{ role: "writer", model: "deepinfra/zai-org/GLM-5.3-Flash" }],
     });

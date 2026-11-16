@@ -22,12 +22,12 @@ import type {
 } from "../db/schema/index.js";
 import {
   harnessesOn,
+  harnessNeedsRepository,
   harnessOffMessage,
   harnessOf,
   isHarness,
   isHarnessOff,
-  isTurnHarness,
-  subscriptionHarnessMessage,
+  subscriptionRepositoryMessage,
 } from "../coding/harnesses.js";
 import { listServers } from "../connectors/servers.js";
 import { agentNameTaken, listAgents } from "../db/agents.js";
@@ -76,6 +76,7 @@ import {
   prepareRecipeForApply,
   roleBrowses,
   roleCodes,
+  roleRepositories,
   roleRunsOnSubscription,
   roleTakesHarness,
   roleTaskText,
@@ -435,9 +436,13 @@ function resolveModels(recipe: RecipeDocument, decisions: ModelDecision[], offer
   });
 }
 
-/** Whether apply can create the role on the harness: one the box does not turn off, and that runs a subscription role. */
+/**
+ * Whether apply can create the role on the harness: one the box does not turn off, and for a
+ * subscription role on a harness that needs a repository, a role that lists one.
+ */
 function harnessFits(role: RecipeRole, harness: Harness): boolean {
-  return !isHarnessOff(harness) && (!roleRunsOnSubscription(role) || isTurnHarness(harness));
+  const inRepository = !roleRunsOnSubscription(role) || !harnessNeedsRepository(harness) || roleRepositories(role).length > 0;
+  return !isHarnessOff(harness) && inRepository;
 }
 
 /** The harness the recipe names for a role; null when it names none, or one apply cannot create the role on. */
@@ -446,7 +451,7 @@ function recommendedHarness(role: RecipeRole): Harness | null {
   return harness !== null && harnessFits(role, harness) ? harness : null;
 }
 
-/** The harness the operator chose for a role, or null; refuses one that is unknown, turned off, or not for its subscription. */
+/** The harness the operator chose for a role, or null; refuses one that is unknown, turned off, or needs a repository the role lists none of. */
 function chosenHarness(role: RecipeRole, choice: string | null): Harness | null {
   if (choice === null) {
     return null;
@@ -458,7 +463,7 @@ function chosenHarness(role: RecipeRole, choice: string | null): Harness | null 
     throw new RecipeError(`harnesses.${role.role}: ${harnessOffMessage(choice)}`);
   }
   if (!harnessFits(role, choice)) {
-    throw new RecipeError(`harnesses.${role.role}: ${subscriptionHarnessMessage(choice)}`);
+    throw new RecipeError(`harnesses.${role.role}: ${subscriptionRepositoryMessage(choice)}`);
   }
   return choice;
 }

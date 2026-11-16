@@ -26,8 +26,9 @@ There are three kinds of agent:
 - a **coding agent** also leads code work in the guild's
   repositories it picks, delegated to a coding harness. See
   [Coding agents](coding/index.md);
-- a **subscription agent** has no model: its harness, Claude Code or
-  Codex, on the operator's own subscription, is its model source. Each
+- a **subscription agent** has no model: its harness, on the
+  operator's own subscription, is its model source; Cursor and
+  Antigravity only for an agent with a repository. Each
   generation of its run is one turn of the harness, with the
   harness's own tools and the platform's tools it is offered
   ([Model source](#model-source)).
@@ -70,17 +71,19 @@ model when it has one, otherwise the operator picks one.
 
 On a subscription, the agent names a harness, its model, and its
 effort ([Harnesses](coding/harnesses.md#subscription-agents)), and
-the harness runs on the operator's own subscription. Only Claude Code
-and Codex run one.
+the harness runs on the operator's own subscription. Cursor and
+Antigravity keep their own system prompt, so they run a subscription
+agent only with a repository: an agent that does code work.
 The settings of the orchestrator's model loop do not apply to it:
 temperature, thinking level, max output tokens, max input tokens, and
 keep tool results stay at their defaults.
 
 Each generation of a subscription agent's run is one turn of its
-harness's CLI, Claude Code or Codex, in the agent's sandbox: the run's
-composed system prompt replaces the CLI's own, the messages that
-opened the generation are its prompt, and the run shows what it
-writes and the tools it uses ([Runs](runs.md#harness-turns)). The
+harness's CLI in the agent's sandbox: the run's composed system prompt
+replaces the CLI's own on Claude Code and Codex, and reaches Cursor
+and Antigravity as rules beside theirs; the messages that opened the
+generation are its prompt, and the run shows what it writes and the
+tools it uses ([Runs](runs.md#harness-turns)). The
 run's next generation resumes the same session. A subscription agent:
 
 - is offered the tools a model on a key would be, connectors
@@ -222,7 +225,7 @@ is disabled once the guild is full. Each agent row shows:
    preselected with its default when it has one. With no provider
    connected, the step shows a guide to **Model keys** in its place.
    On a subscription, the step is titled **Harness** and holds the
-   harness, Claude Code or Codex, its model and effort, the
+   harness, its model and effort, the
    capabilities, and the run limits a harness keeps; no provider is
    needed. Then the thinking level and the temperature, each switched
    off only for a model that does not take it. Then **Agent
@@ -352,7 +355,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
-| Subscription agent | no model; a harness, Claude Code or Codex; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools but the code tools through the orchestrator's MCP server |
+| Subscription agent | no model; a harness, and on Cursor or Antigravity a repository; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools but the code tools through the orchestrator's MCP server |
 | Repositories | only on a coding agent or a subscription agent; each one the agent can use ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
@@ -413,11 +416,18 @@ The model source is checked on every create and update, each a 422:
 | a `model` and a `harness`, `coding` off | `harness is for a coding agent, or a subscription agent, which has no model` |
 | no `model`, `coding` on | `a coding agent needs a model: the lead model it runs on a key` |
 | no `model`, no `harness` | `an agent without a model is a subscription agent: it needs a harness` |
-| no `model`, `harness` `cursor` or `antigravity` | `<Harness> cannot run a subscription agent: pick Claude Code or Codex, or give the agent a model` |
 | no `model`, and `temperature`, `thinking_level`, `max_tokens`, `max_input_tokens`, or `keep_tool_result_generations` off its default | `a subscription agent takes no <keys>: they set the model loop, which its harness replaces` |
 
 A switch from a subscription to a model on a key, and back, is one
 update of `model` and `harness`.
+
+A subscription agent on Cursor or Antigravity needs a repository: a
+create, and an update that removes its last repository or switches it
+to one of them, without one is 422 "`<Harness>` runs a subscription
+agent only with a repository, since it keeps its own system prompt:
+pick a repository, or another harness". A stored agent whose
+repositories are all gone still loads; its runs fail at start with
+`coding.repositories_missing` ([Runs](runs.md#harness-turns)).
 
 Validation errors are 422 with the message, for example
 `name must match ^[a-z][a-z0-9-]{0,62}$`, `max_steps must be a

@@ -8,6 +8,30 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A subscription agent runs on Cursor or Antigravity, when
+it has a repository. Neither CLI takes a system prompt in place of its
+own, so the run's composed prompt reaches it as a rules file in the
+agent's home, `~/.cursor/rules/guilds.mdc` or `~/.gemini/GEMINI.md`,
+beside the vendor's own system prompt, and the prompt says so; the
+orchestrator's MCP server is the one server of the CLI's configuration
+in the home for that turn. Both files are mode 0600, outside every
+repository's working tree, and gone when the turn ends. Each turn is
+one headless run of the CLI in the agent's repository; its messages
+and tool calls are the run's rows, its session is resumed, Antigravity's
+tokens are recorded on its reply at no price, and `max_turn_minutes`
+and `max_tool_calls` bound it. Creating such an agent without a
+repository, removing its last repository, or switching an agent to one
+of them without one is refused; a run of one whose repositories are
+all gone fails at start with `coding.repositories_missing`; a recipe's
+subscription role on one that lists no repository warns with
+`subscription.repository`, and apply asks for another harness. Breaking:
+`GET /api/harnesses` holds `needs_repository` in place of
+`subscription`, and the run error `subscription.not_runnable` and the
+recipe finding `subscription.harness` no longer occur. An Antigravity
+turn and code task read their prompt as a stream-json message on stdin
+in place of a prompt file named in `-p`
+([SEC-67](docs/architecture/security-register.md#sec-67--cursor-and-antigravity-run-a-subscription-agents-turn-under-their-vendors-own-system-prompt)).
+
 **Rebuild.** A subscription agent works in repositories. It picks
 them in `config.repositories` and under **Repositories** in its
 Settings, as a coding agent does, and a recipe's subscription role

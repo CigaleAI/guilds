@@ -1,6 +1,7 @@
 import {
   HARNESSES,
   EFFORTS,
+  type Harness,
   type RecipeFinding,
   type RecipeDocument,
   type RecipeRole,
@@ -12,10 +13,10 @@ import {
   credentialFix,
   HARNESS_INFO,
   harnessModelOf,
+  harnessNeedsRepository,
   isHarness,
   isHarnessOff,
-  isTurnHarness,
-  subscriptionHarnessMessage,
+  subscriptionRepositoryMessage,
 } from "../coding/harnesses.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
@@ -52,10 +53,16 @@ function harnessChoiceFinding(role: RecipeRole): RecipeFinding | null {
   if (isHarness(harness) && isHarnessOff(harness)) {
     return finding("harness.off", "warning", path, `${HARNESS_INFO[harness].label} is turned off on this box; apply asks for another`);
   }
-  if (isHarness(harness) && roleRunsOnSubscription(role) && !isTurnHarness(harness)) {
-    return finding("subscription.harness", "warning", path, `${subscriptionHarnessMessage(harness)}; apply asks for another`);
+  return isHarness(harness) ? subscriptionRepositoryFinding(role, harness) : null;
+}
+
+/** A subscription role on a harness that needs a repository, which lists none; null for any other role. */
+function subscriptionRepositoryFinding(role: RecipeRole, harness: Harness): RecipeFinding | null {
+  if (!roleRunsOnSubscription(role) || !harnessNeedsRepository(harness) || roleRepositories(role).length) {
+    return null;
   }
-  return null;
+  const path = `roles.${role.role}.config.harness`;
+  return finding("subscription.repository", "warning", path, `${subscriptionRepositoryMessage(harness)}; apply asks for another harness`);
 }
 
 /** The model-loop settings a subscription role sets, which apply leaves out. */
