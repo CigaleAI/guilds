@@ -189,6 +189,43 @@ export async function pollHarness(ops: ToolRun, callId: string, harness: Harness
   return keepMatching(HarnessPoll, poll.meta) ?? {};
 }
 
+/** Consecutive failed polls after which a harness is stopped and its turn ends. */
+export const HARNESS_POLL_FAILURES_MAX = 3;
+
+/**
+ * How a turn's poll loop ended: the harness exited on its own, its state was gone, it was
+ * cancelled or ran past its timeout, it stopped answering polls, or the run was cancelled before
+ * it started.
+ */
+export type Settled = "exited" | "missing" | "cancelled" | "timed_out" | "unresponsive" | "not_started";
+
+/** How a turn ended: `stopped` is null when the harness was not stopped; `result` is the `result` op's meta once read. */
+export type TurnEnding = {
+  settled: Settled | "unreadable";
+  stopped: boolean | null;
+  result: HarnessExit | null;
+};
+
+/**
+ * How the turn of the call `callId` names ends once its poll loop `settled`: a harness that
+ * exited has its result read, one whose state is gone has nothing left, and any other is stopped.
+ */
+export async function endHarnessTurn(
+  ops: ToolRun,
+  callId: string,
+  harness: Harness,
+  settled: Settled,
+): Promise<TurnEnding> {
+  if (settled === "missing") {
+    return { settled, stopped: null, result: null };
+  }
+  if (settled === "exited") {
+    const result = await readResult(ops, callId, harness);
+    return { settled: result === null ? "unreadable" : "exited", stopped: null, result };
+  }
+  return { settled, ...(await stopHarness(ops, callId, harness)) };
+}
+
 /** The raw event log the app reads of one `code_task` call, at most this much of it. */
 export const HARNESS_LOG_MAX_BYTES = 256 * 1024;
 

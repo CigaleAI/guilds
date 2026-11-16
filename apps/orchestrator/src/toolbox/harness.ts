@@ -5,17 +5,19 @@ import { callSegment } from "./code.js";
 import { buildBrief } from "./harness-brief.js";
 import {
   checkpoint,
+  endHarnessTurn,
+  HARNESS_POLL_FAILURES_MAX,
   launchHarness,
   opsRun,
   pause,
   pollHarness,
-  readResult,
   shownProgressLines,
   stopHarness,
   stringOrNull,
   type CheckpointRepository,
-  type HarnessExit,
   type HarnessPoll,
+  type Settled,
+  type TurnEnding,
 } from "./harness-ops.js";
 import { codeTaskText, failureDetail, isChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
 import { checkHarness, requiredHarness } from "./harness-setup.js";
@@ -35,8 +37,6 @@ export const CODE_TASK_DEFAULT_MINUTES = 30;
 export const CODE_TASK_MAX_MINUTES = 60;
 /** How often a running call is polled, and how long its minutes are; tests shorten both. */
 export const harnessTiming = { pollMs: 3000, minuteMs: 60_000 };
-/** Consecutive failed polls after which the harness is stopped and the call ends `interrupted`. */
-const POLL_FAILURES_MAX = 3;
 
 // --- the call's arguments ---------------------------------------------------
 
@@ -116,19 +116,6 @@ type HarnessTurn = {
   session: string | null;
   offset: number;
   failures: number;
-};
-
-/**
- * How the poll loop ended: the harness exited on its own, its state was gone, it was cancelled
- * or ran past its timeout, it stopped answering polls, or the run was cancelled before it started.
- */
-type Settled = "exited" | "missing" | "cancelled" | "timed_out" | "unresponsive" | "not_started";
-
-/** How a turn ended: `stopped` is null when the harness was not stopped; `result` is the `result` op's meta once read. */
-type TurnEnding = {
-  settled: Settled | "unreadable";
-  stopped: boolean | null;
-  result: HarnessExit | null;
 };
 
 const NOT_STARTED: TurnEnding = { settled: "not_started", stopped: null, result: null };
@@ -221,7 +208,7 @@ function interruption(run: ToolRun, turn: HarnessTurn): Settled | null {
 
 function countFailedPoll(turn: HarnessTurn, message: string): Settled | null {
   turn.failures += 1;
-  if (turn.failures < POLL_FAILURES_MAX) {
+  if (turn.failures < HARNESS_POLL_FAILURES_MAX) {
     return null;
   }
   writeLog("warn", message, { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
@@ -286,17 +273,6 @@ async function pollUntilSettled(services: ToolServices, run: ToolRun, hooks: Too
   }
 }
 
-async function endTurn(turn: HarnessTurn, settled: Settled): Promise<TurnEnding> {
-  if (settled === "missing") {
-    return { settled, stopped: null, result: null };
-  }
-  if (settled === "exited") {
-    const result = await readResult(turn.ops, turn.call_id, turn.harness);
-    return { settled: result === null ? "unreadable" : "exited", stopped: null, result };
-  }
-  return { settled, ...(await stopHarness(turn.ops, turn.call_id, turn.harness)) };
-}
-
 /** Starts the harness and polls it to the end; from `start` on, any way out but a clean exit or lost state stops it. */
 async function runHarnessTurn(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<TurnEnding> {
   let settled: Settled;
@@ -307,7 +283,7 @@ async function runHarnessTurn(services: ToolServices, run: ToolRun, hooks: ToolH
     await stopHarness(turn.ops, turn.call_id, turn.harness);
     throw error;
   }
-  return endTurn(turn, settled);
+  return endHarnessTurn(turn.ops, turn.call_id, turn.harness, settled);
 }
 
 /** What the machine says about a call the orchestrator lost track of when it restarted. */
