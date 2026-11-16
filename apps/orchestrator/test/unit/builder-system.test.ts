@@ -132,10 +132,10 @@ test("builder system prompt inlines the configured Guidelines template", () => {
   const guidelinesPath = path.join(dir, "system.md");
   writeFileSync(
     guidelinesPath,
-    'Custom guidelines for this box.\n<capability name="coding">Coding part.</capability><capability name="no_coding">No coding part.</capability>\n',
+    'Custom guidelines for this box.\n<capability name="browser_standard">Browser part.</capability><capability name="browser_optimized">Optimized part.</capability>\n',
   );
   const text = readBuilderSystemTemplate({ guidelinesPath });
-  assert.match(text, /<agent_guidelines>\nCustom guidelines for this box\.\nCoding part\.\n<\/agent_guidelines>/);
+  assert.match(text, /<agent_guidelines>\nCustom guidelines for this box\.\nBrowser part\.\n<\/agent_guidelines>/);
   assert.doesNotMatch(text, /You are an agent in a work guild/);
   assert.throws(
     () => readBuilderSystemTemplate({ guidelinesPath: path.join(dir, "missing.md") }),
