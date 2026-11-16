@@ -37,7 +37,9 @@ lives is the [Code map](code-map.md).
   the model on a billed provider, else `cost_source: unavailable`. The
   catalog rate prices uncached input, cache reads, and output;
   `cache_read_tokens` is a subset of `input_tokens`. A message records
-  the catalog's fetch date as `pricing_version`
+  the catalog's fetch date as `pricing_version`. A subscription
+  agent's turn records the tokens its harness reports on its reply,
+  with `cost_usd` 0 and `cost_source: subscription`
 
 ## Configuration
 
@@ -961,11 +963,12 @@ stdin, polls every second, and keeps each poll's events as rows
 through `events.commitMessage`: one parser per CLI
 (`generation/parse-claude-code.ts`, `generation/parse-codex.ts`) and
 the steps `HARNESS_TURN_STEPS` makes of its events
-(`generation/harness-rows.ts`). It
-keeps the session in `metadata.harness_turn` for the next generation
-to resume, and ends with `harness.start`, `harness.failed`,
-`harness.lost`, `harness.unresponsive`, or `harness.timed_out` when
-it does not exit cleanly. The server runs the harness's calls through
+(`generation/harness-rows.ts`), the reply holding the turn's usage
+at `cost_source: subscription`. It keeps the session in
+`metadata.harness_turn` for the next generation to resume, and ends
+with `harness.start`, `harness.failed`, `harness.lost`,
+`harness.unresponsive`, or `harness.timed_out` when it does not exit
+cleanly. The server runs the harness's calls through
 `ToolCalls.executeHarnessCall`, one at a time per grant; a call past
 `max_tool_calls` or one that files a blocking issue asks the turn to
 stop, and the loop stops the harness and records

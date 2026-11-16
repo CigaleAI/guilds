@@ -119,6 +119,12 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
       assert.equal(row.metadata.generation, 1);
     }
     assert.equal(published.filter((name) => name === "message.committed").length, 7);
+    assert.deepEqual(
+      [kept[6]?.metadata.usage, kept[6]?.metadata.cost_usd, kept[6]?.metadata.cost_source],
+      [{ input_tokens: 12, output_tokens: 140, cache_read_tokens: 0 }, 0, "subscription"],
+      "the reply records the turn's usage, with no price",
+    );
+    assert.ok(kept.slice(0, 6).every((row) => row.metadata.usage === undefined));
     assert.equal(published[0], "generation.started");
     assert.equal(published.at(-1), "generation.finished");
     assert.equal(db.run.status, "active", "a direct run waits for its next message");
@@ -171,6 +177,24 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal(second.stdin, "Yes, name the agent too.");
     assert.equal(second.system_prompt, "sys");
     assert.equal((db.run.metadata as { harness_turn?: { call_id: string } }).harness_turn?.call_id, "turn_2_r_1");
+  });
+
+  test("a turn whose usage follows a call, or whose reply has no usage after it, keeps both its rows", async () => {
+    const recorded = recordedEvents("claude-code");
+    const usage = recorded.at(-1)!;
+    const { loop, rows } = subscriptionLoop([...recorded.slice(0, 3), usage]);
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(rows().map((row) => [row.payload.role, row.payload.content, row.metadata.cost_source]), [
+      ["assistant", "I'll look at the greeting first.", undefined],
+      ["tool", "1\tprint('hello')\n", undefined],
+      ["assistant", "", "subscription"],
+    ], "with no reply held, an empty reply records the usage");
+
+    const unfinished = subscriptionLoop(recorded.slice(0, -1));
+    await unfinished.loop.generator.generate("r_1", 1);
+    const reply = unfinished.rows().at(-1);
+    assert.match(String(reply?.payload.content), /Should the greeting also name the agent\?$/, "the held reply is kept when the turn ends");
+    assert.equal(reply?.metadata.usage, undefined);
   });
 
   test("a cancel stops the CLI mid-tool, and the call it was in gets the interrupted result", async () => {

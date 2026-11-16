@@ -168,9 +168,26 @@ test("a direct message to a Codex subscription agent runs a turn of codex exec, 
   assert.ok(!call.argv.includes("resume"));
   assert.equal(call.mcp_config?.mcpServers.guilds?.url, `${mcpUrl}/mcp/${agentId}`);
 
+  assert.deepEqual(
+    [rows.at(-1)?.metadata.usage, rows.at(-1)?.metadata.cost_source],
+    [{ input_tokens: 9120, output_tokens: 212, cache_read_tokens: 4096 }, "subscription"],
+    "the reply records the turn's usage, on the subscription",
+  );
+
+  // The next turn's usage is what the thread's total holds past the first turn's.
+  const thread = { type: "turn.completed", usage: { input_tokens: 15000, cached_input_tokens: 6000, output_tokens: 300 } };
+  stub.replay([...RECORDED.slice(0, -1), JSON.stringify(thread)]);
   const next = await app.inject({ method: "POST", url: `/api/runs/${runId}/messages`, headers: HEADERS, payload: { content: "Yes, name the agent too." } });
   assert.equal(next.statusCode, 202, next.body);
   await settled(runId);
+  const resumed = await messages(runId);
+  assert.deepEqual(resumed.at(-1)?.metadata.usage, { input_tokens: 5880, output_tokens: 88, cache_read_tokens: 1904 });
+  const usage = (await app.inject({ method: "GET", url: `/api/agents/${agentId}/usage`, headers: HEADERS })).json();
+  assert.deepEqual(
+    [usage.input_tokens, usage.output_tokens, usage.cache_read_tokens, usage.cost_usd, usage.calls],
+    [15000, 300, 6000, 0, 2],
+    "the agent's usage counts each turn's tokens, at no cost",
+  );
   const second = stub.calls().at(-1);
   assert.ok(second);
   assert.deepEqual(second.argv.slice(1, 3), ["exec", "resume"]);

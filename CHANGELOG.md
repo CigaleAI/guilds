@@ -8,6 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A subscription agent's turn records the tokens it spent:
+its reply's metadata holds `usage` (input, output, cache reads, and
+cache writes where the CLI reports them) from Claude Code's `result`
+event or Codex's `turn.completed`, with `cost_usd` 0 and the new
+`cost_source: "subscription"`, and the agent's, guild's, and
+organisation's usage count it as one call at no cost. A Codex turn
+records what its thread's total holds past the run's earlier turns.
+`TokenUsage` gains an optional `cache_write_tokens`. In the operator
+app, a reply that records usage ends with its tokens and cost, or
+**on the subscription**, and a step's or generation's cost leaves a
+subscription turn out.
+
 **Rebuild.** A Codex subscription agent runs: each generation of its
 run is one turn of `codex exec` in the agent's sandbox, as a Claude
 Code one is. The run's composed system prompt replaces Codex's own

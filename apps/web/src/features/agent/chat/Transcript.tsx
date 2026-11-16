@@ -29,6 +29,7 @@ import { parseWakeUp } from "../../../api/wire";
 import { askedRequest } from "../../access/secrets";
 import {
   buildFlowSegments,
+  replyUsage,
   turnReasoning,
   turnText,
   type FlowCall,
@@ -193,6 +194,7 @@ type AgentTurnProps = { agent: AgentDetail; message: RunMessage };
 function AgentTurn({ agent, message }: AgentTurnProps) {
   const text = turnText(message);
   const reasoning = turnReasoning(message);
+  const usage = replyUsage(message);
   return (
     <AgentMessage
       name={agent.name}
@@ -206,6 +208,11 @@ function AgentTurn({ agent, message }: AgentTurnProps) {
         {message.metadata.finish_reason === "length" ? (
           <p className="text-xs text-t-ochre-fg">
             Output token limit reached; the reply stops here.
+          </p>
+        ) : null}
+        {usage ? (
+          <p className="text-xs text-muted" title={usage.title}>
+            {usage.label}
           </p>
         ) : null}
       </div>

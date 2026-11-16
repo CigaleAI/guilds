@@ -248,10 +248,15 @@ export type ToolMessage = { role: "tool"; tool_call_id: string; content: string 
 /** A stored message, as the model reads it. */
 export type MessagePayload = SystemMessage | UserMessage | AssistantMessage | ToolMessage;
 
+/**
+ * The tokens a model call, or a harness's turn, spent: its input, its output, and the parts of the
+ * input read from and written to the cache; cache writes only where the source reports them.
+ */
 export type TokenUsage = {
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
+  cache_write_tokens?: number;
 };
 
 /** What a model call records on the assistant message it returns. */
@@ -263,7 +268,8 @@ export type CompletionMetadata = {
   response_id: string | null;
   provider_request_id: string | null;
   cost_usd: number;
-  cost_source: "provider" | "catalog" | "unavailable";
+  /** Where the cost comes from; `subscription` for a harness's turn, which no price per token charges. */
+  cost_source: "provider" | "catalog" | "unavailable" | "subscription";
   /** The catalog's pricing version, when the catalog priced the call. */
   pricing_version?: string;
   reasoning?: string;

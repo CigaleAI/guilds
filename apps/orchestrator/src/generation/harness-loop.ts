@@ -14,6 +14,7 @@ import {
   modelSourceOf,
   type AssistantMessage,
   type Harness,
+  type TokenUsage,
   type RunConfigSnapshot,
   type RunHarnessTurn,
   type ToolCall,
@@ -49,7 +50,10 @@ import {
   HARNESS_TURN_STEPS,
   harnessToolRecord,
   interruptedHarnessToolRecord,
+  sessionTurnUsage,
+  subscriptionUsageRecord,
   type HarnessResultStep,
+  type HarnessUsageStep,
 } from "./harness-rows.js";
 import { HARNESS_TURN_MINUTES, harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
 import type { HarnessGrant, HarnessMcpServer } from "./harness-mcp.js";
@@ -107,6 +111,11 @@ type HarnessRunTurn = {
   offset: number;
   failures: number;
   pending: Map<string, PendingCall>;
+  /**
+   * The harness's latest message with no call of its own tools, kept back until its next event
+   * says whether it is the turn's reply, which records the turn's usage.
+   */
+  held: AssistantMessage | null;
 };
 
 /** How a subscription agent's turn's poll loop ends: as a harness's does, or stopped because the run's tool calls asked. */
@@ -179,6 +188,7 @@ export class HarnessLoop {
       }
       await this.recordEnding(gen, turn, ending);
     } finally {
+      await this.releaseHeld(gen, turn, null);
       await this.services.mcp.close(grant);
       await this.resolveHarnessCalls(gen.runId, turn.harness);
     }
@@ -288,6 +298,7 @@ export class HarnessLoop {
       offset: 0,
       failures: 0,
       pending: new Map(),
+      held: null,
     };
   }
 
@@ -390,14 +401,25 @@ export class HarnessLoop {
     for (const step of HARNESS_TURN_STEPS[turn.harness](raw, secrets, turn.call_id)) {
       if (step.kind === "message") {
         await this.keepMessage(gen, turn, step.payload);
-      } else {
+      } else if (step.kind === "result") {
+        await this.releaseHeld(gen, turn, null);
         await this.keepResult(gen, secrets, turn, step);
+      } else {
+        await this.keepUsage(gen, turn, step);
       }
     }
   }
 
-  /** Keeps a message of the harness's as an assistant row; its tool calls wait for their results. */
+  /**
+   * Keeps a message of the harness's as an assistant row once the message before it is kept; its
+   * tool calls wait for their results, and a message without any is held until the next event.
+   */
   private async keepMessage(gen: SubscriptionGeneration, turn: HarnessRunTurn, payload: AssistantMessage): Promise<void> {
+    await this.releaseHeld(gen, turn, null);
+    if (!toolCallsOf(payload).length) {
+      turn.held = payload;
+      return;
+    }
     await this.services.events.commitMessage(gen.runId, payload, {
       generation: gen.generation,
       from_harness: turn.harness,
@@ -431,6 +453,38 @@ export class HarnessLoop {
     await this.services.events.commitMessage(gen.runId, payload, {
       generation: gen.generation,
       ...metadata,
+    });
+  }
+
+  /**
+   * Keeps the tokens the turn spent on the message it holds, its reply, or on an empty reply when
+   * it holds none; a session's total counts only what the run's earlier turns did not.
+   */
+  private async keepUsage(gen: SubscriptionGeneration, turn: HarnessRunTurn, step: HarnessUsageStep): Promise<void> {
+    if (step.kind === "turn_usage") {
+      await this.releaseHeld(gen, turn, step.usage);
+      return;
+    }
+    const kept = (await this.services.db.listMessages(gen.runId)).flatMap((row) =>
+      row.metadata.from_harness === turn.harness && row.metadata.usage !== undefined ? [row.metadata.usage] : [],
+    );
+    await this.releaseHeld(gen, turn, sessionTurnUsage(step.usage, kept));
+  }
+
+  /**
+   * Keeps the message the turn holds as an assistant row, recording `usage`, the turn's tokens,
+   * when they came after it; with `usage` and no message held, an empty reply records them.
+   */
+  private async releaseHeld(gen: SubscriptionGeneration, turn: HarnessRunTurn, usage: TokenUsage | null): Promise<void> {
+    const held = turn.held;
+    turn.held = null;
+    if (held === null && usage === null) {
+      return;
+    }
+    await this.services.events.commitMessage(gen.runId, held ?? { role: "assistant", content: "" }, {
+      generation: gen.generation,
+      from_harness: turn.harness,
+      ...(usage === null ? {} : subscriptionUsageRecord(usage)),
     });
   }
 

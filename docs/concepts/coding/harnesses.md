@@ -311,7 +311,7 @@ machine that has it."
 | Codex credential | A ChatGPT login only; an `auth.json` holding only an API key is no credential |
 | Antigravity credential | A Google sign-in only |
 | Organisation model keys | Never in the sandbox |
-| Usage and cost | None recorded for harness calls |
+| Usage and cost | None recorded for a `code_task` call; a subscription agent's turn records its tokens on its reply, at no price ([Usage](../usage.md#cost-of-a-harness-turn)) |
 | Image | Codex always; Claude Code, Cursor, and Antigravity when built with them |
 | Harness configuration in the home | Removed before every call; logins and sessions kept |
 

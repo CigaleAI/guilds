@@ -566,8 +566,21 @@ three failed polls, a stop the MCP server's calls asked for, or an
 error. However the turn ends, the generation's token is revoked once
 the server has kept the call it is running, and a call of the
 harness's own tools still without a result gets the interrupted
-result, marked `from_harness`. Usage and cost are not recorded for a
-turn.
+result, marked `from_harness`.
+
+The turn's reply records the tokens the turn spent, over every model
+call of the CLI, as a model reply records its call's
+([Usage](usage.md#cost-of-a-harness-turn)): `metadata.usage`,
+`cost_usd` 0, and `cost_source: "subscription"`. A message of the CLI
+with no call of its own tools is held until the CLI's next event, so
+the reply is the one the usage follows; when none is held, an empty
+reply records it, and a turn that ends without its usage keeps the
+held message as it is.
+
+| CLI | Usage read from | The turn's tokens |
+| --- | --- | --- |
+| Claude Code | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the invocation's; input counts the cache's reads and writes |
+| Codex | `turn.completed`'s `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` | the thread's total less what the run's earlier Codex replies recorded; a total below that is a new thread's, all of it the turn's |
 
 `metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,

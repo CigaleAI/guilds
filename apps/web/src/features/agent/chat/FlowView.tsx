@@ -32,6 +32,7 @@ import {
   turnReasoning,
   turnText,
   turnUsage,
+  usageTitle,
   type FlowCall,
   type FlowSegment,
   type FlowStats,
@@ -159,19 +160,19 @@ function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues
   const input = sum(usages.map((usage) => usage.input_tokens));
   const output = sum(usages.map((usage) => usage.output_tokens));
   const cached = sum(usages.map((usage) => usage.cache_read_tokens));
+  const written = sum(usages.map((usage) => usage.cache_write_tokens));
   const costs = steps.map(stepCostUsd).filter((cost) => cost !== null);
   const kinds = new Set(calls.map((call) => call.info.kind));
   const facts: StepFact[] = [];
   if (input + output) {
     facts.push({
       label: `${formatTokens(input + output)} tok`,
-      title: [
-        `${input.toLocaleString()} in`,
-        `${output.toLocaleString()} out`,
-        cached ? `${cached.toLocaleString()} cached` : "",
-      ]
-        .filter(Boolean)
-        .join(" · "),
+      title: usageTitle({
+        input_tokens: input,
+        output_tokens: output,
+        cache_read_tokens: cached,
+        cache_write_tokens: written,
+      }),
     });
   }
   if (costs.length) facts.push({ label: formatCost(sum(costs)) });

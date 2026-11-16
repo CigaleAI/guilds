@@ -3,7 +3,16 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { claudeCodeAssistantMessage, claudeCodeTurnSteps, codexTurnSteps, harnessToolRecord, interruptedHarnessToolRecord, NOT_TEXT_OUTPUT } from "../../src/generation/harness-rows.js";
+import {
+  claudeCodeAssistantMessage,
+  claudeCodeTurnSteps,
+  codexTurnSteps,
+  harnessToolRecord,
+  interruptedHarnessToolRecord,
+  NOT_TEXT_OUTPUT,
+  sessionTurnUsage,
+  subscriptionUsageRecord,
+} from "../../src/generation/harness-rows.js";
 import { parseCodexEvents } from "../../src/generation/parse-codex.js";
 import { parseClaudeCodeEvents, type ClaudeCodeMessage } from "../../src/generation/parse-claude-code.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
@@ -16,9 +25,10 @@ test("a recorded Claude Code turn parses into its messages and its tools' result
   const events = parseClaudeCodeEvents(RECORDED);
   assert.deepEqual(
     events.map((event) => event.type),
-    ["assistant", "user", "assistant", "user", "assistant", "user", "assistant"],
-    "the init and result events make no row",
+    ["assistant", "user", "assistant", "user", "assistant", "user", "assistant", "result"],
+    "the init event makes no row",
   );
+  assert.deepEqual(events.at(-1), { type: "result", usage: { input_tokens: 12, output_tokens: 140, cache_read_tokens: 0 } });
   assert.deepEqual(events[0], {
     type: "assistant",
     content: [
@@ -152,7 +162,7 @@ test("a recorded Claude Code turn makes its messages and its tools' results, eac
   const steps = claudeCodeTurnSteps(RECORDED, {});
   assert.deepEqual(
     steps.map((step) => step.kind),
-    ["message", "result", "message", "result", "message", "result", "message"],
+    ["message", "result", "message", "result", "message", "result", "message", "turn_usage"],
   );
   assert.deepEqual(steps[1], {
     kind: "result",
@@ -165,7 +175,7 @@ test("a recorded Claude Code turn makes its messages and its tools' results, eac
 test("a recorded Codex turn parses into its tools' calls as they start and complete, and its message", () => {
   const events = parseCodexEvents(RECORDED_CODEX);
   assert.deepEqual(
-    events.map((event) => [event.type, event.type === "message" ? null : event.item.type]),
+    events.map((event) => [event.type, "item" in event ? event.item.type : null]),
     [
       ["tool_started", "command_execution"],
       ["tool_completed", "command_execution"],
@@ -173,9 +183,14 @@ test("a recorded Codex turn parses into its tools' calls as they start and compl
       ["tool_started", "command_execution"],
       ["tool_completed", "command_execution"],
       ["message", null],
+      ["thread_usage", null],
     ],
-    "the thread, turn, reasoning and usage events make no row",
+    "the thread, turn start, and reasoning events make no row",
   );
+  assert.deepEqual(events.at(-1), {
+    type: "thread_usage",
+    usage: { input_tokens: 9120, output_tokens: 212, cache_read_tokens: 4096 },
+  });
   assert.deepEqual(events[1], {
     type: "tool_completed",
     item: { id: "item_1", type: "command_execution", command: "bash -lc 'cat greet.py'", aggregated_output: "print('hello')\n" },
@@ -202,7 +217,7 @@ test("a Codex turn's calls are rows under the turn's id, announced as they start
   const steps = codexTurnSteps(RECORDED_CODEX, { TOKEN: "guild" }, "turn_1");
   assert.deepEqual(
     steps.map((step) => step.kind),
-    ["message", "result", "result", "message", "result", "message"],
+    ["message", "result", "result", "message", "result", "message", "session_usage"],
   );
   assert.deepEqual(steps[0], {
     kind: "message",
@@ -218,7 +233,7 @@ test("a Codex turn's calls are rows under the turn's id, announced as they start
     { harness: "codex", tool_use_id: "turn_1.item_2", output: "update /home/a_1/repos/app/greet.py" },
     "file_change",
   ]);
-  const reply = steps.at(-1);
+  const reply = steps.at(-2);
   assert.match(reply?.kind === "message" ? reply.payload.content : "", /\[REDACTED:TOKEN\]/, "a message is redacted");
 });
 
@@ -245,4 +260,52 @@ test("a Codex call of the orchestrator's MCP server makes no row; another server
     ],
   );
   assert.equal(codexTurnSteps(JSON.stringify({ type: "item.completed", item: { id: "i", type: "agent_message", text: " " } }), {}, "t").length, 0);
+});
+
+test("Claude Code's usage counts its cache reads and writes in its input; Codex's already does", () => {
+  const [claude] = parseClaudeCodeEvents(
+    JSON.stringify({
+      type: "result",
+      usage: { input_tokens: 10, output_tokens: 40, cache_read_input_tokens: 300, cache_creation_input_tokens: 50 },
+    }),
+  );
+  assert.deepEqual(claude, {
+    type: "result",
+    usage: { input_tokens: 360, output_tokens: 40, cache_read_tokens: 300, cache_write_tokens: 50 },
+  });
+  assert.deepEqual(parseClaudeCodeEvents(JSON.stringify({ type: "result", subtype: "success" })), [], "a result without usage reads as nothing");
+  const [codex] = parseCodexEvents(
+    JSON.stringify({
+      type: "turn.completed",
+      usage: { input_tokens: 3006, cached_input_tokens: 900, cache_write_input_tokens: 0, output_tokens: 156, reasoning_output_tokens: 21 },
+    }),
+  );
+  assert.deepEqual(codex, {
+    type: "thread_usage",
+    usage: { input_tokens: 3006, output_tokens: 156, cache_read_tokens: 900, cache_write_tokens: 0 },
+  });
+  assert.deepEqual(parseCodexEvents(JSON.stringify({ type: "turn.completed", usage: { input_tokens: "many" } })), []);
+});
+
+test("a session's turn spent what its total holds past the turns the run kept, or all of it in a new session", () => {
+  const first = { input_tokens: 3006, output_tokens: 156, cache_read_tokens: 900, cache_write_tokens: 10 };
+  const total = { input_tokens: 6021, output_tokens: 321, cache_read_tokens: 1800, cache_write_tokens: 25 };
+  assert.deepEqual(sessionTurnUsage(total, [first]), {
+    input_tokens: 3015,
+    output_tokens: 165,
+    cache_read_tokens: 900,
+    cache_write_tokens: 15,
+  });
+  assert.deepEqual(sessionTurnUsage(first, []), first, "a session's first turn spent its whole total");
+  assert.deepEqual(sessionTurnUsage(first, [total]), first, "a total below what the run kept is a new session's");
+  assert.deepEqual(
+    sessionTurnUsage({ input_tokens: 20, output_tokens: 2, cache_read_tokens: 0 }, [{ input_tokens: 5, output_tokens: 1, cache_read_tokens: 0 }]),
+    { input_tokens: 15, output_tokens: 1, cache_read_tokens: 0 },
+    "no cache writes when the total reports none",
+  );
+});
+
+test("a harness turn's usage is recorded with no price, from the subscription", () => {
+  const usage = { input_tokens: 12, output_tokens: 140, cache_read_tokens: 0 };
+  assert.deepEqual(subscriptionUsageRecord(usage), { usage, cost_usd: 0, cost_source: "subscription" });
 });

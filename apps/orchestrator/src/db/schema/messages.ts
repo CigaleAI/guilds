@@ -31,13 +31,23 @@ export type AttachmentRef = {
   kind: AttachmentKind;
 };
 
+/**
+ * The tokens a model call, or a harness's turn, spent: its input, its output, and the parts of the
+ * input read from and written to the cache, each a subset of `input_tokens`; cache writes only
+ * where the source reports them.
+ */
 export type TokenUsage = {
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
+  cache_write_tokens?: number;
 };
 
-export type CostSource = "provider" | "catalog" | "unavailable";
+/**
+ * Where a call's cost comes from: the provider's report, the catalog's prices, no price known, or
+ * the operator's subscription, which charges no price per token.
+ */
+export type CostSource = "provider" | "catalog" | "unavailable" | "subscription";
 
 /**
  * The fields of a reasoning block that a stream reads: the block a piece extends, and the text, the

@@ -56,6 +56,11 @@ in the Task show as their inlined bodies, the nested hop included.
   block collapses when the reply starts.
 - A reply cut by `finish_reason: length` says the output token limit
   was reached.
+- A reply that records usage ends with a line of its tokens and its
+  cost, such as **120 tok · $0.0020**, with input, output, and the
+  cache's reads and writes on hover. A subscription agent's reply
+  records its whole turn's tokens and reads **on the subscription** in
+  place of a cost.
 - While the agent generates and nothing has streamed yet, the
   transcript shows the agent's avatar, three pulsing dots, and
   **`<name>` is thinking…**. Once text streams, three pulsing dots sit
@@ -71,7 +76,8 @@ per generation. Its header shows:
   count
 - its time (model and tool time on hover), steps, tool calls, failed
   calls, tokens, and cost: the model replies' cost and the spend of
-  any tool result that records one, such as a `browse` call's
+  any tool result that records one, such as a `browse` call's; a
+  harness turn on the subscription has no price, so it shows none
 - a toolbar
 
 Below the header, the generation reads down a rail as one block per
