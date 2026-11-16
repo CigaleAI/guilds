@@ -177,9 +177,9 @@ result lands.
 
 ### Changes
 
-A run with repository changes ends with a **Changes** panel: each
-repository with its branch and diffstat, and **Show diff**, which
-fetches the run's diff from the agent's machine
+A run whose turns changed a repository ends with a **Changes** panel:
+each turn's repositories with their branch and diffstat, and **Show
+diff**, which fetches that turn's diff from the agent's machine
 ([Reviewing changes](coding/reviewing-changes.md)).
 
 ### Harness turns

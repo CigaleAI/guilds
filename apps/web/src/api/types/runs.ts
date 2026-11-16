@@ -52,8 +52,6 @@ export type Run = {
   updated_at: string;
   group_chat_through_seq: number | null;
   schedule_id?: string;
-  /** What a coding run changed in each repository, between its checkpoints. */
-  repos?: RunRepositoryChange[];
   /** What each turn of a subscription agent's run changed; a turn that changed nothing has none. */
   turn_changes?: RunTurnChange[];
   /** The run's pending wake-up, null when it has none; a run list leaves it out. */
@@ -87,7 +85,7 @@ export type NewRun = { message: string; files?: File[] };
 /** The operator's next message in a run, with the images attached to it. */
 export type RunMessageInput = { runId: string; content: string; files?: File[] };
 
-/** A run's or a turn's diff in one repository, cut at the server's limit. */
+/** A turn's diff in one repository, cut at the server's limit. */
 export type RunDiff = { repository: string; diff: string; truncated: boolean };
 
 /**

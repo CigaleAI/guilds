@@ -87,16 +87,12 @@ commit made elsewhere, such as from the **CLI** tab, gets none.
 
 ### The Changes panel
 
-On the **Chat** tab, a coding run's transcript ends with a **Changes**
-panel once an end checkpoint has recorded the run's repositories. Each
-repository shows its name, its branch, and its diffstat, such as
-"3 files · +40 −2", or "no changes". **Show diff** fetches the run's
-diff from the agent's machine, and **Hide diff** folds it. It is
-disabled with no changes.
-
-A subscription agent's run shows the same panel once a turn has changed
-a repository: each turn that did is under **Turn `<n>`**, with a row per
-repository it changed, and **Show diff** fetches that turn's diff.
+On the **Chat** tab, a subscription agent's run ends with a **Changes**
+panel once a turn has changed a repository. Each turn that did is under
+**Turn `<n>`**, with a row per repository it changed: its name, its
+branch, and its diffstat, such as "3 files · +40 −2". **Show diff**
+fetches that turn's diff from the agent's machine, and **Hide diff**
+folds it.
 
 ### Reading a diff
 
@@ -110,7 +106,7 @@ shows "Couldn't load the diff" with the reason.
 
 1. Read the agent's final reply: what it changed, what it ran, and what
    failed.
-2. Open the **Changes** panel and **Show diff** for each repository.
+2. Open the **Changes** panel and **Show diff** for each turn and repository.
 3. Review the pull request the agent opened on the git host, where the
    project's own checks run.
 

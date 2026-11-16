@@ -12,7 +12,6 @@ import type { Run, RunDiff, RunMessage, NewRun, RunMessageInput } from "../types
 export const runKeys = {
   agentRuns: (agentId: string) => ["agent", agentId, "runs"] as const,
   run: (runId: string) => ["run", runId] as const,
-  runDiff: (runId: string, repository: string) => ["run", runId, "diff", repository] as const,
   turnDiff: (runId: string, callId: string, repository: string) =>
     ["run", runId, "turn-diff", callId, repository] as const,
   runMessages: (runId: string) => ["run", runId, "messages"] as const,
@@ -140,17 +139,6 @@ export function useCancelWake() {
         run ? { ...run, pending_wake: null } : run,
       );
     },
-  });
-}
-
-/** The diff a run made in one repository, fetched from the agent's home on demand. */
-export function useRunDiff(runId: string, repository: string | null) {
-  return useQuery({
-    queryKey: runKeys.runDiff(runId, repository ?? ""),
-    enabled: Boolean(repository),
-    staleTime: Infinity,
-    queryFn: () =>
-      api<RunDiff>(`${runPath(runId)}/changes/${encodeURIComponent(repository ?? "")}/diff`),
   });
 }
 
