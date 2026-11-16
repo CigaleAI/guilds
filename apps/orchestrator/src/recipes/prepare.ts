@@ -67,10 +67,10 @@ export function roleCodes(role: RecipeRole): boolean {
   return role.config.coding === true;
 }
 
-/** The repositories a role's agent works on, by name: a coding role's list when it is one, else none. */
+/** The repositories a role's agent works on, by name: the list of a role that holds a harness when it is one, else none. */
 export function roleRepositories(role: RecipeRole): string[] {
   const listed = role.config.repositories;
-  return roleCodes(role) && isValidRepositoryList(listed) ? listed : [];
+  return roleTakesHarness(role) && isValidRepositoryList(listed) ? listed : [];
 }
 
 /**
@@ -132,7 +132,7 @@ function withoutSubscriptionLoopSettings(role: RecipeRole): RecipeRole["config"]
  * The agent config a role applies as: the role's, with the model and harness the operator chose
  * (else the recipe's), and the browser and coding flags settled. A subscription role has no model
  * and leaves out the model-loop settings it sets. Only a coding role and a subscription role keep
- * a harness, only a coding role its repositories, and the recipe's harness model and effort only
+ * a harness, only a role that holds one its repositories, and the recipe's harness model and effort only
  * with the recipe's harness, and secret aliases or repositories that do not validate are left out.
  * The agent browses with the step-by-step browser
  * tools. Every other setting the role leaves out takes its

@@ -79,7 +79,11 @@ it ([Tool names](#tool-names)). They keep a part of their own for its
 harness: where it runs, its home, its toolchains, its ports, that its
 secrets are variables it never prints, and, when the run offers a
 tool, that the guild's tools come from the platform's MCP server and
-that its own tools' calls count toward `max_tool_calls` too.
+that its own tools' calls count toward `max_tool_calls` too. A
+subscription agent that picks repositories also gets a part on them:
+where they are, where its turn starts, how it branches, commits, and
+pushes through git's credential helper, and the tool that opens a
+pull request when its run offers one.
 
 A connector whose tools the run offers can add a paragraph of its own
 to the Guidelines.
@@ -100,7 +104,7 @@ the snapshot as JSON. The JSON holds:
 - the collections the agent can read, with their columns
 - the agent's scripts
 - the names of the secrets the agent has, never their values
-- a coding agent's repositories
+- the repositories a coding agent or a subscription agent picks
 - facts a connector adds for the agent's logins
 
 Notes are not listed. The agent searches them with `note_find`
@@ -234,7 +238,19 @@ without its tags, when the condition holds, and removed otherwise:
 | `group_post` | the run offers `group_post` |
 | `schedules` | the run offers a schedule tool |
 | `issues` | the run offers `report_issue` |
+| `pull_request_tool` | the run offers the connector tool that opens a pull request on the provider of one of the agent's repositories |
+| `no_pull_request_tool` | the run offers no such tool |
+| `repositories` | the agent is a subscription agent that picks repositories |
+| `no_repositories` | the agent picks none, or is not a subscription agent |
 | `harness` | the agent is a subscription agent, whose harness runs its turns |
+
+Inside `pull_request_tool`, `<pull_request_tool/>` becomes the tool's
+`<tool>` tag, which composition then names as the run calls it
+([Tool names](#tool-names)). The pull request tool of a
+GitHub repository is the GitHub connector's `create_pull_request`, on
+the run's offer under its namespaced name, such as
+`github_create_pull_request`; a repository on another host has none
+([Repositories](coding/repositories.md#pull-requests)).
 
 The tools a part reads are those a direct run of the agent offers:
 the native tools its access grants under its switches, with
@@ -243,7 +259,8 @@ subscription agent. A part inside another is resolved first.
 
 Without scripts, the State intro drops the `scripts` explanation.
 Without tools, it drops the sentences on listing tools and the tool
-budget. A coding agent's State intro adds a line on `repositories`.
+budget. The State intro of a coding agent, and of a subscription agent
+that picks repositories, adds a line on `repositories`.
 
 ### Tool names
 
@@ -271,7 +288,7 @@ included, is written the same way.
 | `collections` | every collection the agent can read, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
 | `scripts` | the script catalog ([Scripts](scripts.md)) |
 | `environment` | bound secret names with descriptions ([Secrets](secrets.md)) |
-| `repositories` | a coding agent's guild repositories: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
+| `repositories` | the repositories a coding agent, or a subscription agent that picks some, works in: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
 | a connector key | what a connector's `state` hook returns for the agent's logins |
 
 ### Connector State and guidance
@@ -327,7 +344,8 @@ this order:
    since the last fire ([Routines](routines.md)).
 7. A subscription agent's harness: its container, its home, its
    toolchains, its ports, its secrets as variables, and where the
-   guild's tools come from.
+   guild's tools come from; with repositories, where they are, its
+   branch, commits and push, and how its pull request is opened.
 8. `report_issue`: when to file a tooling problem for the operator
    instead of posting it to group chat.
 

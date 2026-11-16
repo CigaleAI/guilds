@@ -91,7 +91,11 @@ run's next generation resumes the same session. A subscription agent:
   `max_tool_calls`, with every call of the harness's own;
 - takes images attached to a message as files in its home, whose
   paths its prompt names ([Runs](runs.md#attachments)), and has no
-  repositories or code tools;
+  code tools;
+- works in the repositories it picks, if any: its turn clones them,
+  starts in its one repository, and pushes branches through git's
+  credential helper with a token that pushes alone
+  ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them));
 - records each turn's tokens on its reply, at no price
   ([Usage](usage.md#cost-of-a-harness-turn)), and stops a turn after
   its **Max turn minutes**.
@@ -349,7 +353,7 @@ saves.
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
 | Subscription agent | no model; a harness, Claude Code or Codex; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools but the code tools through the orchestrator's MCP server |
-| Repositories | only on a coding agent; each one the agent can use ([Repositories](coding/repositories.md)) |
+| Repositories | only on a coding agent or a subscription agent; each one the agent can use ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
 | Kimi Code models | only on a coding agent |
@@ -391,7 +395,7 @@ the agent.
 | `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null; `claude-code` or `codex` without a model | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_effort` | effort or null; needs a harness | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
-| `repositories` | list of repository names, each once, that the agent can use; only on a coding agent | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
+| `repositories` | list of repository names, each once, that the agent can use; only on a coding agent or a subscription agent | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
 | `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
 | `scripting` | boolean | `true` | [Scripts](scripts.md) |
 | `memory` | boolean | `true` | [Memory](memory.md) |

@@ -1,11 +1,13 @@
 # Repositories
 
 A guild's repositories are the git repositories its
-[coding agents](index.md) can work in. Each coding agent picks the
-ones it works on, in its config's `repositories`. It clones each one
-it picks into its own [home](../agent-home.md), and the
-[harness](harnesses.md) runs there. A coding agent needs at least one
-before it can run.
+[coding agents](index.md) and its subscription agents can work in.
+Each such agent picks the ones it works on, in its config's
+`repositories`. It clones each one it picks into its own
+[home](../agent-home.md), and the [harness](harnesses.md) runs there.
+A coding agent needs at least one before it can run; a subscription
+agent that picks none works in its home. An agent on a key that does
+not code picks none.
 
 A repository comes from one of two places. It is picked on a
 [GitHub](../../tools-and-connectors/github.md) login, under **Tools**,
@@ -18,9 +20,10 @@ which clones a public repository.
 The repository's credential decides its git provider: GitHub for a
 GitHub login, the access-token provider for an access token, none
 without a credential. The provider gives the agent a token for that
-repository at each run. git only clones, fetches and pushes; a pull
-or merge request is opened with the host's connector tools, such as
-the GitHub connector's.
+repository at each run, or at each turn of a subscription agent. git
+only clones, fetches and pushes; a pull or merge request is opened
+with the host's connector tools, such as the GitHub connector's
+([Pull requests](#pull-requests)).
 
 ## Why it exists
 
@@ -83,6 +86,53 @@ hooks and configuration are the agent's.
 
 A token that expires is refreshed while the run goes on
 ([Tokens](#tokens)).
+
+### What a subscription agent's turn does with them
+
+A subscription agent's turn works in the repositories its agent picks,
+in its harness's CLI. At each generation the run checks the agent's
+picks first: one it can no longer use fails the run with
+`coding.repositories_gone`, naming it. An agent that picks none skips
+the rest, and its turn starts in its home. Then, once the harness
+check passes, for each repository it picks:
+
+1. **Tokens**, as a coding run's, with one difference: a GitHub
+   token holds contents write alone, which pushes a branch and opens
+   no pull request ([Tokens](#tokens)).
+2. **Identity and clone**, as a coding run's.
+3. **Turn start checkpoint** of each one's working tree, under the
+   turn's call id ([Reviewing changes](reviewing-changes.md#checkpoints)).
+
+The CLI starts in the repository's working tree when the agent picks
+one, and in its home when it picks several. It branches, commits, and
+pushes with its own tools: git's credential helper answers the push
+with the turn's token. The CLI's environment never holds `GH_TOKEN`
+or `GITHUB_TOKEN`, nor any repository token. Tokens that near their
+expiry are replaced before each poll of the turn.
+
+When the turn ends, however it ends, the run takes the turn's end
+checkpoint, records what the turn changed in each repository it
+changed ([Reviewing changes](reviewing-changes.md#refs)), and empties
+the agent's tokens file, so the credential helper answers no
+repository between turns.
+
+The system prompt of a subscription agent that picks repositories says
+which ones it has and where, where its turn starts, how it branches,
+commits and pushes, and how its pull request is opened
+([System prompt](../system-prompt.md#capability-parts-of-the-guidelines)).
+
+### Pull requests
+
+A pull request is opened with the connector tool of the repository's
+host, under that connector's own login and bindings, never with a
+repository token. For a GitHub repository it is the GitHub connector's
+`create_pull_request`, which a subscription agent reaches through the
+orchestrator's MCP server like any of its Guilds tools
+([Tools in a run](../../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)).
+Like every writing tool it starts Off. A subscription agent whose run
+offers it reads its name, as its harness calls it, in its system
+prompt. One whose run offers none, or whose repositories are on a host
+without a connector, reads that the pushed branch ends its part.
 
 ### Git identity
 
@@ -218,7 +268,7 @@ The coding strip counts the repositories a coding run clones
 | Rule | Value or behaviour |
 | --- | --- |
 | Name | `^[a-z][a-z0-9_-]{0,62}$`, unique in the guild; also the folder under `repos/` |
-| An agent's picks | Only on a coding agent; each a repository it can use, once; a pick it can no longer use stays until it is unpicked |
+| An agent's picks | Only on a coding agent or a subscription agent; each a repository it can use, once; a pick it can no longer use stays until it is unpicked |
 | URL | `https` on any host, without credentials, query, or fragment; SSH is refused |
 | Credential | One at most: a GitHub login, or an access token's secret and username |
 | With a GitHub login | `https://github.com/<owner>/<repository>`, reachable by that login's installation |
@@ -229,6 +279,8 @@ The coding strip counts the repositories a coding run clones
 | Who may change them | Any operator who sees the guild |
 | Clone timeout | 600 seconds per repository |
 | Token refresh | Replaced within 10 minutes of expiry |
+| GitHub token permissions | Contents and pull requests write for a coding run; contents write alone for a subscription agent's turn |
+| Tokens between turns | A subscription agent's tokens file is emptied when its turn ends |
 | Commit author email | Empty, or one email address of at most 254 characters, not on a `.invalid` domain |
 | Removing | Unpicks it from each agent that can no longer use it; leaves existing clones in place |
 
@@ -236,8 +288,9 @@ The coding strip counts the repositories a coding run clones
 
 ### Storage
 
-`agents.config.repositories` holds the names a coding agent picks, in
-order; it is empty on any other agent
+`agents.config.repositories` holds the names a coding agent or a
+subscription agent picks, in order; it is empty on an agent on a key
+that does not code
 ([Agents](../agents.md#reference)).
 
 `guild_repositories`:
@@ -345,16 +398,19 @@ gets no token.
 - `github`: for each GitHub connection the repositories use, the
   orchestrator mints an installation access token limited to those
   repositories by their GitHub ids, with contents and pull requests
-  write. A repository stored without an id gets the one GitHub lists
+  write for a coding run, and contents write alone for a subscription
+  agent's turn. A repository stored without an id gets the one GitHub lists
   under its path. GitHub's answer names every repository as it is now:
   a repository whose name or owner changed gets its current URL, on
   the guild repository and in the login's selection. The token lives
   one hour.
 - `access_token`: the value of the secret `secret_id` names, read when
   the generation starts, sent with the repository's `username`. It has
-  no expiry and is never refreshed. The secret is not added to the
-  agent's environment; an agent gets it there only when the secret is
-  also granted to it ([Secrets](../secrets.md)).
+  no expiry and is never refreshed, and carries what the host granted
+  it, for a coding run and a subscription agent's turn alike. The
+  secret is not added to the agent's environment; an agent gets it
+  there only when the secret is also granted to it
+  ([Secrets](../secrets.md)).
 
 The tokens are written through the sandbox file API to
 `/run/guilds/<agent id>/git-tokens.json`, outside every home, as
@@ -385,11 +441,13 @@ for any HTTPS host.
 working directory as `GH_TOKEN` for `gh`
 ([GitHub](../../tools-and-connectors/github.md)). A repository of
 another provider gives no `GH_TOKEN`. A harness gets no repository
-token in its environment
-([Harness environment](code-tasks.md#harness-environment)).
+token in its environment, a code task's or a subscription agent's turn
+alike ([Harness environment](code-tasks.md#harness-environment)).
 
-Before each `shell` command and each code task start and poll, a
-token within 10 minutes of expiry is replaced and rewritten.
+Before each `shell` command, each code task start and poll, and each
+poll of a subscription agent's turn, a token within 10 minutes of
+expiry is replaced and rewritten. When a subscription agent's turn
+ends, the tokens file is rewritten as `{ repositories: {} }`.
 
 The generation-start error `repository.token` covers:
 
@@ -413,8 +471,8 @@ The generation-start error `repository.token` covers:
 `config.repositories` is a list of repository names, each once
 ([Agents](../agents.md#reference)). A create or a reconfigure is 422:
 
-- with a list on an agent without `coding`: "repositories are only for
-  coding agents";
+- with a list on an agent on a key without `coding`: "repositories are
+  only for coding agents and subscription agents";
 - with a value that is not a list: "repositories must be a list of
   repository names"; with an item that is not a repository name:
   "repositories: `<item>` is not a repository name"; with a name twice:
@@ -423,18 +481,19 @@ The generation-start error `repository.token` covers:
   already pick: "repositories: the agent cannot use `<names>`: add it to
   the guild's Repositories first".
 
-A coding generation fails at start, before the machine wakes:
+A coding generation, and the generation of a subscription agent that
+picks repositories, fails at start, before the machine wakes:
 
 - with `coding.repositories_gone` while the agent picks a repository
   it can no longer use: "this agent picks `<names>`, which it can no
   longer use: add it back in the guild's Repositories, or unpick it in
   the agent's Settings under Repositories, then send again";
-- with `coding.repositories_missing` while it picks none: "this agent
-  has no repository: pick one in its Settings under Repositories, then
-  send again".
+- with `coding.repositories_missing` while it picks none, on a coding
+  agent: "this agent has no repository: pick one in its Settings under
+  Repositories, then send again".
 
 `GET /api/agents/:id/harness` lists `repositories`, the names a coding
-run clones (those the agent picks and can use, in its order), and
+run or a subscription agent's turn clones (those the agent picks and can use, in its order), and
 `usable_repositories`, the names it can use
 ([Harnesses](harnesses.md#reference)).
 
@@ -458,8 +517,9 @@ git wanted credentials, the error says which case it is:
 
 ### State
 
-A coding agent's State carries `repositories`, the ones it picks and
-can use, in its config's order: `[{ name, path, default_branch }]`,
+A coding agent's State, and that of a subscription agent that picks
+repositories, carries `repositories`, the ones it picks and can use,
+in its config's order: `[{ name, path, default_branch }]`,
 where `path` is `/home/<agent id>/repos/<name>`. Live git state is not
 in State.
 
@@ -469,8 +529,9 @@ in State.
 repositories an agent can use and the ones it picks),
 `apps/orchestrator/src/coding/agent-repositories.ts` (loading them for
 an agent, and the run errors of its picks),
-`apps/orchestrator/src/coding/git.ts` (the git provider, the
-agent's tokens, identity, clone errors),
+`apps/orchestrator/src/coding/git.ts` (the git provider, the token
+scope, the agent's tokens, identity, clone errors, and the connector
+tool that opens a pull request),
 `apps/orchestrator/src/coding/github-provider.ts` (GitHub's tokens),
 `apps/orchestrator/src/coding/access-token-provider.ts` (an access
 token's), `apps/orchestrator/src/github/tokens.ts` (minting a login's
@@ -482,7 +543,8 @@ repositories and the GitHub logins they use, and
 `retireInstallationGone`, which retires a login whose installation
 GitHub refused, while its repositories are listed and while a run's
 tokens are minted),
-`apps/orchestrator/src/generation/coding.ts` (a coding run's tokens),
+`apps/orchestrator/src/generation/coding.ts` (a coding run's and a
+subscription turn's tokens, clones, and checkpoints),
 `apps/orchestrator/src/mcp/connections.ts` (the GitHub login an
 operator sees),
 `apps/orchestrator/src/guilds/validation.ts` (the commit author

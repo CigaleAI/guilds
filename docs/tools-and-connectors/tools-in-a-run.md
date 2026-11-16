@@ -58,7 +58,11 @@ those tools on the orchestrator's MCP server
 ([MCP server](#the-mcp-server)), which Claude Code and Codex name
 `mcp__guilds__<tool>`, and the run's prompt names each tool that way.
 Each list and each call re-reads the agent's bindings and flags, and
-offers no tool its generation did not offer.
+offers no tool its generation did not offer. A connector tool reaches
+the harness this way too, under the connector's own login: a GitHub
+login's `create_pull_request`, while bound and On, is how a
+subscription agent opens the pull request of a branch it pushed
+([Repositories](../concepts/coding/repositories.md#pull-requests)).
 
 ### The MCP server
 

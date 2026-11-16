@@ -178,7 +178,7 @@ function unusedRepositories(recipe: RecipeDocument): RecipeFinding[] {
 
 /**
  * A role's repositories apply cannot give its agent: not a list of names each once, on a role that
- * does not code, or naming a repository the recipe does not list.
+ * holds no harness, or naming a repository the recipe does not list.
  */
 function repositoryFindings(role: RecipeRole, recipe: RecipeDocument): RecipeFinding[] {
   const listed = role.config.repositories;
@@ -187,8 +187,8 @@ function repositoryFindings(role: RecipeRole, recipe: RecipeDocument): RecipeFin
   if (!isValidRepositoryList(listed)) {
     return [finding("repositories.invalid", "error", path, "config.repositories must be a list of repository names, each once")];
   }
-  if (listed.length && role.config.coding !== true) {
-    return [finding("repositories.coding", "warning", path, "config.repositories is only for a coding role; apply leaves it out")];
+  if (listed.length && !roleTakesHarness(role)) {
+    return [finding("repositories.coding", "warning", path, "config.repositories is only for a coding or subscription role; apply leaves it out")];
   }
   const known = new Set(recipe.repositories.map((repository) => repository.name));
   return listed
