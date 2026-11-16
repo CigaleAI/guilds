@@ -29,7 +29,7 @@ export function liveHandleError(
   return kind === "agent" ? agentHandleError(trimmed) : handleError(trimmed);
 }
 
-/** The server's rule for a guild repository's name, which is also its folder under repos/ in the home of each coding agent that picks it. */
+/** The server's rule for a guild repository's name, which is also its folder under repos/ in the home of each subscription agent that picks it. */
 export const repositoryNamePattern = /^[a-z][a-z0-9_-]{0,62}$/;
 
 /** Why the server would refuse a repository name as typed; undefined while it is empty or valid. */

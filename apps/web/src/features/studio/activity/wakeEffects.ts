@@ -92,7 +92,7 @@ export type WakeEffects = {
   records: WriteGroup[];
   notes: WriteGroup[];
   scripts: WriteGroup[];
-  /** Repositories a coding wake changed, each with its diffstat. */
+  /** Repositories a wake's turns changed, each with its diffstat. */
   code: ActivityWrite[];
   memory: boolean;
 };

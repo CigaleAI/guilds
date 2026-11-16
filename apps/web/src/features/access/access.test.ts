@@ -225,7 +225,7 @@ test("the browse tool says which browser it needs where no agent is in view", ()
   assert.equal(isCapabilityNativeTool("browse"), true);
 });
 
-test("browser and coding tools follow the agent's capability, not a binding", () => {
+test("browser tools follow the agent's capability, not a binding", () => {
   const browser = binding("browser_click");
   assert.deepEqual(nativeToolDisplay(browser, "guild"), {
     enabled: true,

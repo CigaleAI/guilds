@@ -30,14 +30,11 @@ const models: OrgModels = {
   models: [model("openai/gpt-5"), model("openai/gpt-5-mini"), model("kimi/k3", "coding")],
 };
 
-test("the picker lists chosen models by connected provider, coding rows only for a coding agent", () => {
-  const plain = modelOptions(models, { coding: false });
+test("the picker lists chosen models by connected marketplace provider, never a coding plan's", () => {
+  const plain = modelOptions(models);
   assert.deepEqual(plain.map((group) => [group.label, group.options.map((option) => option.value)]), [
     ["OpenAI", ["openai/gpt-5", "openai/gpt-5-mini"]],
   ]);
-  const coding = modelOptions(models, { coding: true });
-  assert.deepEqual(coding.map((group) => group.label), ["OpenAI", "Kimi Code"]);
-  assert.deepEqual(modelOptions(models, { coding: true, marketplaceOnly: true }).map((group) => group.label), ["OpenAI"]);
   const kept = modelOptions(models, { current: "deepinfra/old" });
   assert.deepEqual(kept[0], { label: "Not offered", options: [{ value: "deepinfra/old", label: "deepinfra/old" }] });
   assert.deepEqual(modelOptions(undefined, { current: "openai/gpt-5" }), [
@@ -48,8 +45,7 @@ test("the picker lists chosen models by connected provider, coding rows only for
 
 test("the default is preselected where the picker lists it, else nothing", () => {
   assert.equal(preselectedModel(models), "openai/gpt-5");
-  assert.equal(preselectedModel({ ...models, default: "kimi/k3" }, { coding: false }), "");
-  assert.equal(preselectedModel({ ...models, default: "kimi/k3" }, { coding: true }), "kimi/k3");
+  assert.equal(preselectedModel({ ...models, default: "kimi/k3" }), "");
   assert.equal(preselectedModel({ ...models, default: null }), "");
   assert.equal(preselectedModel(undefined), "");
 });

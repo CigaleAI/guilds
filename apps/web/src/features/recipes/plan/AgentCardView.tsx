@@ -1,6 +1,5 @@
 import {
   ChevronDown,
-  Code2,
   Globe,
   PenLine,
   Plug,
@@ -236,7 +235,6 @@ function MetricEntries({ metric, metrics }: MetricEntriesProps) {
 
 const capabilityIcon: Record<AgentCapability["id"], LucideIcon> = {
   browser: Globe,
-  coding: Code2,
   subscription: SquareTerminal,
 };
 
@@ -265,10 +263,7 @@ function CapabilityList({ capabilities }: CapabilityListProps) {
         >
           <span
             tabIndex={0}
-            className={cn(
-              "flex cursor-help items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-xs font-medium",
-              capability.pending && "text-muted",
-            )}
+            className="flex cursor-help items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-xs font-medium"
           >
             <Icon icon={capabilityIcon[capability.id]} size={14} />
             {capability.label}

@@ -277,7 +277,7 @@ type HarnessFieldProps = {
 };
 
 /**
- * The harness of a coding or subscription agent and the model it runs, with a note that it runs on
+ * The harness of a subscription agent and the model it runs, with a note that it runs on
  * the operator's own subscription; for an existing agent, what the harness still needs to run.
  */
 export function HarnessField({ form, onChange, errors, agent, carried }: HarnessFieldProps) {

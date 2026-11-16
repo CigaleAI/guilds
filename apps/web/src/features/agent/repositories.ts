@@ -64,10 +64,10 @@ export function accessTokenSecrets(secrets: readonly Secret[]): Secret[] {
   return secrets.filter((secret) => secret.can_manage);
 }
 
-/** A repository a coding agent's checklist offers: one it can use, or one it picks and can no longer use. */
+/** A repository a subscription agent's checklist offers: one it can use, or one it picks and can no longer use. */
 export type RepositoryChoice = { name: string; picked: boolean; usable: boolean };
 
-/** The checklist of a coding agent's repositories: each one it can use, then each it picks and can no longer use. */
+/** The checklist of a subscription agent's repositories: each one it can use, then each it picks and can no longer use. */
 export function repositoryChoices(
   usable: readonly string[],
   picked: readonly string[],
@@ -85,7 +85,7 @@ export function togglePickedRepository(picked: readonly string[], name: string):
   return picked.includes(name) ? picked.filter((item) => item !== name) : [...picked, name];
 }
 
-/** Whether the agent picks a repository it can use, which a coding run needs to start. */
+/** Whether the agent picks a repository it can use, which a turn in repositories needs to start. */
 export function picksUsableRepository(usable: readonly string[], picked: readonly string[]): boolean {
   return picked.some((name) => usable.includes(name));
 }

@@ -1,16 +1,13 @@
 import type { SelectOption, SelectOptionGroup } from "@guildsrun/ui";
 import type { ModelProvider, OrgModelProvider, OrgModels } from "../../api/types/models";
 
-/**
- * Which models a model picker offers: `current` is the value it holds, `coding` whether the agent
- * it picks for has coding on, and `marketplaceOnly` whether it offers marketplace models alone.
- */
-export type ModelPickerScope = { current?: string; coding?: boolean; marketplaceOnly?: boolean };
+/** Which models a model picker offers: `current` is the value it holds. */
+export type ModelPickerScope = { current?: string };
 
 /**
- * The picker's options: the organisation's chosen models grouped by provider. Coding rows appear
- * only for an agent with coding on; `marketplaceOnly` leaves them out whatever the agent. A
- * current value the organisation no longer offers stays listed as it is.
+ * The picker's options: the organisation's chosen marketplace models grouped by provider; a coding
+ * plan's models run no agent. A current value the organisation no longer offers stays listed as
+ * it is.
  */
 export function modelOptions(
   models: OrgModels | undefined,
@@ -22,9 +19,7 @@ export function modelOptions(
   }
   const groups: SelectOptionGroup[] = models.providers
     .filter((provider) => provider.connected)
-    .filter(
-      (provider) => provider.kind !== "coding" || (options.coding && !options.marketplaceOnly),
-    )
+    .filter((provider) => provider.kind !== "coding")
     .map((provider) => ({
       label: provider.label,
       options: models.models
@@ -51,13 +46,10 @@ export function modelLabel(models: OrgModels | undefined, modelId: string): stri
 }
 
 /** The organisation's default when the picker may list it, else nothing. */
-export function preselectedModel(
-  models: OrgModels | undefined,
-  options: Omit<ModelPickerScope, "current"> = {},
-): string {
+export function preselectedModel(models: OrgModels | undefined): string {
   const chosen = models?.default ?? "";
   if (!chosen) return "";
-  const listed = modelOptions(models, options).some((group) =>
+  const listed = modelOptions(models).some((group) =>
     group.options.some((option) => option.value === chosen),
   );
   return listed ? chosen : "";

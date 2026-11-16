@@ -72,7 +72,7 @@ export function useInvestigateIssue() {
     pending: create.isPending,
     investigate: async (issue: Issue) => {
       const loaded = models.data ?? (await models.refetch()).data;
-      const model = preselectedModel(loaded, { marketplaceOnly: true });
+      const model = preselectedModel(loaded);
       if (!model) {
         toast({
           kind: "error",

@@ -57,7 +57,7 @@ function defaultLogin(connection: PlannedConnection): string {
 
 /**
  * What apply checks before it creates the guild: whether the recipe is approved, whether no model
- * provider is connected for an agent on a key, whether such an agent lacks a model or a coding or
+ * provider is connected for an agent on a key, whether such an agent lacks a model or a
  * subscription agent a harness, and the preview with its machine and errors.
  */
 type ApplyChecks = {
@@ -74,7 +74,7 @@ function blockingReason(checks: ApplyChecks): string | null {
     [!checks.approved, "Approve this recipe before applying it."],
     [checks.noProvider, "Connect a model provider on Model keys before applying."],
     [checks.missingModel, "Choose a model for each agent."],
-    [checks.missingHarness, "Choose a harness for each coding or subscription agent."],
+    [checks.missingHarness, "Choose a harness for each subscription agent."],
     [
       checks.preview.machine_id === null && checks.preview.machines.length > 0,
       "Choose the machine the agents go on.",
@@ -97,7 +97,7 @@ function choiceOf(connection: PlannedConnection, login: string): ApplyConnection
 
 /**
  * What applying an approved recipe creates, before anything is written: the new guild's name, the
- * machine every agent goes on, each agent's name and model, each coding agent's harness, and for
+ * machine every agent goes on, each agent's name and model, each subscription agent's harness, and for
  * each connector a live login to reuse or one to connect afterwards.
  */
 export function ApplyPreviewPage() {
@@ -139,7 +139,7 @@ export function ApplyPreviewPage() {
   const modelOf = (role: string) =>
     models[role] ?? data.models.find((item) => item.role === role)?.model ?? "";
   const roleHarness = (role: string) => data.harnesses.find((item) => item.role === role);
-  const onSubscription = (role: string) => roleHarness(role)?.subscription === true;
+  const onSubscription = (role: string) => roleHarness(role) !== undefined;
   const keyed = creates.agents.filter((agent) => !onSubscription(agent.role));
   const noProvider = hasConnectedProvider(orgModels.data) === false && keyed.length > 0;
   const missingModel = keyed.some((agent) => !modelOf(agent.role));
@@ -243,7 +243,6 @@ export function ApplyPreviewPage() {
               recommended={
                 data.models.find((item) => item.role === agent.role)?.recommended ?? null
               }
-              coding={agent.coding}
               orgModels={orgModels.data}
               harness={roleHarness(agent.role) ? harnessOf(agent.role) : null}
               harnessChoices={harnessChoicesOf(agent)}
@@ -378,9 +377,8 @@ type AgentChoicesProps = {
   model: string | null;
   onModel: (model: string) => void;
   recommended: string | null;
-  coding: boolean;
   orgModels: OrgModels | undefined;
-  /** Null hides the harness picker: the agent neither codes nor runs on a subscription. */
+  /** Null hides the harness picker: the agent runs on a key. */
   harness: Harness | "" | null;
   /** The harnesses the picker offers: a subscription agent's only those that run one. */
   harnessChoices: ReadonlyArray<{ value: Harness; label: string }>;
@@ -389,7 +387,7 @@ type AgentChoicesProps = {
 };
 
 /**
- * An agent's name and model before apply, and a coding or subscription agent's harness; no model
+ * An agent's name and model before apply, and a subscription agent's harness; no model
  * picker while no provider is connected, nor for a subscription agent.
  */
 function AgentChoices({
@@ -399,7 +397,6 @@ function AgentChoices({
   model,
   onModel,
   recommended,
-  coding,
   orgModels,
   harness,
   harnessChoices,
@@ -424,7 +421,7 @@ function AgentChoices({
           placeholder="Choose a model"
           value={model}
           onValueChange={onModel}
-          options={modelOptions(orgModels, { current: model, coding })}
+          options={modelOptions(orgModels, { current: model })}
           hint={recommended ? `The recipe recommends ${recommended}.` : undefined}
           {...(model ? {} : { error: "Choose a model." })}
         />

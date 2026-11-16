@@ -47,7 +47,7 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
   const base =
     config ??
     configFormOf(
-      { ...defaultAgentConfig, model: preselectedModel(models.data, { coding: false }) },
+      { ...defaultAgentConfig, model: preselectedModel(models.data) },
       "key",
     );
   const machine = chosenMachine(machines.data, base.machine_id);
