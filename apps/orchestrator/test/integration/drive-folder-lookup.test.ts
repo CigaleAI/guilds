@@ -124,9 +124,11 @@ test("a Drive login looks up its saved folder's path through its own login, and 
     assert.equal((await lookup(REPORTS, OUTSIDER)).statusCode, 404);
     assert.equal((await putSettings({ folder_id: ARCHIVE }, OUTSIDER)).statusCode, 404);
 
-    const cleared = await putSettings({});
-    assert.equal(cleared.statusCode, 422, cleared.body);
-    assert.deepEqual(await storedSettings(), { folder_id: REPORTS });
+    for (const refusedSettings of [{}, { folder_id: "" }, { folder_id: 42 }]) {
+      const cleared = await putSettings(refusedSettings);
+      assert.equal(cleared.statusCode, 422, cleared.body);
+      assert.deepEqual(await storedSettings(), { folder_id: REPORTS });
+    }
 
     const replaced = await putSettings({ folder_id: ARCHIVE });
     assert.equal(replaced.statusCode, 200, replaced.body);
