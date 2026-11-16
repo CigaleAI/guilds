@@ -304,3 +304,51 @@ test("flowTimeline orders model latency before each step's tool durations", () =
   assert.equal(total, 2436);
   assert.equal(timeline[4]?.label, "Step 2 · memory_write");
 });
+
+test("a subscription agent's harness turn reads as a flow of its own tools' calls and a reply", () => {
+  const harness = { generation: 1, from_harness: "claude-code" as const };
+  const rows = [
+    row(
+      { role: "user", content: "Make the greeting name the guild." },
+      { generation: 1, source: "ui" },
+    ),
+    row(
+      {
+        role: "assistant",
+        content: "I'll look first.",
+        tool_calls: [call("toolu_01", "Read", { file_path: "greet.py" })],
+      },
+      harness,
+    ),
+    toolRow("toolu_01", "Read", "1\tprint('hello')\n", harness),
+    row(
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [call("toolu_02", "Bash", { command: "python3 greet.py" })],
+      },
+      harness,
+    ),
+    toolRow("toolu_02", "Bash", "hello, guild", harness),
+    row({ role: "assistant", content: "Changed the greeting." }, harness),
+  ];
+  const { segments } = buildFlowSegments(rows, {
+    id: "r1",
+    errors: [],
+    config_snapshot: { tools: [], mcp: [] },
+  });
+  assert.deepEqual(
+    segments.map((segment) => segment.type),
+    ["message", "flow", "message"],
+  );
+  const flow = segments[1] as FlowSegment;
+  assert.deepEqual(
+    flow.steps.flatMap((step) =>
+      step.calls.map((item) => [item.info.name, item.info.kind, item.error]),
+    ),
+    [
+      ["Read", "read", null],
+      ["Bash", "execute", null],
+    ],
+  );
+});

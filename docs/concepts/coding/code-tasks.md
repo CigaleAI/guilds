@@ -216,20 +216,21 @@ to 60 seconds; each task checkpoint up to 300.
 | Op | Does |
 | --- | --- |
 | `check` | Whether the harness's CLI is installed, its version, its credential (`secret`, `login`, or none), and with a login its `account` |
-| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file, forks a supervisor in its own session, and returns |
-| `poll` | The progress lines after a byte offset into the log, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
+| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives one, the system prompt file, forks a supervisor in its own session, and returns |
+| `poll` | The raw events after a byte offset into the log as whole lines, their progress lines, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
 | `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
 | `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |
 | `log` | A kept log of the run: every event as a progress line, the number of events and of lines that were not JSON, the log's size, and its raw JSONL as whole lines from the start within `max_bytes`; `missing` once the log is gone |
 
 The supervisor starts the CLI in its own process group in
-`repos/<repo>`, appends the CLI's raw events to the log, waits for it,
-and records its exit code.
+`repos/<repo>`, or in the agent's home when the request names no
+repository, appends the CLI's raw events to the log, waits for it, and
+records its exit code.
 
 A call's state is under `/run/guilds/<agent id>/harness/` (mode 0700),
 which goes with the container: `<call id>.json` (what was started),
 `.pid` (the CLI's process group), `.exit`, `.session`, and `.stderr`.
-`result` removes them and the prompt file once the CLI has exited.
+`result` removes them and the prompt files once the CLI has exited.
 
 The raw event log, `.runs/<run id>/<call id>.harness.jsonl` in the
 agent's home, is stored unredacted like a `shell` log, under the same

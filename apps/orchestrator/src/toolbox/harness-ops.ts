@@ -1,11 +1,12 @@
 import { Type, type Static } from "typebox";
+import { harnessLaunch } from "../coding/harness-models.js";
 import type { Effort, Harness } from "../db/schema/index.js";
 import { keepMatching } from "../lib/decode.js";
 import { isObjectNode } from "../lib/json.js";
 import { errorMessage, writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 import { HARNESS_HELPER, runCodeHelper, type CodeResult } from "./code.js";
-import { createToolHooks, type ToolRun } from "./types.js";
+import { createToolHooks, type CancelEvent, type ToolRun } from "./types.js";
 
 const HARNESS_OP_TIMEOUT_SECONDS = 60;
 const CHECKPOINT_TIMEOUT_SECONDS = 300;
@@ -99,6 +100,7 @@ export type HarnessOpFields = {
   harness: Harness;
   repository?: string;
   prompt?: string;
+  system_prompt?: string;
   session_id?: string;
   model?: string;
   effort?: Effort;
@@ -113,6 +115,134 @@ export async function harnessOp(ops: ToolRun, callId: string, op: string, args: 
     { ...args, op, call_id: callId },
     { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS },
   );
+}
+
+/** Waits `ms`, or until the run is cancelled. */
+export async function pause(ms: number, cancel: CancelEvent | null): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const elapsed = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  if (cancel === null) {
+    await elapsed;
+    return;
+  }
+  const abort = new AbortController();
+  try {
+    await Promise.race([elapsed, cancel.wait(abort.signal).catch(() => undefined)]);
+  } finally {
+    clearTimeout(timer);
+    abort.abort();
+  }
+}
+
+/** The `result` op's meta, which also clears the call's state once the harness exited; null when unread. */
+export async function readResult(ops: ToolRun, callId: string, harness: Harness): Promise<HarnessExit | null> {
+  const result = await harnessOp(ops, callId, "result", { harness }).catch(() => null);
+  const exit = result === null ? null : (keepMatching(HarnessExit, result.meta) ?? {});
+  return exit === null || exit.missing === true ? null : exit;
+}
+
+/** Stops the harness and, once it has exited, reads its result. A call with no state left has nothing to stop. */
+export async function stopHarness(
+  ops: ToolRun,
+  callId: string,
+  harness: Harness,
+): Promise<{ stopped: boolean; result: HarnessExit | null }> {
+  const stop = await harnessOp(ops, callId, "stop", { harness }).catch(() => null);
+  const stopped = stop !== null && keepMatching(HarnessStop, stop.meta)?.exited !== false;
+  return { stopped, result: stopped ? await readResult(ops, callId, harness) : null };
+}
+
+/**
+ * What a harness CLI is started with: the harness, the prompt it reads on stdin or from its file,
+ * the repository it runs in (null for the agent's home), the system prompt that replaces its own,
+ * the session it resumes, and the model and effort the agent sets for it, each null to leave it
+ * to the harness.
+ */
+export type HarnessStart = {
+  harness: Harness;
+  prompt: string;
+  repository: string | null;
+  system_prompt: string | null;
+  session_id: string | null;
+  model: string | null;
+  effort: Effort | null;
+};
+
+/** Starts the harness CLI for the call `callId` names on the machine, under the model name and effort the CLI takes. */
+export async function launchHarness(ops: ToolRun, callId: string, start: HarnessStart): Promise<void> {
+  const launch = harnessLaunch(start.harness, start.model, start.effort);
+  const repository = start.repository ? { repository: start.repository } : {};
+  const system = start.system_prompt ? { system_prompt: start.system_prompt } : {};
+  const resume = start.session_id ? { session_id: start.session_id } : {};
+  const model = launch.model ? { model: launch.model } : {};
+  const effort = launch.effort ? { effort: launch.effort } : {};
+  await harnessOp(ops, callId, "start", {
+    harness: start.harness,
+    prompt: start.prompt,
+    ...repository,
+    ...system,
+    ...resume,
+    ...model,
+    ...effort,
+  });
+}
+
+/** One poll of a running harness: what the `poll` op says, and the raw JSONL events it read past the offset. */
+export type HarnessPollResult = { poll: HarnessPoll; events: string };
+
+/** One `poll` of the call `callId` names, from the log's byte `offset`. */
+export async function pollHarness(
+  ops: ToolRun,
+  callId: string,
+  harness: Harness,
+  offset: number,
+): Promise<HarnessPollResult> {
+  const result = await harnessOp(ops, callId, "poll", { harness, offset });
+  return { poll: keepMatching(HarnessPoll, result.meta) ?? {}, events: result.text };
+}
+
+/** Where the event log of the call `callId` of run `runId` is kept, under the agent's home. */
+export function harnessLogPath(runId: string, callId: string): string {
+  return `.runs/${runId}/${callId}.harness.jsonl`;
+}
+
+/** Consecutive failed polls after which a harness is stopped and its turn ends. */
+export const HARNESS_POLL_FAILURES_MAX = 3;
+
+/**
+ * How a turn's poll loop ended: the harness exited on its own, its state was gone, it was
+ * cancelled or ran past its timeout, it stopped answering polls, or the run was cancelled before
+ * it started.
+ */
+export type Settled = "exited" | "missing" | "cancelled" | "timed_out" | "unresponsive" | "not_started";
+
+/** How a turn ended: `stopped` is null when the harness was not stopped; `result` is the `result` op's meta once read. */
+export type TurnEnding = {
+  settled: Settled | "unreadable";
+  stopped: boolean | null;
+  result: HarnessExit | null;
+};
+
+/**
+ * How the turn of the call `callId` names ends once its poll loop `settled`: a harness that
+ * exited has its result read, one whose state is gone has nothing left, and any other is stopped.
+ */
+export async function endHarnessTurn(
+  ops: ToolRun,
+  callId: string,
+  harness: Harness,
+  settled: Settled,
+): Promise<TurnEnding> {
+  if (settled === "missing") {
+    return { settled, stopped: null, result: null };
+  }
+  if (settled === "exited") {
+    const result = await readResult(ops, callId, harness);
+    return { settled: result === null ? "unreadable" : "exited", stopped: null, result };
+  }
+  return { settled, ...(await stopHarness(ops, callId, harness)) };
 }
 
 /** The raw event log the app reads of one `code_task` call, at most this much of it. */

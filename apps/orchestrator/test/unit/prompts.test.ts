@@ -355,6 +355,89 @@ test("state intro omits the scripts line when scripting is off", () => {
   assert.equal(on, STATE_INTRO);
 });
 
+test("a run that offers no tool drops the tool budget and every part on a tool it does not offer", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const bare = standingForCapabilities(text, {
+    scripts: false,
+    notes: false,
+    browser: false,
+    coding: false,
+    memory: true,
+    memoryWrite: false,
+    tools: false,
+    artifacts: false,
+    groupPost: false,
+    schedules: false,
+    issues: false,
+  });
+  for (const gone of [
+    "remaining_tool_calls",
+    "max_tool_calls",
+    "listing tools",
+    "Call only the tools",
+    "memory_write",
+    "one canonical home",
+    "Use collections for structured records",
+    "It is only for coordination",
+    "decide who to tag",
+    "tag the agent",
+    "Schedule wake-up:",
+    "report_issue",
+    "`shell`",
+    "A script",
+    "code_task",
+    "<capability",
+  ]) {
+    assert.ok(!bare.includes(gone), gone);
+  }
+  assert.ok(bare.includes("Use it as your initial context."));
+  assert.ok(bare.includes("do the part your domain owns. When those fields are empty"));
+  assert.ok(bare.includes("Group Chat info:"), "a group run's opening message is still explained");
+  assert.ok(!bare.includes("$GUILDS_PORTS"), "the harness part is for a subscription agent");
+});
+
+test("a key agent without group_post, schedules, or report_issue loses only those parts", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const caps = { scripts: false, notes: true, browser: false, coding: false };
+  const all = standingForCapabilities(text, caps);
+  const without = standingForCapabilities(text, { ...caps, groupPost: false, schedules: false, issues: false });
+  assert.ok(all.includes("It is only for coordination") && !without.includes("It is only for coordination"));
+  assert.ok(all.includes("Schedule wake-up:") && !without.includes("Schedule wake-up:"));
+  assert.ok(all.includes("Call `report_issue`") && !without.includes("report_issue"));
+  assert.ok(without.includes("remaining_tool_calls: N"));
+  assert.ok(without.includes("one canonical home"));
+});
+
+test("a subscription agent's harness reads where it runs, its home, and its ports", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const harness = standingForCapabilities(text, {
+    scripts: false,
+    notes: false,
+    browser: false,
+    coding: false,
+    tools: false,
+    artifacts: false,
+    groupPost: false,
+    schedules: false,
+    issues: false,
+    harness: true,
+  });
+  assert.ok(harness.includes("in your own Linux container, as root, with\nyour own tools"));
+  assert.ok(harness.includes("Your working directory is your home (`$HOME`)"));
+  assert.ok(harness.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
+  assert.ok(harness.includes("Never print their values"));
+  assert.ok(!harness.includes("code_task"));
+  assert.ok(!harness.includes("<capability"));
+});
+
+test("the state intro of a run that offers no tool says nothing of listing tools or a tool budget", () => {
+  const intro = stateIntroForCapabilities({ scripts: false, notes: false, browser: false, coding: false, tools: false });
+  assert.ok(!intro.includes("listing tools"));
+  assert.ok(!intro.includes("tool-invocation budget"));
+  assert.ok(intro.startsWith("A snapshot of the guild at the start of this run. Use it as your initial context.\n"));
+  assert.ok(intro.includes("`utc_now` is the UTC instant"));
+});
+
 test("the State section lists each agent and its purpose", () => {
   const state = emptyRunState();
   state.group.members = [{ name: "researcher", focus: "reads papers" }, { name: "writer" }];

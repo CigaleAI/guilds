@@ -537,7 +537,7 @@
       "count": 1
     }
   },
-  "src/toolbox/harness.ts": {
+  "src/toolbox/harness-ops.ts": {
     "limits/silent-catch": {
       "count": 3
     }

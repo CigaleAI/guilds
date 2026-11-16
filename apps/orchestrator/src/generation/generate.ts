@@ -1,5 +1,6 @@
 import { isOptimizedBrowserOn } from "../agents/config.js";
 import { agentActor } from "../artifacts/actors.js";
+import { isTurnHarness } from "../coding/harnesses.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
@@ -37,6 +38,7 @@ import {
   type OperationFailure,
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
+import type { HarnessLoop, SubscriptionGeneration } from "./harness-loop.js";
 import { runStanding, runWasResumed } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
@@ -57,8 +59,11 @@ import type { WorkspaceLimits } from "./workspace.js";
 const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 const SCHEDULE_WAKE_PREFIX = "Schedule wake-up: ";
 
-/** A generation under way: its run and agent as it started, and the snapshot it runs with. */
-export type Generation = RunGeneration & { run: RunRow; agent: AgentRow; snapshot: KeyRunConfigSnapshot };
+/** A generation of a run on a model on a key, as it started, which the model loop runs. */
+export type KeyGeneration = RunGeneration & { run: RunRow; agent: AgentRow; source: "key"; snapshot: KeyRunConfigSnapshot };
+
+/** A generation under way: its run and agent as it started, and the snapshot of its model source it runs with. */
+export type Generation = KeyGeneration | SubscriptionGeneration;
 
 /** The containers a generation runs in: its machine's, and the agent's on it with the run's environment. */
 type RunSandboxes = { machine: SandboxHandle; agent: SandboxHandle };
@@ -160,6 +165,7 @@ export type RunGeneratorServices = {
   generations: ActiveGenerations;
   machines: AgentMachines;
   completion: ModelCompletion;
+  harness: HarnessLoop;
   coding: CodingRuns;
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
@@ -170,9 +176,10 @@ export type RunGeneratorServices = {
 };
 
 /**
- * Generates runs: the agent's home, secrets, container, and tools set up, then model steps
- * and their tool calls until the model stops, a limit or failure ends the generation, a coding
- * run hands off, or a cancel stops it.
+ * Generates runs: the agent's home, secrets, container, and tools set up, then, on a model on a
+ * key, model steps and their tool calls until the model stops, a limit or failure ends the
+ * generation, a coding run hands off, or a cancel stops it; on a subscription, one turn of the
+ * agent's harness.
  */
 export class RunGenerator {
   constructor(private readonly services: RunGeneratorServices) {}
@@ -222,8 +229,8 @@ export class RunGenerator {
   }
 
   /**
-   * The generation with its run and agent, its log fields naming them, and the model its snapshot
-   * runs on; null when either is gone, or when the run is a subscription agent's, which fails here.
+   * The generation with its run and agent, and its log fields naming them; null when either is
+   * gone, or when its model source cannot run it.
    */
   private async startedGeneration(turn: RunGeneration): Promise<Generation | null> {
     const { db, events } = this.services;
@@ -237,13 +244,27 @@ export class RunGenerator {
       return null;
     }
     turn.log = { run_id: turn.runId, agent_id: agent.id, guild_id: agent.guild_id };
-    const source = modelSourceOf(run.config_snapshot);
-    if (source.kind === "subscription") {
-      const refused = new SubscriptionRunUnavailable();
-      await events.recordError(turn, refused.code, refused);
+    return this.generationOf(turn, run, agent);
+  }
+
+  /**
+   * The generation on the model source its snapshot states: the model on a key, or the harness of
+   * a subscription; null when a subscription names no harness that runs its turns, and the run
+   * says why.
+   */
+  private async generationOf(turn: RunGeneration, run: RunRow, agent: AgentRow): Promise<Generation | null> {
+    const snapshot = run.config_snapshot;
+    const source = modelSourceOf(snapshot);
+    if (source.kind === "key") {
+      return { ...turn, run, agent, source: "key", snapshot: { ...snapshot, model: source.model } };
+    }
+    const harness = snapshot.harness;
+    if (harness === null || !isTurnHarness(harness)) {
+      const refused = harness === null ? harnessMissingError() : new SubscriptionRunUnavailable(harness);
+      await this.services.events.recordError(turn, refused.code, refused);
       return null;
     }
-    return { ...turn, run, agent, snapshot: { ...run.config_snapshot, model: source.model } };
+    return { ...turn, run, agent, source: "subscription", snapshot: { ...snapshot, model: null, harness } };
   }
 
   /**
@@ -331,15 +352,22 @@ export class RunGenerator {
     await task;
   }
 
-  /** Sets the generation up and runs its steps; afterwards a coding run's checkpoints and the workspace sizes are kept. */
+  /**
+   * Sets the generation up and runs it, in model steps on a key or in a turn of the harness on a
+   * subscription; afterwards a coding run's checkpoints and the workspace sizes are kept.
+   */
   private async runGeneration(gen: Generation): Promise<void> {
-    const { coding, workspace, generations } = this.services;
+    const { coding, workspace, generations, harness } = this.services;
     const ready = await this.setUp(gen);
     if (ready === null) {
       return;
     }
     try {
-      await this.runSteps(gen, ready.tools);
+      if (gen.source === "key") {
+        await this.runSteps(gen, ready.tools);
+      } else {
+        await harness.runTurn(gen, ready.tools);
+      }
     } finally {
       if (gen.snapshot.coding) {
         await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox, ready.tools.run.code_repositories);
@@ -367,7 +395,10 @@ export class RunGenerator {
     if (sandboxes === null) {
       return null;
     }
-    const tools = await this.generationTools(gen, sandboxes, secrets);
+    const tools =
+      gen.source === "key"
+        ? await this.generationTools(gen, sandboxes, secrets)
+        : await this.harnessTools(gen, sandboxes, secrets);
     return (await this.isReady(gen, sandboxes.machine, tools)) ? { tools, sandbox: sandboxes.machine } : null;
   }
 
@@ -441,13 +472,16 @@ export class RunGenerator {
   }
 
   /**
-   * Whether the generation may take its first step: the workspace has room, and a coding run's
-   * harness is ready and its repositories are cloned.
+   * Whether the generation may take its first step: the workspace has room, a subscription's or a
+   * coding run's harness is ready, and a coding run's repositories are cloned.
    */
   private async isReady(gen: Generation, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     const { workspace, coding } = this.services;
     if (!(await workspace.hasRoom(gen, gen.agent, sandbox))) {
       return false;
+    }
+    if (gen.source === "subscription") {
+      return coding.harnessReady(gen, tools.run);
     }
     if (!gen.snapshot.coding) {
       return true;
@@ -457,7 +491,7 @@ export class RunGenerator {
 
   /** The tools the generation calls: those its snapshot froze that the agent's live bindings and settings still offer. */
   private async generationTools(
-    gen: Generation,
+    gen: KeyGeneration,
     sandboxes: RunSandboxes,
     secrets: GenerationSecrets,
   ): Promise<GenerationTools> {
@@ -481,7 +515,27 @@ export class RunGenerator {
     };
   }
 
-  private async offeredNames(gen: Generation, frozen: RunConfigSnapshot["tools"]): Promise<Set<string>> {
+  /**
+   * The run record a subscription's harness runs under, which offers no tool, beside the values
+   * its rows are redacted with. No step of the model loop's set-up runs for it.
+   */
+  private async harnessTools(
+    gen: SubscriptionGeneration,
+    sandboxes: RunSandboxes,
+    secrets: GenerationSecrets,
+  ): Promise<GenerationTools> {
+    const offer: ToolOffer = { names: new Set(), scripts: [], connections: new Map() };
+    return {
+      run: await this.toolRun(gen, sandboxes, secrets, offer),
+      hooks: this.toolHooks(gen, sandboxes),
+      schemas: [],
+      secrets: secrets.values,
+      connections: offer.connections,
+      maxToolCalls: gen.snapshot.max_tool_calls,
+    };
+  }
+
+  private async offeredNames(gen: KeyGeneration, frozen: RunConfigSnapshot["tools"]): Promise<Set<string>> {
     const { agent, run } = gen;
     const scope: ToolBindingScope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
     const rows = await this.services.db.listBindingsCovering(scope);
@@ -503,7 +557,7 @@ export class RunGenerator {
    * browser on and the System One key is not set, and records `browse_integration_off_at` on the
    * run's metadata so later generations of the run do not log it again.
    */
-  private async warnBrowseKeyMissing(gen: Generation): Promise<void> {
+  private async warnBrowseKeyMissing(gen: KeyGeneration): Promise<void> {
     const { agent, run } = gen;
     if (agent.config.browser_optimized !== true || isOptimizedBrowserOn(agent.config)) {
       return;
@@ -582,7 +636,7 @@ export class RunGenerator {
   }
 
   /** Model steps until the model stops calling tools, or the step, tool-call, or input limit ends the run. */
-  private async runSteps(gen: Generation, tools: GenerationTools): Promise<void> {
+  private async runSteps(gen: KeyGeneration, tools: GenerationTools): Promise<void> {
     const maxSteps = gen.snapshot.max_steps;
     for (let step = 0; step < maxSteps; step += 1) {
       if (this.services.generations.isCancelled(gen.runId)) {
@@ -603,7 +657,7 @@ export class RunGenerator {
   }
 
   /** Whether the run has made its last tool call; a run that has completes with `generation.max_tool_calls`. */
-  private async reachedToolLimit(gen: Generation, tools: GenerationTools): Promise<boolean> {
+  private async reachedToolLimit(gen: KeyGeneration, tools: GenerationTools): Promise<boolean> {
     const { db, events } = this.services;
     if (executedToolCalls(await db.listMessages(gen.runId)) < tools.maxToolCalls) {
       return false;
@@ -622,7 +676,7 @@ export class RunGenerator {
    * blocking issue the agent reported, a limit that completes the run, or a failed model call,
    * and the run says which.
    */
-  private async stepOrStop(gen: Generation, tools: GenerationTools): Promise<ToolCall[] | null> {
+  private async stepOrStop(gen: KeyGeneration, tools: GenerationTools): Promise<ToolCall[] | null> {
     const { db, events, chains, toolCalls } = this.services;
     try {
       return await this.modelStep(gen, tools);
@@ -653,7 +707,7 @@ export class RunGenerator {
    * Calls the model with the run's history and runs the tool calls it makes. A history over
    * the input limit ends the run; a coding run's history at the hand-off share hands off.
    */
-  private async modelStep(gen: Generation, tools: GenerationTools): Promise<ToolCall[]> {
+  private async modelStep(gen: KeyGeneration, tools: GenerationTools): Promise<ToolCall[]> {
     const { db, completion, events, toolCalls } = this.services;
     const maxInputTokens = gen.snapshot.max_input_tokens;
     const agent = await db.getAgent(gen.run.agent_id);

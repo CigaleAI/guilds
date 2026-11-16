@@ -42,6 +42,7 @@ import { generationLive, ModelCompletion, modelCompletionDatabase } from "./comp
 import { isAdmissionRefusal, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
 import { RunEventBus, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase } from "./generate.js";
+import { HarnessLoop, harnessLoopDatabase } from "./harness-loop.js";
 import { runWasResumed } from "./lifecycle.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
 import {
@@ -99,6 +100,7 @@ function generationDatabase(db: Queryable) {
     ...runsDatabase(db),
     ...runChainsDatabase(db),
     ...runWakesDatabase(db),
+    ...harnessLoopDatabase(db),
     ...runGeneratorDatabase(db),
     ...loopDatabase(db),
   };
@@ -178,6 +180,7 @@ export class GenerationLoop implements GroupRunner {
   machines: AgentMachines;
   preparation: RunPreparation;
   completion: ModelCompletion;
+  harness: HarnessLoop;
   coding: CodingRuns;
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
@@ -230,6 +233,7 @@ export class GenerationLoop implements GroupRunner {
       credentials: this.credentials,
       attachments: this.attachments,
     });
+    this.harness = new HarnessLoop({ db, events: this.events, machines: this.machines });
     this.secrets = new RunSecrets(db, this.machines);
     const { tools } = services;
     this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events, tools });
@@ -276,6 +280,7 @@ export class GenerationLoop implements GroupRunner {
       generations: this.generations,
       machines: this.machines,
       completion: this.completion,
+      harness: this.harness,
       coding: this.coding,
       workspace: this.workspace,
       toolCalls: this.toolCalls,
@@ -537,6 +542,7 @@ export class GenerationLoop implements GroupRunner {
   async reconcile(): Promise<void> {
     const now = new Date();
     for (const run of await this.db.listActiveRuns()) {
+      await this.harness.endLostTurn(run);
       await this.toolCalls.resolveUnresolved(run.id, null);
       if (run.kind === "direct" || runWasResumed(run)) {
         continue;

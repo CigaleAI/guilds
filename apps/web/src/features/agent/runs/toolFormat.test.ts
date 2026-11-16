@@ -303,3 +303,42 @@ test("a code task reads by its repository and session, and ends with its status 
   assert.equal(codeTaskStatus("interrupted"), "interrupted");
   assert.equal(codeTaskStatus("other"), "");
 });
+
+test("a call of Claude Code's own tool reads as what it did, in the platform's verbs", () => {
+  const friendly = (name: string, args: Record<string, unknown>) =>
+    friendlyToolCall(callWith(name, args));
+  assert.equal(
+    friendly("Bash", { command: "python3 greet.py\nmore", description: "Run the script" }),
+    "Run python3 greet.py",
+  );
+  assert.equal(
+    friendly("Read", { file_path: "/home/a_1/repos/app/greet.py" }),
+    "Read /home/a_1/repos/app/greet.py",
+  );
+  assert.equal(
+    friendly("Edit", { file_path: "greet.py", old_string: "a", new_string: "b" }),
+    "Edit greet.py",
+  );
+  assert.equal(friendly("Write", { file_path: "notes.md", content: "x" }), "Write notes.md");
+  assert.equal(friendly("Grep", { pattern: "TODO" }), 'Search lines "TODO"');
+  assert.equal(friendly("Glob", { pattern: "**/*.ts" }), 'Search files "**/*.ts"');
+  assert.equal(
+    friendly("WebFetch", { url: "https://example.com", prompt: "x" }),
+    "Fetch https://example.com",
+  );
+  assert.equal(friendly("WebSearch", { query: "guilds" }), 'Search web "guilds"');
+  assert.equal(
+    friendly("Task", { description: "Find the bug", prompt: "x" }),
+    "Delegate Find the bug",
+  );
+  assert.equal(friendly("TodoWrite", { todos: [] }), "Update todos");
+  assert.equal(friendly("Bash", { command: 3 }), "", "arguments of another shape read as nothing");
+  assert.equal(
+    summarizeCalls([
+      callWith("Read", { file_path: "a.md" }),
+      callWith("Read", { file_path: "b.md" }),
+      callWith("Bash", { command: "ls" }),
+    ]),
+    "Read a.md, b.md · Run ls",
+  );
+});

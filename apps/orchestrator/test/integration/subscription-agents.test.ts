@@ -182,7 +182,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
       errors = (await app.inject({ method: "GET", url: `/api/runs/${runId}`, headers: AUTH })).json().errors;
     }
     assert.equal(errors.at(-1)?.operation, "subscription.not_runnable");
-    assert.match(String(errors.at(-1)?.message), /subscription agents cannot run yet/);
+    assert.match(String(errors.at(-1)?.message), /Codex cannot run a subscription agent's turns yet: pick Claude Code/);
     const snapshot = (await app.inject({ method: "GET", url: `/api/runs/${runId}`, headers: AUTH })).json().config_snapshot;
     assert.equal(snapshot.model, null);
     assert.equal("model_source" in snapshot, false);

@@ -60,6 +60,13 @@ A generation is one turn of the agent loop:
 Every row a generation adds carries its generation number, starting at
 1. The opening system prompt has none.
 
+A [subscription agent](agents.md#model-source)'s generation is one
+turn of its harness instead: the harness's CLI runs in the agent's
+sandbox on the run's system prompt and the messages that opened the
+generation, with its own tools, and the run keeps what it writes as
+rows while it runs ([Harness turns](#harness-turns)). Only Claude
+Code runs a subscription agent's turns.
+
 ### What a run stores
 
 Each row holds two things:
@@ -172,8 +179,8 @@ when it ends.
 
 ### Cancel, interrupt, resume
 
-- **Cancel** stops the current model call or tool command. A direct
-  run stays open.
+- **Cancel** stops the current model call, tool command, or harness
+  turn. A direct run stays open.
 - If the orchestrator restarts mid-run, unfinished tool calls get an
   "interrupted" result, so the transcript stays valid. A one-shot run
   is marked completed.
@@ -334,7 +341,10 @@ Metadata sits beside the payload and is never sent to the model:
 - generation number;
 - source;
 - the model's reasoning text and provider reasoning blocks, when it
-  streamed any.
+  streamed any;
+- on a row of a subscription agent's harness turn, `from_harness`: the
+  harness whose CLI wrote the message, or ran the tool the call and
+  its result are of ([Harness turns](#harness-turns)).
 
 Tool-result metadata includes the provider tool-call id for
 correlation. The message row already owns the run id. Agent, guild,
@@ -368,7 +378,10 @@ starts ([Repositories](coding/repositories.md#where-the-list-comes-from)), with 
 guild's `keep_tool_result_generations` when the agent's is null, and
 with the offered `tools`, `mcp`, `secrets`, and the `scripts`
 ([Scripts](scripts.md#snapshot)). Its `model` states the run's model
-source: a model on a key, or null for a subscription agent's run.
+source: a model on a key, or null for a subscription agent's run. A
+subscription agent's run offers no `tools` and no `mcp` connection: its
+harness reaches no tool of the platform. Its `secrets` still reach the
+harness's environment.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `max_wake_ups`, `keep_tool_result_generations`,
@@ -423,10 +436,13 @@ a generation-start error.
 ### Generation
 
 A run whose snapshot has no `model` is a subscription agent's
-([Agents](agents.md#model-source)). Its generation fails first, with
-`subscription.not_runnable`, "subscription agents cannot run yet",
-before the machine is woken or a model is called. Every other run
-goes on.
+([Agents](agents.md#model-source)). Its generation is a turn of its
+harness ([Harness turns](#harness-turns)). Before the machine is
+woken, it fails with `harness.missing` when the snapshot names no
+harness, and with `subscription.not_runnable`, "`<Harness>` cannot run
+a subscription agent's turns yet: pick Claude Code in the agent's
+Settings, or give the agent a model on a key", on any harness but
+Claude Code.
 
 At start, the loop cancels the machine's idle timer, ensures the
 machine is up, and checks the disk caps. A home or machine over its
@@ -437,7 +453,12 @@ machine ends, the idle timer starts again
 ([Machines](machines.md#idle-timer)). A coding run is checked further
 before the model is called: harness picked, guild repositories,
 harness installed and credentialed, repositories prepared
-([Coding agents](coding/index.md)).
+([Coding agents](coding/index.md)). A subscription agent's run is
+checked for its harness the same way: not turned off, installed, and
+credentialed, with the same errors
+([Harnesses](coding/harnesses.md#credentials-and-errors)). None of the
+model loop's set-up runs for it: no tool is offered and no model
+credential is resolved.
 
 It loads every payload in order and repeats the loop up to
 `max_steps` times. Each step filters every tool result through the
@@ -482,6 +503,56 @@ Admitting a generation refuses an agent with an open blocking issue
 with `agent is disabled by a blocking issue: <summary>. Resolve the
 issue first`: a 409 on a direct message, and a wait for a group
 delivery, a routine, or a wake-up.
+
+### Harness turns
+
+A subscription agent's generation is one turn of its harness's CLI,
+under the call id `turn_<generation>_<run id>`
+([Process](coding/code-tasks.md#process)):
+
+1. **Start.** `guilds-harness start` runs the CLI in the agent's home,
+   on the agent's harness model and effort, with the run's first row,
+   its composed system prompt, in place of the CLI's own
+   ([Drivers](coding/harnesses.md#drivers)). Its prompt on stdin is
+   every user message since the run's last assistant or tool row, in
+   order, joined by a blank line: the opening message, a message the
+   operator sent, a Group Chat info or Schedule wake-up message, or a
+   wake-up's message. A run whose `metadata.harness_turn` holds a
+   session resumes it; a new run starts a new session. The run records
+   `metadata.harness_turn` at the start and again once the CLI reports
+   its session.
+2. **Poll** every second. Each poll's new events become rows as they
+   come, published as `message.committed`
+   ([Run transcript](run-transcript.md#harness-turns)): each message
+   of the CLI an assistant row, its calls of its own tools the row's
+   `tool_calls`, and each result a tool row. Text, tool inputs, and
+   results are redacted with the run's secret values, and each result
+   is capped as a tool's output is. Every row carries
+   `from_harness: "claude-code"` and the generation number.
+3. **End.** A CLI that exits 0 without an error result ends the
+   generation as a model's final reply does: the run completes or
+   waits by the same rules. Any other ending records its error:
+
+| Operation | Cause |
+| --- | --- |
+| `harness.start` | `start` failed: "`<Harness>` did not start: `<reason>`" |
+| `harness.failed` | the CLI exited otherwise, or its turn ended in error: "`<Harness>`'s turn failed (`<detail>`)", the detail as a code task's ([Result](coding/code-tasks.md#result)) |
+| `harness.lost` | a poll found the turn's state gone, or the CLI exited and its result could not be read |
+| `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
+| `harness.timed_out` | the turn ran 30 minutes; the harness got `stop` |
+
+A harness that does not stop adds "It did not stop and may still be
+running; its log is `<path>`." Once `start` has gone, every way out
+but a clean exit or lost state sends `stop`: a cancel, the time limit,
+three failed polls, or an error. However the turn ends, a call of the
+harness's own tools still without a result gets the interrupted
+result, marked `from_harness`. Usage and cost are not recorded for a
+turn.
+
+`metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
+`log_path`. The turn's raw log stays at `log_path` in the agent's home,
+`.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`, under the
+same retention as a code task's.
 
 ### Stubbing rules
 
@@ -633,9 +704,9 @@ history, then consumes new events.
 
 ### Cancellation and restart
 
-Cancellation stops the current model call or tool command. It records
-`generation.cancelled` and leaves a direct run active. The machine
-stays.
+Cancellation stops the current model call, tool command, or harness
+turn, whose CLI gets `stop`. It records `generation.cancelled` and
+leaves a direct run active. The machine stays.
 
 If an assistant row with tool calls is already in history,
 cancellation or restart appends `ERROR: execution interrupted` for
@@ -644,7 +715,13 @@ every unresolved call, so the next model request is valid.
 On orchestrator startup, unresolved tool calls in active runs get
 those interruption results. Startup does not replay a model call. An
 unresolved `code_task` is stopped and checkpointed first
-([Code tools](coding/code-tools.md)).
+([Code tools](coding/code-tools.md)). A subscription agent's run with
+a `metadata.harness_turn` has its harness turn ended first: the turn's
+CLI gets `stop` on the agent's machine when the machine runs, the
+session its result names replaces the one kept, so the run's next
+generation resumes it, and each call of the harness's own tools
+without a result gets the interrupted result, marked `from_harness`
+([Harness turns](#harness-turns)).
 
 An interrupted group or schedule run that the operator has not
 resumed records `generation.interrupted` (`orchestrator restarted`)
@@ -722,9 +799,12 @@ cancel and resume are, and records `cancel_reason: "operator"`.
     `deliverScheduleRun`, and the scheduler
   - `prepare.ts` and `snapshot.ts`: the composed prompt and the
     snapshot
-  - `generate.ts`: the steps of a generation and the offered tools
-    (`offered-tools.ts`)
+  - `generate.ts`: a generation's set-up, its model steps or its
+    harness turn, and the offered tools (`offered-tools.ts`)
   - `completion.ts`: model calls, input counting, and credentials
+  - `harness-loop.ts`: a subscription agent's turns on its harness;
+    `parse-claude-code.ts` and `harness-rows.ts`: Claude Code's events
+    and the rows they make
   - `tool-calls.ts`: tool calls and interruption results
   - `events.ts`: committed rows, run errors, and stream events
   - `run-secrets.ts`: the secrets of each generation

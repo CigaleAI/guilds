@@ -1,20 +1,24 @@
 import { Type, type Static } from "typebox";
-import { harnessLaunch } from "../coding/harness-models.js";
 import type { Harness } from "../db/schema/index.js";
-import { keepMatching } from "../lib/decode.js";
 import { errorMessage, writeLog } from "../observability/log.js";
-import { callSegment, type CodeResult } from "./code.js";
+import { callSegment } from "./code.js";
 import { buildBrief } from "./harness-brief.js";
 import {
   checkpoint,
-  HarnessExit,
-  harnessOp,
-  HarnessPoll,
-  HarnessStop,
+  endHarnessTurn,
+  HARNESS_POLL_FAILURES_MAX,
+  harnessLogPath,
+  launchHarness,
   opsRun,
+  pause,
+  pollHarness,
   shownProgressLines,
+  stopHarness,
   stringOrNull,
   type CheckpointRepository,
+  type HarnessPoll,
+  type Settled,
+  type TurnEnding,
 } from "./harness-ops.js";
 import { codeTaskText, failureDetail, isChangedFile, type CodeTaskOutcome, type CodeTaskStatus } from "./harness-result.js";
 import { checkHarness, requiredHarness } from "./harness-setup.js";
@@ -23,7 +27,6 @@ import type { ToolServices } from "./services.js";
 import {
   callActor,
   nativeTool,
-  type CancelEvent,
   type ToolHooks,
   type ToolInvocation,
   type ToolRun,
@@ -35,8 +38,6 @@ export const CODE_TASK_DEFAULT_MINUTES = 30;
 export const CODE_TASK_MAX_MINUTES = 60;
 /** How often a running call is polled, and how long its minutes are; tests shorten both. */
 export const harnessTiming = { pollMs: 3000, minuteMs: 60_000 };
-/** Consecutive failed polls after which the harness is stopped and the call ends `interrupted`. */
-const POLL_FAILURES_MAX = 3;
 
 // --- the call's arguments ---------------------------------------------------
 
@@ -118,19 +119,6 @@ type HarnessTurn = {
   failures: number;
 };
 
-/**
- * How the poll loop ended: the harness exited on its own, its state was gone, it was cancelled
- * or ran past its timeout, it stopped answering polls, or the run was cancelled before it started.
- */
-type Settled = "exited" | "missing" | "cancelled" | "timed_out" | "unresponsive" | "not_started";
-
-/** How a turn ended: `stopped` is null when the harness was not stopped; `result` is the `result` op's meta once read. */
-type TurnEnding = {
-  settled: Settled | "unreadable";
-  stopped: boolean | null;
-  result: HarnessExit | null;
-};
-
 const NOT_STARTED: TurnEnding = { settled: "not_started", stopped: null, result: null };
 
 const SETTLED_STATUS: Record<Exclude<TurnEnding["settled"], "exited">, CodeTaskStatus> = {
@@ -178,7 +166,7 @@ async function openHarnessTurn(services: ToolServices, run: ToolRun, call: ToolI
     ...checked,
     tool_call_id: call.id,
     minutes,
-    log_path: displayLogPath(run.run_id, checked.call_id),
+    log_path: harnessLogPath(run.run_id, checked.call_id),
     start_sha: stringOrNull(start.start_sha),
     started,
     deadline: started + minutes * harnessTiming.minuteMs,
@@ -200,39 +188,17 @@ async function rememberTurn(services: ToolServices, run: ToolRun, turn: HarnessT
 }
 
 async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<void> {
-  const resume = turn.session ? { session_id: turn.session } : {};
   await hooks.before_command?.();
-  const launch = harnessLaunch(turn.harness, run.harness_model, run.harness_effort);
-  const model = launch.model ? { model: launch.model } : {};
-  const effort = launch.effort ? { effort: launch.effort } : {};
-  await harnessOp(turn.ops, turn.call_id, "start", {
+  await launchHarness(turn.ops, turn.call_id, {
     harness: turn.harness,
-    repository: turn.repository,
     prompt: turn.prompt,
-    ...resume,
-    ...model,
-    ...effort,
+    repository: turn.repository,
+    system_prompt: null,
+    session_id: turn.session,
+    model: run.harness_model,
+    effort: run.harness_effort,
   });
   await rememberTurn(services, run, turn);
-}
-
-/** Waits `ms`, or until the run is cancelled. */
-async function pause(ms: number, cancel: CancelEvent | null): Promise<void> {
-  let timer: NodeJS.Timeout | undefined;
-  const elapsed = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, ms);
-  });
-  if (cancel === null) {
-    await elapsed;
-    return;
-  }
-  const abort = new AbortController();
-  try {
-    await Promise.race([elapsed, cancel.wait(abort.signal).catch(() => undefined)]);
-  } finally {
-    clearTimeout(timer);
-    abort.abort();
-  }
 }
 
 function interruption(run: ToolRun, turn: HarnessTurn): Settled | null {
@@ -244,7 +210,7 @@ function interruption(run: ToolRun, turn: HarnessTurn): Settled | null {
 
 function countFailedPoll(turn: HarnessTurn, message: string): Settled | null {
   turn.failures += 1;
-  if (turn.failures < POLL_FAILURES_MAX) {
+  if (turn.failures < HARNESS_POLL_FAILURES_MAX) {
     return null;
   }
   writeLog("warn", message, { run_id: turn.ops.run_id, agent_id: turn.ops.agent_id, operation: "code_task.poll" });
@@ -287,15 +253,15 @@ async function applyPoll(
 }
 
 async function pollOnce(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<Settled | null> {
-  let poll: CodeResult;
+  let poll: HarnessPoll;
   try {
     await hooks.before_command?.();
-    poll = await harnessOp(turn.ops, turn.call_id, "poll", { harness: turn.harness, offset: turn.offset });
+    ({ poll } = await pollHarness(turn.ops, turn.call_id, turn.harness, turn.offset));
   } catch (error) {
     return countFailedPoll(turn, errorMessage(error));
   }
   turn.failures = 0;
-  return applyPoll(services, run, turn, keepMatching(HarnessPoll, poll.meta) ?? {});
+  return applyPoll(services, run, turn, poll);
 }
 
 /** Polls the harness, publishing its progress, until it exits, is lost, or must be stopped. */
@@ -309,35 +275,6 @@ async function pollUntilSettled(services: ToolServices, run: ToolRun, hooks: Too
   }
 }
 
-/** The `result` op's meta, which also clears the call's state once the harness exited; null when unread. */
-async function readResult(ops: ToolRun, callId: string, harness: Harness): Promise<HarnessExit | null> {
-  const result = await harnessOp(ops, callId, "result", { harness }).catch(() => null);
-  const exit = result === null ? null : (keepMatching(HarnessExit, result.meta) ?? {});
-  return exit === null || exit.missing === true ? null : exit;
-}
-
-/** Stops the harness and, once it has exited, reads its result. A call with no state left has nothing to stop. */
-async function stopHarness(
-  ops: ToolRun,
-  callId: string,
-  harness: Harness,
-): Promise<{ stopped: boolean; result: HarnessExit | null }> {
-  const stop = await harnessOp(ops, callId, "stop", { harness }).catch(() => null);
-  const stopped = stop !== null && keepMatching(HarnessStop, stop.meta)?.exited !== false;
-  return { stopped, result: stopped ? await readResult(ops, callId, harness) : null };
-}
-
-async function endTurn(turn: HarnessTurn, settled: Settled): Promise<TurnEnding> {
-  if (settled === "missing") {
-    return { settled, stopped: null, result: null };
-  }
-  if (settled === "exited") {
-    const result = await readResult(turn.ops, turn.call_id, turn.harness);
-    return { settled: result === null ? "unreadable" : "exited", stopped: null, result };
-  }
-  return { settled, ...(await stopHarness(turn.ops, turn.call_id, turn.harness)) };
-}
-
 /** Starts the harness and polls it to the end; from `start` on, any way out but a clean exit or lost state stops it. */
 async function runHarnessTurn(services: ToolServices, run: ToolRun, hooks: ToolHooks, turn: HarnessTurn): Promise<TurnEnding> {
   let settled: Settled;
@@ -348,7 +285,7 @@ async function runHarnessTurn(services: ToolServices, run: ToolRun, hooks: ToolH
     await stopHarness(turn.ops, turn.call_id, turn.harness);
     throw error;
   }
-  return endTurn(turn, settled);
+  return endHarnessTurn(turn.ops, turn.call_id, turn.harness, settled);
 }
 
 /** What the machine says about a call the orchestrator lost track of when it restarted. */
@@ -377,10 +314,6 @@ export async function endLostTurn(
     start_sha: stringOrNull(end.start_sha),
     end_sha: stringOrNull(end.end_sha),
   };
-}
-
-function displayLogPath(runId: string, callId: string): string {
-  return `.runs/${runId}/${callId}.harness.jsonl`;
 }
 
 function endingStatus(ending: TurnEnding): CodeTaskStatus {

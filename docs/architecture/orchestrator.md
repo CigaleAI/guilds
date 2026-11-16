@@ -219,20 +219,26 @@ and `PORT`.
 Run reconciliation:
 
 1. list every active run
-2. append interruption tool results for unresolved committed tool
+2. end a subscription agent's lost harness turn, named by the run's
+   `metadata.harness_turn`: `guilds-harness stop` on its machine when
+   the machine is running, its state cleared once the CLI has exited,
+   the session its result names kept on the record, and the
+   interrupted result, marked `from_harness`, for each call of the
+   harness's own tools without one
+3. append interruption tool results for unresolved committed tool
    calls; an unresolved `code_task` first gets `guilds-harness stop`
    on its machine when the machine is running, its state is cleared
    once the harness has exited, and the task's end checkpoint is
    taken; its result is `interrupted`, naming the session and log
    from the run's `metadata.harness_task`
-3. leave direct runs, and runs an operator resumed, active and
+4. leave direct runs, and runs an operator resumed, active and
    reusable
-4. append a `generation.interrupted` run error to group and
+5. append a `generation.interrupted` run error to group and
    schedule runs
-5. complete group delivery through the run's snapshotted sequence
+6. complete group delivery through the run's snapshotted sequence
    or complete the schedule run
-6. resume pending group dispatch
-7. schedule idle teardown for running machines on which no agent
+7. resume pending group dispatch
+8. schedule idle teardown for running machines on which no agent
    generates
 
 Studio and Builder reconciliation settles each session left
@@ -928,10 +934,27 @@ invoke reviewed helpers inside the agent container
 `guilds-browser`, the code tools through `guilds-code`, `code_task`
 through `guilds-harness`).
 
-A generation whose snapshot has no `model`, a subscription agent's,
-fails with `subscription.not_runnable` before anything else
-(`generation/generate.ts`); the model loop only ever reads a snapshot
-with a model. Browser tools are offered when the run snapshot has
+A generation is typed by its model source (`generation/generate.ts`):
+a key generation, whose snapshot has a `model`, runs the model loop,
+and a subscription generation, whose snapshot has none and names a
+harness that runs a subscription agent's turns, runs one turn of that
+harness (`generation/harness-loop.ts`). The set-up, the cancel
+settlement, the finish, and the events around either loop are shared.
+A subscription generation on no harness fails with `harness.missing`,
+and on any harness but Claude Code with `subscription.not_runnable`,
+before the machine is woken. It offers no tool and resolves no model
+credential; its harness is checked as a coding run's is. Its turn
+starts the CLI with the run's first row as its system prompt
+(`--system-prompt-file`) and the user messages since the run's last
+reply on stdin, polls every second, keeps each poll's Claude Code
+events as rows through `events.commitMessage`
+(`generation/parse-claude-code.ts`, `generation/harness-rows.ts`),
+keeps the session in `metadata.harness_turn` for the next generation
+to resume, and ends with `harness.start`, `harness.failed`,
+`harness.lost`, `harness.unresponsive`, or `harness.timed_out` when
+it does not exit cleanly. The start, the poll, the stop, the result,
+and the log are the `guilds-harness` ops `code_task` calls too
+(`toolbox/harness-ops.ts`). Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
 `coding: true`. A coding generation runs its start checks in order:
 no `harness` in the snapshot fails with `harness.missing`, an

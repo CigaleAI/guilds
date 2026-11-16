@@ -49,6 +49,33 @@ agents whose role lists it. A recipe whose coding roles list no
 repositories applies with agents that work on none until their
 repositories are picked in Settings.
 
+**Rebuild.** A Claude Code subscription agent runs: each generation
+of its run is one turn of Claude Code in the agent's sandbox, started
+with the run's composed system prompt in place of Claude Code's own
+and the messages that opened the generation on stdin, polled every
+second, and stopped after 30 minutes. The run shows the CLI's messages
+as assistant rows and each tool it uses (Bash, Read, Edit, …) as a
+call with its result, marked `from_harness`, redacted and capped as
+tool results are. The run's next generation resumes the session kept
+in `metadata.harness_turn`. A turn that does not end cleanly records
+`harness.start`, `harness.failed`, `harness.lost`,
+`harness.unresponsive`, or `harness.timed_out`; a cancel stops the
+CLI. A subscription agent's run is offered no tool and no connection,
+and its Guidelines leave out the tool budget and every part on a tool
+the run does not offer, and gain the facts its harness needs: where
+it runs, its home, its ports. A Codex subscription agent's runs still
+fail at start with `subscription.not_runnable`, which now reads "Codex
+cannot run a subscription agent's turns yet". The runtime image must
+be rebuilt: `guilds-harness start` takes a `system_prompt` and runs in
+the home without a repository, and `poll` returns the raw events it
+read ([SEC-62](docs/architecture/security-register.md#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network)).
+In the operator app, a harness turn reads as a run flow: Claude Code's
+own tools read as what they did, such as **Run** a command, **Read**
+or **Edit** a file, or **Search lines**, coloured by kind, and a call's
+Metadata names the harness under **Called by**. The Model source note
+says Claude Code runs a subscription agent's turns and Codex ones
+cannot run yet.
+
 **Rebuild.** A recipe that lists repositories no longer asks for a
 GitHub connection: applying it adds no `conn:github` step of its own,
 and its preview names no GitHub App to set up for them. Each
@@ -83,8 +110,7 @@ its model source. The box offers them only with
 created and saved through the agent routes with `model: null` and its
 `harness`, `harness_model`, and `harness_effort`, and refused while
 the setting is off, on Cursor or Antigravity, or with a model-loop
-setting off its default. Its runs do not start yet: each fails at
-start with `subscription.not_runnable`. An agent's view and its
+setting off its default. An agent's view and its
 guild's list carry `model_source` (`key` or `subscription`), derived
 from its `model`. `GET /api/harnesses` adds
 `subscription_agents` and, per harness, `subscription`. A

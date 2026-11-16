@@ -133,6 +133,22 @@ test("configSnapshot keeps the model that states the run's model source, and sto
   assert.equal("model_source" in subscription, false);
 });
 
+test("a subscription agent's run offers no tool and no connection, whatever its access grants", () => {
+  const schema = { type: "function" as const, function: { name: "ok", description: "", parameters: { type: "object" } } };
+  const access = {
+    tools: ["note_find", "group_post", "memory_write"],
+    secrets: [{ id: "sec_1", name: "CLAUDE_CODE_OAUTH_TOKEN", description: "" }],
+    mcp: [{ connection_id: "conn_1", server_id: "srv_notion", slug: "notion", tools: [{ name: "ok", remote_name: "r", schema }] }],
+  };
+  const subscription = configSnapshot({ ...AGENT_CONFIG, model: null, harness: "claude-code" }, access, "direct");
+  assert.deepEqual(subscription.tools, []);
+  assert.deepEqual(subscription.mcp, []);
+  assert.deepEqual(subscription.secrets, access.secrets, "its secrets still reach its environment");
+  const keyed = configSnapshot(AGENT_CONFIG, access, "direct");
+  assert.ok(keyed.tools.some((tool) => tool.function.name === "report_issue"));
+  assert.equal(keyed.mcp.length, 1);
+});
+
 test("mcpRedactions skips missing connections and decrypt failures", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ access_token: "tok-live" });

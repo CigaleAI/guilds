@@ -67,7 +67,8 @@ A token or login on the agent's machine is readable by what runs there
 A check asks the machine whether the harness's CLI is installed, its
 version, and the credential it would run on. It runs:
 
-- at every generation start of a coding run, with the run's secrets;
+- at every generation start of a coding run or a subscription agent's
+  run, with the run's secrets;
 - before every code task;
 - from Settings, with **Check login**. That check runs outside any
   run, without the agent's secrets, so it finds a login or nothing.
@@ -150,8 +151,12 @@ and no code tools.
   it.
 - A harness turned off with `HARNESSES_OFF` is refused as a new pick
   for a subscription agent as for a coding agent.
-- A subscription agent's runs do not start: each fails at start with
-  `subscription.not_runnable` ([Runs](../runs.md#generation)).
+- Claude Code runs a subscription agent's turns: each generation of
+  its run is one turn of the CLI in the agent's home, on the run's
+  system prompt in place of Claude Code's own, resuming the run's
+  session ([Runs](../runs.md#harness-turns)). The CLI reaches no tool
+  of the platform, only its own. A Codex subscription agent's runs
+  fail at start with `subscription.not_runnable`.
 
 ### Managed configuration
 
@@ -297,7 +302,7 @@ machine that has it."
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
 | Subscription harness | Claude Code or Codex |
-| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; their runs fail at start |
+| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; each generation one Claude Code turn of at most 30 minutes, polled every second; on Codex their runs fail at start |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |
@@ -495,6 +500,14 @@ pinned to the CLI version the image installs.
 | Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>`, then `-c model_reasoning_effort="<effort>"`, after the managed flags and before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) |
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
 | Antigravity | `agy --output-format stream-json --dangerously-skip-permissions --disable-slash-commands --add-dir <run folder> -p "Read your task in <prompt file> and follow it."` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | the prompt file, named in `-p`; `--add-dir` lets the CLI's tools reach it outside the repository |
+
+A request with a `system_prompt` starts Claude Code with
+`--system-prompt-file <run folder>/<call id>.system.md`, after
+`--settings` and before the model, so that text replaces Claude Code's
+own system prompt. `start` writes the file with mode 0600 beside the
+prompt file, and `result` removes both with the call's state. Codex,
+Cursor, and Antigravity refuse a system prompt (`<harness> takes no
+system prompt`) before the call starts.
 
 The orchestrator resolves the agent's model and effort through the
 catalogue before the call: a listed Cursor model becomes its CLI name

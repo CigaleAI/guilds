@@ -190,3 +190,15 @@ test("a code task naming its log has a Log view, given its run", () => {
   assert.equal(hasTaskLog(flowCall("code_task", { ...codeTask, log_path: null }), "r1"), false);
   assert.equal(hasTaskLog(flowCall("shell", { log_path: "/tmp/out.log" }), "r1"), false);
 });
+
+test("a call of a harness's own tool names the harness that called it", () => {
+  const facts = toolCallFacts(
+    flowCall("Bash", { tool_name: "Bash", from_harness: "claude-code", duration_ms: 1200 }),
+    null,
+  );
+  assert.deepEqual(facts.slice(0, 3), [
+    ["Call", "call_1"],
+    ["Tool", "Bash"],
+    ["Called by", "Claude Code"],
+  ]);
+});

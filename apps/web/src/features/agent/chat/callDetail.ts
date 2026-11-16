@@ -119,6 +119,7 @@ export function toolCallFacts(call: FlowCall, sessionId: string | null): CallFac
   const facts: CallFact[] = [
     ["Call", call.id || "—"],
     ["Tool", call.info.name],
+    ["Called by", harnessLabel(meta.from_harness)],
     ...(task ? codeTaskFacts(meta, sessionId) : []),
     ["Duration", meta.duration_ms === undefined ? "" : formatDuration(meta.duration_ms)],
     ["Output filter", meta.output_filter ?? ""],

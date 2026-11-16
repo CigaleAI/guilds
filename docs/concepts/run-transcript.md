@@ -185,6 +185,35 @@ repository with its branch and diffstat, and **Show diff**, which
 fetches the run's diff from the agent's machine
 ([Reviewing changes](coding/reviewing-changes.md)).
 
+### Harness turns
+
+A [subscription agent](agents.md#model-source)'s generation is a turn
+of its harness, and reads like any other: each message the harness
+wrote while it called its own tools is a step, each of those calls is
+a call card with its input and result, and its last message is the
+reply bubble ([Runs](runs.md#harness-turns)). Its rows carry
+`from_harness`. The run's error banner names a turn that did not end
+cleanly, such as `harness.failed` or `harness.timed_out`.
+
+A call of Claude Code's own tool reads as what it did, coloured by its
+kind:
+
+| Tool | Reads | Kind |
+| --- | --- | --- |
+| `Bash` | **Run** and the command's first line | execute |
+| `Read` | **Read** and the file | read |
+| `Write`, `Edit`, `MultiEdit` | **Write** or **Edit** and the file | write |
+| `Grep`, `Glob` | **Search lines** or **Search files** and the pattern | read |
+| `LS` | **List** and the path | read |
+| `WebFetch`, `WebSearch` | **Fetch** and the address, or **Search web** and the query | read |
+| `Task` | **Delegate** and its description | execute |
+| `TodoWrite` | **Update todos** | write |
+
+Any other tool reads as its name. A write in the agent's home is not
+tracked state, so it carries no **wrote** tag. Opening the call shows
+its input and its output, which the platform redacted and capped as
+any tool's, and its Metadata names the harness under **Called by**.
+
 ### Errors outside a flow
 
 A run error that belongs to no run flow, such as a failure before the

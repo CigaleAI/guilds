@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -736,6 +737,63 @@ test("a supervisor outlives the call that started it, and stop ends the harness'
   const result = await op("result");
   assert.equal(result.meta.is_error, true);
   assert.equal((await op("poll", { offset: 0 })).meta.missing, true, "result clears the call's state");
+});
+
+describe("a harness started for a run's own turn", () => {
+  /** The `guilds-harness` ops of call `callId` in run `r_turn`, on `sandbox`. */
+  function turnOps(sandbox: HostCodeSandbox, callId: string) {
+    const ctx = toolFixture({ run_id: "r_turn", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+    return (name: string, args: Record<string, unknown> = {}) =>
+      runCodeHelper(ctx.run, createToolHooks(), { op: name, call_id: callId, harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
+  }
+
+  test("a system prompt replaces Claude Code's own from a private file in the run folder that goes with the call", async () => {
+    const { sandbox, calls } = hangingSandbox();
+    const op = turnOps(sandbox, "call_turn");
+    await op("start", { prompt: "hello", system_prompt: "You are the guild's agent.", model: "opus" });
+    const systemFile = path.join(sandbox.home, ".runs", "r_turn", "call_turn.system.md");
+    for (let attempt = 0; attempt < 100 && !calls().length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const [call] = calls();
+    assert.ok(call);
+    const at = call.argv.indexOf("--system-prompt-file");
+    assert.equal(call.argv[at + 1], systemFile);
+    assert.equal(call.argv[at - 2], "--settings", "after the settings that turn hooks, plugins and project MCP servers off");
+    assert.deepEqual(call.argv.slice(at + 2), ["--model", "opus"]);
+    assert.ok(call.argv.includes("--strict-mcp-config"));
+    assert.equal(call.stdin, "hello", "the prompt stays on stdin");
+    assert.equal(realpathSync(call.cwd), realpathSync(sandbox.home), "with no repository named it runs in the home");
+    assert.equal(readFileSync(systemFile, "utf8"), "You are the guild's agent.");
+    assert.equal(statSync(systemFile).mode & 0o777, 0o600);
+    await op("stop");
+    await op("result");
+    assert.equal(existsSync(systemFile), false, "the system prompt goes with the call's state");
+    assert.equal(existsSync(path.join(sandbox.home, ".runs", "r_turn", "call_turn.prompt.md")), false);
+  });
+
+  test("a CLI that takes no system prompt refuses one and never starts", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
+    const op = turnOps(sandbox, "call_codex");
+    await assert.rejects(op("start", { harness: "codex", prompt: "hello", system_prompt: "x" }), /codex takes no system prompt/);
+    assert.equal(calls().length, 0);
+  });
+
+  test("a poll returns the raw events it read past the offset, through the last whole line", async () => {
+    const { sandbox } = harnessSandbox("claude", () => recorded("claude-code"));
+    const op = turnOps(sandbox, "call_raw");
+    await op("start", { prompt: "hello" });
+    let polled = await op("poll", { offset: 0 });
+    for (let attempt = 0; attempt < 200 && polled.meta.exited !== true; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      polled = await op("poll", { offset: 0 });
+    }
+    assert.equal(polled.text, recorded("claude-code").join("\n") + "\n");
+    assert.equal(polled.meta.offset, Buffer.byteLength(polled.text));
+    const later = await op("poll", { offset: polled.meta.offset });
+    assert.equal(later.text, "");
+    await op("result");
+  });
 });
 
 test("the result keeps the end of a long final message within the cap", () => {

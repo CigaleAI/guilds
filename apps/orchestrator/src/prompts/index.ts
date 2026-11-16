@@ -43,6 +43,18 @@ export type StandingCaps = {
   memory?: boolean;
   /** Whether `memory_write` is offered. Missing follows `memory`. */
   memoryWrite?: boolean;
+  /** Whether the run offers any tool, and so has a tool budget. Missing means on. */
+  tools?: boolean;
+  /** Whether the run offers a note, record, or file tool, or `memory_write`. Missing means on. */
+  artifacts?: boolean;
+  /** Whether `group_post` is offered. Missing means on. */
+  groupPost?: boolean;
+  /** Whether the schedule tools are offered. Missing means on. */
+  schedules?: boolean;
+  /** Whether `report_issue` is offered. Missing means on. */
+  issues?: boolean;
+  /** Whether the agent's harness runs its turns: a subscription agent. Missing means off. */
+  harness?: boolean;
 };
 
 function memoryOn(caps?: StandingCaps): boolean {
@@ -84,11 +96,18 @@ export const STATE_INTRO =
   "`environment` is the secrets this agent " +
   "has, injected as variables. Never print those values.";
 
+/** The State intro's sentences on listing tools and the tool budget, which a run that offers no tool leaves out. */
+const STATE_INTRO_TOOL_SENTENCES = [
+  " Call listing tools later only when you need a refresh.",
+  "`max_tool_calls` is the tool-invocation budget for this run. ",
+];
+
 export function stateIntroForCapabilities(caps: StandingCaps): string {
-  if (caps.scripts) {
-    return STATE_INTRO;
+  const scripted = caps.scripts ? STATE_INTRO : STATE_INTRO.replace("`scripts` are this agent's reusable Python files. ", "");
+  if (caps.tools !== false) {
+    return scripted;
   }
-  return STATE_INTRO.replace("`scripts` are this agent's reusable Python files. ", "");
+  return STATE_INTRO_TOOL_SENTENCES.reduce((text, sentence) => text.replace(sentence, ""), scripted);
 }
 
 export const REPOSITORIES_INTRO =
@@ -182,6 +201,13 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
     memory_write: memoryWriteOn(caps),
     memory,
     no_memory: !memory,
+    // Each part below holds parts named above, which are resolved first.
+    tools: caps.tools !== false,
+    artifacts: caps.artifacts !== false,
+    group_post: caps.groupPost !== false,
+    schedules: caps.schedules !== false,
+    issues: caps.issues !== false,
+    harness: caps.harness === true,
   });
 }
 
