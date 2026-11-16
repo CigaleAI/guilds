@@ -303,7 +303,7 @@ machine that has it."
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
 | Subscription harness | Claude Code or Codex |
-| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; each generation one turn of Claude Code or Codex of at most 30 minutes, polled every second |
+| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; each generation one turn of Claude Code or Codex of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |

@@ -220,13 +220,16 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal(stub.rows().length, 7);
   });
 
-  test("a turn past its time is stopped and ends the generation with harness.timed_out", async () => {
+  test("a turn past its agent's max_turn_minutes is stopped and ends the generation with harness.timed_out", async () => {
     harnessTurnTiming.minuteMs = 20;
     try {
-      const { loop, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+      const { loop, db, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+      db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), max_turn_minutes: 50 };
+      const started = Date.now();
       await loop.generator.generate("r_1", 1);
+      assert.ok(Date.now() - started >= 1000, "the turn ran its fifty minutes");
       assert.equal(errors().at(-1)?.operation, "harness.timed_out");
-      assert.match(String(errors().at(-1)?.message), /^Claude Code was stopped after 30 minutes\. The run's next turn resumes its session\.$/);
+      assert.match(String(errors().at(-1)?.message), /^Claude Code was stopped after 50 minutes\. The run's next turn resumes its session\.$/);
       assert.equal(stubsRunning(bin), false);
       assert.equal(rows().at(-1)?.payload.content, INTERRUPTED_CONTENT);
     } finally {
@@ -329,7 +332,7 @@ describe("a harness turn's prompt and outcome", () => {
   });
 
   test("each way a turn ends names its run error, and a clean exit none", () => {
-    const failure = (ending: Parameters<typeof harnessTurnFailure>[1]) => harnessTurnFailure("claude-code", ending, ".runs/r/t.harness.jsonl");
+    const failure = (ending: Parameters<typeof harnessTurnFailure>[1]) => harnessTurnFailure("claude-code", ending, ".runs/r/t.harness.jsonl", 30);
     assert.equal(failure({ settled: "exited", stopped: null, result: { exit_code: 0, is_error: false } }), null);
     assert.equal(failure({ settled: "exited", stopped: null, result: { exit_code: 0, is_error: true, events: 3, error: "Not logged in" } })?.code, "harness.failed");
     assert.equal(failure({ settled: "missing", stopped: null, result: null })?.code, "harness.lost");

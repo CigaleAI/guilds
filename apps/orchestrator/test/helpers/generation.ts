@@ -65,6 +65,7 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   max_wake_ups: 10,
+  max_turn_minutes: 30,
   keep_tool_result_generations: 1,
   max_scripts: 10,
   max_workspace_mib: 10240,

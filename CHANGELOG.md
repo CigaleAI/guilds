@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Agent configs and run snapshots gain `max_turn_minutes`,
+how many minutes a subscription agent's turn of its harness runs
+before it is stopped: a whole number of 1 or more, 30 by default; a
+migration fills it in. A turn past it records `harness.timed_out`,
+"`<Harness>` was stopped after `<minutes>` minutes". Settings shows
+**Max turn minutes** under **Run limits** for a subscription agent
+alone, and a captured recipe carries it. A `code_task` call keeps its
+own `timeout_minutes`.
+
 **Rebuild.** A subscription agent's turn records the tokens it spent:
 its reply's metadata holds `usage` (input, output, cache reads, and
 cache writes where the CLI reports them) from Claude Code's `result`

@@ -232,3 +232,23 @@ test("a Codex turn calls its Guilds tools on the MCP server under the token of i
   assert.match(token, /^[A-Za-z0-9_-]{43}$/);
   assert.ok(!call.argv.some((arg) => arg.includes(token)), "the token is on no command line");
 });
+
+test("a Codex turn past its agent's max_turn_minutes is stopped and ends the generation with harness.timed_out", { timeout: 120_000 }, async () => {
+  const agentId = await subscriber("codex-minutes", { max_turn_minutes: 4 });
+  const agent = (await app.inject({ method: "GET", url: `/api/agents/${agentId}`, headers: HEADERS })).json();
+  assert.equal(agent.config.max_turn_minutes, 4);
+  stub.replay([RECORDED[0]!, HANG]);
+  harnessTurnTiming.minuteMs = 100;
+  try {
+    const started = Date.now();
+    const runId = await startRun(agentId, "Take your time.");
+    const run = await settled(runId);
+    assert.ok(Date.now() - started >= 400, "the turn ran its four minutes");
+    assert.equal(run.config_snapshot.max_turn_minutes, 4);
+    assert.equal(run.errors.at(-1)?.operation, "harness.timed_out");
+    assert.match(String(run.errors.at(-1)?.message), /^Codex was stopped after 4 minutes\./);
+    assert.equal(stubsRunning(stub.bin), false, "the harness was stopped");
+  } finally {
+    harnessTurnTiming.minuteMs = timing.minuteMs;
+  }
+});

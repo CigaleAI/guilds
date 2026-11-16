@@ -253,6 +253,7 @@ An ended run shows a banner under the transcript:
 | Wrap-up warning | when 8 tool calls or fewer are left |
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
 | Max wake-ups | 10 by default, for a coding agent too |
+| Max turn minutes | 30 by default; a subscription agent's turn of its harness |
 | Full tool results kept | the agent's setting, else its guild's; 2 user turns for a new guild |
 | Results never stubbed | under 2048 bytes |
 | Routine check | every 30 seconds |
@@ -386,10 +387,12 @@ run on a key with the same access would, less the code tools
 Its `secrets` reach the harness's environment.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
-`max_wake_ups`, `keep_tool_result_generations`,
+`max_wake_ups`, `max_turn_minutes`, `keep_tool_result_generations`,
 `projection_policy_version`, and `thinking_level`. `max_wake_ups` is
 the most wake-ups the run may fire, counted over the fired wake-ups of
-its chain; `wake_after` is refused past it.
+its chain; `wake_after` is refused past it. `max_turn_minutes` is how
+long a subscription agent's turn runs before its harness is stopped
+([Harness turns](#harness-turns)).
 
 Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
 `harness` is a coding agent's harness or null, `harness_model` the
@@ -555,7 +558,7 @@ under the call id `turn_<generation>_<run id>`
 | `harness.failed` | the CLI exited otherwise, or its turn ended in error: "`<Harness>`'s turn failed (`<detail>`)", the detail as a code task's ([Result](coding/code-tasks.md#result)) |
 | `harness.lost` | a poll found the turn's state gone, or the CLI exited and its result could not be read |
 | `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
-| `harness.timed_out` | the turn ran 30 minutes; the harness got `stop` |
+| `harness.timed_out` | the turn ran its snapshot's `max_turn_minutes`: "`<Harness>` was stopped after `<minutes>` minutes."; the harness got `stop` |
 | `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls; the harness got `stop`, and the run completes |
 | `generation.blocked` | a call of the MCP server filed a blocking issue; the harness got `stop` |
 

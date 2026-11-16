@@ -1,15 +1,11 @@
 import { HARNESS_INFO } from "../coding/harnesses.js";
 import type { Harness } from "../db/schema/index.js";
-import { CODE_TASK_DEFAULT_MINUTES } from "../toolbox/harness.js";
 import type { TurnEnding } from "../toolbox/harness-ops.js";
 import { failureDetail } from "../toolbox/harness-result.js";
 import { HarnessTurnError } from "./errors.js";
 
 // How a subscription agent's turn on its harness ended, and the run error a turn that did not end
 // cleanly fails its generation with.
-
-/** How long a subscription agent's turn runs before its harness is stopped: a `code_task` call's default. */
-export const HARNESS_TURN_MINUTES = CODE_TASK_DEFAULT_MINUTES;
 
 /** How a subscription agent's turn ended: as a harness's turn does, or stopped at its run's tool calls' asking. */
 export type HarnessTurnEnding = Omit<TurnEnding, "settled"> & { settled: TurnEnding["settled"] | "stopped" };
@@ -25,25 +21,28 @@ const SETTLED_CODE: Record<
   timed_out: "harness.timed_out",
 };
 
-const SETTLED_MESSAGE: Record<keyof typeof SETTLED_CODE, (label: string) => string> = {
+/** What each way a started turn can end other than cleanly says, of `label`'s turn that could run `minutes`. */
+const SETTLED_MESSAGE: Record<keyof typeof SETTLED_CODE, (label: string, minutes: number) => string> = {
   missing: (label) =>
     `${label}'s state is gone: the machine restarted or its container was recreated. The run's next turn resumes its session.`,
   unreadable: (label) => `${label} exited, and its result could not be read.`,
   unresponsive: (label) =>
     `${label} stopped answering, so it was stopped. The run's next turn resumes its session.`,
-  timed_out: (label) =>
-    `${label} was stopped after ${HARNESS_TURN_MINUTES} minutes. The run's next turn resumes its session.`,
+  timed_out: (label, minutes) =>
+    `${label} was stopped after ${minutes} minutes. The run's next turn resumes its session.`,
 };
 
 /**
- * The run error a turn that ended `ending` fails its generation with; null for a turn whose CLI
- * exited cleanly, that was cancelled, or that its run's tool calls stopped, which ends the
- * generation with their own error. A harness that did not stop is named with its log.
+ * The run error a turn that ended `ending`, and could run `minutes`, fails its generation with;
+ * null for a turn whose CLI exited cleanly, that was cancelled, or that its run's tool calls
+ * stopped, which ends the generation with their own error. A harness that did not stop is named
+ * with its log.
  */
 export function harnessTurnFailure(
   harness: Harness,
   ending: HarnessTurnEnding,
   logPath: string,
+  minutes: number,
 ): HarnessTurnError | null {
   const label = HARNESS_INFO[harness].label;
   const unstopped =
@@ -64,6 +63,6 @@ export function harnessTurnFailure(
   }
   return new HarnessTurnError(
     SETTLED_CODE[ending.settled],
-    SETTLED_MESSAGE[ending.settled](label) + unstopped,
+    SETTLED_MESSAGE[ending.settled](label, minutes) + unstopped,
   );
 }

@@ -55,7 +55,7 @@ import {
   type HarnessResultStep,
   type HarnessUsageStep,
 } from "./harness-rows.js";
-import { HARNESS_TURN_MINUTES, harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
+import { harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
 import type { HarnessGrant, HarnessMcpServer } from "./harness-mcp.js";
 import { pendingToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
@@ -214,7 +214,7 @@ export class HarnessLoop {
       await completeIfActive(db, gen.runId);
       return;
     }
-    const failure = harnessTurnFailure(turn.harness, ending, turn.log_path);
+    const failure = harnessTurnFailure(turn.harness, ending, turn.log_path, gen.snapshot.max_turn_minutes);
     if (failure !== null) {
       await events.recordError(gen, failure.code, failure);
     }
@@ -293,7 +293,7 @@ export class HarnessLoop {
       grant,
       call_id: callId,
       log_path: harnessLogPath(gen.runId, callId),
-      deadline: Date.now() + HARNESS_TURN_MINUTES * harnessTurnTiming.minuteMs,
+      deadline: Date.now() + gen.snapshot.max_turn_minutes * harnessTurnTiming.minuteMs,
       session: gen.run.metadata.harness_turn?.session_id ?? null,
       offset: 0,
       failures: 0,

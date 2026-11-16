@@ -211,6 +211,13 @@
       "when": 1791982800000,
       "tag": "0030_agent_repositories",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791986400000,
+      "tag": "0031_agent_turn_minutes_config",
+      "breakpoints": true
     }
   ]
 }

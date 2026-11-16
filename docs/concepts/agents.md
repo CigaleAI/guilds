@@ -91,8 +91,9 @@ run's next generation resumes the same session. A subscription agent:
   beside the harness's own tools. Each call counts toward
   `max_tool_calls`, with every call of the harness's own;
 - takes no attachments and has no repositories or code tools;
-- records no usage or cost for its turns, and stops a turn after 30
-  minutes.
+- records each turn's tokens on its reply, at no price
+  ([Usage](usage.md#cost-of-a-harness-turn)), and stops a turn after
+  its **Max turn minutes**.
 
 Next to a model on a key sit three options:
 
@@ -117,14 +118,18 @@ Run limits stop a run that goes on too long:
 | Max tool calls | tool calls in one run | 50 |
 | Max input tokens | the size of the prompt sent to the model | 100000 |
 | Max wake-ups | the wake-ups one run may fire | 10 |
+| Max turn minutes | how long one turn of a subscription agent's harness runs before it is stopped | 30 |
 | Keep tool results | how many user turns keep full tool output in the prompt; older large results are stubbed | empty: the guild's ([Guilds](guilds.md#other-guild-settings)) |
 
 Only a guild admin sets, changes, or clears an agent's **Keep tool
 results**. Anyone else's save that changes it is refused; one that
 leaves it as it is passes.
 
-A coding agent starts at 200 steps and 200 tool calls. What happens
-at each limit is on [Runs](runs.md).
+A coding agent starts at 200 steps and 200 tool calls. A subscription
+agent's **Run limits** show Max steps, Max tool calls, Max wake-ups,
+and Max turn minutes; an agent on a key shows every limit but Max
+turn minutes, which its runs do not read. What happens at each limit
+is on [Runs](runs.md).
 
 ### Capabilities
 
@@ -357,7 +362,7 @@ saves.
 
 ### Configuration keys
 
-Agent configuration is a JSON object of twenty-three keys. A missing key
+Agent configuration is a JSON object of twenty-four keys. A missing key
 takes its default, then the check runs. `model` has no default, so a
 configuration without it is 422 `missing keys: model`; a subscription
 agent sends `model: null`. Unknown keys
@@ -374,6 +379,7 @@ the agent.
 | `max_tool_calls` | positive integer | `50` (`200` for a new coding agent) | [Runs](runs.md#generation) |
 | `max_input_tokens` | positive integer | `100000` | [Runs](runs.md#generation) |
 | `max_wake_ups` | positive integer | `10` | [Runs](runs.md#snapshot) |
+| `max_turn_minutes` | positive integer | `30` | [Runs](runs.md#harness-turns) |
 | `keep_tool_result_generations` | positive integer, or null for the guild's `keep_tool_result_generations` | `null` | [Runs](runs.md#tool-result-stubbing) |
 | `max_scripts` | positive integer | `10` | [Scripts](scripts.md) |
 | `max_workspace_mib` | positive integer | `10240` | [Agent home](agent-home.md) |

@@ -106,7 +106,9 @@ records, and files the agent may write, posts to the group chat, sets
 routines and wake-ups, reads and runs scripts, drives the agent's
 browser, stores secrets, files issues, and calls every connector tool
 the agent's logins offer, such as a GitHub write, until the generation
-ends, for up to 30 minutes.
+ends: for up to 30 minutes until 2026-11-16, and since then for up to
+the agent's `max_turn_minutes`, 30 by default, which an operator can
+raise.
 
 **Control in place:** the token is 32 bytes from the platform's
 random source, one per generation, kept only in the orchestrator's
@@ -216,7 +218,8 @@ file is mode 0600 and goes with the turn's state. The driver removes
 the variables that would move the CLI onto a metered key and turns
 off hooks, plugins, and project MCP servers; Codex also loads no
 `config.toml` or rules from the home. A turn stops after 30
-minutes. The organisation's model keys never reach the sandbox.
+minutes; since 2026-11-16 after the agent's `max_turn_minutes`, 30 by
+default. The organisation's model keys never reach the sandbox.
 
 **Fix to make:** start the harness with only its own credential in its
 environment, and limit what the agent's container reaches. Until then,

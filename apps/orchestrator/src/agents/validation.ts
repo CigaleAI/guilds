@@ -463,6 +463,7 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     max_tool_calls: requirePositiveInteger(filled.max_tool_calls, "max_tool_calls"),
     max_input_tokens: requirePositiveInteger(filled.max_input_tokens, "max_input_tokens"),
     max_wake_ups: requirePositiveInteger(filled.max_wake_ups, "max_wake_ups"),
+    max_turn_minutes: requirePositiveInteger(filled.max_turn_minutes, "max_turn_minutes"),
     keep_tool_result_generations:
       filled.keep_tool_result_generations === null
         ? null
