@@ -8,6 +8,28 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A Codex subscription agent runs: each generation of its
+run is one turn of `codex exec` in the agent's sandbox, as a Claude
+Code one is. The run's composed system prompt replaces Codex's own
+instructions through `model_instructions_file`, a private file in the
+turn's run folder; the orchestrator's MCP server is given for that one
+call by `-c mcp_servers.guilds.*` overrides, its token read from
+`GUILDS_MCP_TOKEN`, which only the CLI's own process holds and which
+the commands Codex runs do not inherit; and the run's next generation
+resumes the thread with `codex exec resume`. The prompt names each
+tool `mcp__guilds__<tool>`, as Codex's model calls it. The run shows
+Codex's messages as assistant rows and its commands, patches, and web
+searches as calls with their results, marked `from_harness: "codex"`;
+in the operator app they read as **Run**, **Change**, and **Search
+web**. A run on a harness that runs no turn fails at start with
+`subscription.not_runnable`, which reads "`<Harness>` cannot run a
+subscription agent: pick Claude Code or Codex, or give the agent a
+model", and the Model source note says the harness runs every turn.
+The runtime image must be rebuilt: the Codex driver takes a
+`system_prompt` and an MCP server
+([SEC-62](docs/architecture/security-register.md#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network),
+[SEC-64](docs/architecture/security-register.md#sec-64--a-subscription-agents-mcp-token-lets-any-process-on-its-machine-call-its-guilds-tools)).
+
 **Rebuild.** A Claude Code subscription agent calls its Guilds tools:
 its run is offered what a run on a key with the same access would be,
 connectors included, less the code tools, and its snapshot records

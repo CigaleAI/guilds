@@ -194,6 +194,9 @@ export type HarnessToolArguments = {
   description?: string;
 };
 
+/** A Codex patch's arguments, as its item reports them: the files it changed, each with how. */
+export type FileChangeArguments = { changes: Array<{ path: string; kind?: string }> };
+
 /** A `code_task` call's arguments: the brief, the repository, and the harness session it resumes. */
 export type CodeTaskArguments = { brief?: string; repo?: string; session_id?: string };
 

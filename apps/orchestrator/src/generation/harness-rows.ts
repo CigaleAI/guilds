@@ -7,6 +7,7 @@ import type {
   ToolResultMetadata,
 } from "../db/schema/index.js";
 import { HARNESS_MCP_TOOL_PREFIX, type TurnHarness } from "../coding/harnesses.js";
+import type { JsonObject } from "../lib/json.js";
 import { redact } from "../secrets/index.js";
 import { identityOutput, processOutput, toolResultMaxBytes } from "../toolbox/index.js";
 import {
@@ -14,6 +15,7 @@ import {
   type ClaudeCodeMessage,
   type ClaudeCodeToolUse,
 } from "./parse-claude-code.js";
+import { parseCodexEvents, type CodexToolItem } from "./parse-codex.js";
 import { interruptionRecord } from "./tool-calls.js";
 
 // The rows a subscription agent's run keeps of its harness's events: each message the harness
@@ -90,9 +92,78 @@ export function claudeCodeTurnSteps(raw: string, secrets: Record<string, string>
   });
 }
 
-/** The steps each harness that runs a subscription agent's turns makes of the raw lines of its log. */
-export const HARNESS_TURN_STEPS: Record<TurnHarness, (raw: string, secrets: Record<string, string>) => HarnessTurnStep[]> = {
+/** A call of one of Codex's tools as the run keeps it: the tool's name and the call's input. */
+type CodexToolUse = { name: string; input: JsonObject };
+
+/**
+ * The call of one of Codex's tools its item reports: a shell command, a patch's changes, a web
+ * search, or a call of an MCP server's tool under the name Codex gives its model,
+ * `mcp__<server>__<tool>`.
+ */
+function codexToolUse(item: CodexToolItem): CodexToolUse {
+  switch (item.type) {
+    case "command_execution":
+      return { name: item.type, input: { command: item.command } };
+    case "file_change":
+      return { name: item.type, input: { changes: item.changes } };
+    case "web_search":
+      return { name: item.type, input: { query: item.query } };
+    case "mcp_tool_call":
+      return { name: `mcp__${item.server}__${item.tool}`, input: item.arguments ?? {} };
+  }
+}
+
+/** What a call of one of Codex's tools returned, as its completed item reports it; null when it reports no text. */
+function codexToolOutput(item: CodexToolItem): string | null {
+  switch (item.type) {
+    case "command_execution":
+      return item.aggregated_output ?? null;
+    case "file_change":
+      return item.changes.map((change) => `${change.kind ?? "change"} ${change.path}`).join("\n");
+    case "web_search":
+      return null;
+    case "mcp_tool_call":
+      return item.error?.message ?? item.result?.content.flatMap((part) => (part.text === undefined ? [] : [part.text])).join("\n") ?? null;
+  }
+}
+
+/**
+ * The steps Codex's `--json` lines in `raw` make, in order, redacted with `secrets`: each message
+ * with text, and each call of one of its own tools, when it starts and with its result when it
+ * completes. Codex numbers its items afresh on each turn, so a call's id is the item's under
+ * `turnId`, the turn's call id.
+ */
+export function codexTurnSteps(raw: string, secrets: Record<string, string>, turnId: string): HarnessTurnStep[] {
+  return parseCodexEvents(raw).flatMap((event): HarnessTurnStep[] => {
+    if (event.type === "message") {
+      return event.text.trim() ? [{ kind: "message", payload: { role: "assistant", content: redact(event.text, secrets) } }] : [];
+    }
+    const use = codexToolUse(event.item);
+    if (!isHarnessOwnTool("codex", use.name)) {
+      return [];
+    }
+    const call: ToolCall = {
+      id: `${turnId}.${event.item.id}`,
+      type: "function",
+      function: { name: use.name, arguments: redact(JSON.stringify(use.input), secrets) },
+    };
+    if (event.type === "tool_started") {
+      return [{ kind: "message", payload: { role: "assistant", content: "", tool_calls: [call] } }];
+    }
+    return [{ kind: "result", result: { harness: "codex", tool_use_id: call.id, output: codexToolOutput(event.item) }, call }];
+  });
+}
+
+/**
+ * The steps each harness that runs a subscription agent's turns makes of the raw lines of its log,
+ * redacted with the turn's secrets, under the turn's call id.
+ */
+export const HARNESS_TURN_STEPS: Record<
+  TurnHarness,
+  (raw: string, secrets: Record<string, string>, turnId: string) => HarnessTurnStep[]
+> = {
   "claude-code": claudeCodeTurnSteps,
+  codex: codexTurnSteps,
 };
 
 /**

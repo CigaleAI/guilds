@@ -65,8 +65,8 @@ turn of its harness instead: the harness's CLI runs in the agent's
 sandbox on the run's system prompt and the messages that opened the
 generation, with its own tools and the run's Guilds tools, which it
 calls on the orchestrator's MCP server, and the run keeps what it
-writes as rows while it runs ([Harness turns](#harness-turns)). Only
-Claude Code runs a subscription agent's turns.
+writes as rows while it runs ([Harness turns](#harness-turns)).
+Claude Code and Codex run a subscription agent's turns.
 
 ### What a run stores
 
@@ -442,9 +442,8 @@ A run whose snapshot has no `model` is a subscription agent's
 harness ([Harness turns](#harness-turns)). Before the machine is
 woken, it fails with `harness.missing` when the snapshot names no
 harness, and with `subscription.not_runnable`, "`<Harness>` cannot run
-a subscription agent's turns yet: pick Claude Code in the agent's
-Settings, or give the agent a model on a key", on any harness but
-Claude Code.
+a subscription agent: pick Claude Code or Codex, or give the agent a
+model", on any other harness.
 
 At start, the loop cancels the machine's idle timer, ensures the
 machine is up, and checks the disk caps. A home or machine over its
@@ -523,8 +522,8 @@ under the call id `turn_<generation>_<run id>`
    session resumes it; a new run starts a new session. The run records
    `metadata.harness_turn` at the start and again once the CLI reports
    its session. The generation's grant on the orchestrator's MCP server
-   opens before the start: the CLI is given its URL and token in a
-   private configuration file
+   opens before the start: the CLI is given its URL and token for that
+   one call
    ([The MCP server](../tools-and-connectors/tools-in-a-run.md#the-mcp-server)).
 2. **Poll** every second. Each poll's new events become rows as they
    come, published as `message.committed`
@@ -533,11 +532,19 @@ under the call id `turn_<generation>_<run id>`
    `tool_calls`, and each result a tool row. Text, tool inputs, and
    results are redacted with the run's secret values, and each result
    is capped as a tool's output is. Every row carries
-   `from_harness: "claude-code"` and the generation number. A call of
-   a tool of the orchestrator's MCP server, which Claude Code names
+   `from_harness`, the harness, and the generation number. A call of
+   a tool of the orchestrator's MCP server, which both CLIs name
    `mcp__guilds__<tool>`, and its result make no row from these
    events: the server keeps the call as the run's own, an assistant
    row holding it and its tool row, as a model's call is kept.
+
+   | CLI | Message | Call of its own tool | Result |
+   | --- | --- | --- | --- |
+   | Claude Code | each `assistant` event's text | each `tool_use` block, under its id and tool name | each `tool_result` block of a `user` event |
+   | Codex | each completed `agent_message` item | each `command_execution` (its `command`), `file_change` (its `changes`) or `web_search` (its `query`) item as it starts, or as it completes when it did not announce its start, under `<call id>.<item id>` and the item's type | the completed item: a command's output, a line per changed file, nothing for a search |
+
+   Codex's other items (its reasoning, its plan, an error notice) make
+   no row.
 3. **End.** A CLI that exits 0 without an error result ends the
    generation as a model's final reply does: the run completes or
    waits by the same rules. Any other ending records its error:
@@ -817,8 +824,8 @@ cancel and resume are, and records `cancel_reason: "operator"`.
   - `completion.ts`: model calls, input counting, and credentials
   - `harness-loop.ts`: a subscription agent's turns on its harness;
     `harness-ending.ts`: how a turn ended and the run error it fails
-    with; `parse-claude-code.ts` and `harness-rows.ts`: Claude Code's
-    events and the rows they make
+    with; `parse-claude-code.ts` and `parse-codex.ts`: each CLI's
+    events; `harness-rows.ts`: the rows they make
   - `tool-calls.ts`: tool calls and interruption results
   - `events.ts`: committed rows, run errors, and stream events
   - `run-secrets.ts`: the secrets of each generation

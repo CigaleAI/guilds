@@ -222,3 +222,19 @@ test("a call of Claude Code's own tool reads by its kind on the agent's home, or
     "an edit in the home is no tracked state",
   );
 });
+
+test("a call of Codex's own tool reads by the kind of item its log reports", () => {
+  assert.deepEqual(classifyToolCall(call("command_execution", { command: "ls" })), {
+    name: "command_execution",
+    kind: "execute",
+    level: "local",
+    server: null,
+  });
+  assert.equal(classifyToolCall(call("file_change", { changes: [{ path: "a.py" }] })).kind, "write");
+  assert.deepEqual(classifyToolCall(call("web_search", { query: "guilds" })), {
+    name: "web_search",
+    kind: "read",
+    level: null,
+    server: null,
+  });
+});

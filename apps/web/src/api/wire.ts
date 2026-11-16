@@ -20,6 +20,7 @@ import type {
   CodeTaskArguments,
   ConnectorToolArguments,
   FileReadArguments,
+  FileChangeArguments,
   FileToolArguments,
   HarnessToolArguments,
   NamedToolArguments,
@@ -246,6 +247,17 @@ export function isHarnessToolArguments(value: unknown): value is HarnessToolArgu
     "query",
     "description",
   ]);
+}
+
+/** Whether a tool call's arguments are a Codex patch's: the files it changed, each a path and how, as text. */
+export function isFileChangeArguments(value: unknown): value is FileChangeArguments {
+  return (
+    isJsonObject(value) &&
+    Array.isArray(value.changes) &&
+    value.changes.every(
+      (change) => hasTextParameters(change, ["path", "kind"]) && isString(change.path),
+    )
+  );
 }
 
 /** Whether a tool call's arguments are a `code_search` call's: its pattern, mode and path, as text. */

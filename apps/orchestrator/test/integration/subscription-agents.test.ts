@@ -29,7 +29,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("a subscription agent is created, reconfigured, checked for readiness, and fails its runs at start", { timeout: 60_000 }, async () => {
+test("a subscription agent is created, reconfigured, checked for readiness, and runs on its harness", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const env = testEnv(databaseUrl);
   Object.assign(process.env, env);
@@ -167,7 +167,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     assert.equal(harness.json().repositories.length, 0);
     assert.ok(harness.json().harnesses.some((item: { harness: string }) => item.harness === "codex"));
 
-    // A run of it fails at start, naming why.
+    // A run of it goes to its harness: this machine's sandbox answers no harness check.
     const run = await app.inject({
       method: "POST",
       url: `/api/agents/${agentId}/runs`,
@@ -181,8 +181,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
       await sleep(25);
       errors = (await app.inject({ method: "GET", url: `/api/runs/${runId}`, headers: AUTH })).json().errors;
     }
-    assert.equal(errors.at(-1)?.operation, "subscription.not_runnable");
-    assert.match(String(errors.at(-1)?.message), /Codex cannot run a subscription agent's turns yet: pick Claude Code/);
+    assert.equal(errors.at(-1)?.operation, "harness.check");
     const snapshot = (await app.inject({ method: "GET", url: `/api/runs/${runId}`, headers: AUTH })).json().config_snapshot;
     assert.equal(snapshot.model, null);
     assert.equal("model_source" in snapshot, false);

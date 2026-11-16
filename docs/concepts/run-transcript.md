@@ -197,11 +197,14 @@ makes on the orchestrator's MCP server, reads as a model's call of
 that tool does. The run's error banner names a turn that did not end
 cleanly, such as `harness.failed` or `harness.timed_out`.
 
-A call of Claude Code's own tool reads as what it did, coloured by its
+A call of the harness's own tool reads as what it did, coloured by its
 kind:
 
 | Tool | Reads | Kind |
 | --- | --- | --- |
+| Codex's `command_execution` | **Run** and the command's first line | execute |
+| Codex's `file_change` | **Change** and the file, or the number of files | write |
+| Codex's `web_search` | **Search web** and the query | read |
 | `Bash` | **Run** and the command's first line | execute |
 | `Read` | **Read** and the file | read |
 | `Write`, `Edit`, `MultiEdit` | **Write** or **Edit** and the file | write |

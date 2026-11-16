@@ -83,7 +83,7 @@ export function isSubscriptionHarness(harness: Harness): boolean {
 }
 
 /** The harnesses whose CLI runs a subscription agent's turns; on the others its runs fail at start. */
-export const TURN_HARNESSES = ["claude-code"] as const;
+export const TURN_HARNESSES = ["claude-code", "codex"] as const;
 export type TurnHarness = (typeof TURN_HARNESSES)[number];
 
 /** Whether the harness's CLI runs a subscription agent's turns. */
@@ -97,10 +97,12 @@ export const HARNESS_MCP_SERVER = "guilds";
 /**
  * What a harness that runs a subscription agent's turns puts before a tool's own name when it
  * offers its model a tool of the orchestrator's MCP server: Claude Code names an MCP tool
- * `mcp__<server>__<tool>`.
+ * `mcp__<server>__<tool>`, and so does Codex, whose model reaches it as `tools.mcp__<server>__<tool>`
+ * or in the tool namespace `mcp__<server>`.
  */
 export const HARNESS_MCP_TOOL_PREFIX: Record<TurnHarness, string> = {
   "claude-code": `mcp__${HARNESS_MCP_SERVER}__`,
+  codex: `mcp__${HARNESS_MCP_SERVER}__`,
 };
 
 /** Why a subscription agent cannot run on a harness it may not run on. */

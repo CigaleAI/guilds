@@ -949,16 +949,19 @@ harness that runs a subscription agent's turns, runs one turn of that
 harness (`generation/harness-loop.ts`). The set-up, the cancel
 settlement, the finish, and the events around either loop are shared.
 A subscription generation on no harness fails with `harness.missing`,
-and on any harness but Claude Code with `subscription.not_runnable`,
-before the machine is woken. Its tools are narrowed as a key
+and on any harness but Claude Code and Codex
+(`TURN_HARNESSES`, `coding/harnesses.ts`) with
+`subscription.not_runnable`, before the machine is woken. Its tools are narrowed as a key
 generation's are, and no model credential is resolved; its harness is
 checked as a coding run's is. Its turn opens a grant on the
 `HarnessMcpServer` (`generation/harness-mcp.ts`), starts the CLI with
-the run's first row as its system prompt (`--system-prompt-file`), the
-server's URL and the grant's token (`--mcp-config`), and the user
-messages since the run's last reply on stdin, polls every second, keeps each poll's Claude Code
-events as rows through `events.commitMessage`
-(`generation/parse-claude-code.ts`, `generation/harness-rows.ts`),
+the run's first row as its system prompt, the server's URL and the
+grant's token, and the user messages since the run's last reply on
+stdin, polls every second, and keeps each poll's events as rows
+through `events.commitMessage`: one parser per CLI
+(`generation/parse-claude-code.ts`, `generation/parse-codex.ts`) and
+the steps `HARNESS_TURN_STEPS` makes of its events
+(`generation/harness-rows.ts`). It
 keeps the session in `metadata.harness_turn` for the next generation
 to resume, and ends with `harness.start`, `harness.failed`,
 `harness.lost`, `harness.unresponsive`, or `harness.timed_out` when

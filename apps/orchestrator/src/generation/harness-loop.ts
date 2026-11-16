@@ -387,7 +387,7 @@ export class HarnessLoop {
     turn: HarnessRunTurn,
     raw: string,
   ): Promise<void> {
-    for (const step of HARNESS_TURN_STEPS[turn.harness](raw, secrets)) {
+    for (const step of HARNESS_TURN_STEPS[turn.harness](raw, secrets, turn.call_id)) {
       if (step.kind === "message") {
         await this.keepMessage(gen, turn, step.payload);
       } else {

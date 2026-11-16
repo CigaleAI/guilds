@@ -22,7 +22,11 @@ test("a subscription agent's run on Claude Code names each tool as Claude Code c
   assert.deepEqual(runToolNaming({ model: null, harness: "claude-code" }), { prefix: "mcp__guilds__" });
 });
 
+test("a subscription agent's run on Codex names each tool as Codex's model calls an MCP tool", () => {
+  assert.deepEqual(runToolNaming({ model: null, harness: "codex" }), { prefix: "mcp__guilds__" });
+});
+
 test("a subscription agent's run on a harness that runs no turn names each tool by its own name", () => {
-  assert.deepEqual(runToolNaming({ model: null, harness: "codex" }), { prefix: "" });
+  assert.deepEqual(runToolNaming({ model: null, harness: "cursor" }), { prefix: "" });
   assert.deepEqual(runToolNaming({ model: null, harness: null }), { prefix: "" });
 });
