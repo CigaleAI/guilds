@@ -37,11 +37,20 @@ export function bulkEditBody(
 }
 
 /**
- * The column a bulk edit sets: the one named, or the table's first before one is; undefined when
- * the table has no such column.
+ * What a bulk edit's next save sends: the first save's value, which stays fixed for every retry;
+ * before one, the field's value when its column takes it; else nothing.
  */
+export function bulkEditSends(
+  sent: RecordChanges | null,
+  result: ReturnType<typeof bulkEditBody> | null,
+): RecordChanges | null {
+  if (sent) return sent;
+  return result && "body" in result ? result.body : null;
+}
+
+/** The column a bulk edit sets: the one named; undefined before one is chosen, or once the table lost it. */
 export function chosenColumn(columns: readonly Column[], columnName: string): Column | undefined {
-  return columnName ? columns.find((column) => column.name === columnName) : columns[0];
+  return columns.find((column) => column.name === columnName);
 }
 
 /** The records a bulk edit's next save sends to: those the last one refused, or else every one asked. */

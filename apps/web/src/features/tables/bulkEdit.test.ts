@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { CollectionRecord, Column } from "../../api/types/tables";
 import {
   bulkEditBody,
+  bulkEditSends,
   bulkEditTargets,
   chosenColumn,
   recordIdsText,
@@ -67,10 +68,18 @@ test("a unique column takes a value on one record, and clearing on any number", 
   assert.deepEqual(bulkEditBody(email, "", 2), { body: { email: null } });
 });
 
-test("the column chosen is the one named, the first before one is, and none once the table lost it", () => {
+test("a save sends the first save's value once there was one, else the field's value when it is taken", () => {
+  assert.deepEqual(bulkEditSends(null, { body: { score: 7 } }), { score: 7 });
+  assert.equal(bulkEditSends(null, { error: "A number." }), null);
+  assert.equal(bulkEditSends(null, null), null);
+  assert.deepEqual(bulkEditSends({ score: 9 }, { body: { score: 11 } }), { score: 9 });
+  assert.deepEqual(bulkEditSends({ score: 9 }, { error: "A number." }), { score: 9 });
+});
+
+test("the column chosen is the one named, and none before one is or once the table lost it", () => {
   const columns = [column("score", "number"), column("tags", "array")];
   assert.equal(chosenColumn(columns, "tags"), columns[1]);
-  assert.equal(chosenColumn(columns, ""), columns[0]);
+  assert.equal(chosenColumn(columns, ""), undefined);
   assert.equal(chosenColumn(columns, "gone"), undefined);
   assert.equal(chosenColumn([], ""), undefined);
 });

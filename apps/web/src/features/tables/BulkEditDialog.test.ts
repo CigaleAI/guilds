@@ -44,7 +44,7 @@ function record(id: number): CollectionRecord {
 /** A PATCH the panel sent: its path and its JSON body. */
 type SentPatch = { path: string; body: string };
 
-test("selection mode selects the page's records apart from opening them, a new view clears the selection, and a bulk edit names its records, sends one typed PATCH per record, in turn, keeps the refused ones to retry alone, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
+test("selection mode takes a column before any record and selects the page's records apart from opening them, another column, table or view clears the selection, and a bulk edit names its column and records, sends one typed PATCH per record, in turn, fixes its value from the first save, keeps the refused ones to retry alone with that value, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
   const window = new Window({ url: "http://localhost/" });
   const globals = {
     window,
@@ -81,11 +81,12 @@ test("selection mode selects the page's records apart from opening them, a new v
     for (const [name, value] of Object.entries(globals)) {
       Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
     }
-    // The server: three records on every page of a listing of a hundred, a search that finds the
-    // one whose id it names, the ids whose PATCH
-    // it refuses, every PATCH it got, and how many it answered at once at most.
+    // The server: three records on every page of a listing of a hundred in either table, a search
+    // that finds the one whose id it names, the ids whose PATCH it refuses, a gate that holds each
+    // PATCH while set, every PATCH it got, and how many it answered at once at most.
     const stored = [record(1), record(2), record(3)];
     const refused = new Map<number, string>();
+    let gate: Promise<void> | null = null;
     const patches: SentPatch[] = [];
     let inFlight = 0;
     let mostInFlight = 0;
@@ -97,13 +98,14 @@ test("selection mode selects the page's records apart from opening them, a new v
         inFlight += 1;
         mostInFlight = Math.max(mostInFlight, inFlight);
         await new Promise((resolve) => setTimeout(resolve, 0));
+        if (gate) await gate;
         inFlight -= 1;
         const recordId = Number(url.pathname.split("/").at(-1));
         const reason = refused.get(recordId);
         if (reason) return Response.json({ detail: reason }, { status: 409 });
         return Response.json({ record: record(recordId), warnings: [] });
       }
-      if (url.pathname === "/api/collections/c1/records") {
+      if (/^\/api\/collections\/c[12]\/records$/.test(url.pathname)) {
         listFetches += 1;
         const query = url.searchParams.get("query");
         const records = query ? stored.filter((item) => String(item.id) === query) : stored;
@@ -128,7 +130,7 @@ test("selection mode selects the page's records apart from opening them, a new v
       await import("@tanstack/react-router");
     const { getToasts } = await import("@guildsrun/ui");
     const { RecordsPanel } = await import("./RecordsPanel");
-    // The table as the page holds it, swapped below for one that lost a column.
+    // The table as the page holds it, swapped below for another table and for one that lost columns.
     let showCollection: (next: Collection) => void = () => undefined;
     const Panel = () => {
       const [shown, setShown] = React.useState(collection);
@@ -221,14 +223,16 @@ test("selection mode selects the page's records apart from opening them, a new v
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
       );
     };
-    const choose = async (label: string, option: string) => {
-      const trigger = [
-        ...(dialog()?.querySelectorAll<HTMLElement>('[role="combobox"]') ?? []),
-      ].find(
+    const select = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="combobox"]')].find(
         (candidate) =>
           candidate.id &&
-          document.querySelector(`label[for="${candidate.id}"]`)?.textContent?.startsWith(label),
+          document
+            .querySelector(`label[for="${candidate.id}"]`)
+            ?.textContent?.replace(/ \*$/, "") === label,
       );
+    const choose = async (label: string, option: string) => {
+      const trigger = select(label);
       assert.ok(trigger, `the ${label} select`);
       await settle(() => trigger.click());
       const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
@@ -255,10 +259,15 @@ test("selection mode selects the page's records apart from opening them, a new v
     await press("Cancel");
     assert.equal(dialog(), null);
 
-    // In selection mode a box selects without opening the record, a row opens nothing and has no
-    // pencils, and the header box selects the page, then none.
+    // In selection mode a row opens nothing and has no pencils, and the boxes stay off until a
+    // column is chosen; then a box selects without opening the record, and the header box selects
+    // the page, then none.
     await press("Select records");
     assert.equal(button("Edit score of record #1"), undefined, "no pencil in selection mode");
+    assert.equal(button("Select record #1")?.disabled, true, "no box before a column");
+    assert.equal(button("Select this page")?.disabled, true, "no page box before a column");
+    await choose("Column to edit", "score");
+    assert.equal(button("Select record #1")?.disabled, false);
     await press("Select record #1");
     await press("Select record #3");
     assert.equal(toolbar(), "2 selected");
@@ -270,15 +279,24 @@ test("selection mode selects the page's records apart from opening them, a new v
     await press("Select this page");
     assert.equal(toolbar(), null);
 
-    // Leaving the mode takes the boxes away and clears the selection.
+    // Another column clears the selection.
+    await press("Select record #1");
+    await choose("Column to edit", "active");
+    assert.equal(toolbar(), null, "another column");
+    await choose("Column to edit", "score");
+
+    // Leaving the mode takes the boxes away and clears the selection and the column.
     await press("Select record #1");
     await press("Exit selection mode");
     assert.equal(button("Select record #1"), undefined);
+    assert.equal(select("Column to edit"), undefined, "no column outside the mode");
     await press("Select records");
     assert.equal(toolbar(), null);
+    assert.equal(button("Select record #1")?.disabled, true, "the column is chosen again");
+    await choose("Column to edit", "score");
 
     // Fetching the same view again keeps the selection; each change of the page, the sort, the
-    // filters or the search clears it, even when the view shows the same records.
+    // filters, the search or the table clears it, even when the view shows the same records.
     const fetchesBeforeRefresh = listFetches;
     await press("Select record #1");
     await press("Refresh the records");
@@ -308,13 +326,24 @@ test("selection mode selects the page's records apart from opening them, a new v
     await search("");
     await until(() => rows() === 3, "the listing again");
     assert.equal(toolbar(), null, "the search cleared");
+    await press("Select record #1");
+    await settle(() => showCollection({ ...collection, id: "c2" }));
+    await until(() => rows() === 3, "the other table's records");
+    assert.equal(toolbar(), null, "another table");
+    await settle(() => showCollection(collection));
+    await until(() => rows() === 3, "the first table's records");
 
     // Cancel sends nothing; a value the column refuses is named and not sent.
     await press("Select record #1");
     await press("Select record #2");
     await press("Edit selected");
     assert.match(dialog()?.textContent ?? "", /Edit 2 records/);
-    assert.match(dialog()?.textContent ?? "", /Records #1, #2/);
+    assert.match(dialog()?.textContent ?? "", /Column score · Records #1, #2/);
+    assert.equal(
+      dialog()?.querySelector('[role="combobox"]'),
+      null,
+      "the dialog does not change the column",
+    );
     await typeValue("5");
     await press("Cancel");
     assert.equal(dialog(), null);
@@ -325,14 +354,23 @@ test("selection mode selects the page's records apart from opening them, a new v
     await press("Cancel");
     assert.equal(patches.length, 0, "nothing is sent");
 
-    // Save pressed twice sends the typed value once to each record, one at a time, then closes and
-    // the selection stays.
+    // Save pressed twice sends the typed value once to each record, one at a time, with the field
+    // off while it runs, then closes and the selection stays.
     await press("Edit selected");
     await typeValue("7");
+    let release: () => void = () => undefined;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
     await settle(() => {
       button("Save changes")?.click();
       button("Save changes")?.click();
     });
+    assert.ok(button("Saving…"), "the save runs");
+    assert.equal(dialog()?.querySelector("input")?.disabled, true, "no value while saving");
+    await settle(() => button("Saving…")?.click());
+    gate = null;
+    release();
     await until(() => dialog() === null, "the dialog closes once every record is saved");
     assert.deepEqual(patches, [
       { path: "/api/collections/c1/records/1", body: JSON.stringify({ body: { score: 7 } }) },
@@ -344,13 +382,18 @@ test("selection mode selects the page's records apart from opening them, a new v
 
     // Another column sends its own type: a boolean, and a list cleared to null.
     patches.length = 0;
+    await choose("Column to edit", "active");
+    await press("Select record #1");
+    await press("Select record #2");
     await press("Edit selected");
-    await choose("Column", "active");
+    assert.match(dialog()?.textContent ?? "", /Column active · Records #1, #2/);
     await choose("active", "false");
     await press("Save changes");
     await until(() => dialog() === null, "the boolean is saved");
+    await choose("Column to edit", "tags");
+    await press("Select record #1");
+    await press("Select record #2");
     await press("Edit selected");
-    await choose("Column", "tags");
     await press("Save changes");
     await until(() => dialog() === null, "the list is cleared");
     assert.deepEqual(
@@ -363,9 +406,10 @@ test("selection mode selects the page's records apart from opening them, a new v
       ],
     );
 
-    // A refused record is listed with the server's reason and the dialog stays open; the others are
-    // saved, and the records are fetched again all the same.
+    // A refused record is listed with the server's reason and the dialog stays open, its value
+    // fixed; the others are saved, and the records are fetched again all the same.
     patches.length = 0;
+    await choose("Column to edit", "score");
     await press("Select this page");
     assert.equal(toolbar(), "3 selected");
     refused.set(2, "The record changed meanwhile.");
@@ -391,8 +435,11 @@ test("selection mode selects the page's records apart from opening them, a new v
     );
     assert.equal(toastTitles().at(-1), "Saved score on 2 records");
     await until(() => listFetches > fetchesBefore, "the records are fetched again after a refusal");
+    assert.equal(dialog()?.querySelector("input")?.disabled, true, "no value after a refusal");
 
-    // Retry sends to the refused record only, and closes once it is saved.
+    // Retry sends the first save's value, whatever the field holds, to the refused record only,
+    // and closes once it is saved.
+    await typeValue("11");
     refused.clear();
     await press("Retry failed");
     await until(() => dialog() === null, "the retry closes the dialog");
@@ -404,17 +451,20 @@ test("selection mode selects the page's records apart from opening them, a new v
 
     // One value for several records of a unique column is refused before anything is sent.
     patches.length = 0;
+    await choose("Column to edit", "email");
+    await press("Select this page");
     await press("Edit selected");
-    await choose("Column", "email");
     await typeText("a@b.c");
     await press("Save changes");
     assert.match(dialog()?.textContent ?? "", /Unique: one record at most can hold a value\./);
     await press("Cancel");
     assert.equal(patches.length, 0, "nothing is sent for a repeated unique value");
 
-    // A chosen column the table loses is named, and saving stays off.
+    // A chosen column the table loses is named in the dialog, and saving stays off; the panel
+    // drops the column and the selection.
+    await choose("Column to edit", "tags");
+    await press("Select this page");
     await press("Edit selected");
-    await choose("Column", "tags");
     await settle(() =>
       showCollection({
         ...collection,
@@ -425,6 +475,14 @@ test("selection mode selects the page's records apart from opening them, a new v
     assert.equal(button("Save changes")?.disabled, true);
     await press("Cancel");
     assert.equal(patches.length, 0);
+    assert.equal(toolbar(), null, "the lost column's selection");
+    assert.equal(button("Select record #1")?.disabled, true, "no box without the column");
+
+    // A table without columns has nothing to select records for.
+    await settle(() => showCollection({ ...collection, columns: [] }));
+    assert.equal(select("Column to edit")?.disabled, true);
+    assert.match(select("Column to edit")?.textContent ?? "", /This table has no columns/);
+    assert.equal(button("Select record #1")?.disabled, true);
   } finally {
     if (root) {
       const leftover: Root = root;

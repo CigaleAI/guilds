@@ -29,14 +29,23 @@ type RecordFieldProps = {
   text: string;
   onChange: (text: string) => void;
   error: string | undefined;
+  disabled?: boolean;
 };
 
 /** A column's field: a pick among its values, a text area for free text, or a typed input. */
-export function RecordField({ column, text, onChange, error }: RecordFieldProps) {
+export function RecordField({ column, text, onChange, error, disabled = false }: RecordFieldProps) {
   const label = column.required ? `${column.name} *` : column.name;
   const labels = { label, hint: column.description, ...(error ? { error } : {}) };
   if (column.type === "boolean" || (column.type === "text" && column.values?.length)) {
-    return <ChoiceField column={column} text={text} onChange={onChange} labels={labels} />;
+    return (
+      <ChoiceField
+        column={column}
+        text={text}
+        onChange={onChange}
+        labels={labels}
+        disabled={disabled}
+      />
+    );
   }
   if (column.type === "text") {
     return (
@@ -46,11 +55,20 @@ export function RecordField({ column, text, onChange, error }: RecordFieldProps)
         rows={2}
         {...labels}
         value={text}
+        disabled={disabled}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
     );
   }
-  return <TypedField column={column} text={text} onChange={onChange} labels={labels} />;
+  return (
+    <TypedField
+      column={column}
+      text={text}
+      onChange={onChange}
+      labels={labels}
+      disabled={disabled}
+    />
+  );
 }
 
 type ChoiceFieldProps = {
@@ -58,10 +76,11 @@ type ChoiceFieldProps = {
   text: string;
   onChange: (text: string) => void;
   labels: FormFieldText;
+  disabled: boolean;
 };
 
 /** A boolean column, or a text column with allowed values: one of them, or not set. */
-function ChoiceField({ column, text, onChange, labels }: ChoiceFieldProps) {
+function ChoiceField({ column, text, onChange, labels, disabled }: ChoiceFieldProps) {
   const options =
     column.type === "boolean"
       ? [
@@ -74,6 +93,7 @@ function ChoiceField({ column, text, onChange, labels }: ChoiceFieldProps) {
       tone="surface"
       {...labels}
       value={text || unset}
+      disabled={disabled}
       onValueChange={(value) => onChange(value === unset ? "" : value)}
       options={[{ value: unset, label: "(not set)" }, ...options]}
     />
@@ -85,10 +105,11 @@ type TypedFieldProps = {
   text: string;
   onChange: (text: string) => void;
   labels: FormFieldText;
+  disabled: boolean;
 };
 
 /** A number, time or array column: an input of its type, an array's values comma-separated. */
-function TypedField({ column, text, onChange, labels }: TypedFieldProps) {
+function TypedField({ column, text, onChange, labels, disabled }: TypedFieldProps) {
   return (
     <TextField
       tone="surface"
@@ -106,6 +127,7 @@ function TypedField({ column, text, onChange, labels }: TypedFieldProps) {
           : undefined
       }
       value={text}
+      disabled={disabled}
       onChange={(event) => onChange(event.currentTarget.value)}
     />
   );

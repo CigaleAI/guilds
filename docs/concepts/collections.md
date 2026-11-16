@@ -161,26 +161,34 @@ A collection opens at `/tables/<id>` on **Records**.
     with **Cancel** and **Save changes**, and checks and sends the value
     as the dialog does. `id` and `updated_at` have no pencil.
   - **Select records** turns on selection mode, and **Exit selection
-    mode** turns it off and clears the selection. In the mode a row
-    opens nothing and its cells have no pencil; the box on a row
+    mode** turns it off and clears the column and the selection. In
+    the mode a row opens nothing and its cells have no pencil.
+    **Column to edit** takes one of the table's columns first; `id`
+    and `updated_at` are not among them, and a table without columns
+    has none to take. The boxes stay off until a column is chosen,
+    and choosing another clears the selection. The box on a row then
     selects the record, and **Select this page** in the header selects
-    every record of the page, or none. Each change of the search, the
-    filters, the sort or the page clears the selection, even when the
-    same records stay shown; fetching the same view again keeps it. A
-    bar shows how many are selected, **Clear selection**, and **Edit
-    selected**.
-  - **Edit selected** sets one column to the same value on every
-    selected record, and names their ids. It takes the column, then
-    the dialog's field for it, checked as the dialog checks it; an
-    empty field clears the value. A unique column takes a value on one
+    every record of the page, or none. Each change of the table, the
+    search, the filters, the sort or the page clears the selection,
+    even when the same records stay shown; a column the table loses
+    clears it too. Fetching the same view again keeps it, less the
+    records the view no longer shows. A bar shows how many are
+    selected, **Clear selection**, and **Edit selected**.
+  - **Edit selected** sets the chosen column to the same value on
+    every selected record, and names the column and the records' ids;
+    the column does not change in the dialog. It takes the dialog's
+    field for the column, checked as the dialog checks it; an empty
+    field clears the value. A unique column takes a value on one
     record only; for several it can only be cleared. A column the
-    table loses while chosen is named, and nothing saves until another
-    is chosen. Each record is saved by its own `PATCH`, one at a time,
-    so it keeps its other values and the server applies every rule of
-    a record write to it alone. After a save the server refuses for
-    some records, the dialog names the records saved and lists the
-    refused ones with its reasons, and **Retry failed** sends to them
-    only. The dialog does not close while the records save.
+    table loses while the dialog is open is named, and nothing saves.
+    Each record is saved by its own `PATCH`, one at a time, so it
+    keeps its other values and the server applies every rule of a
+    record write to it alone. The first save fixes the value: the
+    field stays off while the records save and after. After a save the
+    server refuses for some records, the dialog names the records
+    saved and lists the refused ones with its reasons, and **Retry
+    failed** sends them the same value, to them only. The dialog does
+    not close while the records save.
   - The delete button on a row removes the record after a confirm.
     Its id is not reused.
   - **Delete all** empties the collection after a confirm that asks

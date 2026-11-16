@@ -1,6 +1,11 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useUpdateRecordsInTurn } from "../../api/queries/tables";
-import type { Collection, Column, RecordsUpdateOutcome } from "../../api/types/tables";
+import type {
+  Collection,
+  Column,
+  RecordChanges,
+  RecordsUpdateOutcome,
+} from "../../api/types/tables";
 import {
   Banner,
   Button,
@@ -10,11 +15,11 @@ import {
   DialogContent,
   DialogFooter,
   DialogHeader,
-  Select,
   toast,
 } from "@guildsrun/ui";
 import {
   bulkEditBody,
+  bulkEditSends,
   bulkEditTargets,
   chosenColumn,
   recordIdsText,
@@ -22,37 +27,42 @@ import {
 } from "./bulkEdit";
 import { RecordField } from "./RecordDialog";
 
+/** What a bulk edit sets: one column, on the records selected for it. */
+export type BulkEdit = { columnName: string; recordIds: readonly number[] };
+
 type BulkEditDialogProps = {
   collection: Collection;
-  /** The records to edit, as the selection held them when the dialog opened; null keeps it closed. */
-  recordIds: readonly number[] | null;
+  /** The column and records, as the selection held them when the dialog opened; null keeps it closed. */
+  edit: BulkEdit | null;
   onClose: () => void;
 };
 
 /**
- * Sets one column to the same value on several records, checked as the record dialog checks it.
- * Each record is saved by its own request, one at a time; the records the server refuses are listed
- * with its reasons and stay in the dialog, and the next save sends to them only. A second save while
- * one runs sends nothing more, and the dialog stays open until it ends. A column chosen and then
- * gone from the table is named, and nothing is sent until another is chosen.
+ * Sets the selection's column to the same value on its records, checked as the record dialog checks
+ * it. Each record is saved by its own request, one at a time. The first save fixes the value: the
+ * field stays off from then on, the records the server refuses are listed with its reasons and stay
+ * in the dialog, and the next save sends them the same value, to them only. A second save while one
+ * runs sends nothing more, and the dialog stays open until it ends. A column the table loses is
+ * named, and nothing is sent.
  */
-export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialogProps) {
+export function BulkEditDialog({ collection, edit, onClose }: BulkEditDialogProps) {
   const update = useUpdateRecordsInTurn(collection.id);
-  const [columnName, setColumnName] = useState("");
   const [text, setText] = useState("");
   const [tried, setTried] = useState(false);
+  const [sent, setSent] = useState<RecordChanges | null>(null);
   const [outcome, setOutcome] = useState<RecordsUpdateOutcome | null>(null);
   const running = useRef(false);
+  const columnName = edit?.columnName ?? "";
   const column = chosenColumn(collection.columns, columnName);
-  const failed = outcome?.failed ?? [];
-  const targets = bulkEditTargets(recordIds ?? [], failed);
+  const targets = bulkEditTargets(edit?.recordIds ?? [], outcome?.failed ?? []);
   const result = column ? bulkEditBody(column, text, targets.length) : null;
+  const body = bulkEditSends(sent, result);
 
   const close = () => {
     if (running.current) return;
-    setColumnName("");
     setText("");
     setTried(false);
+    setSent(null);
     setOutcome(null);
     onClose();
   };
@@ -60,9 +70,10 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
-    if (!column || !result || "error" in result || running.current) return;
+    if (!column || !body || running.current) return;
     running.current = true;
-    void update.mutateAsync({ recordIds: targets, body: result.body }).then((next) => {
+    setSent(body);
+    void update.mutateAsync({ recordIds: targets, body }).then((next) => {
       running.current = false;
       setOutcome(next);
       if (next.updated.length) toast(recordsUpdatedToast(column.name, next.updated));
@@ -71,7 +82,7 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
   };
 
   return (
-    <Dialog open={recordIds !== null} onOpenChange={(open) => !open && close()}>
+    <Dialog open={edit !== null} onOpenChange={(open) => !open && close()}>
       <DialogContent size="sm">
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
@@ -80,26 +91,17 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
           />
           <DialogBody>
             <div className="flex flex-col gap-3">
-              <p className="text-sm text-muted">Records {recordIdsText(targets)}</p>
-              <Select
-                tone="surface"
-                label="Column"
-                placeholder="Choose a column"
-                value={column?.name ?? ""}
-                disabled={update.isPending || failed.length > 0}
-                onValueChange={(name) => {
-                  setColumnName(name);
-                  setText("");
-                  setTried(false);
-                }}
-                options={collection.columns.map((item) => ({ value: item.name, label: item.name }))}
-              />
+              <p className="text-sm text-muted">
+                Column {columnName} · Records {recordIdsText(targets)}
+              </p>
               <BulkEditField
                 columnName={columnName}
                 column={column}
                 text={text}
                 onChange={setText}
-                error={tried && result && "error" in result ? result.error : undefined}
+                tried={tried}
+                result={result}
+                disabled={sent !== null}
               />
               <RecordsUpdateStatus outcome={outcome} />
             </div>
@@ -110,9 +112,11 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={update.isPending || !column}>
-              {update.isPending ? "Saving…" : failed.length ? "Retry failed" : "Save changes"}
-            </Button>
+            <BulkEditSaveButton
+              saving={update.isPending}
+              retrying={outcome !== null}
+              disabled={!column}
+            />
           </DialogFooter>
         </form>
       </DialogContent>
@@ -121,31 +125,57 @@ export function BulkEditDialog({ collection, recordIds, onClose }: BulkEditDialo
 }
 
 type BulkEditFieldProps = {
-  /** The column chosen; empty before one is. */
+  /** The column chosen. */
   columnName: string;
   /** Its definition in the table; undefined when the table has no such column. */
   column: Column | undefined;
   text: string;
   onChange: (text: string) => void;
-  error: string | undefined;
+  /** Whether a save was pressed, after which the field names why its value is refused. */
+  tried: boolean;
+  /** What the field's value sends, or why it is refused; null without a column. */
+  result: ReturnType<typeof bulkEditBody> | null;
+  disabled: boolean;
 };
 
-/** The chosen column's field, or that the table has lost it or has no column. */
-function BulkEditField({ columnName, column, text, onChange, error }: BulkEditFieldProps) {
+/** The chosen column's field, or that the table has lost it. */
+function BulkEditField({
+  columnName,
+  column,
+  text,
+  onChange,
+  tried,
+  result,
+  disabled,
+}: BulkEditFieldProps) {
+  const error = tried && result && "error" in result ? result.error : undefined;
   if (!column) {
-    return (
-      <Banner
-        tone="error"
-        title={
-          columnName
-            ? `${columnName} is no longer a column of this table`
-            : "This table has no columns"
-        }
-      />
-    );
+    return <Banner tone="error" title={`${columnName} is no longer a column of this table`} />;
   }
   return (
-    <RecordField key={column.name} column={column} text={text} onChange={onChange} error={error} />
+    <RecordField
+      column={column}
+      text={text}
+      onChange={onChange}
+      error={error}
+      disabled={disabled}
+    />
+  );
+}
+
+type BulkEditSaveButtonProps = {
+  saving: boolean;
+  /** Whether the save sends to the records the last one refused. */
+  retrying: boolean;
+  disabled: boolean;
+};
+
+/** The dialog's submit button, named for a first save, a retry, or a save running. */
+function BulkEditSaveButton({ saving, retrying, disabled }: BulkEditSaveButtonProps) {
+  return (
+    <Button type="submit" disabled={saving || disabled}>
+      {saving ? "Saving…" : retrying ? "Retry failed" : "Save changes"}
+    </Button>
   );
 }
 
