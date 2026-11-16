@@ -3,17 +3,16 @@ import { agentSecrets, snapshotEnvValues } from "../access/runtime.js";
 import { agentGitIdentity, CloneFailure, cloneFailures, repositoryTokens } from "../coding/git.js";
 import { RepositoryTokenInstallationGoneError } from "../coding/github-provider.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
-import { codingRepositories, type CodingRepository } from "../coding/repositories.js";
+import { codingRepositoriesDatabase, loadAgentRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
-import { getGuild, listGuildRepositories } from "../db/guilds.js";
-import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
+import { getGuild } from "../db/guilds.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
 import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall } from "../db/schema/index.js";
 import { assertMatches, keepMatching } from "../lib/decode.js";
 import { isObjectNode, type JsonValue } from "../lib/json.js";
 import { RepositoryAccessError } from "../github/tokens.js";
-import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentRunDir } from "../sandbox/index.js";
@@ -37,46 +36,6 @@ export const RUN_DIFF_MAX_BYTES = 256 * 1024;
 
 /** A diff the agent's machine produced: at most `RUN_DIFF_MAX_BYTES` of it, redacted, and whether it was cut. */
 export type CodeDiff = { diff: string; truncated: boolean };
-
-/** The db/ functions a coding run's repositories are read through. */
-export type CodingRepositoriesDatabase = {
-  listGuildRepositories: BoundQuery<typeof listGuildRepositories>;
-  getMcpConnectionForOwner: BoundQuery<typeof getMcpConnectionForOwner>;
-};
-
-/** The db/ functions a coding run's repositories are read through, on `db`. */
-export function codingRepositoriesDatabase(db: Queryable): CodingRepositoriesDatabase {
-  return {
-    listGuildRepositories: bindQuery(db, listGuildRepositories),
-    getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
-  };
-}
-
-/** The GitHub connection a coding run of the agent clones with: the agent's, else its guild's, else its organisation's. */
-async function githubConnectionOf(
-  db: CodingRepositoriesDatabase,
-  agent: AgentRow,
-): Promise<McpConnectionRow | null> {
-  for (const [scope, ownerId] of [
-    ["agent", agent.id],
-    ["guild", agent.guild_id],
-    ["org", agent.org_id],
-  ] as const) {
-    const row = ownerId ? await db.getMcpConnectionForOwner(GITHUB_SERVER_ID, scope, ownerId) : null;
-    if (row !== null && row.status === "connected") {
-      return row;
-    }
-  }
-  return null;
-}
-
-/** The guild repositories a coding run of the agent clones, with what its GitHub connection reaches. */
-export async function guildRepositories(
-  db: CodingRepositoriesDatabase,
-  agent: AgentRow,
-): Promise<CodingRepository[]> {
-  return codingRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
-}
 
 /** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens. */
 export type CodingRunsDatabase = CodingRepositoriesDatabase & {
@@ -132,7 +91,7 @@ function failedClones(value: JsonValue | undefined): CloneFailure[] {
 }
 
 /**
- * What a coding run does around its tool calls: the harness checked and the guild's
+ * What a coding run does around its tool calls: the harness checked and the agent's
  * repositories cloned before the model's first step, the end checkpoint taken after its last,
  * and, outside a run, the diff, the harness log, and the harness check an operator asks for.
  */
@@ -151,10 +110,11 @@ export class CodingRuns {
   }
 
   /**
-   * A coding generation's repositories: a token for each one with a git provider, minted
-   * through it (written under /run/guilds and added to the run's redaction values; a GitHub
-   * login whose installation GitHub refuses is retired as `installation_gone`), the agent's git
-   * identity, a clone of each one missing from the workspace, and the run's start checkpoint.
+   * A coding generation's repositories, the ones its agent picks: a token for each one with a
+   * git provider, minted through it (written under /run/guilds and added to the run's redaction
+   * values; a GitHub login whose installation GitHub refuses is retired as `installation_gone`),
+   * the agent's git identity, a clone of each one missing from the workspace, and the run's
+   * start checkpoint of each.
    * The working directory starts in the repository when there is one. Tokens that expire are
    * replaced before each command once they near it.
    */
@@ -165,7 +125,7 @@ export class CodingRuns {
     tools: GenerationTools,
   ): Promise<boolean> {
     const { db, events } = this.services;
-    const repositories = await guildRepositories(db, agent);
+    const { repositories } = await loadAgentRepositories(db, agent);
     const tokens = db.repositoryTokens(repositories);
     const mint = async () => {
       try {
@@ -214,8 +174,9 @@ export class CodingRuns {
       await events.recordError(turn, "repository.clone", new RepositoryAccessError(`clone failed: ${detail}`));
       return false;
     }
-    await this.checkpoint(maintenance, "start", agent);
-    tools.run.code_repositories = repositories.map((row) => String(row.name));
+    const names = repositories.map((row) => row.name);
+    await this.checkpoint(maintenance, "start", agent, names);
+    tools.run.code_repositories = names;
     if (repositories.length === 1) {
       tools.run.code_default_cwd = `repos/${String(repositories[0]?.name)}`;
     }
@@ -233,9 +194,9 @@ export class CodingRuns {
     return true;
   }
 
-  /** The end checkpoint of every working tree, and what the run changed since its start. */
-  async recordCheckpoints(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
-    const repos = await this.checkpoint(maintenanceRun(runId, agent, sandbox), "end", agent);
+  /** The end checkpoint of the run's repositories, by name, and what the run changed in each since its start. */
+  async recordCheckpoints(runId: string, agent: AgentRow, sandbox: SandboxHandle, repositories: string[]): Promise<void> {
+    const repos = await this.checkpoint(maintenanceRun(runId, agent, sandbox), "end", agent, repositories);
     if (repos.length) {
       await this.services.db.mergeRunMetadata(runId, { repos }, new Date());
     }
@@ -282,11 +243,6 @@ export class CodingRuns {
       throw new RunRequestError(404, "that log is no longer kept: an agent's home keeps its 20 most recent runs");
     }
     return log;
-  }
-
-  /** The guild repositories a coding run of the agent clones, by their folder under `repos/`. */
-  async repositoryNames(agent: AgentRow): Promise<string[]> {
-    return (await guildRepositories(this.services.db, agent)).map((row) => String(row.name));
   }
 
   /**
@@ -370,12 +326,19 @@ export class CodingRuns {
   }
 
   /**
-   * Takes a checkpoint of every working tree; the end one lists what each repository changed since
-   * the start. One that fails, or reports repositories in another shape, is logged and lists none.
+   * Takes a checkpoint of the working tree of each of the run's repositories; the end one lists
+   * what each changed since the start. One that fails, or reports repositories in another shape, is
+   * logged and lists none.
    */
-  private async checkpoint(run: ToolRun, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
+  private async checkpoint(
+    run: ToolRun,
+    which: "start" | "end",
+    agent: AgentRow,
+    names: string[],
+  ): Promise<RunRepositoryChange[]> {
     try {
-      const result = await runCodeHelper(run, createToolHooks(), { op: "checkpoint", which }, { timeoutSeconds: 300 });
+      const request = { op: "checkpoint", which, repositories: names };
+      const result = await runCodeHelper(run, createToolHooks(), request, { timeoutSeconds: 300 });
       if (which === "start") {
         return [];
       }

@@ -10,6 +10,7 @@ import {
   SUBSCRIPTION_AGENTS_OFF_MESSAGE,
   subscriptionHarnessMessage,
 } from "../coding/harnesses.js";
+import { REPOSITORY_NAME_RE } from "../coding/repositories.js";
 import { SECRET_NAME } from "../credentials/validate.js";
 import {
   EFFORTS,
@@ -319,6 +320,63 @@ export function isValidSecretAliases(value: unknown): value is AgentConfig["secr
   }
 }
 
+/** The repositories an agent works on: a list of repository names, each once. */
+function requireRepositories(value: unknown): AgentConfig["repositories"] {
+  if (!Array.isArray(value)) {
+    throw new AgentValidationError("repositories must be a list of repository names");
+  }
+  const names: string[] = [];
+  for (const name of value) {
+    if (typeof name !== "string" || !REPOSITORY_NAME_RE.test(name)) {
+      throw new AgentValidationError(`repositories: ${String(name)} is not a repository name`);
+    }
+    if (names.includes(name)) {
+      throw new AgentValidationError(`repositories: ${name} is listed twice`);
+    }
+    names.push(name);
+  }
+  return names;
+}
+
+/** Only a coding agent works on repositories: a list on any other agent is refused. */
+function rejectRepositoriesWithoutCoding(repositories: AgentConfig["repositories"], coding: boolean): void {
+  if (repositories.length && !coding) {
+    throw new AgentValidationError("repositories are only for coding agents");
+  }
+}
+
+/** Whether a value is repositories a coding agent's config takes, as `validateAgentConfig` checks them. */
+export function isValidRepositoryList(value: unknown): value is AgentConfig["repositories"] {
+  try {
+    requireRepositories(value);
+    return true;
+  } catch (error) {
+    if (error instanceof AgentValidationError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Refuses a config whose repositories name one outside `usable`, the repositories the agent can
+ * use, naming each. One the agent's `previous` config already lists stays when the agent can no
+ * longer use it; its coding runs fail at start until it is unpicked.
+ */
+export function assertUsableRepositories(
+  config: AgentConfig,
+  usable: readonly string[],
+  previous?: AgentConfig,
+): void {
+  const kept = new Set(previous?.repositories ?? []);
+  const outside = config.repositories.filter((name) => !usable.includes(name) && !kept.has(name));
+  if (outside.length) {
+    throw new AgentValidationError(
+      `repositories: the agent cannot use ${outside.join(", ")}: add it to the guild's Repositories first`,
+    );
+  }
+}
+
 /**
  * A coding agent needs a harness: every create and update is refused without one, and an update
  * cannot switch a coding agent's coding off. A stored coding agent without one still validates;
@@ -395,6 +453,8 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
   const harness = requireHarness(filled.harness);
   rejectUnsoundModelSource(model, coding, harness);
   const harnessModel = requireHarnessModel(filled.harness_model, harness);
+  const repositories = requireRepositories(filled.repositories);
+  rejectRepositoriesWithoutCoding(repositories, coding);
   const config: AgentConfig = {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),
@@ -417,6 +477,7 @@ function agentConfigFrom(settings: JsonObject, defaults: AgentConfigDefaults): A
     harness,
     harness_model: harnessModel,
     harness_effort: requireHarnessEffort(filled.harness_effort, harness, harnessModel),
+    repositories,
     secret_aliases: requireSecretAliases(filled.secret_aliases),
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),

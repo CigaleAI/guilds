@@ -234,8 +234,10 @@ What capture writes:
   `agent`. A server the organisation added of its own carries its
   manifest whole, so a box that lacks it can add it.
 - The guild's repositories are captured by name with an empty
-  `purpose`. Their URLs, branches, and GitHub connections stay with
-  the guild.
+  `purpose`, followed by each other repository an agent picks, such as
+  one picked on a GitHub login. Their URLs, branches, and GitHub
+  connections stay with the guild. Each coding role's
+  `config.repositories` is the list its agent picks, in its order.
 - The guild's own collections are written as `scope: "guild"`.
 - Every organisation collection the guild reaches is written as
   `scope: "org"`: the organisation's row, the guild's row, or a row of

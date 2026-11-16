@@ -39,7 +39,7 @@ export type Guild = {
  */
 export type RepositoryProvider = "github" | "access_token" | null;
 
-/** A git repository of a guild, cloned into each coding agent's workspace. */
+/** A git repository of a guild, cloned into the workspace of each coding agent that picks it. */
 export type GuildRepository = {
   id: string;
   guild_id: string;
@@ -55,6 +55,16 @@ export type GuildRepository = {
   secret: { id: string; name: string } | null;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * `GET /api/guilds/:id/repositories`: the guild's repositories, the GitHub logins they may be added
+ * with, and the names of the repositories a new coding agent of the guild can use.
+ */
+export type GuildRepositoryView = {
+  repositories: GuildRepository[];
+  github_connections: GithubLogin[];
+  usable: string[];
 };
 
 /** A repository to add: its URL and at most one credential, a GitHub login or an access token's secret and username. */

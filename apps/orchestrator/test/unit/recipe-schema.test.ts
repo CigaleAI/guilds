@@ -552,15 +552,47 @@ test("coding roles count against the plan's coding agents", () => {
   assert.ok(findings.some((item) => item.code === "capacity.coding" && item.severity === "error"));
   assert.ok(!validateRecipe(recipe, ctx).some((item) => item.code === "capacity.coding"));
 
-  const unused = parseRecipe({
+});
+
+test("a recipe repository no role lists warns as unused, one a role lists does not", () => {
+  const recipe = parseRecipe({
+    ...(fixtureDeskRecipe() as Record<string, unknown>),
+    repositories: [
+      { name: "api", purpose: "" },
+      { name: "web", purpose: "" },
+    ],
+  });
+  const unused = (findings: ReturnType<typeof validateRecipe>) =>
+    findings.filter((item) => item.code === "repositories.unused").map((item) => [item.severity, item.path]);
+  assert.deepEqual(unused(validateRecipe(recipe, ctx)), [
+    ["warning", "repositories.api"],
+    ["warning", "repositories.web"],
+  ]);
+  recipe.roles[0]!.config = { ...recipe.roles[0]!.config, coding: true, repositories: ["web"] };
+  assert.deepEqual(unused(validateRecipe(recipe, ctx)), [["warning", "repositories.api"]]);
+});
+
+test("a role's repositories are names the recipe lists, on a coding role, each once", () => {
+  const recipe = parseRecipe({
     ...(fixtureDeskRecipe() as Record<string, unknown>),
     repositories: [{ name: "api", purpose: "" }],
   });
-  assert.ok(
-    validateRecipe(unused, ctx).some(
-      (item) => item.code === "repositories.unused" && item.severity === "warning",
-    ),
-  );
+  const role = recipe.roles[0]!;
+  const found = () =>
+    validateRecipe(recipe, ctx)
+      .filter((item) => item.code.startsWith("repositories.") && item.code !== "repositories.unused")
+      .map((item) => [item.code, item.severity, item.path, item.message]);
+  const path = `roles.${role.role}.config.repositories`;
+  role.config = { ...role.config, coding: true, repositories: ["api"] };
+  assert.deepEqual(found(), []);
+  role.config = { ...role.config, coding: true, repositories: ["api", "billing"] };
+  assert.deepEqual(found(), [["repositories.unknown", "error", path, "unknown repository billing; list it in the recipe's repositories"]]);
+  role.config = { ...role.config, coding: true, repositories: "api" };
+  assert.deepEqual(found(), [["repositories.invalid", "error", path, "config.repositories must be a list of repository names, each once"]]);
+  role.config = { ...role.config, coding: false, repositories: ["api"] };
+  assert.deepEqual(found(), [["repositories.coding", "warning", path, "config.repositories is only for a coding role; apply leaves it out"]]);
+  role.config = { ...role.config, coding: false, repositories: [] };
+  assert.deepEqual(found(), []);
 });
 
 test("a role's model is a recommendation: a bad one warns and never blocks", () => {

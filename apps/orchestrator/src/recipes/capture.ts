@@ -118,8 +118,8 @@ function clippedHint(value: string | null | undefined): string {
 /**
  * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A
  * subscription agent's absent model, a harness, harness model or harness effort left unset,
- * tool-result turns left to the guild, and secret aliases a recipe carries none of, leave their
- * key out; apply settles them. The agent-optimized
+ * tool-result turns left to the guild, no repositories, and secret aliases a recipe carries none
+ * of, leave their key out; apply settles them. The agent-optimized
  * browser stays behind: it needs the applying instance's System One key and a model of the
  * applying organisation, so a role browses with the step-by-step browser tools.
  */
@@ -144,6 +144,7 @@ export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
     ...(config.harness === null ? {} : { harness: config.harness }),
     ...(config.harness_model === null ? {} : { harness_model: config.harness_model }),
     ...(config.harness_effort === null ? {} : { harness_effort: config.harness_effort }),
+    ...(config.repositories.length ? { repositories: [...config.repositories] } : {}),
     ...(Object.keys(aliases).length ? { secret_aliases: aliases } : {}),
     scripting: config.scripting,
     memory: config.memory,
@@ -353,10 +354,14 @@ async function captureAgent(capture: Capture, agent: GuildAgentRow): Promise<voi
   await captureSecrets(capture, agent);
 }
 
-/** Repositories travel by name only: their URLs and connections stay with the guild. */
+/**
+ * Repositories travel by name only: their URLs and connections stay with the guild. The recipe
+ * lists the guild's, then each other one an agent picks, as one picked on a GitHub login.
+ */
 async function captureRepositories(capture: Capture): Promise<void> {
   const rows = await capture.deps.db.listGuildRepositories(capture.guildId);
-  capture.recipe.repositories = rows.map((row) => ({ name: row.name, purpose: "" }));
+  const names = new Set([...rows.map((row) => row.name), ...capture.agents.flatMap((agent) => agent.config.repositories)]);
+  capture.recipe.repositories = [...names].map((name) => ({ name, purpose: "" }));
 }
 
 /** The seed note a live note becomes. */

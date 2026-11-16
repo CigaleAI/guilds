@@ -10,7 +10,10 @@ import {
   isCredentialComplete,
   isGithubUrl,
   NO_CREDENTIAL,
+  picksUsableRepository,
+  repositoryChoices,
   repositoryCredential,
+  togglePickedRepository,
 } from "./repositories";
 
 const logins: Pick<GithubLogin, "id" | "status">[] = [
@@ -98,4 +101,24 @@ test("only the secrets an operator manages can hold a repository's access token"
     ),
     ["sec_mine"],
   );
+});
+
+test("an agent's checklist offers each repository it can use, then each it picks and can no longer use", () => {
+  assert.deepEqual(repositoryChoices(["docs", "shop"], ["shop", "billing"]), [
+    { name: "docs", picked: false, usable: true },
+    { name: "shop", picked: true, usable: true },
+    { name: "billing", picked: true, usable: false },
+  ]);
+  assert.deepEqual(repositoryChoices([], []), []);
+});
+
+test("ticking a repository adds it after the agent's picks, and unticking takes it out", () => {
+  assert.deepEqual(togglePickedRepository(["shop"], "docs"), ["shop", "docs"]);
+  assert.deepEqual(togglePickedRepository(["shop", "docs"], "shop"), ["docs"]);
+});
+
+test("a coding run needs a pick the agent can use", () => {
+  assert.equal(picksUsableRepository(["shop"], ["shop"]), true);
+  assert.equal(picksUsableRepository(["shop"], ["billing"]), false);
+  assert.equal(picksUsableRepository(["shop"], []), false);
 });

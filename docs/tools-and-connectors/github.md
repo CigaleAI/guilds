@@ -65,9 +65,12 @@ A guild or agent without its own login uses its organisation's
 repositories, and an agent its guild's. Connecting a login at the
 narrower scope lets it pick a different set.
 
-The guild's coding agents clone these repositories at their next
-run ([Repositories](../concepts/coding/repositories.md),
-[Add a coding agent](../getting-started/add-a-coding-agent.md)).
+Each coding agent the login reaches can then pick these repositories
+in its Settings, and clones the ones it picks at its next run
+([Repositories](../concepts/coding/repositories.md),
+[Add a coding agent](../getting-started/add-a-coding-agent.md)). A
+repository taken out of the pick is unpicked from each agent the
+login reaches that can no longer use it.
 
 ## Registering the App by hand
 
@@ -247,15 +250,19 @@ installation reaches: `id`, `name`, `full_name`, `owner`, `private`,
 settings as `repositories`. Each must be one the installation
 reaches, and is stored with GitHub's id for it (`remote_id`), which a
 rename of the repository or its owner keeps. A guild-owned login
-mirrors its selection into `guild_repositories`.
+mirrors its selection into `guild_repositories`. In the same
+transaction, each repository the new selection leaves out is unpicked
+from every agent the login reaches (the agent's own, the guild's
+agents, or the organisation's) that can no longer use it
+([Repositories](../concepts/coding/repositories.md#removing-a-repository)).
 
 ### Tokens
 
 The App's private key and the installation id never leave the
 orchestrator. At each generation start of a coding agent, it signs an
 App token (RS256, 9 minutes) and mints, per connection, an
-installation token limited to the guild's repositories, valid one
-hour ([Repositories](../concepts/coding/repositories.md#tokens)).
+installation token limited to the repositories the agent picks that
+use that connection, valid one hour ([Repositories](../concepts/coding/repositories.md#tokens)).
 
 `guilds-git-credential` is the credential helper for every HTTPS
 host with `useHttpPath`, GitHub's included. It reads

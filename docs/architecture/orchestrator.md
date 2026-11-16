@@ -957,9 +957,10 @@ and the log are the `guilds-harness` ops `code_task` calls too
 (`toolbox/harness-ops.ts`). Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
 `coding: true`. A coding generation runs its start checks in order:
-no `harness` in the snapshot fails with `harness.missing` and
-a guild without repositories with `coding.repositories_missing`, both
-before the machine is woken; once the workspace check passes,
+no `harness` in the snapshot fails with `harness.missing`, an
+agent picking a repository it can no longer use with
+`coding.repositories_gone`, and one picking none with
+`coding.repositories_missing`, all before the machine is woken; once the workspace check passes,
 `guilds-harness check` fails it with `harness.not_installed`,
 `harness.credential`, or `harness.check`; then the repositories are
 prepared. All of them run before the model is called

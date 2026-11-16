@@ -164,6 +164,17 @@ const machinesPath = (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/
  * Refreshes every read that shows machines or the memory their agents plan to use: the machine
  * lists and the recipe apply previews.
  */
+/**
+ * Refetches each agent's config and harness view, which a change to the repositories it can use
+ * changes: a repository gone from them leaves its picks.
+ */
+export function refreshAgentRepositories(client: QueryClient) {
+  void client.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] === "agent" && (query.queryKey.length === 2 || query.queryKey[2] === "harness"),
+  });
+}
+
 export function refreshMachines(client: QueryClient) {
   void client.invalidateQueries({ queryKey: agentKeys.machinesAll });
   void client.invalidateQueries({

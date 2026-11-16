@@ -193,7 +193,7 @@ function captureDeps(options: {
 test("portable role config carries every setting but the browser mode in the order of the config keys", () => {
   const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
   const config = portableRoleConfig(stored);
-  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model"]);
+  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model", "repositories"]);
   assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && !left.has(key)));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);
@@ -372,6 +372,27 @@ test("captureGuild carries what each note's access list gives the guild and its 
   });
   const orgModes = Object.fromEntries(recipe.notes.map((item) => [item.key, item.org ?? null]));
   assert.deepEqual(orgModes, { "glossary.md": "read", "open.md": "read", "rules.md": null, "map.md": null, "own.md": null });
+});
+
+test("captureGuild gives each role the repositories its agent picks, and lists one only a login picks", async () => {
+  const recipe = await captureGuild(
+    captureDeps({
+      agents: [
+        { id: "a_coder", name: "coder", focus: "Code", config: { model: TEST_MODEL, coding: true, harness: "codex", repositories: ["site", "api"] } },
+        { id: "a_writer", name: "writer", focus: "Write", config: { model: TEST_MODEL } },
+      ],
+      repositories: [{ name: "api", url: "https://github.com/acme/api", default_branch: "main", connection_id: null }],
+    }),
+    ACTOR,
+    GUILD,
+    [],
+  );
+  assert.deepEqual(recipe.roles.find((role) => role.role === "coder")?.config.repositories, ["site", "api"]);
+  assert.equal("repositories" in (recipe.roles.find((role) => role.role === "writer")?.config ?? {}), false);
+  assert.deepEqual(recipe.repositories, [
+    { name: "api", purpose: "" },
+    { name: "site", purpose: "" },
+  ]);
 });
 
 test("captureGuild lists the guild's repositories by name, without their URLs", async () => {
