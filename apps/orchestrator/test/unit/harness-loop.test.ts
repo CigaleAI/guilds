@@ -10,6 +10,9 @@ import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps, helperRequest, type HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
+import { toolFixture } from "../helpers/toolbox.js";
+import { createToolHooks } from "../../src/toolbox/index.js";
+import { HARNESS_HELPER, runCodeHelper } from "../../src/toolbox/code.js";
 import { HANG, RECORDED_SESSION, recordedEvents, stubCliSandbox, stubsRunning } from "../helpers/harness-cli.js";
 
 const live = generationLive;
@@ -51,9 +54,11 @@ function subscriptionLoop(lines: string[], check: Record<string, unknown> = HARN
     published.push(event[0]);
     await publish(runId, ...event);
   };
+  sandboxes.connectRunning = (async (machineId: string) =>
+    sandboxes.running.has(machineId) ? stub.sandbox : null) as unknown as FakeSandboxes["connectRunning"];
   const rows = () => (db.messages as Row[]).slice(2);
   const errors = () => db.run.errors as Array<{ operation: string; message: string }>;
-  return { ...stub, db, loop, machines, published, rows, errors };
+  return { ...stub, db, loop, machines, sandboxes, published, rows, errors };
 }
 
 /** Fails every op `op` of the sandbox's helper with `error`, as a helper envelope says it. */
@@ -224,6 +229,40 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal(errors().at(-1)?.operation, "subscription.not_runnable");
     assert.match(String(errors().at(-1)?.message), /^Codex cannot run a subscription agent's turns yet: pick Claude Code/);
     assert.equal(machines.length, 0);
+  });
+});
+
+describe("a turn lost with the orchestrator", () => {
+  test("is ended at boot: its harness stopped, its open call interrupted, its session kept for the next turn", async () => {
+    const { loop, db, sandbox, sandboxes, rows, bin, calls } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+    // What the process that died left: a started turn on the machine, its first row, and its record.
+    const ctx = toolFixture({ run_id: "r_1", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+    await runCodeHelper(ctx.run, createToolHooks(), { op: "start", call_id: "turn_1_r_1", harness: "claude-code", prompt: "use bash twice" }, { helper: HARNESS_HELPER });
+    await until(() => calls().length > 0);
+    const call = { id: "toolu_01", type: "function", function: { name: "Read", arguments: "{}" } };
+    db.messages.push({ id: 3, seq: 2, payload: { role: "assistant", content: "I'll look.", tool_calls: [call] }, metadata: { generation: 1, from_harness: "claude-code" }, created_at: new Date() });
+    db.run.metadata = { harness_turn: { call_id: "turn_1_r_1", harness: "claude-code", session_id: null, log_path: ".runs/r_1/turn_1_r_1.harness.jsonl" } };
+    sandboxes.running.add("mach_1");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    await loop.reconcile();
+
+    assert.equal(stubsRunning(bin), false, "the harness that kept running is stopped");
+    const last = rows().at(-1);
+    assert.deepEqual(last?.payload, { role: "tool", tool_call_id: "toolu_01", content: INTERRUPTED_CONTENT });
+    assert.equal(last?.metadata.from_harness, "claude-code");
+    assert.equal((db.run.metadata as { harness_turn?: { session_id: string | null } }).harness_turn?.session_id, RECORDED_SESSION);
+    assert.equal(db.run.status, "active", "a direct run stays open for its next message");
+  });
+
+  test("is left alone when its machine is not running, its open call still interrupted", async () => {
+    const { loop, db, rows } = subscriptionLoop(recordedEvents("claude-code"));
+    const call = { id: "toolu_01", type: "function", function: { name: "Read", arguments: "{}" } };
+    db.messages.push({ id: 3, seq: 2, payload: { role: "assistant", content: "", tool_calls: [call] }, metadata: { generation: 1, from_harness: "claude-code" }, created_at: new Date() });
+    db.run.metadata = { harness_turn: { call_id: "turn_1_r_1", harness: "claude-code", session_id: "s_1", log_path: ".runs/r_1/turn_1_r_1.harness.jsonl" } };
+    await loop.reconcile();
+    assert.equal(rows().at(-1)?.metadata.from_harness, "claude-code");
+    assert.equal((db.run.metadata as { harness_turn?: { session_id: string | null } }).harness_turn?.session_id, "s_1");
   });
 });
 

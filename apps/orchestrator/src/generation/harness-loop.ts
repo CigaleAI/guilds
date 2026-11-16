@@ -1,9 +1,15 @@
 import { HARNESS_INFO, type TurnHarness } from "../coding/harnesses.js";
-import type { AgentRow } from "../db/agents.js";
+import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
-import { listMessages, mergeRunMetadata, type MessageRow, type RunRow } from "../db/runs.js";
-import type { Harness, RunConfigSnapshot, RunHarnessTurn, ToolCall } from "../db/schema/index.js";
-import { errorMessage, writeLog } from "../observability/log.js";
+import { listMessages, mergeRunMetadata, type ActiveRunRow, type MessageRow, type RunRow } from "../db/runs.js";
+import {
+  modelSourceOf,
+  type Harness,
+  type RunConfigSnapshot,
+  type RunHarnessTurn,
+  type ToolCall,
+} from "../db/schema/index.js";
+import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { callSegment } from "../toolbox/code.js";
 import { CODE_TASK_DEFAULT_MINUTES } from "../toolbox/harness.js";
 import {
@@ -24,6 +30,7 @@ import { failureDetail } from "../toolbox/harness-result.js";
 import type { ToolRun } from "../toolbox/index.js";
 import { GenerationCancelled, HarnessTurnError } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
+import type { AgentMachines } from "./machines.js";
 import {
   claudeCodeAssistantMessage,
   claudeCodeToolRecord,
@@ -35,6 +42,7 @@ import {
   type ClaudeCodeToolResults,
 } from "./parse-claude-code.js";
 import { pendingToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
+import { maintenanceRun } from "./workspace.js";
 
 /** How often a subscription agent's turn is polled, and how long its minutes are; tests shorten both. */
 export const harnessTurnTiming = { pollMs: 1000, minuteMs: 60_000 };
@@ -145,6 +153,7 @@ export function harnessTurnFailure(
 
 /** The db/ functions a subscription agent's turns read the run and keep its session through. */
 export type HarnessLoopDatabase = {
+  getAgent: BoundQuery<typeof getAgent>;
   listMessages: BoundQuery<typeof listMessages>;
   mergeRunMetadata: BoundQuery<typeof mergeRunMetadata>;
 };
@@ -152,13 +161,18 @@ export type HarnessLoopDatabase = {
 /** The db/ functions a subscription agent's turns read the run and keep its session through, on `db`. */
 export function harnessLoopDatabase(db: Queryable): HarnessLoopDatabase {
   return {
+    getAgent: bindQuery(db, getAgent),
     listMessages: bindQuery(db, listMessages),
     mergeRunMetadata: bindQuery(db, mergeRunMetadata),
   };
 }
 
-/** What subscription agents' turns are run with, built once by the loop. */
-export type HarnessLoopServices = { db: HarnessLoopDatabase; events: RunEventBus };
+/** What subscription agents' turns are run with, built once by the loop: the machines a lost turn is stopped on. */
+export type HarnessLoopServices = {
+  db: HarnessLoopDatabase;
+  events: RunEventBus;
+  machines: AgentMachines;
+};
 
 /**
  * The harness loop: each generation of a subscription agent's run is one turn of its harness's
@@ -198,8 +212,59 @@ export class HarnessLoop {
     }
   }
 
+  /**
+   * Ends the turn a subscription agent's run lost when the orchestrator restarted: its harness is
+   * stopped on the agent's machine while that runs, the session its result names is kept for the
+   * run's next turn, and each call of the harness's own tools left without a result gets the
+   * interrupted one. A run of no subscription agent, or with no turn, is left as it is.
+   */
+  async endLostTurn(run: ActiveRunRow): Promise<void> {
+    const turn = run.metadata.harness_turn;
+    if (turn === undefined || modelSourceOf(run.config_snapshot).kind !== "subscription") {
+      return;
+    }
+    const session = await this.stopLostHarness(run, turn);
+    if (session !== null && session !== turn.session_id) {
+      await this.services.db.mergeRunMetadata(
+        run.id,
+        { harness_turn: { ...turn, session_id: session } },
+        new Date(),
+      );
+    }
+    await this.resolveHarnessCalls(run.id, turn.harness);
+  }
+
+  /**
+   * Stops a lost turn's harness on its agent's machine; the session its result names, or null
+   * when it names none, the machine is not running, or the stop did not go through, which is logged.
+   */
+  private async stopLostHarness(run: ActiveRunRow, turn: RunHarnessTurn): Promise<string | null> {
+    const { db, machines } = this.services;
+    try {
+      const agent = await db.getAgent(run.agent_id);
+      const sandbox = agent ? await machines.sandboxes.connectRunning(agent.machine_id) : null;
+      if (agent === null || sandbox === null) {
+        return null;
+      }
+      const { result } = await stopHarness(
+        maintenanceRun(run.id, agent, sandbox),
+        turn.call_id,
+        turn.harness,
+      );
+      return stringOrNull(result?.session_id);
+    } catch (error) {
+      writeLog("warn", errorMessage(error), {
+        run_id: run.id,
+        agent_id: run.agent_id,
+        operation: "harness.stop",
+        error_type: errorName(error),
+      });
+      return null;
+    }
+  }
+
   /** Gives each call of the harness's own tools in the run's history that has no result the interrupted one. */
-  async resolveHarnessCalls(runId: string, harness: Harness): Promise<void> {
+  private async resolveHarnessCalls(runId: string, harness: Harness): Promise<void> {
     const { db, events } = this.services;
     for (const [call, generation] of pendingToolCalls(await db.listMessages(runId))) {
       const [payload, metadata] = interruptedHarnessToolRecord(call, generation, harness);

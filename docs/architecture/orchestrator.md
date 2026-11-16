@@ -219,20 +219,26 @@ and `PORT`.
 Run reconciliation:
 
 1. list every active run
-2. append interruption tool results for unresolved committed tool
+2. end a subscription agent's lost harness turn, named by the run's
+   `metadata.harness_turn`: `guilds-harness stop` on its machine when
+   the machine is running, its state cleared once the CLI has exited,
+   the session its result names kept on the record, and the
+   interrupted result, marked `from_harness`, for each call of the
+   harness's own tools without one
+3. append interruption tool results for unresolved committed tool
    calls; an unresolved `code_task` first gets `guilds-harness stop`
    on its machine when the machine is running, its state is cleared
    once the harness has exited, and the task's end checkpoint is
    taken; its result is `interrupted`, naming the session and log
    from the run's `metadata.harness_task`
-3. leave direct runs, and runs an operator resumed, active and
+4. leave direct runs, and runs an operator resumed, active and
    reusable
-4. append a `generation.interrupted` run error to group and
+5. append a `generation.interrupted` run error to group and
    schedule runs
-5. complete group delivery through the run's snapshotted sequence
+6. complete group delivery through the run's snapshotted sequence
    or complete the schedule run
-6. resume pending group dispatch
-7. schedule idle teardown for running machines on which no agent
+7. resume pending group dispatch
+8. schedule idle teardown for running machines on which no agent
    generates
 
 Studio and Builder reconciliation settles each session left

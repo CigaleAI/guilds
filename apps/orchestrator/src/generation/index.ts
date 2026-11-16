@@ -233,7 +233,7 @@ export class GenerationLoop implements GroupRunner {
       credentials: this.credentials,
       attachments: this.attachments,
     });
-    this.harness = new HarnessLoop({ db, events: this.events });
+    this.harness = new HarnessLoop({ db, events: this.events, machines: this.machines });
     this.secrets = new RunSecrets(db, this.machines);
     const { tools } = services;
     this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events, tools });
@@ -542,6 +542,7 @@ export class GenerationLoop implements GroupRunner {
   async reconcile(): Promise<void> {
     const now = new Date();
     for (const run of await this.db.listActiveRuns()) {
+      await this.harness.endLostTurn(run);
       await this.toolCalls.resolveUnresolved(run.id, null);
       if (run.kind === "direct" || runWasResumed(run)) {
         continue;
