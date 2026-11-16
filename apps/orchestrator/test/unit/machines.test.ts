@@ -48,28 +48,24 @@ test("each tier has its size, and a custom machine its own", () => {
 });
 
 test("an agent's minimum is the largest of its capabilities' minimums, not their sum", () => {
-  assert.deepEqual(agentMinimum({ browser: false, coding: false, harness: null }), AGENT_MINIMUMS.base);
-  assert.deepEqual(agentMinimum({ browser: true, coding: false, harness: null }), AGENT_MINIMUMS.browser);
-  assert.deepEqual(agentMinimum({ browser: true, coding: true, harness: null }), AGENT_MINIMUMS.coding);
+  assert.deepEqual(agentMinimum({ browser: false, harness: null }), AGENT_MINIMUMS.base);
+  assert.deepEqual(agentMinimum({ browser: true, harness: null }), AGENT_MINIMUMS.browser);
+  assert.deepEqual(agentMinimum({ browser: true, harness: "codex" }), AGENT_MINIMUMS.harness);
   assert.deepEqual(
     agentsMinimum([
-      { browser: true, coding: false, harness: null },
-      { browser: false, coding: false, harness: null },
+      { browser: true, harness: null },
+      { browser: false, harness: null },
     ]),
     AGENT_MINIMUMS.browser,
   );
 });
 
-test("a subscription agent needs its harness and the coding minimum; an agent on a key needs no harness", () => {
-  const subscription = agentNeedsOf({ browser: false, coding: false, model: null, harness: "codex" });
-  assert.deepEqual(subscription, { browser: false, coding: false, harness: "codex" });
-  assert.deepEqual(agentMinimum(subscription), AGENT_MINIMUMS.coding);
-  assert.deepEqual(
-    agentNeedsOf({ browser: true, coding: true, model: "deepinfra/zai-org/GLM-5.3-Flash", harness: "cursor" }),
-    { browser: true, coding: true, harness: null },
-    "a coding agent's harness takes only the code work it delegates",
-  );
-  assert.deepEqual(agentsMinimum([{ browser: true, coding: false, harness: null }, subscription]), AGENT_MINIMUMS.coding);
+test("a subscription agent needs its harness and the harness minimum; an agent on a key needs no harness", () => {
+  const subscription = agentNeedsOf({ browser: false, model: null, harness: "codex" });
+  assert.deepEqual(subscription, { browser: false, harness: "codex" });
+  assert.deepEqual(agentMinimum(subscription), AGENT_MINIMUMS.harness);
+  assert.deepEqual(agentNeedsOf({ browser: true, model: "deepinfra/zai-org/GLM-5.3-Flash", harness: null }), { browser: true, harness: null });
+  assert.deepEqual(agentsMinimum([{ browser: true, harness: null }, subscription]), AGENT_MINIMUMS.harness);
   assert.deepEqual(agentsMinimum([]), AGENT_MINIMUMS.base);
 });
 
@@ -83,15 +79,15 @@ test("a machine carries a harness its image lists, and any before its container 
   );
 });
 
-test("a standard machine takes browser agents, a code machine coding ones, a custom one by its size", () => {
+test("a standard machine takes browser agents, a code machine subscription ones, a custom one by its size", () => {
   const standard = machineSize({ box: "standard", cpu: null, memory_mib: null });
   const code = machineSize({ box: "code", cpu: null, memory_mib: null });
-  assert.equal(sizeMeets(standard, agentMinimum({ browser: true, coding: false, harness: null })), true);
-  assert.equal(sizeMeets(standard, agentMinimum({ browser: false, coding: true, harness: null })), false);
-  assert.equal(sizeMeets(code, agentMinimum({ browser: true, coding: true, harness: null })), true);
-  assert.equal(sizeMeets(machineSize(CUSTOM), agentMinimum({ browser: false, coding: true, harness: null })), false);
+  assert.equal(sizeMeets(standard, agentMinimum({ browser: true, harness: null })), true);
+  assert.equal(sizeMeets(standard, agentMinimum({ browser: false, harness: "codex" })), false);
+  assert.equal(sizeMeets(code, agentMinimum({ browser: true, harness: "codex" })), true);
+  assert.equal(sizeMeets(machineSize(CUSTOM), agentMinimum({ browser: false, harness: "codex" })), false);
   assert.equal(
-    belowMinimumMessage("dev", { browser: false, coding: true, harness: null }, CUSTOM),
+    belowMinimumMessage("dev", { browser: false, harness: "codex" }, CUSTOM),
     "dev needs a machine with at least 2 CPUs and 4 GiB; big has 2 CPUs and 3 GiB",
   );
 });
@@ -184,8 +180,8 @@ test("placement takes the lowest free slot, under the policy's cap and core's ce
 test("a machine's planned load sums its agents' minimums, against its size times the overcommit", () => {
   assert.deepEqual(
     plannedLoad([
-      { browser: true, coding: false, harness: null },
-      { browser: false, coding: false, harness: null },
+      { browser: true, harness: null },
+      { browser: false, harness: null },
     ]),
     { cpu: 1.5, memory_mib: 2048 + 256 },
   );

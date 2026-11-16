@@ -33,7 +33,6 @@ const EVERY_CAPABILITY = {
   scripts: true,
   notes: true,
   browser: true,
-  coding: true,
   memory: true,
   memoryWrite: true,
 } as const;

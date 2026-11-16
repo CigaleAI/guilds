@@ -18,8 +18,8 @@ export const GITHUB_MANIFEST_STATE_COOKIE = "guilds_github_manifest";
 export const APP_NAME_MAX = 34;
 
 /**
- * The repository permissions the App asks for: what coding runs push and open pull requests with,
- * and what the connector's toolsets read and write.
+ * The repository permissions the App asks for: what a subscription agent's turns push with, and
+ * what the connector's toolsets read and write, opening pull requests among them.
  */
 export const GITHUB_APP_PERMISSIONS = {
   contents: "write",
@@ -77,7 +77,7 @@ export function githubAppManifest(baseUrl: string, requestOrigin: string, name =
     ...(hook ? { hook_attributes: hook } : {}),
     redirect_url: `${base}${MANIFEST_CALLBACK_PATH}`,
     callback_urls: callbacks,
-    description: "Lets this Guilds box's agents work with the issues, pull requests, and CI runs of the repositories each login picks, and its coding agents clone and push them.",
+    description: "Lets this Guilds box's agents work with the issues, pull requests, and CI runs of the repositories each login picks, and its subscription agents clone and push them.",
     public: false,
     default_permissions: GITHUB_APP_PERMISSIONS,
     request_oauth_on_install: true,

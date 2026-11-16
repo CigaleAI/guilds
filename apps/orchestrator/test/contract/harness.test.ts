@@ -149,7 +149,7 @@ async function liveSubscriptionTurn(
     });
     const schemas = schemasFor(offered);
     const tools: GenerationTools = { run: ctx.run, hooks: ctx.hooks, schemas, secrets, connections: new Map(), maxToolCalls: 50 };
-    const agent = { id: agentId, org_id: "org_contract", guild_id: "g_1", config: { model: null, harness, browser: false, coding: false, scripting: false, memory: false } };
+    const agent = { id: agentId, org_id: "org_contract", guild_id: "g_1", config: { model: null, harness, browser: false, scripting: false, memory: false } };
     const toolCalls = new ToolCalls({
       db: { getAgent: async () => null, getRun: async () => null, listMessages: async () => rows },
       events,

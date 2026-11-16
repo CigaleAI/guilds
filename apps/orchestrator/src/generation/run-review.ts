@@ -25,10 +25,10 @@ import type { HarnessCheck } from "../toolbox/harness-setup.js";
 import type { CodeDiff, CodingRuns } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 
-/** What a coding agent's harness and a coding run's changes are read through, built once from the app's services. */
+/** What a subscription agent's harness and a turn's changes are read through, built once from the app's services. */
 export type RunReviewServices = {
   db: Queryable;
-  /** The coding runs whose machines hold the repositories; absent on a box without a generation loop. */
+  /** The subscription turns whose machines hold the repositories; absent on a box without a generation loop. */
   coding: Pick<CodingRuns, "turnDiff" | "checkHarness"> | null;
 };
 
@@ -48,9 +48,9 @@ export type HarnessCredential = Pick<HarnessInfo, "harness" | "label" | "secret"
 };
 
 /**
- * A coding agent's harness, model and effort, the harness CLIs its machine carries (null before
- * the machine first started), the repositories a coding run clones (those it picks and can use, in
- * its order), the repositories it can use, and each harness's credentials.
+ * A subscription agent's harness, model and effort, the harness CLIs its machine carries (null
+ * before the machine first started), the repositories its turns clone (those it picks and can use,
+ * in its order), the repositories it can use, and each harness's credentials.
  */
 export type AgentHarness = {
   harness: Harness | null;
@@ -96,8 +96,8 @@ function harnessView(
 }
 
 /**
- * A coding agent's harness, model and effort, the repositories it works in and those it can use,
- * and each harness's secret and login.
+ * A subscription agent's harness, model and effort, the repositories it works in and those it can
+ * use, and each harness's secret and login.
  */
 export async function loadHarnessView(services: RunReviewServices, agent: AgentRow): Promise<AgentHarness> {
   const config = agent.config;

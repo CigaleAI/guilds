@@ -303,7 +303,7 @@ describe("generation", { concurrency: 1 }, () => {
         payload: {
           role: "assistant" as const,
           content: "",
-          tool_calls: [{ id: "c1", type: "function" as const, function: { name: "file_read", arguments: "{}" } }],
+          tool_calls: [{ id: "c1", type: "function" as const, function: { name: "note_get", arguments: "{}" } }],
         },
         metadata: { generation: 1 },
         created_at: new Date(),
@@ -312,7 +312,7 @@ describe("generation", { concurrency: 1 }, () => {
         id: 4,
         seq: 3,
         payload: { role: "tool", tool_call_id: "c1", content: large },
-        metadata: { generation: 1, tool_name: "file_read", path: "repos/shop/src/a.ts" },
+        metadata: { generation: 1, tool_name: "note_get" },
         created_at: new Date(),
       },
       {
@@ -332,8 +332,7 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.generator.generate("r_1", 2);
     const tool = seen.find((item) => item.role === "tool");
     assert.match(String(tool?.content), /"stub":true/);
-    assert.match(String(tool?.content), /file_read/);
-    assert.match(String(tool?.content), /repos\/shop\/src\/a\.ts/);
+    assert.match(String(tool?.content), /note_get/);
     assert.doesNotMatch(String(tool?.content), /xxx/);
     const stored = db.messages.find((row) => row.seq === 3);
     assert.equal((stored?.payload as Record<string, unknown>).content, large);
@@ -1964,7 +1963,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("ensure_cli_runs_on_the_machine_of_its_tier", async () => {
     const db = new FakeDB({});
-    db.agent.config = { ...AGENT_CONFIG, browser: true, coding: true };
+    db.agent.config = { ...AGENT_CONFIG, browser: true };
     Object.assign(db.agent, { machine_box: "custom", machine_cpu: "1.5", machine_memory_mib: 3072 });
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, {
@@ -2414,7 +2413,6 @@ describe("generation", { concurrency: 1 }, () => {
     db.cancelRunWake = async () => ({
       id: "wk_1",
       run_id: "r_1",
-      root_run_id: "r_1",
       agent_id: "a_1",
       due_at: "2026-01-01T00:05:00.000Z",
       message: null,

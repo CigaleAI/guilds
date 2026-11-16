@@ -119,7 +119,7 @@ test("builder system prompt carries the Task shape and what every agent already 
   assert.match(text, /<agent_state_intro>\nA snapshot of the guild at the start of this run/);
   assert.match(text, /<agent_memory_rules>\n### Your Memory/);
   assert.match(text, /<agent_guidelines>\nYou are an agent in a work guild/);
-  assert.match(text, /code_task/);
+  assert.match(text, /every role that\n  reads, changes, runs, and ships code in git repositories/);
   assert.doesNotMatch(text, /<capability name=/);
   assert.doesNotMatch(text, /\{\{(AGENT_PROMPT|WRITING|TASK_SHAPE|AGENT_GUIDELINES|TASK_INTRO|STATE_INTRO|MEMORY_RULES)\}\}/);
   assert.doesNotMatch(text, /Start of work/);

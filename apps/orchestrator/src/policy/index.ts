@@ -2,8 +2,7 @@ import {
   countOrgAgents,
   countOrgBrowserAgents,
   countOrgGuilds,
-  listOrgAgentHarnessConfigs,
-  type OrgAgentHarnessConfig,
+  countOrgSubscriptionAgents,
 } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { modelSourceOf, type AgentConfig, type CoachRunLimits } from "../db/schema/index.js";
@@ -95,17 +94,9 @@ export const OPEN_POLICY: OrgPolicy = {
   },
 };
 
-/**
- * Whether an agent counts against `maxSubscriptionAgents`: a coding agent does, and so does a
- * subscription agent, which holds a harness as a coding agent does.
- */
-export function countsAsSubscriptionAgent(config: OrgAgentHarnessConfig): boolean {
-  return config.coding || modelSourceOf(config).kind === "subscription";
-}
-
-/** How many of the organisation's agents count against `maxSubscriptionAgents`. */
-export async function countOrgSubscriptionAgents(db: Queryable, orgId: string): Promise<number> {
-  return (await listOrgAgentHarnessConfigs(db, orgId)).filter(countsAsSubscriptionAgent).length;
+/** Whether an agent counts against `maxSubscriptionAgents`: a subscription agent, which holds a harness, does. */
+export function countsAsSubscriptionAgent(config: Pick<AgentConfig, "model">): boolean {
+  return modelSourceOf(config).kind === "subscription";
 }
 
 /** The live counts the caps are checked against. */
@@ -138,7 +129,7 @@ export function remaining(limit: number | null, count: number): number | null {
 export type AddedAgents = { agents: number; browserAgents: number; subscriptionAgents: number };
 
 /** The settings of a new agent its caps are checked by. */
-export type CappedAgentConfig = Pick<AgentConfig, "browser"> & OrgAgentHarnessConfig;
+export type CappedAgentConfig = Pick<AgentConfig, "browser" | "model">;
 
 export async function assertCanCreateAgents(
   policy: OrgPolicy,
@@ -291,7 +282,7 @@ export async function assertCanEnableBrowserThrough(
   }
 }
 
-/** Turning `coding` on, or a subscription, for an existing agent takes one more of the organisation's subscription agents. */
+/** Moving an existing agent onto a subscription takes one more of the organisation's subscription agents. */
 export async function assertCanAddSubscriptionAgent(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
   await assertCanAddSubscriptionAgentThrough(policy, orgCounts(db), orgId);
 }

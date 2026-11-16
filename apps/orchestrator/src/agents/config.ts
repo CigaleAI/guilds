@@ -17,7 +17,6 @@ export const CONFIG_KEYS = new Set([
   "browser_language",
   "browser_optimized",
   "browser_model",
-  "coding",
   "harness",
   "harness_model",
   "harness_effort",
@@ -32,7 +31,7 @@ export const DEFAULT_MAX_TOKENS = 8192;
 export const DEFAULT_MAX_STEPS = 30;
 export const DEFAULT_MAX_TOOL_CALLS = 50;
 export const DEFAULT_MAX_INPUT_TOKENS = 100_000;
-/** The most wake-ups a run may fire, for every agent, coding or not. */
+/** The most wake-ups a run may fire, for every agent. */
 export const DEFAULT_MAX_WAKE_UPS = 10;
 /** How many minutes a subscription agent's turn runs before its harness is stopped. */
 export const DEFAULT_MAX_TURN_MINUTES = 30;
@@ -45,9 +44,6 @@ export const DEFAULT_SCRIPTING = true;
 export const DEFAULT_MEMORY = true;
 /** How many secret aliases an agent's config may hold. */
 export const SECRET_ALIASES_MAX = 32;
-/** The step and tool-call budgets an agent created with `coding` on starts with. */
-export const CODING_MAX_STEPS = 200;
-export const CODING_MAX_TOOL_CALLS = 200;
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "none";
 /** Chrome UI and Accept-Language when the agent has a browser and none is stored. */
 export const DEFAULT_BROWSER_LANGUAGE = "en-US";
@@ -104,7 +100,7 @@ export type AgentConfigDefaults = Omit<AgentConfig, "model">;
 
 /**
  * The value each setting takes when a payload leaves it out: no browser, the step-by-step browser
- * tools, no coding, no harness, the harness's default model and effort, no repositories, no secret aliases, the
+ * tools, no harness, the harness's default model and effort, no repositories, no secret aliases, the
  * guild's tool-result turns, and the default limits. Only `model` has none.
  */
 export const AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
@@ -122,7 +118,6 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
   browser_language: DEFAULT_BROWSER_LANGUAGE,
   browser_optimized: DEFAULT_BROWSER_OPTIMIZED,
   browser_model: null,
-  coding: false,
   harness: null,
   harness_model: null,
   harness_effort: null,
@@ -141,13 +136,6 @@ export const MODEL_LOOP_SETTINGS = [
   "max_input_tokens",
   "keep_tool_result_generations",
 ] as const satisfies ReadonlyArray<keyof AgentConfigDefaults>;
-
-/** The defaults of a new agent created with `coding` on: the coding budgets for its step and tool-call limits. */
-export const CODING_AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
-  ...AGENT_CONFIG_DEFAULTS,
-  max_steps: CODING_MAX_STEPS,
-  max_tool_calls: CODING_MAX_TOOL_CALLS,
-};
 
 /** The settings the agent's runs take: its config, with its guild's tool-result turns when it sets none. */
 export function resolveAgentConfig(

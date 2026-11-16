@@ -218,6 +218,13 @@
       "when": 1791986400000,
       "tag": "0031_agent_turn_minutes_config",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791990000000,
+      "tag": "0032_subscription_agents_only",
+      "breakpoints": true
     }
   ]
 }

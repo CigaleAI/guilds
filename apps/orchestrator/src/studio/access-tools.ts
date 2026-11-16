@@ -101,7 +101,7 @@ export const studioGetScript: StudioTool = studioTool({
 export const studioEditAccess: StudioTool = studioTool({
   name: "studio_edit_access",
   description:
-    "Propose what one source-guild agent is offered: native tools, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, coding, scripting, and memory switches are agent configuration, not access.",
+    "Propose what one source-guild agent is offered: native tools, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, harness, scripting, and memory switches are agent configuration, not access.",
   parameters: EditAccessArguments,
   async run(deps, call, input: EditAccessArguments) {
     const agent = await resolveHandle(deps, call, input.agent_id);

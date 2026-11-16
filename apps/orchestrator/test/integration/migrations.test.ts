@@ -33,6 +33,7 @@ const remoteIdDb = uniqueDbName("agent_platform_migrate_remote_id");
 const providersDb = uniqueDbName("agent_platform_migrate_providers");
 const agentRepositoriesDb = uniqueDbName("agent_platform_migrate_agent_repositories");
 const turnMinutesConfigDb = uniqueDbName("agent_platform_migrate_turn_minutes_config");
+const subscriptionOnlyDb = uniqueDbName("agent_platform_migrate_subscription_only");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -51,6 +52,7 @@ after(async () => {
   await dropIsolatedDatabase(providersDb);
   await dropIsolatedDatabase(agentRepositoriesDb);
   await dropIsolatedDatabase(turnMinutesConfigDb);
+  await dropIsolatedDatabase(subscriptionOnlyDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -170,7 +172,7 @@ test("the native CLI migration drops the cli flag from recipe roles, keeping the
     const migrated = await pool.query("SELECT id, body FROM public.recipes ORDER BY id");
     assert.deepEqual(migrated.rows[0].body.roles, [
       { role: "lead", config: { model: "m", browser: true } },
-      { role: "coder", config: { coding: true } },
+      { role: "coder", config: {} },
       { role: "bare" },
     ]);
     assert.equal(migrated.rows[0].body.format, "guilds.recipe");
@@ -274,7 +276,8 @@ test("the agent config migration gives a config each key it predates, keeping th
     const byId = new Map(rows.rows.map((row) => [row.id, row.config]));
     assert.deepEqual(
       byId.get("old"),
-      agentConfig({ model: MODEL, coding: true, harness: "codex", max_steps: 200, keep_tool_result_generations: 1 }),
+      agentConfig({ model: null, harness: "codex", max_steps: 200 }),
+      "a coding agent became a subscription agent",
     );
     assert.deepEqual(byId.get("full"), full);
   } finally {
@@ -440,6 +443,164 @@ test("the turn minutes config migration gives agent configs and run snapshots ma
     assert.deepEqual(snapshots.get("run_active"), runSnapshot(agentConfig()));
     assert.deepEqual(snapshots.get("run_completed"), runSnapshot(agentConfig()));
     assert.deepEqual(snapshots.get("run_capped"), cappedSnapshot);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the subscription-only migration makes each coding agent a subscription agent and drops the coding agent's stored shapes", async () => {
+  const pool = await createPool(await createIsolatedDatabase(subscriptionOnlyDb), reportPoolError);
+  try {
+    const folder = chainBefore("0032_subscription_agents_only");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'code', $1, $1)",
+      [now],
+    );
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    const tuned = { temperature: 0.4, max_tokens: 2048, max_input_tokens: 50_000, keep_tool_result_generations: 3, max_steps: 200 };
+    await agent("coder", 0, { ...agentConfig(tuned), coding: true, harness: "claude-code", harness_model: "opus", repositories: ["site"] });
+    await agent("cursor", 1, { ...agentConfig(), coding: true, harness: "cursor" });
+    await agent("unharnessed", 2, { ...agentConfig(tuned), coding: true, repositories: ["site"] });
+    await agent("plain", 3, { ...agentConfig(tuned), coding: false });
+    const snapshot = { ...runSnapshot(agentConfig()), harness: "claude-code" };
+    await pool.query(
+      `INSERT INTO public.runs (id, agent_id, status, config_snapshot, metadata, created_at, updated_at, org_id)
+       VALUES ('run_1', 'coder', 'completed', $1, $2, $3, $3, 'org_1')`,
+      [
+        JSON.stringify({ ...snapshot, coding: true }),
+        JSON.stringify({
+          instruction_hash: "h",
+          chain: { root_run_id: "run_0", index: 1, previous_run_id: "run_0" },
+          continued_by_run_id: "run_2",
+          repos: [{ repository: "site", files_changed: 1 }],
+          harness_task: { call_id: "call_1", harness: "claude-code", repository: "site", session_id: null, log_path: "/tmp/log" },
+        }),
+        now,
+      ],
+    );
+    const message = (seq: number, metadata: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.messages (run_id, seq, payload, metadata, created_at) VALUES ('run_1', $1, $2, $3, $4)`,
+        [seq, JSON.stringify({ role: "tool", tool_call_id: `call_${seq}`, content: "out" }), JSON.stringify(metadata), now],
+      );
+    await message(1, {
+      generation: 1,
+      tool_name: "code_task",
+      truncated: false,
+      exit_code: 0,
+      status: "completed",
+      harness: "claude-code",
+      session_id: "s_1",
+      repository: "site",
+      files_changed: 2,
+      insertions: 3,
+      deletions: 1,
+      start_sha: "a",
+      end_sha: "b",
+      log_path: "/tmp/log",
+    });
+    await message(2, { generation: 1, tool_name: "file_read", path: "src/a.ts", range: [1, 4], content_hash: "h", repeat_of: 1 });
+    await message(3, { generation: 1, tool_name: "note_get", path: "notes/a.md" });
+    await message(4, { generation: 0, source: "continuation", previous_run_id: "run_0" });
+    await message(5, { source: "handoff", previous_run_id: "run_0" });
+    await message(6, { source: "ui" });
+    await pool.query(
+      `INSERT INTO public.run_wakes (id, run_id, root_run_id, agent_id, due_at, state, set_tool_call_id, created_at)
+       VALUES ('wk_1', 'run_1', 'run_0', 'coder', $1, 'pending', 'call_1', $1)`,
+      [now],
+    );
+    const recipe = {
+      format: "guilds.recipe",
+      roles: [
+        {
+          role: "coder",
+          config: { model: "m", coding: true, harness: "codex", temperature: 0.2, thinking_level: "high", max_tokens: 100, max_steps: 200, repositories: ["site"] },
+        },
+        { role: "unharnessed", config: { model: "m", coding: true, max_steps: 200, repositories: ["site"] } },
+        { role: "writer", config: { model: "m", coding: false } },
+        { role: "bare" },
+      ],
+    };
+    await pool.query(
+      `INSERT INTO public.recipes (id, org_id, name, body, source_kind, created_at, updated_at)
+       VALUES ('rec_1', 'org_1', 'r', $1, 'file', $2, $2), ('rec_2', 'org_1', 'r2', '{"roles": [{"role": "lead"}]}', 'file', $2, $2)`,
+      [JSON.stringify(recipe), now],
+    );
+    const preview = {
+      recipe_id: "rec_1",
+      harnesses: [{ role: "coder", recommended: "codex", harness: "codex", subscription: false }],
+      creates: { agents: [{ role: "coder", name: "coder", coding: true, browser: false }], repositories: [] },
+    };
+    await pool.query(
+      `INSERT INTO public.recipe_applies (id, org_id, recipe_id, status, recipe_body_version, preview, created_at, updated_at)
+       VALUES ('apl_1', 'org_1', 'rec_1', 'preview', 1, $1, $2, $2)`,
+      [JSON.stringify(preview), now],
+    );
+
+    await applyMigrations(pool);
+    const agents = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const configs = new Map(agents.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(
+      configs.get("coder"),
+      agentConfig({ model: null, max_steps: 200, harness: "claude-code", harness_model: "opus", repositories: ["site"] }),
+      "a coding agent runs on its harness, its model-loop settings at their defaults",
+    );
+    assert.deepEqual(
+      configs.get("cursor"),
+      agentConfig({ model: null, harness: "cursor" }),
+      "a Cursor agent without a repository is a subscription agent that picks none",
+    );
+    assert.deepEqual(configs.get("unharnessed"), agentConfig(tuned), "a coding agent with no harness keeps its model, without repositories");
+    assert.deepEqual(configs.get("plain"), agentConfig(tuned));
+
+    const run = await pool.query<{ config_snapshot: Record<string, unknown>; metadata: Record<string, unknown> }>(
+      "SELECT config_snapshot, metadata FROM public.runs WHERE id = 'run_1'",
+    );
+    assert.deepEqual(run.rows[0]?.config_snapshot, snapshot, "the run keeps the model it ran on");
+    assert.deepEqual(run.rows[0]?.metadata, { instruction_hash: "h" });
+    const messages = await pool.query<{ seq: number; metadata: Record<string, unknown> }>(
+      "SELECT seq, metadata FROM public.messages WHERE run_id = 'run_1' ORDER BY seq",
+    );
+    assert.deepEqual(
+      messages.rows.map((row) => row.metadata),
+      [
+        { generation: 1, tool_name: "code_task", truncated: false, exit_code: 0, status: "completed" },
+        { generation: 1, tool_name: "file_read" },
+        { generation: 1, tool_name: "note_get", path: "notes/a.md" },
+        { generation: 0, source: "system" },
+        { source: "system" },
+        { source: "ui" },
+      ],
+    );
+    const wakeColumns = await pool.query<{ column_name: string }>(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'run_wakes'",
+    );
+    assert.equal(wakeColumns.rows.some((row) => row.column_name === "root_run_id"), false);
+    assert.equal((await pool.query("SELECT id FROM public.run_wakes")).rowCount, 1);
+
+    const recipes = await pool.query<{ id: string; body: { roles: unknown[] } }>("SELECT id, body FROM public.recipes ORDER BY id");
+    assert.deepEqual(recipes.rows[0]?.body.roles, [
+      { role: "coder", config: { harness: "codex", max_steps: 200, repositories: ["site"] } },
+      { role: "unharnessed", config: { model: "m", max_steps: 200 } },
+      { role: "writer", config: { model: "m" } },
+      { role: "bare" },
+    ]);
+    assert.deepEqual(recipes.rows[1]?.body, { roles: [{ role: "lead" }] });
+    const applies = await pool.query<{ preview: Record<string, unknown> }>("SELECT preview FROM public.recipe_applies");
+    assert.deepEqual(applies.rows[0]?.preview, {
+      recipe_id: "rec_1",
+      harnesses: [{ role: "coder", recommended: "codex", harness: "codex" }],
+      creates: { agents: [{ role: "coder", name: "coder", browser: false }], repositories: [] },
+    });
   } finally {
     await pool.end();
   }
@@ -620,7 +781,7 @@ test("the agent repositories migration gives each coding agent every repository 
         [id, guild, name, now],
       );
     }
-    const { repositories: _repositories, ...coding } = agentConfig({ coding: true, harness: "codex" });
+    const { repositories: _repositories, ...coding } = { ...agentConfig(), coding: true, harness: "codex" };
     const { repositories: _none, ...plain } = agentConfig();
     const agent = (id: string, guild: string, slot: number, config: Record<string, unknown>) =>
       pool.query(

@@ -57,7 +57,7 @@ test("a captured subscription role applies on its harness", { timeout: 60_000 },
     const role = (captured.json().body.roles as Array<{ role: string; config: Record<string, unknown> }>)[0];
     assert.equal("model" in (role?.config ?? {}), false);
     assert.equal(role?.config.harness, "codex");
-    assert.equal(role?.config.coding, false);
+    assert.equal("coding" in (role?.config ?? {}), false);
     assert.equal((await call("POST", `/api/recipes/${recipeId}/validate`)).statusCode, 200);
     assert.equal((await call("POST", `/api/recipes/${recipeId}/publish`)).statusCode, 200);
 
@@ -65,7 +65,7 @@ test("a captured subscription role applies on its harness", { timeout: 60_000 },
     const preview = await call("POST", `/api/recipes/${recipeId}/preview`, {});
     assert.equal(preview.statusCode, 200, preview.body);
     assert.deepEqual(preview.json().models, []);
-    assert.deepEqual(preview.json().harnesses, [{ role: "writer", recommended: "codex", harness: "codex", subscription: true }]);
+    assert.deepEqual(preview.json().harnesses, [{ role: "writer", recommended: "codex", harness: "codex" }]);
     assert.deepEqual(preview.json().errors, []);
     const cursor = await call("POST", `/api/recipes/${recipeId}/preview`, { harnesses: [{ role: "writer", harness: "cursor" }] });
     assert.equal(cursor.statusCode, 422, cursor.body);
@@ -89,7 +89,7 @@ test("a captured subscription role applies on its harness", { timeout: 60_000 },
     assert.equal(applied.statusCode, 201, applied.body);
     const [created] = await listAgents(db, String(applied.json().guild_id));
     assert.equal(created?.config.model, null);
-    assert.equal(created?.config.coding, false);
+    assert.equal("coding" in (created?.config ?? {}), false);
     assert.equal(created?.config.harness, "claude-code");
     assert.equal(created?.config.harness_model, null, "another harness takes its default model");
   } finally {

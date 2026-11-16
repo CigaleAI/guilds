@@ -1,11 +1,11 @@
 import { Type, type Static } from "typebox";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { listServers } from "../connectors/servers.js";
-import { countOrgAgents, countOrgBrowserAgents } from "../db/orgs.js";
+import { countOrgAgents, countOrgBrowserAgents, countOrgSubscriptionAgents } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { modelsService, type ModelsService } from "../llm/models.js";
 import type { NotesStore } from "../notes/store.js";
-import { countOrgSubscriptionAgents, OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
+import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
@@ -80,7 +80,7 @@ const ModelDecisionSchema = Type.Object({ role: Type.String(), model: Type.Strin
 
 export type ModelDecision = Static<typeof ModelDecisionSchema>;
 
-/** The harness the operator picked for a coding role on the apply preview. */
+/** The harness the operator picked for a subscription role on the apply preview. */
 const HarnessDecisionSchema = Type.Object({ role: Type.String(), harness: Type.String() });
 
 export type HarnessDecision = Static<typeof HarnessDecisionSchema>;
@@ -92,7 +92,7 @@ export const ApplyChoicesSchema = Type.Object({
   /** The name of each role's agent. */
   names: Type.Optional(Type.Array(Type.Object({ role: Type.String(), name: Type.String() }))),
   models: Type.Optional(Type.Array(ModelDecisionSchema)),
-  /** The harness of each coding role. */
+  /** The harness of each subscription role. */
   harnesses: Type.Optional(Type.Array(HarnessDecisionSchema)),
   connections: Type.Optional(Type.Array(ConnectionDecisionSchema)),
   secrets: Type.Optional(Type.Array(SecretDecisionSchema)),

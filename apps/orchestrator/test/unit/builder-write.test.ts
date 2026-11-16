@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { builderWriteRecipe, builderWriteRejection, builderWriteToolResult, recommendCoachModel } from "../../src/builder/tools.js";
-import type { RecipeRole } from "../../src/db/schema/index.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
 import { parseRecipe } from "../../src/recipes/parse.js";
 import { huskLeadMatcherRecipe, linkedInNotionRecipe } from "../helpers/recipe-docs.js";
@@ -56,10 +55,7 @@ test("a role written without a model is recommended the coach's, but a subscript
   assert.ok(keyed && other);
   keyed.config = { browser: false };
   other.config = { harness: "codex" };
-  const coding: RecipeRole = { ...keyed, role: "coder", config: { coding: true, harness: "codex" } };
-  recipe.roles.push(coding);
   recommendCoachModel(recipe, "deepinfra/zai-org/GLM-5.3-Flash");
   assert.equal(keyed.config.model, "deepinfra/zai-org/GLM-5.3-Flash");
   assert.equal("model" in other.config, false, "a subscription role runs on its harness");
-  assert.equal(coding.config.model, "deepinfra/zai-org/GLM-5.3-Flash", "a coding role's lead model runs on a key");
 });

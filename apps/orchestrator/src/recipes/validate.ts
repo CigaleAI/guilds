@@ -27,7 +27,7 @@ import { isDisplayPath } from "../artifacts/paths.js";
 import { operatorAccessCuts } from "./access-edits.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
 import { browserRoles, finding, type RecipeRule, type ValidationContext } from "./findings.js";
-import { roleRepositories, roleRunsOnSubscription, roleTakesHarness, subscriptionLoopSettings } from "./prepare.js";
+import { roleRepositories, roleRunsOnSubscription, subscriptionHarnessOf, subscriptionLoopSettings } from "./prepare.js";
 import { validateDesign } from "./validate-design.js";
 
 /** A check of one role of the recipe. */
@@ -42,13 +42,8 @@ function harnessChoiceFinding(role: RecipeRole): RecipeFinding | null {
   if (harness !== undefined && harness !== null && !isHarness(harness)) {
     return finding("harness.unknown", "warning", path, `unknown harness ${String(harness)}; apply asks for one of ${HARNESSES.join(", ")}`);
   }
-  if (isHarness(harness) && !roleTakesHarness(role)) {
-    return finding(
-      "harness.coding",
-      "warning",
-      path,
-      "config.harness is for a coding role, or a subscription role without a model; apply leaves it out",
-    );
+  if (isHarness(harness) && !roleRunsOnSubscription(role)) {
+    return finding("harness.model", "warning", path, "config.harness is for a subscription role, which has no model; apply leaves it out");
   }
   if (isHarness(harness) && isHarnessOff(harness)) {
     return finding("harness.off", "warning", path, `${HARNESS_INFO[harness].label} is turned off on this box; apply asks for another`);
@@ -80,16 +75,13 @@ function subscriptionFindings(role: RecipeRole): RecipeFinding[] {
   );
 }
 
-/** A coding or subscription role's harness runs on a credential nobody can know before apply. */
-function harnessCredentialFinding(role: RecipeRole): RecipeFinding {
-  const harness = role.config.harness;
-  const named = isHarness(harness);
-  const fix = named ? `after apply, ${credentialFix(harness)}` : "apply asks for its harness";
+/** A subscription role's harness runs on a credential nobody can know before apply. */
+function harnessCredentialFinding(role: RecipeRole, harness: Harness): RecipeFinding {
   return finding(
     "harness.credential",
     "warning",
     `roles.${role.role}.config.harness`,
-    `${named ? HARNESS_INFO[harness].label : "the harness"} runs on a subscription credential that is not known before apply; ${fix}`,
+    `${HARNESS_INFO[harness].label} runs on a subscription credential that is not known before apply; after apply, ${credentialFix(harness)}`,
   );
 }
 
@@ -144,7 +136,8 @@ function secretAliasesFinding(role: RecipeRole): RecipeFinding | null {
 function harnessFindings(role: RecipeRole): RecipeFinding[] {
   const choice = harnessChoiceFinding(role);
   const model = harnessModelFinding(role);
-  const credential = roleTakesHarness(role) ? harnessCredentialFinding(role) : null;
+  const harness = subscriptionHarnessOf(role);
+  const credential = harness === null ? null : harnessCredentialFinding(role, harness);
   return [choice, model, harnessEffortFinding(role), credential, secretAliasesFinding(role)].filter((item): item is RecipeFinding => item !== null);
 }
 
@@ -161,9 +154,9 @@ function browserCapacity(recipe: RecipeDocument, ctx: ValidationContext): Recipe
   return [finding("capacity.browser", "error", "roles", `recipe needs ${needed} browser agents; ${ctx.remainingBrowserAgents} remaining`)];
 }
 
-/** More subscription agents, coding roles counted as subscription ones, than the organisation has room for. */
-function codingCapacity(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
-  const needed = recipe.roles.filter(roleTakesHarness).length;
+/** More subscription agents than the organisation has room for. */
+function subscriptionCapacity(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
+  const needed = recipe.roles.filter(roleRunsOnSubscription).length;
   if (ctx.remainingSubscriptionAgents === null || needed <= ctx.remainingSubscriptionAgents) return [];
   return [finding("capacity.subscription", "error", "roles", `recipe needs ${needed} subscription agents; ${ctx.remainingSubscriptionAgents} remaining`)];
 }
@@ -184,8 +177,8 @@ function unusedRepositories(recipe: RecipeDocument): RecipeFinding[] {
 }
 
 /**
- * A role's repositories apply cannot give its agent: not a list of names each once, on a role that
- * holds no harness, or naming a repository the recipe does not list.
+ * A role's repositories apply cannot give its agent: not a list of names each once, on a role on
+ * a key, or naming a repository the recipe does not list.
  */
 function repositoryFindings(role: RecipeRole, recipe: RecipeDocument): RecipeFinding[] {
   const listed = role.config.repositories;
@@ -194,8 +187,8 @@ function repositoryFindings(role: RecipeRole, recipe: RecipeDocument): RecipeFin
   if (!isValidRepositoryList(listed)) {
     return [finding("repositories.invalid", "error", path, "config.repositories must be a list of repository names, each once")];
   }
-  if (listed.length && !roleTakesHarness(role)) {
-    return [finding("repositories.coding", "warning", path, "config.repositories is only for a coding or subscription role; apply leaves it out")];
+  if (listed.length && !roleRunsOnSubscription(role)) {
+    return [finding("repositories.key", "warning", path, "config.repositories is only for a subscription role; apply leaves it out")];
   }
   const known = new Set(recipe.repositories.map((repository) => repository.name));
   return listed
@@ -209,13 +202,7 @@ function unknownConfigKeys(role: RecipeRole): RecipeFinding[] {
   return unknown.length ? [finding("config.unknown", "error", `roles.${role.role}.config`, `unknown keys: ${unknown.join(", ")}`)] : [];
 }
 
-/** A coding flag that is not a boolean. */
-function codingFlag(role: RecipeRole): RecipeFinding[] {
-  if (role.config.coding === undefined || typeof role.config.coding === "boolean") return [];
-  return [finding("coding.flag", "error", `roles.${role.role}.config.coding`, "config.coding must be a boolean")];
-}
-
-/** A model apply cannot create the role with: unknown, for coding agents only, or of a provider the organisation lacks. */
+/** A model apply cannot create the role with: unknown, a coding plan's, or of a provider the organisation lacks. */
 function modelFindings(role: RecipeRole, _recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
   const model = String(role.config.model ?? "").trim();
   const path = `roles.${role.role}.config.model`;
@@ -224,8 +211,8 @@ function modelFindings(role: RecipeRole, _recipe: RecipeDocument, ctx: Validatio
     return model ? [finding("model.unknown", "warning", path, `unknown model ${model}; apply asks for one`)] : [];
   }
   const findings: RecipeFinding[] = [];
-  if (parsed.provider.kind === "coding" && role.config.coding !== true) {
-    findings.push(finding("model.coding", "warning", path, `${model} is only for a coding agent; apply asks for another`));
+  if (parsed.provider.kind === "coding") {
+    findings.push(finding("model.coding", "warning", path, `${model} is a coding plan's model, which runs no agent; apply asks for another`));
   }
   if (ctx.connectedProviders && !ctx.connectedProviders.has(parsed.provider.id)) {
     findings.push(
@@ -322,7 +309,6 @@ function scriptFindings(role: RecipeRole): RecipeFinding[] {
 
 const ROLE_RULES: RoleRule[] = [
   unknownConfigKeys,
-  codingFlag,
   modelFindings,
   harnessFindings,
   repositoryFindings,
@@ -491,7 +477,7 @@ function accessCuts(recipe: RecipeDocument): RecipeFinding[] {
 const MECHANICAL_RULES: RecipeRule[] = [
   agentCapacity,
   browserCapacity,
-  codingCapacity,
+  subscriptionCapacity,
   unusedRepositories,
   roleFindings,
   collectionWriters,

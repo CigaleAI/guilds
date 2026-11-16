@@ -119,8 +119,8 @@ describe("run wakes", { concurrency: 1 }, () => {
     await setRunWake(database.pool, wakeFor(runId, 10), NOW);
     await assert.rejects(
       database.pool.query(
-        `INSERT INTO run_wakes (id, run_id, root_run_id, agent_id, due_at, state, set_tool_call_id, created_at)
-         VALUES ($1, $2, $2, 'a_waker', $3, 'pending', 'call_x', $3)`,
+        `INSERT INTO run_wakes (id, run_id, agent_id, due_at, state, set_tool_call_id, created_at)
+         VALUES ($1, $2, 'a_waker', $3, 'pending', 'call_x', $3)`,
         [newId("wk"), runId, NOW.toISOString()],
       ),
       isUniqueViolation,
@@ -131,8 +131,8 @@ describe("run wakes", { concurrency: 1 }, () => {
     const runId = await addRun();
     const insert = (state: string, reason: string | null, firedAt: string | null) =>
       database.pool.query(
-        `INSERT INTO run_wakes (id, run_id, root_run_id, agent_id, due_at, state, cancel_reason, set_tool_call_id, created_at, fired_at)
-         VALUES ($1, $2, $2, 'a_waker', $3, $4, $5, 'call_x', $3, $6)`,
+        `INSERT INTO run_wakes (id, run_id, agent_id, due_at, state, cancel_reason, set_tool_call_id, created_at, fired_at)
+         VALUES ($1, $2, 'a_waker', $3, $4, $5, 'call_x', $3, $6)`,
         [newId("wk"), runId, NOW.toISOString(), state, reason, firedAt],
       );
     await assert.rejects(insert("pending", "agent", null), /run_wakes_cancelled_has_reason/);

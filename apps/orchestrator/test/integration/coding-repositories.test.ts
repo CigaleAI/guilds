@@ -313,7 +313,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       afterConnect.json().github_connections.map((row: { id: string; account_hint: string }) => [row.id, row.account_hint]),
       [[remoteId, "acme"]],
     );
-    assert.deepEqual([...afterConnect.json().usable].sort(), ["docs", "shop"], "a new coding agent can use every repository of the guild");
+    assert.deepEqual([...afterConnect.json().usable].sort(), ["docs", "shop"], "a new subscription agent can use every repository of the guild");
 
     // GitHub refusing the installation while the picker lists it disconnects the login.
     installationGone = true;
@@ -585,7 +585,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       headers: JSON_HEADERS,
       payload: {
         name: "coder",
-        config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code", repositories: ["site"] },
+        config: { model: null, browser: false, harness: "claude-code", repositories: ["site"] },
       },
     });
     assert.equal(agent.statusCode, 201, agent.body);
@@ -620,7 +620,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       url: `/api/agents/${coderId}/config`,
       headers: JSON_HEADERS,
       payload: {
-        config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code", repositories: ["site", "shop"] },
+        config: { model: null, browser: false, harness: "claude-code", repositories: ["site", "shop"] },
       },
     });
     assert.equal(repicked.statusCode, 200, repicked.body);

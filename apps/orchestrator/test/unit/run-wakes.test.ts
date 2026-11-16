@@ -21,7 +21,6 @@ function wakeRow(overrides: Partial<RunWakeRow> = {}): RunWakeRow {
   return {
     id: "wk_1",
     run_id: "r_1",
-    root_run_id: "r_1",
     agent_id: "a_1",
     due_at: "2026-11-05T14:12:11.000Z",
     message: "check deploy 4812",

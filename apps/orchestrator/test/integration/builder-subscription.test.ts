@@ -100,7 +100,7 @@ test("the Builder's coach writes a subscription role, and its guild deploys with
     const preview = await app.inject({ method: "POST", url: `/api/recipes/${String(session.recipe_id)}/preview`, headers: JSON_AUTH, payload: {} });
     assert.equal(preview.statusCode, 200, preview.body);
     assert.deepEqual(preview.json().models, []);
-    assert.deepEqual(preview.json().harnesses, [{ role: "writer", recommended: "claude-code", harness: "claude-code", subscription: true }]);
+    assert.deepEqual(preview.json().harnesses, [{ role: "writer", recommended: "claude-code", harness: "claude-code" }]);
     assert.deepEqual(preview.json().errors, []);
 
     const published = await app.inject({ method: "POST", url: `/api/builder/sessions/${String(session.id)}/publish`, headers: AUTH });
@@ -110,7 +110,7 @@ test("the Builder's coach writes a subscription role, and its guild deploys with
     const [agent] = await listAgents(db, String(deployed.json().guild_id));
     assert.equal(agent?.config.model, null);
     assert.equal(agent?.config.harness, "claude-code");
-    assert.equal(agent?.config.coding, false);
+    assert.equal("coding" in (agent?.config ?? {}), false);
   } finally {
     await app.close();
     await database.close();

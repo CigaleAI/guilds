@@ -216,7 +216,7 @@ export async function requireMemberSecret(
 }
 
 /**
- * Refuses a secret a member may not give to a guild's coding agents as a repository's access
+ * Refuses a secret a member may not give to a guild's subscription agents as a repository's access
  * token: one outside the organisation (404), or one the member does not manage (403).
  */
 export async function requireManagedSecret(

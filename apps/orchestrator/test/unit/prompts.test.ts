@@ -365,7 +365,7 @@ test("a run that offers no tool drops the tool budget and every part on a tool i
 
 test("a key agent without group_post, schedules, or report_issue loses only those parts", () => {
   const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
-  const caps = { scripts: false, notes: true, browser: false, coding: false };
+  const caps = { scripts: false, notes: true, browser: false };
   const all = standingForCapabilities(text, caps);
   const without = standingForCapabilities(text, { ...caps, groupPost: false, schedules: false, issues: false });
   assert.ok(all.includes("It is only for coordination") && !without.includes("It is only for coordination"));
@@ -493,7 +493,7 @@ test("compose_system_prompt has four parts", () => {
 
 test("a key run's prompt names each tool by its own name, and a subscription run's as its harness calls it", () => {
   const standing = "Call `<tool>report_issue</tool>` when a tool fails.\n";
-  const caps = { scripts: false, notes: false, browser: false, coding: false, memory: true };
+  const caps = { scripts: false, notes: false, browser: false, memory: true };
   const own = composeSystemPrompt(standing, "Assist.\n", emptyRunState(), EMPTY_MEMORY, caps, ["Use `<tool>tavily_search</tool>`."]);
   assert.ok(own.includes("Call `report_issue` when"));
   assert.ok(own.includes("Use `tavily_search`."));

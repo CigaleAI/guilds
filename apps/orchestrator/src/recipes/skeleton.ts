@@ -35,7 +35,7 @@ import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
 import { ApplyUndoError, RecipeConflictError, RecipeError } from "./errors.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap } from "./plan.js";
-import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleTakesHarness, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
+import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleRunsOnSubscription, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
 import { undoApply } from "./undo.js";
 
@@ -105,7 +105,7 @@ async function assertAllowed(
   await assertCanCreateAgents(apply.policy, apply.db, target.orgId, {
     agents: recipe.roles.length,
     browserAgents: recipe.roles.filter(roleBrowses).length,
-    subscriptionAgents: recipe.roles.filter(roleTakesHarness).length,
+    subscriptionAgents: recipe.roles.filter(roleRunsOnSubscription).length,
   });
   try {
     await assertGuildAgentRoom(apply.db, target.guildId || null, recipe.roles.length);

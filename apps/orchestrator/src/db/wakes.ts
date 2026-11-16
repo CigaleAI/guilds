@@ -40,8 +40,8 @@ export async function setRunWake(
     const replaced = await cancelRunWake(client, wake.runId, "replaced");
     const result = await client.query<RunWakeRow>(
       `INSERT INTO run_wakes (
-         id, run_id, root_run_id, agent_id, due_at, message, state, set_tool_call_id, created_at
-       ) VALUES ($1, $2, $2, $3, $4, $5, 'pending', $6, $7)
+         id, run_id, agent_id, due_at, message, state, set_tool_call_id, created_at
+       ) VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)
        RETURNING ${RUN_WAKE_COLUMNS}`,
       [
         wake.wakeId,

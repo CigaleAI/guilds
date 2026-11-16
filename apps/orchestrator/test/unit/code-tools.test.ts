@@ -5,7 +5,6 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
-import { validateAgentConfig, validateNewAgentConfig } from "../../src/agents/validation.js";
 import { agentWorkspaceMaxMib } from "../../src/generation/workspace.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
@@ -124,19 +123,19 @@ test("no code tool is registered or offered", () => {
   assert.deepEqual(offeredToolNames(["note_find"], {}), ["note_find", "report_issue"]);
 });
 
-test("a coding agent's snapshot keeps its harness, model, effort and aliases", () => {
-  const snapshot = configSnapshot({ ...AGENT_CONFIG, coding: true, harness: "codex" }, { tools: [], secrets: [], mcp: [] }, "schedule");
-  assert.equal(snapshot.coding, true);
+test("a subscription agent's snapshot keeps its harness, model, effort and aliases", () => {
+  const snapshot = configSnapshot({ ...AGENT_CONFIG, model: null, harness: "codex" }, { tools: [], secrets: [], mcp: [] }, "schedule");
+  assert.equal(snapshot.model, null);
   assert.equal(snapshot.harness, "codex");
   assert.equal(snapshot.harness_model, null, "the subscription's default");
   const pinned = configSnapshot(
-    { ...AGENT_CONFIG, coding: true, harness: "claude-code", harness_model: "opus" },
+    { ...AGENT_CONFIG, model: null, harness: "claude-code", harness_model: "opus" },
     { tools: [], secrets: [], mcp: [] }, "schedule",
   );
   assert.equal(pinned.harness_model, "opus");
   assert.equal(snapshot.harness_effort, null, "the harness's default effort");
   const effort = configSnapshot(
-    { ...AGENT_CONFIG, coding: true, harness: "claude-code", harness_model: "opus", harness_effort: "high" },
+    { ...AGENT_CONFIG, model: null, harness: "claude-code", harness_model: "opus", harness_effort: "high" },
     { tools: [], secrets: [], mcp: [] }, "schedule",
   );
   assert.equal(effort.harness_effort, "high");
@@ -151,18 +150,6 @@ test("a coding agent's snapshot keeps its harness, model, effort and aliases", (
 test("agent workspace max is the agent's cap, never above the host cap", () => {
   assert.equal(agentWorkspaceMaxMib({ max_workspace_mib: 512 }), 512);
   assert.equal(agentWorkspaceMaxMib({ max_workspace_mib: 20000 }, { WORKSPACE_MAX_MIB: "4096" }), 4096);
-});
-
-test("coding defaults to off, and a new coding agent gets the coding budgets", () => {
-  assert.equal(validateAgentConfig({ ...AGENT_CONFIG }).coding, false);
-  const coder = validateNewAgentConfig({ model: AGENT_CONFIG.model, browser: false, coding: true });
-  assert.equal(coder.max_steps, 200);
-  assert.equal(coder.max_tool_calls, 200);
-  assert.equal(coder.max_input_tokens, 100000);
-  const explicit = validateNewAgentConfig({ ...AGENT_CONFIG, coding: true, max_steps: 12 });
-  assert.equal(explicit.max_steps, 12);
-  assert.equal(explicit.max_tool_calls, AGENT_CONFIG.max_tool_calls);
-  assert.throws(() => validateAgentConfig({ ...AGENT_CONFIG, coding: "yes" }), /coding must be a boolean/);
 });
 
 describe("subscription runs at the start of a generation", () => {
@@ -332,7 +319,7 @@ describe("subscription runs at the start of a generation", () => {
     ]);
   });
 
-  test("a non-coding generation records the workspace size and stops when it is over the agent's max", async () => {
+  test("a generation on a key records the workspace size and stops when it is over the agent's max", async () => {
     const sandbox = new HostCodeSandbox();
     const sizes: number[] = [];
     const db = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [], mcp: [] }, "schedule")) as FakeDB & {

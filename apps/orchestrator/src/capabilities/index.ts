@@ -10,16 +10,16 @@ import {
   type ServerTool,
 } from "../connectors/servers.js";
 import { oauthSetupState, type OauthSetupState } from "../oauth/index.js";
-import { countOrgSubscriptionAgents, OPEN_POLICY, remaining, type OrgLimits, type OrgPolicy } from "../policy/index.js";
+import { OPEN_POLICY, remaining, type OrgLimits, type OrgPolicy } from "../policy/index.js";
 import { usageFields, type UsageTotals } from "../usage/index.js";
 import {
   ALWAYS_OFFERED_TOOLS,
   BROWSER_CAPABILITY,
-  CODING_CAPABILITY,
+  SUBSCRIPTION_CAPABILITY,
   NATIVE_CAPABILITY_GROUPS,
 } from "./native.js";
 import { listMcpConnections, listMcpTools, type ScopedMcpConnectionRow } from "../db/mcp.js";
-import { countOrgAgents, countOrgBrowserAgents } from "../db/orgs.js";
+import { countOrgAgents, countOrgBrowserAgents, countOrgSubscriptionAgents } from "../db/orgs.js";
 import { getOrgMonthlyUsage, utcMonth } from "../db/usage.js";
 import type { Queryable } from "../db/pg.js";
 
@@ -113,7 +113,7 @@ export type BuilderCapabilities = {
   native: NativeCapabilityGroup[];
   always_offered: AlwaysOfferedTool[];
   browser: typeof BROWSER_CAPABILITY;
-  coding: typeof CODING_CAPABILITY;
+  subscription: typeof SUBSCRIPTION_CAPABILITY;
   catalog: CapabilityServer[];
   models: OrgModelsPayload;
   limits: {
@@ -266,14 +266,14 @@ export class CapabilityService {
     const { limits } = await this.policy.standing(ctx.orgId);
     const agents = await countOrgAgents(this.db, ctx.orgId);
     const browsers = await countOrgBrowserAgents(this.db, ctx.orgId);
-    const coders = await countOrgSubscriptionAgents(this.db, ctx.orgId);
+    const subscribers = await countOrgSubscriptionAgents(this.db, ctx.orgId);
     const month = utcMonth();
     const usage = usageFields(await getOrgMonthlyUsage(this.db, ctx.orgId, month));
     const payload: BuilderCapabilities = {
       native: NATIVE_CAPABILITY_GROUPS.map((group) => ({ ...group, tools: [...group.tools] })),
       always_offered: ALWAYS_OFFERED_TOOLS.map((tool) => ({ ...tool })),
       browser: BROWSER_CAPABILITY,
-      coding: CODING_CAPABILITY,
+      subscription: SUBSCRIPTION_CAPABILITY,
       catalog,
       models: await this.models.read(ctx.orgId),
       limits: {
@@ -286,7 +286,7 @@ export class CapabilityService {
       remaining: {
         agents: remaining(limits.maxAgents, agents),
         browser_agents: remaining(limits.maxBrowserAgents, browsers),
-        subscription_agents: remaining(limits.maxSubscriptionAgents, coders),
+        subscription_agents: remaining(limits.maxSubscriptionAgents, subscribers),
       },
       usage: {
         month,

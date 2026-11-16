@@ -46,11 +46,9 @@ import {
 import { AgentError } from "./errors.js";
 import {
   AgentValidationError,
-  assertCodingAgent,
   assertSubscriptionAgent,
   assertUsableRepositories,
   validateAgentConfig,
-  validateNewAgentConfig,
   validateAgentName,
   validateAvatarColor,
   validateAvatarShape,
@@ -302,8 +300,7 @@ export async function createAgent(
   const wakeTriggers = validateWakeTriggers(request.wakeTriggers);
   const avatarShape = validateAvatarShape(request.avatarShape);
   const avatarColor = validateAvatarColor(request.avatarColor);
-  const config = validateNewAgentConfig(request.config);
-  assertCodingAgent(config);
+  const config = validateAgentConfig(request.config);
   assertSubscriptionAgent(config);
   if (config.keep_tool_result_generations !== null) {
     await requireAdministeredGuild(db, guild.id, operator.actorId);
@@ -350,8 +347,8 @@ function validateAgentProfile(patch: AgentSettingsPatch): AgentConfigPatch {
 }
 
 /**
- * Refuses switching on a browser the agent did not have, or what makes it count as a coding agent
- * when it did not, when the policy's caps are reached.
+ * Refuses switching on a browser the agent did not have, or moving it onto a subscription, when
+ * the policy's caps are reached.
  */
 async function assertCanEnable(
   services: AgentServices,
@@ -433,8 +430,7 @@ async function moveAgentNotes(
  * subscription's harness one the box does not turn off unless the agent is already on it; the
  * agent-optimized browser turned on, or given another browser model, must be ready, while an edit
  * that leaves both alone saves without the check; a repository newly picked is one the agent can
- * use; a browser or coding switched on is
- * within the policy's caps; a rename waits while the agent generates and moves its notes folder; a
+ * use; a browser switched on, or a move onto a subscription, is within the policy's caps; a rename waits while the agent generates and moves its notes folder; a
  * machine the config needs or the patch names moves the agent there. A browser switched off, or on
  * a new language, restarts; switching the agent-optimized browser does not. Only a guild admin
  * changes its tool-result turns.
@@ -447,7 +443,6 @@ export async function reconfigureAgent(
 ): Promise<AgentRow> {
   const config = validateAgentConfig(patch.config);
   const previous = agent.config;
-  assertCodingAgent(config, previous);
   assertSubscriptionAgent(config, previous);
   if (config.keep_tool_result_generations !== previous.keep_tool_result_generations) {
     await requireAdministeredGuild(services.db, agent.guild_id, userId);

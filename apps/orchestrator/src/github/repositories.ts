@@ -3,7 +3,7 @@ import type { CodingRepository } from "../coding/repositories.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { RepositorySelection } from "../db/schema/index.js";
 
-/** A repository a GitHub token is minted for: one a coding agent clones, or one a GitHub login picked. */
+/** A repository a GitHub token is minted for: one a subscription agent clones, or one a GitHub login picked. */
 export type TokenScopedRepository = CodingRepository | RepositorySelection;
 
 /** The host's id for a repository, or for a pick as an operator sends it, or null when none is recorded. */

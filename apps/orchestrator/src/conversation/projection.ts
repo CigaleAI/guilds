@@ -12,7 +12,7 @@ export const MIN_UNSTUBBED_TOOL_RESULTS = 4;
 export const TOOL_RESULT_STUB_MIN_BYTES = 2048;
 
 export const AGENT_TOOL_RESULT_STUB_HINT =
-  "Tool result omitted to save context. Call the same tool again. The working tree may have changed.";
+  "Tool result omitted to save context. Call the same tool again.";
 
 export type ProjectionBudget = {
   model: string;
@@ -31,7 +31,7 @@ export type ProjectedRow = {
   /** A coach conversation's message carries its generation as a column; a run's in its metadata. */
   generation?: number;
   payload: MessagePayload;
-  metadata: Pick<MessageMetadata, "generation" | "tool_name" | "path" | "range">;
+  metadata: Pick<MessageMetadata, "generation" | "tool_name">;
 };
 
 /** A stored tool result, as the projection reads it. */
@@ -79,8 +79,6 @@ export function stubToolResultPayload(row: ProjectedToolRow, format: ToolResultS
     source_seq: row.seq,
     tool_name: metadata.tool_name ?? null,
     hint: format.hint,
-    ...(metadata.path ? { path: metadata.path } : {}),
-    ...(metadata.range ? { range: metadata.range } : {}),
     ...(format.includeContentHash ? { content_hash: promptHash(row.payload.content) } : {}),
   };
   return { ...row.payload, content: JSON.stringify(stub) };

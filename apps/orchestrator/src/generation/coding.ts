@@ -47,7 +47,7 @@ export const RUN_DIFF_MAX_BYTES = 256 * 1024;
 /** A diff the agent's machine produced: at most `RUN_DIFF_MAX_BYTES` of it, redacted, and whether it was cut. */
 export type CodeDiff = { diff: string; truncated: boolean };
 
-/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens. */
+/** The db/ functions subscription turns read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens. */
 export type CodingRunsDatabase = CodingRepositoriesDatabase & {
   agentSecrets: BoundQuery<typeof agentSecrets>;
   snapshotEnvValues: BoundQuery<typeof snapshotEnvValues>;
@@ -62,7 +62,7 @@ export type CodingRunsDatabase = CodingRepositoriesDatabase & {
   repositoryTokens: BoundQuery<typeof repositoryTokens>;
 };
 
-/** The db/ functions coding runs read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens, on `db`. */
+/** The db/ functions subscription turns read and keep their repositories, logins and checkpoints through, the retiring of a login, and the minting of a run's repository tokens, on `db`. */
 export function codingRunsDatabase(db: Queryable): CodingRunsDatabase {
   return {
     agentSecrets: bindQuery(db, agentSecrets),
@@ -79,7 +79,7 @@ export function codingRunsDatabase(db: Queryable): CodingRunsDatabase {
   };
 }
 
-/** What coding runs are run with, built once by the loop. */
+/** What subscription turns are run with, built once by the loop. */
 export type CodingRunsServices = {
   db: CodingRunsDatabase;
   generations: ActiveGenerations;

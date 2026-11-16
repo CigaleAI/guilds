@@ -97,13 +97,13 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const browser = await createAgent("browser", { browser: true });
     assert.equal(browser.statusCode, 201, browser.body);
 
-    // A box in the config is refused, and a coding agent needs a machine of at least 2 CPUs and 4 GiB.
+    // A box in the config is refused, and a subscription agent needs a machine of at least 2 CPUs and 4 GiB.
     const boxed = await createAgent("boxed", { box: "code" });
     assert.equal(boxed.statusCode, 422, boxed.body);
     assert.match(boxed.json().detail, /unknown keys: box/);
-    const coder = await createAgent("coder", { coding: true, harness: "claude-code" });
+    const coder = await createAgent("coder", { model: null, harness: "claude-code" });
     assert.equal(coder.statusCode, 422, coder.body);
-    assert.match(coder.json().detail, /a coding agent needs a machine with at least 2 CPUs and 4 GiB; default has 1 CPU and 2 GiB\. Pick a larger machine, or resize default under Settings, Machines/);
+    assert.match(coder.json().detail, /a subscription agent needs a machine with at least 2 CPUs and 4 GiB; default has 1 CPU and 2 GiB\. Pick a larger machine, or resize default under Settings, Machines/);
 
     // Owners and admins add machines; a name is unique, a custom one carries its size.
     const code = await app.inject({
@@ -142,15 +142,14 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const unplaced = await createAgent("unplaced", {});
     assert.equal(unplaced.statusCode, 422, unplaced.body);
     assert.match(unplaced.json().detail, /machine_id is required/);
-    const placed = await createAgent("coder", { coding: true, harness: "claude-code" }, { machine_id: codeId });
+    const placed = await createAgent("coder", { model: null, harness: "claude-code" }, { machine_id: codeId });
     assert.equal(placed.statusCode, 201, placed.body);
     assert.equal(placed.json().machine.name, "builder");
-    assert.equal(placed.json().config.max_steps, 200, "a new coding agent takes the coding budgets");
     assert.equal("deprecated" in placed.json(), false);
     const coderId = String(placed.json().id);
     assert.equal((await machines()).find((item) => item.id === codeId)?.harnesses, null, "before its container first started");
 
-    // A coding agent stored without a harness is not ready: it saves nothing until a harness is picked.
+    // A subscription agent stored without a harness is not ready: it saves nothing until a harness is picked.
     await db.query(`UPDATE agents SET config = config - 'harness' WHERE id = $1`, [coderId]);
     const stripped = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: AUTH });
     assert.equal(stripped.statusCode, 200, stripped.body);
@@ -161,10 +160,10 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       method: "PUT",
       url: `/api/agents/${coderId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...stripped.json().config, temperature: 0.5 } },
+      payload: { config: { ...stripped.json().config, max_steps: 5 } },
     });
     assert.equal(unsaved.statusCode, 422, unsaved.body);
-    assert.match(unsaved.json().detail, /coding agents need a harness/);
+    assert.match(unsaved.json().detail, /an agent without a model is a subscription agent: it needs a harness/);
     const picked = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/config`,
@@ -208,15 +207,6 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const codex = catalog.json().harnesses.find((item: { harness: string }) => item.harness === "codex");
     assert.ok(codex.models.some((item: { id: string }) => item.id === "gpt-6-luna"));
 
-    // A coding agent stays one.
-    const uncoded = await app.inject({
-      method: "PUT",
-      url: `/api/agents/${coderId}/config`,
-      headers: JSON_AUTH,
-      payload: { config: { ...pinned.json().config, coding: false, harness: null, harness_model: null } },
-    });
-    assert.equal(uncoded.statusCode, 422, uncoded.body);
-    assert.match(uncoded.json().detail, /coding cannot be switched off/);
     const refused = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/config`,
@@ -316,7 +306,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal(renamed.statusCode, 200, renamed.body);
     assert.deepEqual(sandboxes.destroyed, [codeId], "a rename keeps the container");
 
-    // A coding agent cannot move to a machine below its minimum; a plain one moves with its home.
+    // A subscription agent cannot move to a machine below its minimum; an agent on a key moves with its home.
     const blocked = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/machine`,
@@ -369,7 +359,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       method: "PUT",
       url: `/api/agents/${scripterId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...detail.json().config, coding: true, harness: "claude-code" }, machine_id: defaultId },
+      payload: { config: { ...detail.json().config, model: null, harness: "claude-code" }, machine_id: defaultId },
     });
     assert.equal(codingThere.statusCode, 422, codingThere.body);
     const back = await app.inject({

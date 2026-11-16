@@ -91,11 +91,16 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     const cursor = await createAgent("cursor", { model: null, harness: "cursor" });
     assert.equal(cursor.statusCode, 422, cursor.body);
     assert.match(cursor.json().detail, /Cursor runs a subscription agent only with a repository, since it keeps its own system prompt/);
+    for (const coding of [true, false]) {
+      const flagged = await createAgent("flagged", { ...SUBSCRIPTION, coding });
+      assert.equal(flagged.statusCode, 422, flagged.body);
+      assert.match(flagged.json().detail, /unknown keys: coding/, "there is no coding agent type");
+    }
     const tuned = await createAgent("tuned", { ...SUBSCRIPTION, temperature: 0.3 });
     assert.equal(tuned.statusCode, 422, tuned.body);
     assert.match(tuned.json().detail, /a subscription agent takes no temperature/);
 
-    // It needs a machine of the coding minimum whose image carries its harness.
+    // It needs a machine of the harness minimum whose image carries its harness.
     const standard = await app.inject({
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
@@ -113,10 +118,14 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     assert.equal(created.statusCode, 201, created.body);
     const agentId = String(created.json().id);
     assert.equal(created.json().config.model, null);
-    assert.equal(created.json().config.coding, false);
+    assert.equal("coding" in created.json().config, false);
     assert.equal(created.json().config.harness, "codex");
     assert.equal(created.json().model_source, "subscription");
-    // It holds one of the plan's coding agents, as a coding agent does.
+    // It holds one of the plan's subscription agents.
+    const capabilities = await app.inject({ method: "GET", url: "/api/builder/capabilities", headers: AUTH });
+    assert.equal(capabilities.json().limits.max_subscription_agents, 1);
+    assert.equal(capabilities.json().remaining.subscription_agents, 0);
+    assert.equal(capabilities.json().subscription.costs.limit, "max_subscription_agents");
     const second = await createAgent("second", SUBSCRIPTION);
     assert.equal(second.statusCode, 409, second.body);
     assert.match(second.json().detail, /limit reached: subscription agents/);
@@ -147,7 +156,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     });
     assert.equal(shrunk.statusCode, 409, shrunk.body);
 
-    // Its harness, model, effort and credentials read as a coding agent's do.
+    // Its harness, model, effort and credentials read through its harness view.
     const harness = await app.inject({ method: "GET", url: `/api/agents/${agentId}/harness`, headers: AUTH });
     assert.equal(harness.statusCode, 200, harness.body);
     assert.equal(harness.json().harness, "codex");

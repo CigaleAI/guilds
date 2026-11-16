@@ -90,11 +90,11 @@ export const BROWSER_CAPABILITY = {
   },
 };
 
-export const CODING_CAPABILITY = {
-  id: "coding",
-  label: "Coding",
+export const SUBSCRIPTION_CAPABILITY = {
+  id: "subscription",
+  label: "Subscription agent",
   description:
-    "A coding agent clones the guild's repositories it picks into its sandbox, delegates code changes to a coding harness (Claude Code, Codex, Cursor, or Antigravity, on the operator's own subscription) with code_task, checks the harness's work with shell, file_read, and code_search, and hands work over through pushed git branches, opening pull or merge requests with the repository host's connector tools. Set config.coding on the role, config.harness when the operator named one, list the repositories the guild needs in the recipe's repositories (name and purpose; no URL or credential), and list in each coding role's config.repositories the ones its agent works on. Node.js, build tools, git, gh, and mise are in the sandbox; the workspace, caches, and toolchains persist. A run near its input limit continues in a new run from the agent's own hand-off.",
+    "A subscription agent runs every turn on a coding harness (Claude Code, Codex, Cursor, or Antigravity) on the operator's own subscription instead of a model on a key, and is the only agent that works on code. Each turn it works in the guild's repositories it picks, cloned into its sandbox, with the harness's own shell and file tools, and hands work over through pushed git branches, opening pull or merge requests with the repository host's connector tools. Leave config.model out of the role, set config.harness (the operator's pick, else claude-code), list the repositories the guild needs in the recipe's repositories (name and purpose; no URL or credential), and list in the role's config.repositories the ones its agent works on. Cursor and Antigravity run only in repositories. Node.js, build tools, git, and mise are in the sandbox; the workspace, caches, and toolchains persist.",
   tools: [],
   costs: {
     sandbox: "a code box, 2 CPU, 4 GiB",
