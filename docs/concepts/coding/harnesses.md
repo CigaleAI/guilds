@@ -623,7 +623,10 @@ What a repository can still steer is recorded in
 ### Code
 
 `apps/orchestrator/src/coding/harnesses.ts` (the harnesses, the ones
-the box turns off, credential fixes),
+the box turns off, `TURN_HARNESSES`, the ones that run a subscription
+agent's turns and that alone a subscription agent, a recipe's
+subscription role, and Settings' model source offer, credential
+fixes),
 `apps/orchestrator/src/coding/harness-models.ts` (the catalogue),
 `apps/orchestrator/src/config/index.ts` (reading `HARNESSES_OFF`),
 `apps/orchestrator/src/toolbox/harness-setup.ts` (the harness checks

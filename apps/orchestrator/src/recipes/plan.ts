@@ -26,7 +26,7 @@ import {
   harnessOf,
   isHarness,
   isHarnessOff,
-  isSubscriptionHarness,
+  isTurnHarness,
   subscriptionHarnessMessage,
 } from "../coding/harnesses.js";
 import { listServers } from "../connectors/servers.js";
@@ -437,7 +437,7 @@ function resolveModels(recipe: RecipeDocument, decisions: ModelDecision[], offer
 
 /** Whether apply can create the role on the harness: one the box does not turn off, and that runs a subscription role. */
 function harnessFits(role: RecipeRole, harness: Harness): boolean {
-  return !isHarnessOff(harness) && (!roleRunsOnSubscription(role) || isSubscriptionHarness(harness));
+  return !isHarnessOff(harness) && (!roleRunsOnSubscription(role) || isTurnHarness(harness));
 }
 
 /** The harness the recipe names for a role; null when it names none, or one apply cannot create the role on. */

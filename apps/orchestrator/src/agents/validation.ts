@@ -6,7 +6,7 @@ import {
   harnessOffMessage,
   isHarness,
   isHarnessOff,
-  isSubscriptionHarness,
+  isTurnHarness,
   SUBSCRIPTION_AGENTS_OFF_MESSAGE,
   subscriptionHarnessMessage,
 } from "../coding/harnesses.js";
@@ -223,7 +223,7 @@ function rejectUnsoundModelSource(model: string | null, coding: boolean, harness
   if (harness === null) {
     throw new AgentValidationError("an agent without a model is a subscription agent: it needs a harness");
   }
-  if (!isSubscriptionHarness(harness)) {
+  if (!isTurnHarness(harness)) {
     throw new AgentValidationError(subscriptionHarnessMessage(harness));
   }
 }

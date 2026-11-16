@@ -74,19 +74,14 @@ export function harnessesOn(): Harness[] {
   return HARNESSES.filter((harness) => !harnessesOff.has(harness));
 }
 
-/** The harnesses a subscription agent may run on. */
-export const SUBSCRIPTION_HARNESSES: readonly Harness[] = ["claude-code", "codex"];
-
-/** Whether a subscription agent may run on the harness. */
-export function isSubscriptionHarness(harness: Harness): boolean {
-  return SUBSCRIPTION_HARNESSES.includes(harness);
-}
-
-/** The harnesses whose CLI runs a subscription agent's turns; on the others its runs fail at start. */
+/**
+ * The harnesses whose CLI runs a subscription agent's turns, the only ones a subscription agent
+ * may run on; a run on another fails at start.
+ */
 export const TURN_HARNESSES = ["claude-code", "codex"] as const;
 export type TurnHarness = (typeof TURN_HARNESSES)[number];
 
-/** Whether the harness's CLI runs a subscription agent's turns. */
+/** Whether the harness's CLI runs a subscription agent's turns, so a subscription agent may run on it. */
 export function isTurnHarness(harness: Harness): harness is TurnHarness {
   return TURN_HARNESSES.some((item) => item === harness);
 }
@@ -107,7 +102,7 @@ export const HARNESS_MCP_TOOL_PREFIX: Record<TurnHarness, string> = {
 
 /** Why a subscription agent cannot run on a harness it may not run on. */
 export function subscriptionHarnessMessage(harness: Harness): string {
-  const offered = SUBSCRIPTION_HARNESSES.map((item) => HARNESS_INFO[item].label).join(" or ");
+  const offered = TURN_HARNESSES.map((item) => HARNESS_INFO[item].label).join(" or ");
   return `${HARNESS_INFO[harness].label} cannot run a subscription agent: pick ${offered}, or give the agent a model`;
 }
 

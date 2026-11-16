@@ -15,7 +15,7 @@ import {
   harnessModelOf,
   isHarness,
   isHarnessOff,
-  isSubscriptionHarness,
+  isTurnHarness,
   subscriptionHarnessMessage,
 } from "../coding/harnesses.js";
 import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
@@ -53,7 +53,7 @@ function harnessChoiceFinding(role: RecipeRole): RecipeFinding | null {
   if (isHarness(harness) && isHarnessOff(harness)) {
     return finding("harness.off", "warning", path, `${HARNESS_INFO[harness].label} is turned off on this box; apply asks for another`);
   }
-  if (isHarness(harness) && roleRunsOnSubscription(role) && !isSubscriptionHarness(harness)) {
+  if (isHarness(harness) && roleRunsOnSubscription(role) && !isTurnHarness(harness)) {
     return finding("subscription.harness", "warning", path, `${subscriptionHarnessMessage(harness)}; apply asks for another`);
   }
   return null;

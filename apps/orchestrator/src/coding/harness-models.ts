@@ -1,5 +1,5 @@
 import { HARNESSES, type Harness } from "../db/schema/index.js";
-import { areSubscriptionAgentsOn, HARNESS_INFO, isHarnessOff, isSubscriptionHarness } from "./harnesses.js";
+import { areSubscriptionAgentsOn, HARNESS_INFO, isHarnessOff, isTurnHarness } from "./harnesses.js";
 import { EFFORTS, type AgentConfig, type Effort, type RecipeRole } from "../db/schema/index.js";
 
 
@@ -142,7 +142,7 @@ export function harnessCatalog(): HarnessCatalog[] {
     harness,
     label: HARNESS_INFO[harness].label,
     enabled: !isHarnessOff(harness),
-    subscription: isSubscriptionHarness(harness),
+    subscription: isTurnHarness(harness),
     models: HARNESS_MODELS[harness].map(({ id, label, efforts, default_effort }) => ({ id, label, efforts, default_effort })),
     unlisted_efforts: UNLISTED_EFFORTS[harness],
   }));
