@@ -8,7 +8,7 @@ import { remainingAfter, stampToolResult } from "../toolbox/index.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
 import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEventBus } from "./events.js";
-import type { Generation } from "./generate.js";
+import type { KeyGeneration } from "./generate.js";
 import type { Runs } from "./runs.js";
 import type { Wakes } from "../wakes/service.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
@@ -140,7 +140,7 @@ export class RunChains {
    * The run's pending wake-up moves to the continuation. The fifth run of a chain completes with
    * `generation.max_chain` instead.
    */
-  async handOff(gen: Generation, tools: GenerationTools): Promise<void> {
+  async handOff(gen: KeyGeneration, tools: GenerationTools): Promise<void> {
     const { db, events, runs } = this.services;
     const position = chainOf(gen.run);
     if (position.index >= MAX_CHAIN_RUNS) {
@@ -176,7 +176,7 @@ export class RunChains {
    * The agent's reply to the hand-off request; null when the history no longer fits the input
    * limit or the model fails, and the run says why.
    */
-  private async handoffReply(gen: Generation, tools: GenerationTools): Promise<Completion | null> {
+  private async handoffReply(gen: KeyGeneration, tools: GenerationTools): Promise<Completion | null> {
     const { db, events, completion } = this.services;
     const agent = await db.getAgent(gen.run.agent_id);
     const history = await completion.modelHistory(gen, agent, gen.snapshot, tools.schemas);
@@ -204,7 +204,7 @@ export class RunChains {
    * Tool schemas stay fixed for the run, so the model may still call one in its hand-off: each
    * call gets a refusal, which keeps the history valid, and is not run.
    */
-  private async refuseToolCalls(gen: Generation, tools: GenerationTools, reply: Completion): Promise<void> {
+  private async refuseToolCalls(gen: KeyGeneration, tools: GenerationTools, reply: Completion): Promise<void> {
     const { db, events } = this.services;
     let executed = executedToolCalls(await db.listMessages(gen.runId));
     for (const call of toolCallsOf(reply.payload)) {

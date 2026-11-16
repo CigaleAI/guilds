@@ -82,6 +82,15 @@ export function isSubscriptionHarness(harness: Harness): boolean {
   return SUBSCRIPTION_HARNESSES.includes(harness);
 }
 
+/** The harnesses whose CLI runs a subscription agent's turns; on the others its runs fail at start. */
+export const TURN_HARNESSES = ["claude-code"] as const;
+export type TurnHarness = (typeof TURN_HARNESSES)[number];
+
+/** Whether the harness's CLI runs a subscription agent's turns. */
+export function isTurnHarness(harness: Harness): harness is TurnHarness {
+  return TURN_HARNESSES.some((item) => item === harness);
+}
+
 /** Why a subscription agent cannot run on a harness it may not run on. */
 export function subscriptionHarnessMessage(harness: Harness): string {
   const offered = SUBSCRIPTION_HARNESSES.map((item) => HARNESS_INFO[item].label).join(" or ");

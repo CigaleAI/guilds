@@ -7,6 +7,7 @@ import {
   checkpoint,
   endHarnessTurn,
   HARNESS_POLL_FAILURES_MAX,
+  harnessLogPath,
   launchHarness,
   opsRun,
   pause,
@@ -165,7 +166,7 @@ async function openHarnessTurn(services: ToolServices, run: ToolRun, call: ToolI
     ...checked,
     tool_call_id: call.id,
     minutes,
-    log_path: displayLogPath(run.run_id, checked.call_id),
+    log_path: harnessLogPath(run.run_id, checked.call_id),
     start_sha: stringOrNull(start.start_sha),
     started,
     deadline: started + minutes * harnessTiming.minuteMs,
@@ -192,6 +193,7 @@ async function startHarness(services: ToolServices, run: ToolRun, hooks: ToolHoo
     harness: turn.harness,
     prompt: turn.prompt,
     repository: turn.repository,
+    system_prompt: null,
     session_id: turn.session,
     model: run.harness_model,
     effort: run.harness_effort,
@@ -254,7 +256,7 @@ async function pollOnce(services: ToolServices, run: ToolRun, hooks: ToolHooks, 
   let poll: HarnessPoll;
   try {
     await hooks.before_command?.();
-    poll = await pollHarness(turn.ops, turn.call_id, turn.harness, turn.offset);
+    ({ poll } = await pollHarness(turn.ops, turn.call_id, turn.harness, turn.offset));
   } catch (error) {
     return countFailedPoll(turn, errorMessage(error));
   }
@@ -312,10 +314,6 @@ export async function endLostTurn(
     start_sha: stringOrNull(end.start_sha),
     end_sha: stringOrNull(end.end_sha),
   };
-}
-
-function displayLogPath(runId: string, callId: string): string {
-  return `.runs/${runId}/${callId}.harness.jsonl`;
 }
 
 function endingStatus(ending: TurnEnding): CodeTaskStatus {

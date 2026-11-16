@@ -100,6 +100,7 @@ export type HarnessOpFields = {
   harness: Harness;
   repository?: string;
   prompt?: string;
+  system_prompt?: string;
   session_id?: string;
   model?: string;
   effort?: Effort;
@@ -155,13 +156,15 @@ export async function stopHarness(
 
 /**
  * What a harness CLI is started with: the harness, the prompt it reads on stdin or from its file,
- * the repository it runs in, the session it resumes, and the model and effort the agent sets for
- * it, each null to leave it to the harness.
+ * the repository it runs in (null for the agent's home), the system prompt that replaces its own,
+ * the session it resumes, and the model and effort the agent sets for it, each null to leave it
+ * to the harness.
  */
 export type HarnessStart = {
   harness: Harness;
   prompt: string;
-  repository: string;
+  repository: string | null;
+  system_prompt: string | null;
   session_id: string | null;
   model: string | null;
   effort: Effort | null;
@@ -170,23 +173,39 @@ export type HarnessStart = {
 /** Starts the harness CLI for the call `callId` names on the machine, under the model name and effort the CLI takes. */
 export async function launchHarness(ops: ToolRun, callId: string, start: HarnessStart): Promise<void> {
   const launch = harnessLaunch(start.harness, start.model, start.effort);
+  const repository = start.repository ? { repository: start.repository } : {};
+  const system = start.system_prompt ? { system_prompt: start.system_prompt } : {};
   const resume = start.session_id ? { session_id: start.session_id } : {};
   const model = launch.model ? { model: launch.model } : {};
   const effort = launch.effort ? { effort: launch.effort } : {};
   await harnessOp(ops, callId, "start", {
     harness: start.harness,
-    repository: start.repository,
     prompt: start.prompt,
+    ...repository,
+    ...system,
     ...resume,
     ...model,
     ...effort,
   });
 }
 
+/** One poll of a running harness: what the `poll` op says, and the raw JSONL events it read past the offset. */
+export type HarnessPollResult = { poll: HarnessPoll; events: string };
+
 /** One `poll` of the call `callId` names, from the log's byte `offset`. */
-export async function pollHarness(ops: ToolRun, callId: string, harness: Harness, offset: number): Promise<HarnessPoll> {
-  const poll = await harnessOp(ops, callId, "poll", { harness, offset });
-  return keepMatching(HarnessPoll, poll.meta) ?? {};
+export async function pollHarness(
+  ops: ToolRun,
+  callId: string,
+  harness: Harness,
+  offset: number,
+): Promise<HarnessPollResult> {
+  const result = await harnessOp(ops, callId, "poll", { harness, offset });
+  return { poll: keepMatching(HarnessPoll, result.meta) ?? {}, events: result.text };
+}
+
+/** Where the event log of the call `callId` of run `runId` is kept, under the agent's home. */
+export function harnessLogPath(runId: string, callId: string): string {
+  return `.runs/${runId}/${callId}.harness.jsonl`;
 }
 
 /** Consecutive failed polls after which a harness is stopped and its turn ends. */

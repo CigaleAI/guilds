@@ -177,6 +177,17 @@ export type RunHarnessTask = {
   log_path: string;
 };
 
+/**
+ * A subscription agent's run's latest turn on its harness: the call id its state and log are
+ * kept under, the harness, the session the run's next turn resumes, and the log.
+ */
+export type RunHarnessTurn = {
+  call_id: string;
+  harness: Harness;
+  session_id: string | null;
+  log_path: string;
+};
+
 /** A note a run's task inlines, as the run's agent read it when the run started. */
 export type TaskEmbedSnapshot = {
   display_path: string;
@@ -236,6 +247,7 @@ export type RunMetadata = {
   repos?: RunRepositoryChange[];
   host_id?: string;
   harness_task?: RunHarnessTask;
+  harness_turn?: RunHarnessTurn;
   resumed_at?: string;
   /** The generation a wake-up reopened the completed run for; the run completes again when it ends. */
   wake_reopened_generation?: number;

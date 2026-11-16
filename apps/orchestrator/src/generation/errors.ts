@@ -1,3 +1,5 @@
+import { HARNESS_INFO } from "../coding/harnesses.js";
+import type { Harness } from "../db/schema/index.js";
 import { errorName, writeLog, type LogFields, type LogLevel } from "../observability/log.js";
 
 /** The named errors a generation throws, and the failures it carries on past. */
@@ -43,15 +45,32 @@ export class GenerationBlocked extends Error {
 }
 
 /**
- * A run of a subscription agent, which fails at start: core runs an agent's turns only on a model
- * on a key.
+ * A run of a subscription agent on a harness whose CLI does not run a subscription agent's turns,
+ * which fails at start.
  */
 export class SubscriptionRunUnavailable extends Error {
   readonly code = "subscription.not_runnable";
 
-  constructor() {
-    super("subscription agents cannot run yet: give the agent a model on a key in its Settings to run it");
+  constructor(harness: Harness) {
+    super(
+      `${HARNESS_INFO[harness].label} cannot run a subscription agent's turns yet: pick Claude Code in the agent's Settings, or give the agent a model on a key`,
+    );
     this.name = "SubscriptionRunUnavailable";
+  }
+}
+
+/**
+ * How a subscription agent's turn on its harness failed: the CLI did not start, it failed, its
+ * state was lost, it stopped answering, or it ran past its time.
+ */
+export class HarnessTurnError extends Error {
+  constructor(
+    readonly code: "harness.start" | "harness.failed" | "harness.lost" | "harness.unresponsive" | "harness.timed_out",
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "HarnessTurnError";
   }
 }
 

@@ -74,10 +74,25 @@ and Codex run one, and the box offers subscription agents only with
 `SUBSCRIPTION_AGENTS=1` ([Configure](../operations/configure.md)).
 The settings of the orchestrator's model loop do not apply to it:
 temperature, thinking level, max output tokens, max input tokens, and
-keep tool results stay at their defaults. A subscription agent has no
-repositories and no code tools, and takes no attachments. Its runs
-do not start yet: each fails at start with `subscription.not_runnable`
-([Runs](runs.md#generation)).
+keep tool results stay at their defaults.
+
+On Claude Code, each generation of a subscription agent's run is one
+turn of the CLI in the agent's sandbox: the run's composed system
+prompt replaces Claude Code's own, the messages that opened the
+generation are its prompt, and the run shows what it writes and the
+tools it uses ([Runs](runs.md#harness-turns)). The run's next
+generation resumes the same session. A subscription agent:
+
+- runs only on Claude Code: on Codex, its runs fail at start with
+  `subscription.not_runnable`;
+- is offered no tool of the platform and no connection: it cannot
+  write notes, records, files, or Memory, post to the group chat, set
+  routines or wake-ups, report issues, or ask for a secret. It reads
+  its Task, State, and Memory in its system prompt, and acts with the
+  harness's own tools;
+- takes no attachments and has no repositories or code tools;
+- records no usage or cost for its turns, and stops a turn after 30
+  minutes.
 
 Next to a model on a key sit three options:
 
@@ -324,7 +339,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Coding agent | needs a harness, and a model on a key |
-| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; its runs fail at start |
+| Subscription agent | no model; a harness, Claude Code or Codex; only with `SUBSCRIPTION_AGENTS=1`; loop settings at their defaults; each generation one turn of Claude Code, with no tool of the platform; on Codex its runs fail at start |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
 | Kimi Code models | only on a coding agent |

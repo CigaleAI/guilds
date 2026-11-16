@@ -67,7 +67,8 @@ A token or login on the agent's machine is readable by what runs there
 A check asks the machine whether the harness's CLI is installed, its
 version, and the credential it would run on. It runs:
 
-- at every generation start of a coding run, with the run's secrets;
+- at every generation start of a coding run or a subscription agent's
+  run, with the run's secrets;
 - before every code task;
 - from Settings, with **Check login**. That check runs outside any
   run, without the agent's secrets, so it finds a login or nothing.
@@ -150,8 +151,12 @@ and no code tools.
   it.
 - A harness turned off with `HARNESSES_OFF` is refused as a new pick
   for a subscription agent as for a coding agent.
-- A subscription agent's runs do not start: each fails at start with
-  `subscription.not_runnable` ([Runs](../runs.md#generation)).
+- Claude Code runs a subscription agent's turns: each generation of
+  its run is one turn of the CLI in the agent's home, on the run's
+  system prompt in place of Claude Code's own, resuming the run's
+  session ([Runs](../runs.md#harness-turns)). The CLI reaches no tool
+  of the platform, only its own. A Codex subscription agent's runs
+  fail at start with `subscription.not_runnable`.
 
 ### Managed configuration
 
@@ -297,7 +302,7 @@ machine that has it."
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
 | Harness | Only for coding agents and subscription agents, and required on them |
 | Subscription harness | Claude Code or Codex |
-| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; their runs fail at start |
+| Subscription agents | Offered only with `SUBSCRIPTION_AGENTS=1`; each generation one Claude Code turn of at most 30 minutes, polled every second; on Codex their runs fail at start |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |

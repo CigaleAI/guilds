@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-62](#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network) | A subscription agent's harness holds its whole prompt beside its secrets and the network | Open |
 | [SEC-61](#sec-61--a-repositorys-access-token-is-long-lived-and-written-to-its-agents-machine) | A repository's access token is long-lived and written to its agents' machine | Open |
 | [SEC-60](#sec-60--text-holding-a-nul-or-an-unpaired-surrogate-failed-the-write-of-a-message) | Text holding a NUL or an unpaired surrogate failed the write of a message | Fixed 2026-11-15 |
 | [SEC-59](#sec-59--every-member-who-saw-a-guild-could-change-how-many-turns-of-tool-results-its-agents-prompts-keep) | Every member who saw a guild could change how many turns of tool results its agents' prompts keep | Fixed 2026-11-14 |
@@ -70,6 +71,46 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-62 — A subscription agent's harness holds its whole prompt beside its secrets and the network
+
+**Status:** open.
+
+**Found:** 2026-11-16, running a subscription agent's turns on its
+harness.
+
+**Where:** `HarnessLoop` in
+`apps/orchestrator/src/generation/harness-loop.ts`, and `start` with a
+`system_prompt` and the Claude Code driver in `runtime/guilds-harness`.
+
+**Exposure:** each turn of a subscription agent hands Claude Code the
+run's whole composed system prompt: the Guidelines, the Task, State
+(the roster, the recent group-chat messages, the collections the agent
+reads, the names of its secrets, its connectors' State), and Memory.
+Its prompt is whatever opened the generation: an operator's message,
+the group chat's latest messages, a routine's instruction, or a
+wake-up's note. The CLI runs as root in the agent's container with
+every secret granted to the agent in its environment, its permission
+prompts off (SEC-28), and the network open. Text in any of that, or in
+a file, command output, or page the CLI reads, can steer it to send
+its secrets, State, or Memory wherever the container reaches (SEC-8).
+The prompt leaves the box for the vendor's API on the operator's
+subscription. While the turn runs, the system prompt is also a file in
+the agent's home, readable by any process on the machine (SEC-24).
+
+**Control in place:** the harness is offered no tool and no connection
+of the platform, so it writes no note, record, file, or Memory, posts
+nothing to the group chat, and reaches no connection's credentials.
+What it writes into the run is redacted with the run's secret values
+before it is stored, and each tool result is capped. The system prompt
+file is mode 0600 and goes with the turn's state. The driver removes
+the variables that would move the CLI onto a metered key and turns
+off hooks, plugins, and project MCP servers. A turn stops after 30
+minutes. The organisation's model keys never reach the sandbox.
+
+**Fix to make:** start the harness with only its own credential in its
+environment, and limit what the agent's container reaches. Until then,
+grant a subscription agent only the secrets its work needs.
 
 ## SEC-61 — A repository's access token is long-lived and written to its agents' machine
 

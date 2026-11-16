@@ -185,6 +185,16 @@ repository with its branch and diffstat, and **Show diff**, which
 fetches the run's diff from the agent's machine
 ([Reviewing changes](coding/reviewing-changes.md)).
 
+### Harness turns
+
+A [subscription agent](agents.md#model-source)'s generation is a turn
+of its harness, and reads like any other: each message the harness
+wrote while it called its own tools is a step, each of those calls is
+a call card with its input and result, and its last message is the
+reply bubble ([Runs](runs.md#harness-turns)). Its rows carry
+`from_harness`. The run's error banner names a turn that did not end
+cleanly, such as `harness.failed` or `harness.timed_out`.
+
 ### Errors outside a flow
 
 A run error that belongs to no run flow, such as a failure before the
