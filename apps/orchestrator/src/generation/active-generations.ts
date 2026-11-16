@@ -215,21 +215,6 @@ export class ActiveGenerations {
     return machineId;
   }
 
-  /** Moves the agent's generation from a run to its continuation without freeing the agent. */
-  handOver(fromRunId: string, toRunId: string): void {
-    const from = this.runs.get(fromRunId);
-    this.runs.delete(fromRunId);
-    if (from) {
-      this.runs.set(toRunId, {
-        agentId: from.agentId,
-        cancel: new CancelEvent(),
-        task: null,
-        settling: null,
-        command: null,
-      });
-    }
-  }
-
   /** Holds an idle agent busy while it is deleted or moved. */
   holdAgent(agentId: string): void {
     if (this.busyAgents.has(agentId)) {

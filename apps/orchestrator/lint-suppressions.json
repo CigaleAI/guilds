@@ -143,11 +143,6 @@
       "count": 5
     }
   },
-  "src/generation/chain.ts": {
-    "limits/silent-catch": {
-      "count": 1
-    }
-  },
   "src/generation/coding.ts": {
     "limits/bumpy-road": {
       "count": 1

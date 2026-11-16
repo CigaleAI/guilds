@@ -15,7 +15,6 @@ import {
 } from "../db/runs.js";
 import {
   countFiredRunWakes,
-  getPendingRunWake,
   listDueRunWakes,
   markRunWakeFired,
   type RunWakeRow,
@@ -25,7 +24,6 @@ import { wakeUpsLeft, WakeCancelled } from "../wakes/rules.js";
 import type { Wakes } from "../wakes/service.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
-import { continuedBy, latestInChain } from "./chain.js";
 import { AgentDisabledError, ConflictError, logOperationFailure, type OperationFailure } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { GenerationStarter } from "./runs.js";
@@ -49,7 +47,6 @@ export type RunWakesDatabase = {
   getRun: BoundQuery<typeof getRun>;
   nextGeneration: BoundQuery<typeof nextGeneration>;
   listDueRunWakes: BoundQuery<typeof listDueRunWakes>;
-  getPendingRunWake: BoundQuery<typeof getPendingRunWake>;
   wakeFiring: Transaction<WakeFiringQueries>;
 };
 
@@ -59,7 +56,6 @@ export function runWakesDatabase(db: Queryable): RunWakesDatabase {
     getRun: bindQuery(db, getRun),
     nextGeneration: bindQuery(db, nextGeneration),
     listDueRunWakes: bindQuery(db, listDueRunWakes),
-    getPendingRunWake: bindQuery(db, getPendingRunWake),
     wakeFiring: bindTransaction(db, wakeFiringQueries),
   };
 }
@@ -70,8 +66,8 @@ export type RunWakesServices = {
   events: RunEventBus;
   generations: ActiveGenerations;
   starter: GenerationStarter;
-  /** Where a run's pending wake-up is cancelled, moved, and announced fired. */
-  wakes: Pick<Wakes, "cancel" | "move" | "announceFired">;
+  /** Where a run's pending wake-up is cancelled and announced fired. */
+  wakes: Pick<Wakes, "cancel" | "announceFired">;
 };
 
 /**
@@ -130,7 +126,7 @@ export class RunWakes {
    */
   private async fire(due: RunWakeRow): Promise<void> {
     const { db, starter } = this.services;
-    const run = await this.wakingRun(due);
+    const run = await db.getRun(due.run_id);
     if (run === null) {
       return;
     }
@@ -166,27 +162,6 @@ export class RunWakes {
   }
 
   /**
-   * The run the wake-up wakes now: its own, or, when that run continued in another, the last run
-   * of its chain, where the wake-up moves. Null when the run is gone, or when the last run already
-   * has a pending wake-up of its own, which replaces this one.
-   */
-  private async wakingRun(due: RunWakeRow): Promise<RunRow | null> {
-    const { db, wakes } = this.services;
-    const run = await db.getRun(due.run_id);
-    const next = run === null ? null : continuedBy(run);
-    if (next === null) {
-      return run;
-    }
-    const latest = await latestInChain(db, next);
-    if ((await db.getPendingRunWake(latest)) !== null) {
-      await wakes.cancel(due.run_id, "replaced");
-      return null;
-    }
-    await wakes.move(due.run_id, latest);
-    return db.getRun(latest);
-  }
-
-  /**
    * In one transaction: marks the wake-up fired, reopens the run when it is completed, and
    * appends the wake-up message as the run's next generation; once committed, the message and
    * the wake-up's firing are published to the run's subscribers. Returns that generation; null
@@ -202,7 +177,7 @@ export class RunWakes {
       const reopened = await tx.reopenForWake(run.id, generation, now);
       const left = wakeUpsLeft(
         run.config_snapshot.max_wake_ups,
-        await tx.countFiredRunWakes(fired.root_run_id),
+        await tx.countFiredRunWakes(fired.run_id),
       );
       const [payload, metadata] = wakeUserMessage(fired, left, generation, reopened);
       const message = await tx.insertMessage(

@@ -6,9 +6,7 @@ import {
   createRun,
   createScheduleRun,
   getRun,
-  type RunRow,
 } from "../db/runs.js";
-import type { RunMetadata } from "../db/schema/index.js";
 import { listDueSchedules, markScheduleFired, type ScheduleRow } from "../db/schedules.js";
 import { iso, runItem, type RunView } from "../db/views.js";
 import {
@@ -24,7 +22,6 @@ import { instructionHash, scheduleWakeUserMessage } from "../schedules/item.js";
 import type { Schedules } from "../schedules/service.js";
 import { planAfterFire, rowTiming } from "../schedules/timing.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import { continuationMessage, type ChainPosition } from "./chain.js";
 import {
   AgentDisabledError,
   ConflictError,
@@ -95,7 +92,7 @@ export type RunsServices = {
 
 /**
  * Creates the runs of a loop's agents: those an operator opens, those the group chat delivers,
- * those a schedule wakes, and the continuation of a run that handed off. A run created with a
+ * and those a schedule wakes. A run created with a
  * message starts generating at once; the scheduler fires the due wake-ups, then wakes the due
  * schedules, each tick.
  */
@@ -304,55 +301,6 @@ export class Runs {
     const abortWait = new AbortController();
     await Promise.race([scheduler.task, sleep(50, abortWait.signal)]);
     abortWait.abort();
-  }
-
-  /**
-   * The next run of a chain: same agent and kind, a freshly composed prompt, and one user
-   * message carrying the hand-off. A group continuation keeps the delivery's snapshot, a
-   * schedule continuation its routine.
-   */
-  async createContinuation(previous: RunRow, handoff: string, position: ChainPosition): Promise<string> {
-    const throughSeq = previous.group_chat_through_seq;
-    const prepared = await this.preparation.prepare(previous.agent_id, previous.kind === "group" ? throughSeq : null);
-    const runId = newId("r");
-    const now = new Date();
-    const opening = continuationMessage(previous.id, handoff);
-    const runMetadata: RunMetadata = {
-      ...(preparedRunMetadata(prepared) ?? {}),
-      chain: { root_run_id: position.root_run_id, index: position.index + 1, previous_run_id: previous.id },
-    };
-    const base = {
-      runId,
-      agentId: previous.agent_id,
-      systemContent: prepared.system,
-      taskContent: prepared.task,
-      ...preparedPromptHashes(prepared),
-      runMetadata,
-    };
-    if (previous.kind === "group") {
-      await this.db.createGroupRun(
-        { ...base, configSnapshot: preparedSnapshot(prepared, "group"), projected: [opening], throughSeq: throughSeq ?? 0 },
-        now,
-      );
-    } else if (previous.kind === "schedule") {
-      const instruction = previous.metadata.instruction_hash;
-      await this.db.createScheduleRun(
-        {
-          ...base,
-          configSnapshot: preparedSnapshot(prepared, "schedule"),
-          projected: [opening],
-          runMetadata: { ...runMetadata, ...(instruction ? { instruction_hash: instruction } : {}) },
-          scheduleId: previous.schedule_id,
-        },
-        now,
-      );
-    } else {
-      await this.db.createRun(
-        { ...base, configSnapshot: preparedSnapshot(prepared, "direct"), userContent: null, extraMessages: [opening] },
-        now,
-      );
-    }
-    return runId;
   }
 
   /** The run a delivery creates, prepared; a delivery to a busy agent waits, one that cannot be prepared is dropped. */

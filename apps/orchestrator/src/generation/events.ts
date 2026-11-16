@@ -21,7 +21,6 @@ export type GenerationFinished = { generation: number; standing: RunStanding };
 export type AssistantDelta = { text: string };
 
 /** A run handing its work to its continuation: the continuation. */
-export type RunContinued = { run_id: string };
 
 /** What each event of a run's stream carries. */
 export type RunEvents = {
@@ -33,7 +32,6 @@ export type RunEvents = {
   "run.error": RunError;
   "run.wake.changed": RunWakeChange;
   "generation.finished": GenerationFinished;
-  "run.continued": RunContinued;
 };
 
 /** One event on a run's stream: its name and its data. */

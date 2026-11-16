@@ -56,7 +56,6 @@ export const wakeAfter = nativeTool({
     };
     const waking = {
       runId: run.run_id,
-      rootRunId: run.chain_root_run_id,
       agentId: run.agent_id,
       maxWakeUps: run.max_wake_ups,
     };

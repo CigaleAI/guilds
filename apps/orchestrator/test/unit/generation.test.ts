@@ -402,7 +402,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
     await assert.rejects(() => loop.resumeRun("r_1"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
-      assert.match(error.detail, /tool, token, or chain cap/);
+      assert.match(error.detail, /tool or token cap/);
       assert.equal(error.status, 409);
       return true;
     });
@@ -2547,26 +2547,6 @@ describe("generation", { concurrency: 1 }, () => {
       ["run.wake.changed", "run.error wake.cancelled", "generation.finished"],
     );
     assert.deepEqual(seen.at(-1)?.event, ["generation.finished", { generation: 1, standing: "capped" }]);
-    restoreBindings();
-  });
-
-  test("a_run_that_hands_off_finishes_released_before_it_names_its_continuation", async () => {
-    restoreBindings();
-    const db = new FakeDB({});
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    live.streamCompletion = async function* reply() {
-      yield ["done", completionReply("ok")];
-    };
-    loop.chains.takeContinuation = (runId) => (runId === "r_1" ? "r_2" : null);
-    const seen = publishedWithRunState(loop, db);
-    await loop.beginGeneration("r_1", "a_1");
-    loop.generateInBackground("r_1", 1);
-    await waitTask(loop, "r_1");
-    const fromFirst = seen.filter(({ runId }) => runId === "r_1").slice(-2);
-    assert.deepEqual(fromFirst, [
-      { runId: "r_1", event: ["generation.finished", { generation: 1, standing: "open" }], generating: false, status: "active" },
-      { runId: "r_1", event: ["run.continued", { run_id: "r_2" }], generating: false, status: "active" },
-    ]);
     restoreBindings();
   });
 

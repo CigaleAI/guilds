@@ -117,9 +117,7 @@ scripting is off.
 - **A harness and a credential** ([Harnesses](harnesses.md)).
 - **Repositories in its guild** ([Repositories](repositories.md)).
 - **A large run budget.** An agent created with coding on starts with
-  200 steps and 200 tool calls. A coding run whose prompt grows hands
-  off at 70% of `max_input_tokens`: the agent writes a summary, and the
-  work goes on in a new run of the same chain ([Run chains](../runs.md)).
+  200 steps and 200 tool calls.
 
 Its home keeps package caches, toolchains, git configuration, and the
 harnesses' sessions across idle stops ([Agent home](../agent-home.md)).
@@ -293,7 +291,6 @@ under the transcript ([Reviewing changes](reviewing-changes.md#in-the-app)).
 | Turning coding off | Refused: a coding agent stays one |
 | Machine minimum | 2 CPUs and 4 GiB |
 | Starting budget | 200 steps and 200 tool calls, when created with coding on and no limit given |
-| Run chain hand-off | At 70% of `max_input_tokens`, at most 5 runs per chain |
 | Kimi Code models | Only for agents with coding on |
 | Browser | Independent of coding: an agent that debugs a web front end has both |
 | Coding agents per organisation | `maxCodingAgents` in the organisation's policy; core sets no bound |

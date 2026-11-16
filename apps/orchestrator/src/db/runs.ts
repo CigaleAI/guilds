@@ -55,7 +55,6 @@ export type NewDirectRun = {
   systemPromptHash: string;
   taskPromptHash: string;
   memoryPromptHash: string;
-  extraMessages?: RunMessage[] | undefined;
   runMetadata?: Run["metadata"] | undefined;
   userMetadata?: MessageMetadata | undefined;
   startedByUserId?: string | null | undefined;
@@ -284,7 +283,7 @@ export async function insertRun(pool: Queryable, run: NewRun, now: Date): Promis
 }
 
 export async function createRun(pool: Queryable, run: NewDirectRun, now: Date): Promise<void> {
-  const opening = [...(run.extraMessages ?? [])];
+  const opening: RunMessage[] = [];
   if (run.userContent !== null) {
     opening.push([
       { role: "user", content: run.userContent },

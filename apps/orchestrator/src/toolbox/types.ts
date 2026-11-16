@@ -82,8 +82,6 @@ export type AgentSecretStore = {
 /** What a run's tools work with, the same for every call: whose run it is, where its commands run, and what it offers. */
 export type ToolRun = {
   run_id: string;
-  /** The first run of the run's chain: the run itself unless it continues another. */
-  chain_root_run_id: string;
   agent_id: string;
   guild_id: string;
   guild_name: string;
@@ -151,7 +149,6 @@ export function createToolRun(
   partial: Pick<ToolRun, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> & Partial<ToolRun>,
 ): ToolRun {
   return {
-    chain_root_run_id: partial.run_id,
     guild_name: "",
     agent_name: "",
     org_slug: "",

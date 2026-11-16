@@ -802,16 +802,13 @@ export class RecordingDB {
       systemPromptHash,
       taskPromptHash,
       memoryPromptHash,
-      extraMessages: rawExtra,
       userMetadata,
     } = input;
-    const extraMessages = rawExtra ?? [];
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
       task_content: taskContent,
       user_content: userContent,
-      extra_messages: extraMessages,
       user_metadata: userMetadata,
     };
     this.messages = [
@@ -823,10 +820,6 @@ export class RecordingDB {
       },
     ];
     let seq = 1;
-    for (const [payload, metadata] of extraMessages) {
-      this.messages.push({ seq, payload, metadata, created_at: now });
-      seq += 1;
-    }
     if (userContent !== null) {
       this.messages.push({
         seq,

@@ -367,8 +367,6 @@ flowchart TD
   Step -->|tool_calls| Tools["toolbox / MCP / adapters"]
   Tools --> Step
   Step -->|stop / limit / cancel| Done["complete the run if it ends here, free the agent, publish generation.finished"]
-  Step -->|coding, 70% of input limit| Handoff["hand-off step, next run of the chain"]
-  Handoff --> Loop
   Save --> SSE["SSE subscribers"]
 ```
 
@@ -467,10 +465,9 @@ compile.
 |---|---|---|---|
 | `message.committed` | run, Studio, Builder | durable | A message row committed |
 | `generation.started` | run, Studio, Builder | durable | A generation began |
-| `generation.finished` | run, Studio, Builder | durable | A generation ended. On a run, `{ generation, standing }`, published once the run is completed when it ends with this generation and the generation no longer holds it: `standing` is where the run then stands (`open`, `waiting`, `generating`, `completed`, `capped`, `continued`; `runStanding` in `generation/lifecycle.ts`) |
+| `generation.finished` | run, Studio, Builder | durable | A generation ended. On a run, `{ generation, standing }`, published once the run is completed when it ends with this generation and the generation no longer holds it: `standing` is where the run then stands (`open`, `waiting`, `generating`, `completed`, `capped`; `runStanding` in `generation/lifecycle.ts`) |
 | `run.error` | run | durable | A run error; cancellation has `operation: "generation.cancelled"` |
-| `run.continued` | run | durable | A coding run continued in the run named by `run_id` |
-| `run.wake.changed` | run | durable | `{ pending_wake }`: the run's pending wake-up after it was set, replaced, cancelled, moved to or from the run on a hand-off, or fired; null when none is left |
+| `run.wake.changed` | run | durable | `{ pending_wake }`: the run's pending wake-up after it was set, replaced, cancelled, or fired; null when none is left |
 | `assistant.delta` | run, Studio, Builder | ephemeral | Text being written |
 | `assistant.reasoning.delta` | run, Studio, Builder | ephemeral | Reasoning being written |
 | `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines, session_id?}`: a running `code_task`'s redacted progress lines with its session, or a running `browse` call's redacted step line |
@@ -513,16 +510,14 @@ Delivery rules:
   `message.committed` and `tool.progress` events as it goes; on a
   cancel, the interrupted tool results and the cancel's `run.error`;
   on a terminal cap, `run.wake.changed` and the `run.error` of the
-  cancelled wake-up; then `generation.finished`; and after a hand-off,
-  `run.continued`. A client that re-reads the run on
+  cancelled wake-up; then `generation.finished`. A client that re-reads the run on
   `generation.finished` reads it as the generation left it: not
   generating, and completed when it completes with that generation.
   The `standing` it carries is `open` for an active run that takes an
   operator's message, `waiting` for an active run that takes none (a
-  group or schedule run that was not resumed, or one that continued
-  elsewhere), `completed` for an ended run that can be resumed,
-  `capped` for one that ended on a terminal cap, `continued` for one
-  that handed off, and `generating` for one a generation holds. A
+  group or schedule run that was not resumed), `completed` for an
+  ended run that can be resumed, `capped` for one that ended on a
+  terminal cap, and `generating` for one a generation holds. A
   generation whose finishing fails, such as a failed completion of its
   run, still publishes `generation.finished`, with the standing of the
   run as it is read again; only a run whose row is gone publishes none.
