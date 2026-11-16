@@ -293,7 +293,7 @@ under the transcript ([Reviewing changes](reviewing-changes.md#in-the-app)).
 | Starting budget | 200 steps and 200 tool calls, when created with coding on and no limit given |
 | Kimi Code models | Only for agents with coding on |
 | Browser | Independent of coding: an agent that debugs a web front end has both |
-| Coding agents per organisation | `maxCodingAgents` in the organisation's policy; core sets no bound |
+| Coding agents per organisation | `maxSubscriptionAgents` in the organisation's policy; core sets no bound |
 | Repositories | The guild's, each agent picking the ones it works on; a run fails at start without one, or with a pick the agent can no longer use |
 | Working trees | One per agent, never shared |
 | Branch name | `agent/<agent name>/<topic>`, from the system prompt |
@@ -358,15 +358,15 @@ agent's live `coding` flag ([Code tools](code-tools.md#tools)).
 
 ### Policy
 
-The organisation policy's `maxCodingAgents` bounds how many of its
+The organisation policy's `maxSubscriptionAgents` bounds how many of its
 agents have `coding` on or run on a subscription
 ([Agents](../agents.md#model-source)): each holds a harness. Core sets
 no bound. Where an extension's policy sets one, creating a coding
 agent or a subscription agent, turning `coding` on, or switching an
 agent to a subscription, is refused above it with 409
-`<source> limit reached: coding agents`. The
-capabilities payload reports `max_coding_agents` and the remaining
-`coding_agents`.
+`<source> limit reached: subscription agents`. The
+capabilities payload reports `max_subscription_agents` and the remaining
+`subscription_agents`.
 
 ### Code
 

@@ -35,7 +35,7 @@ export type BuilderCapabilities = {
   catalog: CapabilityServer[];
   models: OrgModels;
   /** How many more agents the organisation may hold, by kind; null where nothing caps it. */
-  remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
+  remaining: { agents: number | null; browser_agents: number | null; subscription_agents: number | null };
 };
 
 /** A Builder session: the coach conversation that writes one draft recipe. */

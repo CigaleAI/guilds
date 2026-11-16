@@ -34,7 +34,7 @@ import { listSchedules } from "../db/schedules.js";
 import { listSecrets, type SecretRow } from "../db/secrets.js";
 import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { countsAsCodingAgent } from "../policy/index.js";
+import { countsAsSubscriptionAgent } from "../policy/index.js";
 
 /** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -99,13 +99,13 @@ const HARNESS_TOKEN_VARIABLES = new Set(
  * operator sets one up for the harness they pick.
  */
 function harnessTokenSecrets(config: AgentConfig): Set<string> {
-  if (!countsAsCodingAgent(config)) return new Set();
+  if (!countsAsSubscriptionAgent(config)) return new Set();
   return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, config.secret_aliases) ?? []));
 }
 
 /** The role's secret aliases a recipe carries: a coding or subscription role's harness token aliases stay behind. */
 function portableSecretAliases(config: AgentConfig): Record<string, string> {
-  if (!countsAsCodingAgent(config)) return config.secret_aliases;
+  if (!countsAsSubscriptionAgent(config)) return config.secret_aliases;
   return Object.fromEntries(
     Object.entries(config.secret_aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)),
   );

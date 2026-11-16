@@ -9,7 +9,7 @@ const ctx = {
   publishedServers: new Set(["notion", "tavily"]),
   remainingAgents: 20,
   remainingBrowserAgents: 5,
-  remainingCodingAgents: 5,
+  remainingSubscriptionAgents: 5,
   groupLimit: 20,
 };
 

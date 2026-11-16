@@ -108,7 +108,7 @@ and `trusted-header`. Paths below are under
   and `GET /api/auth/me` are core's (`http/me-routes.ts`).
 - **Organisation policy.** `standing(orgId)` returns the
   organisation's `OrgLimits` and whether it is blocked. The limits
-  are the agent, browser-agent, coding-agent, guild, machine
+  are the agent, browser-agent, subscription-agent, guild, machine
   (`maxMachines`), agents-per-machine (`maxAgentsPerMachine`, never
   above core's 32), and concurrent-run caps; the monthly Studio and
   Builder quota and their generation budgets; the organisation's own

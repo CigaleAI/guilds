@@ -10,7 +10,7 @@ import {
   type ServerTool,
 } from "../connectors/servers.js";
 import { oauthSetupState, type OauthSetupState } from "../oauth/index.js";
-import { countOrgCodingAgents, OPEN_POLICY, remaining, type OrgLimits, type OrgPolicy } from "../policy/index.js";
+import { countOrgSubscriptionAgents, OPEN_POLICY, remaining, type OrgLimits, type OrgPolicy } from "../policy/index.js";
 import { usageFields, type UsageTotals } from "../usage/index.js";
 import {
   ALWAYS_OFFERED_TOOLS,
@@ -119,12 +119,12 @@ export type BuilderCapabilities = {
   limits: {
     max_agents: OrgLimits["maxAgents"];
     max_browser_agents: OrgLimits["maxBrowserAgents"];
-    max_coding_agents: OrgLimits["maxCodingAgents"];
+    max_subscription_agents: OrgLimits["maxSubscriptionAgents"];
     max_concurrent_runs: OrgLimits["maxConcurrentRuns"];
     monthly_studio_builder_runs: OrgLimits["monthlyCoachRuns"];
   };
   /** How many more agents the organisation may hold, by kind; null where nothing caps it. */
-  remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
+  remaining: { agents: number | null; browser_agents: number | null; subscription_agents: number | null };
   usage: Pick<UsageTotals, "cost_usd" | "calls"> & { month: string };
 };
 
@@ -266,7 +266,7 @@ export class CapabilityService {
     const { limits } = await this.policy.standing(ctx.orgId);
     const agents = await countOrgAgents(this.db, ctx.orgId);
     const browsers = await countOrgBrowserAgents(this.db, ctx.orgId);
-    const coders = await countOrgCodingAgents(this.db, ctx.orgId);
+    const coders = await countOrgSubscriptionAgents(this.db, ctx.orgId);
     const month = utcMonth();
     const usage = usageFields(await getOrgMonthlyUsage(this.db, ctx.orgId, month));
     const payload: BuilderCapabilities = {
@@ -279,14 +279,14 @@ export class CapabilityService {
       limits: {
         max_agents: limits.maxAgents,
         max_browser_agents: limits.maxBrowserAgents,
-        max_coding_agents: limits.maxCodingAgents,
+        max_subscription_agents: limits.maxSubscriptionAgents,
         max_concurrent_runs: limits.maxConcurrentRuns,
         monthly_studio_builder_runs: limits.monthlyCoachRuns,
       },
       remaining: {
         agents: remaining(limits.maxAgents, agents),
         browser_agents: remaining(limits.maxBrowserAgents, browsers),
-        coding_agents: remaining(limits.maxCodingAgents, coders),
+        subscription_agents: remaining(limits.maxSubscriptionAgents, coders),
       },
       usage: {
         month,

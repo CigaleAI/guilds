@@ -249,7 +249,7 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const findings = (config: RecipeRole["config"]) => {
@@ -273,7 +273,7 @@ test("a subscription role is refused while the box turns them off, warned on Cur
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const findings = (config: RecipeRole["config"]) => {
@@ -303,7 +303,7 @@ test("a subscription role is refused while the box turns them off, warned on Cur
   assert.deepEqual(findings({ model: TEST_MODEL, harness: "cursor", thinking_level: "high" }), [], "a role on a key is no subscription");
   const capacity = (config: RecipeRole["config"]) => {
     role.config = config;
-    return validateRecipe(recipe, { ...ctx, remainingCodingAgents: 0 }).filter((item) => item.code === "capacity.coding");
+    return validateRecipe(recipe, { ...ctx, remainingSubscriptionAgents: 0 }).filter((item) => item.code === "capacity.subscription");
   };
   assert.equal(capacity({ harness: "codex" }).length, 1, "a subscription role takes a coding agent");
   assert.equal(capacity({ model: TEST_MODEL }).length, 0);
@@ -316,7 +316,7 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const codes = (config: RecipeRole["config"]) => {
@@ -358,7 +358,7 @@ test("a connector the box lacks is installable from the registry or the recipe, 
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
     registryConnectors: new Map([["notion", { version: "1.2.0", verified: true }]]),
   };
@@ -423,7 +423,7 @@ test("a role config with a key an agent config does not have is an error", () =>
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const unknown = () => validateRecipe(recipe, ctx).filter((item) => item.code === "config.unknown");

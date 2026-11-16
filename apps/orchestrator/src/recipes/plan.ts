@@ -640,7 +640,7 @@ export async function previewApply(
     remaining: {
       agents: ctx.remainingAgents,
       browser_agents: ctx.remainingBrowserAgents,
-      coding_agents: ctx.remainingCodingAgents,
+      subscription_agents: ctx.remainingSubscriptionAgents,
     },
     creates: inventoryFromRecipe(recipe, { guildName, names, connections, secrets, collections }),
   };

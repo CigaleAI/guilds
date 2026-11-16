@@ -75,7 +75,7 @@ export function roleRepositories(role: RecipeRole): string[] {
 
 /**
  * Whether a role's agent holds a harness, which it takes at apply: a coding role, or a
- * subscription role. Each counts against the coding agents cap, as `countsAsCodingAgent` reads an agent.
+ * subscription role. Each counts against the subscription agents cap, as `countsAsSubscriptionAgent` reads an agent.
  */
 export function roleTakesHarness(role: RecipeRole): boolean {
   return roleCodes(role) || roleRunsOnSubscription(role);

@@ -98,7 +98,7 @@ export const CODING_CAPABILITY = {
   tools: [],
   costs: {
     sandbox: "a code box, 2 CPU, 4 GiB",
-    limit: "max_coding_agents",
+    limit: "max_subscription_agents",
   },
   apply_step: {
     kind: "repository",

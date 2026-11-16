@@ -26,7 +26,7 @@ const ctx = {
   publishedServers: new Set(["notion"]),
   remainingAgents: 20,
   remainingBrowserAgents: 5,
-  remainingCodingAgents: 5,
+  remainingSubscriptionAgents: 5,
   groupLimit: 20,
 };
 
@@ -338,7 +338,7 @@ test("fixture desk recipes are apply-ready against stub mail and crm", () => {
     publishedServers: new Set(["mail", "crm"]),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const complete = parseRecipe(fixtureDeskRecipe());
@@ -442,7 +442,7 @@ test("operator can remove connector tools and whole connectors", () => {
     publishedServers: new Set(["mail", "crm"]),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   });
   assert.ok(afterTools.some((item) => item.code === "access.tool_removed" && item.message.includes("mail_ping")));
@@ -460,7 +460,7 @@ test("operator can remove connector tools and whole connectors", () => {
     publishedServers: new Set(["mail", "crm"]),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   });
   assert.ok(afterConnector.some((item) => item.code === "access.connector_removed" && item.message.includes("mail")));
@@ -548,9 +548,9 @@ test("coding roles count against the plan's coding agents", () => {
   for (const role of recipe.roles) {
     role.config = { ...role.config, coding: true };
   }
-  const findings = validateRecipe(recipe, { ...ctx, remainingCodingAgents: 0 });
-  assert.ok(findings.some((item) => item.code === "capacity.coding" && item.severity === "error"));
-  assert.ok(!validateRecipe(recipe, ctx).some((item) => item.code === "capacity.coding"));
+  const findings = validateRecipe(recipe, { ...ctx, remainingSubscriptionAgents: 0 });
+  assert.ok(findings.some((item) => item.code === "capacity.subscription" && item.severity === "error"));
+  assert.ok(!validateRecipe(recipe, ctx).some((item) => item.code === "capacity.subscription"));
 
 });
 

@@ -161,11 +161,11 @@ function browserCapacity(recipe: RecipeDocument, ctx: ValidationContext): Recipe
   return [finding("capacity.browser", "error", "roles", `recipe needs ${needed} browser agents; ${ctx.remainingBrowserAgents} remaining`)];
 }
 
-/** More coding agents, subscription roles counted as coding ones, than the organisation has room for. */
+/** More subscription agents, coding roles counted as subscription ones, than the organisation has room for. */
 function codingCapacity(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
   const needed = recipe.roles.filter(roleTakesHarness).length;
-  if (ctx.remainingCodingAgents === null || needed <= ctx.remainingCodingAgents) return [];
-  return [finding("capacity.coding", "error", "roles", `recipe needs ${needed} coding agents; ${ctx.remainingCodingAgents} remaining`)];
+  if (ctx.remainingSubscriptionAgents === null || needed <= ctx.remainingSubscriptionAgents) return [];
+  return [finding("capacity.subscription", "error", "roles", `recipe needs ${needed} subscription agents; ${ctx.remainingSubscriptionAgents} remaining`)];
 }
 
 /** Repositories no role lists in its config.repositories. */

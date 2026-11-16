@@ -5,7 +5,7 @@ import { countOrgAgents, countOrgBrowserAgents } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { modelsService, type ModelsService } from "../llm/models.js";
 import type { NotesStore } from "../notes/store.js";
-import { countOrgCodingAgents, OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
+import { countOrgSubscriptionAgents, OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
@@ -145,14 +145,14 @@ export async function validationContext(
   const { limits } = await apply.policy.standing(orgId);
   const agents = await countOrgAgents(apply.db, orgId);
   const browsers = await countOrgBrowserAgents(apply.db, orgId);
-  const coders = await countOrgCodingAgents(apply.db, orgId);
+  const coders = await countOrgSubscriptionAgents(apply.db, orgId);
   const servers = (await listServers(apply.db, { owner: { visibleTo: orgId }, enabled: true })).map((row) => row.slug);
   return {
     publishedServers: new Set(servers),
     ...(recipe ? { registryConnectors: await registryOffers(apply, recipe, servers) } : {}),
     remainingAgents: remaining(limits.maxAgents, agents),
     remainingBrowserAgents: remaining(limits.maxBrowserAgents, browsers),
-    remainingCodingAgents: remaining(limits.maxCodingAgents, coders),
+    remainingSubscriptionAgents: remaining(limits.maxSubscriptionAgents, coders),
     groupLimit: 20,
     connectedProviders: await apply.models.connectedProviders(orgId),
   };

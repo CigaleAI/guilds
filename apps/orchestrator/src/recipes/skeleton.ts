@@ -105,7 +105,7 @@ async function assertAllowed(
   await assertCanCreateAgents(apply.policy, apply.db, target.orgId, {
     agents: recipe.roles.length,
     browserAgents: recipe.roles.filter(roleBrowses).length,
-    codingAgents: recipe.roles.filter(roleTakesHarness).length,
+    subscriptionAgents: recipe.roles.filter(roleTakesHarness).length,
   });
   try {
     await assertGuildAgentRoom(apply.db, target.guildId || null, recipe.roles.length);

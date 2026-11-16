@@ -90,7 +90,7 @@ test("a captured coding guild applies with repository steps, each giving its rep
       { name: "api", purpose: "" },
       { name: "web", purpose: "" },
     ]);
-    assert.equal(preview.json().remaining.coding_agents, null, "nothing caps coding agents here");
+    assert.equal(preview.json().remaining.subscription_agents, null, "nothing caps coding agents here");
     assert.deepEqual(preview.json().setups, [], "repositories need no GitHub App while the box has none: each is added with its own credential");
 
     const applied = await call("POST", `/api/recipes/${recipeId}/apply`, {

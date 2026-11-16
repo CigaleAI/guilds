@@ -416,7 +416,7 @@ export type ApplyPreview = {
   errors: RecipeFinding[];
   unreviewed: string[];
   /** How many more agents the organisation may hold, by kind; null where nothing caps it. */
-  remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
+  remaining: { agents: number | null; browser_agents: number | null; subscription_agents: number | null };
   creates: ApplyCreates;
 };
 

@@ -450,7 +450,7 @@ findings `collection.conflict` and `machine.*`
 
 | Code | Severity | When |
 |---|---|---|
-| `capacity.agents`, `capacity.browser`, `capacity.coding` | error | The roles, the browser roles, or the coding and subscription roles exceed what the organisation may still create under its limits. A limit that is not set never fires. Core sets none |
+| `capacity.agents`, `capacity.browser`, `capacity.subscription` | error | The roles, the browser roles, or the coding and subscription roles exceed what the organisation may still create under its limits. A limit that is not set never fires. Core sets none |
 | `config.unknown` | error | A role's `config` has a key that is not an agent configuration key |
 | `coding.flag` | error | `config.coding` is not a boolean |
 | `repositories.unused` | warning | At `repositories.<name>`: no role lists the repository in `config.repositories` |

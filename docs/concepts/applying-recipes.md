@@ -322,7 +322,7 @@ on.
   and subscription roles),
   each against the organisation's limit, `null` where nothing caps it.
   The preview's `remaining` carries `agents`, `browser_agents`, and
-  `coding_agents`
+  `subscription_agents`
 - the machine every role goes on: the operator's choice
   (`machine_id`), else the organisation's only machine, else null
   until the operator picks one. A recipe does not name a machine. It

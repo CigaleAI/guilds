@@ -252,7 +252,7 @@ login_failure_policy }`. That is what creates the apply take-control login
   repositories it works in, the checks it
   runs before handing work over, and how work reaches its reviewer (a branch
   and a pull or merge request, recorded where the guild tracks work). Coding roles
-  count against the organisation's coding agents (`remaining.coding_agents`
+  count against the organisation's coding agents (`remaining.subscription_agents`
   from `builder_list_capabilities`; `null` means no limit).
 - subscription (a role whose agent runs every turn on its harness, on the
   operator's own subscription, instead of a model on a key): only when the

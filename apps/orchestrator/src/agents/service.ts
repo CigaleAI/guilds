@@ -39,8 +39,8 @@ import type { NotesStore } from "../notes/store.js";
 import {
   assertCanCreateAgent,
   assertCanEnableBrowser,
-  assertCanEnableCoding,
-  countsAsCodingAgent,
+  assertCanAddSubscriptionAgent,
+  countsAsSubscriptionAgent,
   type OrgPolicy,
 } from "../policy/index.js";
 import { AgentError } from "./errors.js";
@@ -362,8 +362,8 @@ async function assertCanEnable(
   if (config.browser && !previous.browser) {
     await assertCanEnableBrowser(services.policy, services.db, agent.org_id, false);
   }
-  if (countsAsCodingAgent(config) && !countsAsCodingAgent(previous)) {
-    await assertCanEnableCoding(services.policy, services.db, agent.org_id);
+  if (countsAsSubscriptionAgent(config) && !countsAsSubscriptionAgent(previous)) {
+    await assertCanAddSubscriptionAgent(services.policy, services.db, agent.org_id);
   }
 }
 

@@ -53,7 +53,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: mcpPool(db),
     generation,
-    policy: limitedPolicy({ maxCodingAgents: 1 }),
+    policy: limitedPolicy({ maxSubscriptionAgents: 1 }),
   });
   let guildId = "";
   let machineId = "";
@@ -119,7 +119,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     // It holds one of the plan's coding agents, as a coding agent does.
     const second = await createAgent("second", SUBSCRIPTION);
     assert.equal(second.statusCode, 409, second.body);
-    assert.match(second.json().detail, /limit reached: coding agents/);
+    assert.match(second.json().detail, /limit reached: subscription agents/);
     const listed = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/agents`, headers: AUTH });
     assert.deepEqual(
       listed.json().map((item: { name: string; model_source: string }) => [item.name, item.model_source]),
@@ -129,7 +129,7 @@ test("a subscription agent is created, reconfigured, checked for readiness, and 
     assert.equal(plain.statusCode, 201, plain.body);
     const plainSwitched = await reconfigure(String(plain.json().id), { ...plain.json().config, ...SUBSCRIPTION });
     assert.equal(plainSwitched.statusCode, 409, plainSwitched.body);
-    assert.match(plainSwitched.json().detail, /limit reached: coding agents/);
+    assert.match(plainSwitched.json().detail, /limit reached: subscription agents/);
 
     // Its machine lists it on its subscription, and keeps the size it needs.
     const hosting = await app.inject({ method: "GET", url: "/api/orgs/org_home/machines", headers: AUTH });

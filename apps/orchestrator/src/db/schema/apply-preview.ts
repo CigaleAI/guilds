@@ -115,6 +115,6 @@ export type ApplyPreview = {
   findings: RecipeFinding[];
   errors: RecipeFinding[];
   unreviewed: string[];
-  remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
+  remaining: { agents: number | null; browser_agents: number | null; subscription_agents: number | null };
   creates: ApplyInventory;
 };

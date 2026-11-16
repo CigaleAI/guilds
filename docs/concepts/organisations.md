@@ -231,7 +231,7 @@ blocked. Each limit is one cap, or none:
 |---|---|
 | `maxAgents` | Agents |
 | `maxBrowserAgents` | Agents with **Browser** on |
-| `maxCodingAgents` | Agents with **Coding** on, and subscription agents |
+| `maxSubscriptionAgents` | Agents with **Coding** on, and subscription agents |
 | `maxGuilds` | Guilds |
 | `maxMachines` | Machines |
 | `maxAgentsPerMachine` | Agents on one machine; core's ceiling of 32 holds above it |
