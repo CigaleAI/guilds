@@ -366,7 +366,10 @@ run creation, less `max_scripts` and `max_workspace_mib`, with the
 guild's `keep_tool_result_generations` when the agent's is null, and
 with the offered `tools`, `mcp`, `secrets`, and the `scripts`
 ([Scripts](scripts.md#snapshot)). Its `model` states the run's model
-source: a model on a key, or null for a subscription agent's run.
+source: a model on a key, or null for a subscription agent's run. A
+subscription agent's run offers no `tools` and no `mcp` connection: its
+harness reaches no tool of the platform. Its `secrets` still reach the
+harness's environment.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `max_wake_ups`, `keep_tool_result_generations`,

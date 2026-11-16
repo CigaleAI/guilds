@@ -4,13 +4,14 @@ import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
 import type { GroupMessageRow } from "../db/group-chat.js";
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
 import type { NewRun, RunRow } from "../db/runs.js";
-import type {
-  ResolvedAgentConfig,
-  RunConfigSnapshot,
-  RunMetadata,
-  RunScriptSnapshot,
-  RunTaskSource,
-  RunTypesafe,
+import {
+  modelSourceOf,
+  type ResolvedAgentConfig,
+  type RunConfigSnapshot,
+  type RunMetadata,
+  type RunScriptSnapshot,
+  type RunTaskSource,
+  type RunTypesafe,
 } from "../db/schema/index.js";
 import { promptHash } from "../prompts/index.js";
 import { schemasFor } from "../toolbox/index.js";
@@ -23,35 +24,49 @@ import { firstClassScriptSchemas } from "../toolbox/script.js";
 /** A run's kind: opened by an operator, delivered from the group chat, or woken by a schedule. */
 export type RunKind = RunRow["kind"];
 
-/** A run snapshot's config, with the tools the agent's access offers to a run of `kind`. */
+/** What a run offers its agent: the native tools by name, and the connections whose tools it reaches. */
+export type RunOffer = { tools: string[]; mcp: RuntimeAccess["mcp"] };
+
+/**
+ * What a run of `kind` offers an agent with `config` and `access`: the native tools the access
+ * grants under the agent's switches, and its connections. A subscription agent's harness is
+ * offered no tool and no connection of the platform.
+ */
+export function runOffer(config: ResolvedAgentConfig, access: RuntimeAccess, kind: RunKind): RunOffer {
+  if (modelSourceOf(config).kind === "subscription") {
+    return { tools: [], mcp: [] };
+  }
+  const tools = offeredToolNames(access.tools, {
+    browser: config.browser,
+    browserOptimized: isOptimizedBrowserOn(config),
+    coding: config.coding,
+    scripting: config.scripting,
+    memory: config.memory,
+    schedules: kind !== "schedule",
+    direct: kind === "direct",
+  });
+  return { tools, mcp: access.mcp };
+}
+
+/** A run snapshot's config, with the tools and connections a run of `kind` offers the agent. */
 export function configSnapshot(
   config: ResolvedAgentConfig,
   access: RuntimeAccess,
   kind: RunKind,
   scripts?: RunScriptSnapshot[],
 ): RunConfigSnapshot {
-  const native = schemasFor(
-    offeredToolNames(access.tools, {
-      browser: config.browser,
-      browserOptimized: isOptimizedBrowserOn(config),
-      coding: config.coding,
-      scripting: config.scripting,
-      memory: config.memory,
-      schedules: kind !== "schedule",
-      direct: kind === "direct",
-    }),
-  );
+  const offer = runOffer(config, access, kind);
   const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = config;
   const snapshot: RunConfigSnapshot = {
     ...settings,
     projection_policy_version: RUN_PROJECTION_POLICY_VERSION,
     database: false,
     tools: [
-      ...native,
-      ...access.mcp.flatMap((group) => group.tools.map((tool) => tool.schema)),
+      ...schemasFor(offer.tools),
+      ...offer.mcp.flatMap((group) => group.tools.map((tool) => tool.schema)),
       ...firstClassScriptSchemas(scripts ?? []),
     ],
-    mcp: access.mcp.map((group) => ({
+    mcp: offer.mcp.map((group) => ({
       connection_id: group.connection_id,
       server_id: group.server_id,
       slug: group.slug,

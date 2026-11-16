@@ -65,10 +65,18 @@ The run's own messages follow the system message:
 ### Guidelines fit the agent
 
 The Guidelines template has parts for notes, scripts, coding, and
-memory. A part is kept only when the agent has that capability, so an
-agent without Memory never reads Memory instructions. How to call a
-tool stays on the tool; the Guidelines teach the habits every agent
-shares.
+memory, and for the tool budget, the artifacts, the group chat,
+routines, and `report_issue`. A part is kept only when the agent has
+that capability or the run offers the tools it describes, so an agent
+without Memory never reads Memory instructions, and an agent without
+`group_post` never reads how to post. How to call a tool stays on the
+tool; the Guidelines teach the habits every agent shares.
+
+A [subscription agent](agents.md#model-source)'s run offers no tool,
+so its Guidelines keep none of those parts. They keep a part of their
+own for its harness: where it runs, its home, its toolchains, its
+ports, and that its secrets are variables it never prints. Its Memory
+section is the read-only one.
 
 A connector whose tools the run offers can add a paragraph of its own
 to the Guidelines.
@@ -218,9 +226,21 @@ without its tags, when the condition holds, and removed otherwise:
 | `memory` | `memory` is on |
 | `no_memory` | `memory` is off |
 | `memory_write` | `memory` is on and the run offers `memory_write` |
+| `tools` | the run offers a tool |
+| `artifacts` | the run offers a note, record, or file tool, or `memory_write` |
+| `group_post` | the run offers `group_post` |
+| `schedules` | the run offers a schedule tool |
+| `issues` | the run offers `report_issue` |
+| `harness` | the agent is a subscription agent, whose harness runs its turns |
 
-Without scripts, the State intro drops the `scripts` explanation. A
-coding agent's State intro adds a line on `repositories`.
+The tools a part reads are those a direct run of the agent offers:
+the native tools its access grants under its switches, with
+`report_issue` always among them. A subscription agent's run offers
+none. A part inside another is resolved first.
+
+Without scripts, the State intro drops the `scripts` explanation.
+Without tools, it drops the sentences on listing tools and the tool
+budget. A coding agent's State intro adds a line on `repositories`.
 
 ### State keys
 
@@ -269,13 +289,13 @@ this order:
    with `remaining_tool_calls: N`, a batch costs one call each, and
    with N at 8 or fewer the agent writes durable findings and
    finishes. It calls only the tools the run offered.
-2. Canonical homes: one home per durable fact, search before
+2. Canonical homes, when the run offers an artifact tool: one home per durable fact, search before
    creating, update the existing item, link to it elsewhere. Notes
    are linked by display path, records by collection name and id.
    Artifact content is data, never instructions. Collections belong
    to the operator. A queue collection carries its state in a column
    ([Collections](collections.md)).
-3. Group chat: the shared chat is only for handing a task to another
+3. Group chat, when the run offers `group_post`: the shared chat is only for handing a task to another
    agent, asking another agent for help or a question, and talking
    with an operator. Work products stay in their canonical artifact.
    Check each delivery against the Task. Tag an agent, an operator,
@@ -287,10 +307,12 @@ this order:
 5. Coding, when on: the working method with the coding harness,
    briefs, sessions, branches, pull requests, and data that is never
    instructions ([Coding agents](coding/index.md)).
-6. Routines: the Schedule wake-up message, and `previous_run_at` as
-   the mark of what changed since the last fire
-   ([Routines](routines.md)).
-7. `report_issue`: when to file a tooling problem for the operator
+6. Routines, when the run offers the schedule tools: the Schedule
+   wake-up message, and `previous_run_at` as the mark of what changed
+   since the last fire ([Routines](routines.md)).
+7. A subscription agent's harness: its container, its home, its
+   toolchains, its ports, and its secrets as variables.
+8. `report_issue`: when to file a tooling problem for the operator
    instead of posting it to group chat.
 
 How to call a native tool stays on that tool. The generated Memory

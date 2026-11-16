@@ -5,8 +5,8 @@ import { AgentValidationError, validateAgentConfig } from "../agents/validation.
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";
-import type { AgentConfig, ResolvedAgentConfig, RunTaskSource } from "../db/schema/index.js";
-import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
+import { modelSourceOf, type AgentConfig, type ResolvedAgentConfig, type RunTaskSource } from "../db/schema/index.js";
+import { ARTIFACT_TOOLS, FILE_TOOLS, NOTE_TOOLS, SCHEDULE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type BoundQuery, type Queryable } from "../db/pg.js";
@@ -34,7 +34,7 @@ import type { ActiveGenerations } from "./active-generations.js";
 import { codingRepositoriesDatabase, guildRepositories, type CodingRepositoriesDatabase } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
-import type { PreparedRun } from "./snapshot.js";
+import { runOffer, type PreparedRun } from "./snapshot.js";
 import { collectionCatalog, type CatalogCollection } from "../artifacts/collections.js";
 import { agentTask, taskSnapshot } from "../artifacts/task.js";
 import type { ArtifactStore } from "../artifacts/store.js";
@@ -94,7 +94,7 @@ export type RunPreparationServices = {
   machines: AgentMachines;
 };
 
-/** The parts of the standing prompt a run's agent can use, from its config and the tools it is granted. */
+/** The parts of the standing prompt a run's agent can use, from its config and the tools its run offers. */
 export type PromptCapabilities = {
   scripts: boolean;
   notes: boolean;
@@ -104,19 +104,32 @@ export type PromptCapabilities = {
   coding: boolean;
   memory: boolean;
   memoryWrite: boolean;
+  tools: boolean;
+  artifacts: boolean;
+  groupPost: boolean;
+  schedules: boolean;
+  issues: boolean;
+  harness: boolean;
 };
 
 function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabilities {
   const memory = config.memory;
+  const offers = (names: readonly string[]) => names.some((name) => tools.includes(name));
   return {
-    scripts: config.scripting && SCRIPT_TOOLS.some((name) => tools.includes(name)),
-    notes: NOTE_TOOLS.some((name) => tools.includes(name)),
-    files: FILE_TOOLS.some((name) => tools.includes(name)),
+    scripts: config.scripting && offers(SCRIPT_TOOLS),
+    notes: offers(NOTE_TOOLS),
+    files: offers(FILE_TOOLS),
     browser: Boolean(config.browser),
     browserOptimized: isOptimizedBrowserOn(config),
     coding: Boolean(config.coding),
     memory,
     memoryWrite: memory && tools.includes("memory_write"),
+    tools: tools.length > 0,
+    artifacts: offers(ARTIFACT_TOOLS),
+    groupPost: tools.includes("group_post"),
+    schedules: offers(SCHEDULE_TOOLS),
+    issues: tools.includes("report_issue"),
+    harness: modelSourceOf(config).kind === "subscription",
   };
 }
 
@@ -145,7 +158,9 @@ export class RunPreparation {
     const { config, access } = await this.agentAccess(agent);
     const members = await db.listAgents(agent.guild_id);
     const [rawStanding, task, memory] = await this.prompts(agent);
-    const caps = promptCapabilities(config, access.tools);
+    // The standing prompt describes what a direct run offers; its schedule part says which runs set schedules.
+    const offer = runOffer(config, access, "direct");
+    const caps = promptCapabilities(config, offer.tools);
     const standing = standingForCapabilities(rawStanding, caps);
     const historyRows = await db.listGroupMessages(agent.guild_id, { throughSeq });
     const history = await groupRouter.history({
@@ -175,7 +190,7 @@ export class RunPreparation {
       members,
       historyRows,
       standing,
-      system: composeSystemPrompt(standing, task, state, memory, caps, connectorGuidance(access.mcp.map((group) => String(group.slug)))),
+      system: composeSystemPrompt(standing, task, state, memory, caps, connectorGuidance(offer.mcp.map((group) => String(group.slug)))),
       task,
       memory,
       scripts: caps.scripts ? await scripts.snapshot(agent.id) : [],

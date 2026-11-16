@@ -27,6 +27,7 @@ import { helperAnswer, helperRequest } from "../helpers/code-sandbox.js";
 import {
   abortableHang,
   AGENT_CONFIG,
+  agentConfig,
   agentRow,
   AGENT_MACHINE,
   completionReply,
@@ -769,6 +770,21 @@ describe("generation", { concurrency: 1 }, () => {
       assert.equal(error.status, 409);
       return true;
     });
+  });
+
+  test("a subscription agent's prepared prompt describes no tool and tells its harness where it runs", async () => {
+    const { loop, db } = await seededLoop();
+    db.agent.config = agentConfig({ model: null, harness: "claude-code" });
+    const keyed = await seededLoop();
+    const subscription = await loop.preparation.prepare("a_1", null);
+    const key = await keyed.loop.preparation.prepare("a_1", null);
+    for (const text of ["remaining_tool_calls", "tool-invocation budget", "It is only for coordination", "report_issue", "memory_write"]) {
+      assert.ok(key.system.includes(text), `a key agent reads ${text}`);
+      assert.ok(!subscription.system.includes(text), `a subscription agent does not read ${text}`);
+    }
+    assert.ok(subscription.system.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
+    assert.ok(!key.system.includes("$GUILDS_PORTS"));
+    assert.ok(subscription.system.includes("### Your Memory"), "Memory still reaches it, to read");
   });
 
   test("add_message_rejects_group_runs", async () => {
