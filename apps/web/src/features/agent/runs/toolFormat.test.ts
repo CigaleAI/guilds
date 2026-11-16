@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  codeTaskStatus,
   formatDuration,
   formatReturnedData,
   formatTokens,
@@ -279,29 +278,10 @@ test("a browse call ends with its status when it did not complete, and its cost"
   assert.equal(toolOutcome({ tool_name: "browse", status: "cancelled" }), "cancelled");
 });
 
-test("a code task reads by its repository and session, and ends with its status and diffstat", () => {
-  const call = (args: Record<string, unknown>) => callWith("code_task", args);
-  assert.equal(friendlyToolCall(call({ brief: "Fix greet", repo: "app" })), "Code task in app");
-  assert.equal(
-    friendlyToolCall(call({ brief: "Go on", repo: "app", session_id: "s1" })),
-    "Resume code task in app",
-  );
-  assert.equal(friendlyToolCall(call({ brief: "Fix greet" })), "Code task");
-  const done = {
-    tool_name: "code_task",
-    status: "completed",
-    files_changed: 2,
-    insertions: 14,
-    deletions: 3,
-  };
-  assert.equal(toolOutcome(done), "2 files · +14 −3");
-  assert.equal(
-    toolOutcome({ ...done, status: "timed_out", files_changed: 0 }),
-    "timed out · no changes",
-  );
-  assert.equal(toolOutcome({ tool_name: "code_task", status: "failed" }), "failed");
-  assert.equal(codeTaskStatus("interrupted"), "interrupted");
-  assert.equal(codeTaskStatus("other"), "");
+test("an old code_task call reads as its tool name, with no outcome of its own", () => {
+  assert.equal(friendlyToolCall(callWith("code_task", { brief: "Fix greet", repo: "app" })), "");
+  const done = { tool_name: "code_task", status: "completed", files_changed: 2, insertions: 14, deletions: 3 };
+  assert.equal(toolOutcome(done), "");
 });
 
 test("a call of Codex's own tool reads as what it did, in the platform's verbs", () => {

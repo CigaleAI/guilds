@@ -6,17 +6,15 @@ import {
 import { attachmentIdsOf } from "../attachments";
 import { api } from "../client";
 import { agentKeys } from "./agents";
-import type { Run, RunDiff, HarnessLog, RunMessage, NewRun, RunMessageInput } from "../types/runs";
+import type { Run, RunDiff, RunMessage, NewRun, RunMessageInput } from "../types/runs";
 
 /** Query keys of runs. Identity is fixed for the page's life, so keys carry no user or org. */
 export const runKeys = {
   agentRuns: (agentId: string) => ["agent", agentId, "runs"] as const,
   run: (runId: string) => ["run", runId] as const,
   runDiff: (runId: string, repository: string) => ["run", runId, "diff", repository] as const,
-  taskDiff: (runId: string, callId: string) => ["run", runId, "task-diff", callId] as const,
   turnDiff: (runId: string, callId: string, repository: string) =>
     ["run", runId, "turn-diff", callId, repository] as const,
-  taskLog: (runId: string, callId: string) => ["run", runId, "task-log", callId] as const,
   runMessages: (runId: string) => ["run", runId, "messages"] as const,
 };
 
@@ -166,27 +164,5 @@ export function useTurnDiff(runId: string, callId: string, repository: string | 
       api<RunDiff>(
         `${runPath(runId)}/turns/${encodeURIComponent(callId)}/changes/${encodeURIComponent(repository ?? "")}/diff`,
       ),
-  });
-}
-
-/** The diff one code task made, between its start and end checkpoints, fetched on demand. */
-export function useTaskDiff(runId: string, callId: string | null) {
-  return useQuery({
-    queryKey: runKeys.taskDiff(runId, callId ?? ""),
-    enabled: Boolean(callId),
-    staleTime: Infinity,
-    queryFn: () => api<RunDiff>(`${runPath(runId)}/tasks/${encodeURIComponent(callId ?? "")}/diff`),
-  });
-}
-
-/** A code task's kept harness log, read from the agent's machine on demand. */
-export function useTaskLog(runId: string, callId: string | null) {
-  return useQuery({
-    queryKey: runKeys.taskLog(runId, callId ?? ""),
-    enabled: Boolean(callId),
-    staleTime: Infinity,
-    retry: false,
-    queryFn: () =>
-      api<HarnessLog>(`${runPath(runId)}/tasks/${encodeURIComponent(callId ?? "")}/log`),
   });
 }

@@ -1,11 +1,8 @@
 import type { CallProgress } from "../../../api/toolProgress";
-import type { Harness } from "../../../api/types/agents";
 import type { StepMessage, StepMetadata } from "../../../api/types/runs";
 import { harnessLabel } from "../harness";
 import type { FlowCall } from "../runs/runFlowModel";
 import {
-  codeTaskChanges,
-  codeTaskStatus,
   formatDuration,
   formatReturnedData,
   formatToolArgs,
@@ -15,7 +12,7 @@ import {
 } from "../runs/toolFormat";
 
 /** The views of an opened tool call. */
-export type DetailView = "arguments" | "result" | "metadata" | "diff" | "log";
+export type DetailView = "arguments" | "result" | "metadata";
 
 /** A label and its value in a call's Metadata view. */
 export type CallFact = [label: string, value: string];
@@ -23,10 +20,6 @@ export type CallFact = [label: string, value: string];
 /** A count or code as text; empty when it is missing. */
 function numberText(value: number | null | undefined): string {
   return value === undefined || value === null ? "" : String(value);
-}
-
-function shortSha(value: string | null | undefined): string {
-  return value ? value.slice(0, 7) : "";
 }
 
 /** A call's result metadata; empty before its result is committed. */
@@ -39,63 +32,14 @@ export function callArguments(call: FlowCall): ToolArgsInfo {
   return formatToolArgs(call.call.function.arguments);
 }
 
-/** A code task result's closing `log: <path>` line; the Metadata view names the log instead. */
-const TASK_LOG_LINE_RE = /\n*log: [^\n]*\s*$/;
-
-/**
- * What a committed result returned, without the tool-call budget line the runtime appends, nor a
- * code task's log line.
- */
+/** What a committed result returned, without the tool-call budget line the runtime appends. */
 export function returnedData(result: StepMessage): ReturnedDataInfo {
-  const returned = stripRemainingToolCalls(result.payload.content);
-  const task = result.metadata.tool_name === "code_task";
-  return formatReturnedData(task ? returned.replace(TASK_LOG_LINE_RE, "") : returned);
-}
-
-/**
- * The harness a code task runs on: the one its result names, else the run's (the agent's harness
- * while the call runs); null for any other tool, or when neither names a known harness.
- */
-export function callHarness(
-  call: FlowCall,
-  runHarness: Harness | null | undefined,
-): Harness | null {
-  if (call.info.name !== "code_task") return null;
-  return callMetadata(call).harness ?? runHarness ?? null;
+  return formatReturnedData(stripRemainingToolCalls(result.payload.content));
 }
 
 /** The view a call opens on: its result once it failed or has reported progress, else its arguments. */
 export function openingView(call: FlowCall, progress: CallProgress | undefined): DetailView {
   return call.error || progress?.lines.length ? "result" : "arguments";
-}
-
-/** Whether a call is a code task of a known run that reached an end checkpoint, so has a diff. */
-export function hasTaskDiff(call: FlowCall, runId: string | undefined): boolean {
-  return call.info.name === "code_task" && Boolean(runId) && Boolean(callMetadata(call).end_sha);
-}
-
-/** Whether a call is a code task of a known run whose result names the log it kept. */
-export function hasTaskLog(call: FlowCall, runId: string | undefined): boolean {
-  return call.info.name === "code_task" && Boolean(runId) && Boolean(callMetadata(call).log_path);
-}
-
-/** A code task's checkpoints, start → end, as short shas; empty without both. */
-function checkpointRange(meta: StepMetadata): string {
-  return meta.start_sha && meta.end_sha
-    ? `${shortSha(meta.start_sha)} → ${shortSha(meta.end_sha)}`
-    : "";
-}
-
-/** A code task's own facts; its session falls back to the one its progress reported. */
-function codeTaskFacts(meta: StepMetadata, sessionId: string | null): CallFact[] {
-  return [
-    ["Status", codeTaskStatus(meta.status)],
-    ["Harness", harnessLabel(meta.harness)],
-    ["Repository", meta.repository ?? ""],
-    ["Session", meta.session_id || sessionId || ""],
-    ["Changes", codeTaskChanges(meta)],
-    ["Checkpoints", checkpointRange(meta)],
-  ];
 }
 
 function lineRange(range: StepMetadata["range"]): string {
@@ -109,22 +53,17 @@ function storedBytes(meta: StepMetadata): string {
     : `${meta.original_bytes} → ${numberText(meta.stored_bytes)} stored`;
 }
 
-/**
- * What the Metadata view lists about a call, a code task's own facts included; facts without a
- * value are left out. `sessionId` is the session the call's progress reported.
- */
-export function toolCallFacts(call: FlowCall, sessionId: string | null): CallFact[] {
+/** What the Metadata view lists about a call; facts without a value are left out. */
+export function toolCallFacts(call: FlowCall): CallFact[] {
   const meta = callMetadata(call);
-  const task = call.info.name === "code_task";
   const facts: CallFact[] = [
     ["Call", call.id || "—"],
     ["Tool", call.info.name],
     ["Called by", harnessLabel(meta.from_harness)],
-    ...(task ? codeTaskFacts(meta, sessionId) : []),
     ["Duration", meta.duration_ms === undefined ? "" : formatDuration(meta.duration_ms)],
     ["Output filter", meta.output_filter ?? ""],
     ["Exit code", numberText(meta.exit_code)],
-    [task ? "Harness log" : "Full output", meta.log_path ?? ""],
+    ["Full output", meta.log_path ?? ""],
     ["Working directory", meta.cwd ?? ""],
     ["File", meta.path ?? ""],
     ["Lines", lineRange(meta.range)],

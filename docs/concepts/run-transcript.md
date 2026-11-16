@@ -82,8 +82,7 @@ per generation. Its header shows:
 
 Below the header, the generation reads down a rail as one block per
 model step. Each block sits on a dot. The dot is plum when a call
-failed, pulses while a call runs, and shows the harness's logo for a
-step that ran a code task. A step is reasoning, then calls, and
+failed, and pulses while a call runs. A step is reasoning, then calls, and
 sometimes text the model wrote alongside them. The model's final reply
 has no calls, so it is a bubble after the flow, not a step.
 
@@ -109,8 +108,7 @@ results' spend included. A step cut by
 other than stopping or calling tools is tagged too.
 
 Under the header sits the text the model wrote alongside the calls,
-as muted lines. A folded step shows two lines of plain text and its
-code tasks. An open step adds its name, **Step N**, and shows in
+as muted lines. A folded step shows two lines of plain text. An open step adds its name, **Step N**, and shows in
 order:
 
 - a **thinking** line for its reasoning, folded to its opening line;
@@ -119,9 +117,8 @@ order:
   from one model turn are a batch: their cards, numbered in the order
   they ran, held by one bracket. The calls of a batch run one after
   another, with no model turn between them.
-- its code tasks
 
-Two or more steps in a row with no text and no code task compact into
+Two or more steps in a row with no text compact into
 one block on a stack: **N steps**, with the same cues over all their
 calls. Opening it shows them as step blocks on a rail of their own.
 
@@ -174,17 +171,11 @@ full-output log path, the working directory, the file and its lines,
 the step a repeated read points to, stored bytes, and tool calls
 left. The call's kind and level sit beside the views.
 
-### Code tasks
-
-A `code_task` call is its own block in its step. It shows even while
-the step is folded. While it runs, its latest progress lines show
-under its brief. Opening it shows its result, its metadata (status,
-harness, repository, session, diffstat, and log path), and its
-**Diff** ([Code tools](coding/code-tools.md#in-the-app)).
-
 Progress lines are live only. They stream while the run view is open
 and are not stored, so a reload shows the call without them until the
 result lands.
+
+### Changes
 
 A run with repository changes ends with a **Changes** panel: each
 repository with its branch and diffstat, and **Show diff**, which

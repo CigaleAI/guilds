@@ -91,23 +91,8 @@ export type NewRun = { message: string; files?: File[] };
 /** The operator's next message in a run, with the images attached to it. */
 export type RunMessageInput = { runId: string; content: string; files?: File[] };
 
-/** A run's, a code task's, or a turn's diff in one repository, cut at the server's limit. */
+/** A run's or a turn's diff in one repository, cut at the server's limit. */
 export type RunDiff = { repository: string; diff: string; truncated: boolean };
-
-/** `GET /api/runs/:run_id/tasks/:call_id/log`: a code task's kept harness log, redacted. */
-export type HarnessLog = {
-  /** Its events as progress lines, the first 2000. */
-  lines: string[];
-  lines_truncated: boolean;
-  /** Its raw JSONL, whole lines from the start within 256 KiB. */
-  raw: string;
-  raw_truncated: boolean;
-  /** The log's whole size in bytes. */
-  bytes: number;
-  events: number;
-  /** Lines of the log that were not JSON. */
-  unparsed: number;
-};
 
 /**
  * `tool.progress` on a run's stream: the lines a running tool call reported since the last event,
@@ -204,9 +189,6 @@ export type HarnessToolArguments = {
 
 /** A Codex patch's arguments, as its item reports them: the files it changed, each with how. */
 export type FileChangeArguments = { changes: Array<{ path: string; kind?: string }> };
-
-/** A `code_task` call's arguments: the brief, the repository, and the harness session it resumes. */
-export type CodeTaskArguments = { brief?: string; repo?: string; session_id?: string };
 
 /** The name a call gives the script (`script_run`, `script_create`) or the secret (`secret_store`) it works on. */
 export type NamedToolArguments = { name?: string };

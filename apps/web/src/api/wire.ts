@@ -17,7 +17,6 @@ import type {
   BrowserToolArguments,
   BuilderToolArguments,
   CodeSearchArguments,
-  CodeTaskArguments,
   ConnectorToolArguments,
   FileReadArguments,
   FileChangeArguments,
@@ -263,11 +262,6 @@ export function isFileChangeArguments(value: unknown): value is FileChangeArgume
 /** Whether a tool call's arguments are a `code_search` call's: its pattern, mode and path, as text. */
 export function isCodeSearchArguments(value: unknown): value is CodeSearchArguments {
   return hasTextParameters(value, ["pattern", "mode", "path"]);
-}
-
-/** Whether a tool call's arguments are a `code_task` call's: its brief, repository and session, as text. */
-export function isCodeTaskArguments(value: unknown): value is CodeTaskArguments {
-  return hasTextParameters(value, ["brief", "repo", "session_id"]);
 }
 
 /** Whether a tool call's arguments name its script or secret as text. */

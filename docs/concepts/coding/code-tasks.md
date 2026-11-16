@@ -49,39 +49,12 @@ restart ends the task `interrupted` ([Lifecycle](#lifecycle)).
 
 ## In the app
 
-A code task is its own block in its step on the **Chat** tab, shown
-even while the step is folded. Its step carries the harness's logo on
-the rail in place of the dot: the harness its result names, else the
-agent's harness. The block reads:
-
-- the harness's name, "coding task", and its status: **Running…**,
-  **Done**, **Failed**, or how it ended otherwise, such as **Timed
-  out**; a **wrote** tag; and its run time;
-- the brief it was given, clamped to two lines;
-- its repository and its diffstat;
-- the first line of its error, when it failed.
-
-While the task runs, the logo and the status pulse, and its latest six
-progress lines show under the brief. Progress lines are live only. They
+A code task shows in its step on the **Chat** tab as any tool call
+does, with the views every tool call has
+([Code tools](code-tools.md#in-the-app)). While it runs, its latest six
+progress lines show under its card. Progress lines are live only. They
 stream while the run view is open and are not kept, so a reload shows
-the block without them until the result lands.
-
-Opening the block shows the views every tool call has
-([Code tools](code-tools.md#in-the-app)), plus:
-
-| View | Shows |
-| --- | --- |
-| **Result** | Its progress while it runs. Once it ends, the result without its closing `log:` line |
-| **Diff** | The change of this one turn, once it has an end checkpoint ([Reviewing changes](reviewing-changes.md#in-the-app)) |
-| **Log** | The kept harness log, once the result names it: **Steps**, each event as a progress line, or **JSON**, the raw events |
-| **Metadata** | **Status**, **Harness**, **Repository**, **Session**, **Changes**, **Checkpoints** (start → end, as short commit ids), and **Harness log**, whose path opens **Log** |
-
-A task opens on **Result** once it has progress or an error, else on
-**Arguments**. **Log** reads the log from the agent's machine, waking
-it. "Loading the log from the agent's machine…"
-shows while it loads. "Couldn't load the harness log" shows with the
-reason when it cannot be read, such as a log already pruned from the
-agent's home.
+the card without them until the result lands.
 
 ## Rules and limits
 

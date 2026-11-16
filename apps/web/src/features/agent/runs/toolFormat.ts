@@ -9,7 +9,6 @@ import {
   isBrowserToolArguments,
   isBuilderToolArguments,
   isCodeSearchArguments,
-  isCodeTaskArguments,
   isConnectorToolArguments,
   isFileChangeArguments,
   isFileReadArguments,
@@ -30,7 +29,6 @@ import {
   type JsonValue,
 } from "../../../api/wire";
 import { formatCost } from "../../../app/format";
-import { diffstat } from "../chat/changes";
 
 /** A JSON value with structure, an object or an array: what shows as a tree. */
 export type JsonTreeValue = JsonObject | JsonValue[];
@@ -280,10 +278,6 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
     const command = firstCommandLine(args.command ?? "");
     return command ? `${args.background === true ? "Start" : "Run"} ${command}` : "Run command";
   }),
-  code_task: summaryOf(isCodeTaskArguments, (args) => {
-    const where = args.repo ? ` in ${args.repo}` : "";
-    return `${args.session_id ? "Resume code task" : "Code task"}${where}`;
-  }),
   shell_status: summaryOf(isShellStatusArguments, (args) => {
     if (!args.id) return "List background commands";
     return args.stop === true ? `Stop ${args.id}` : `Check ${args.id}`;
@@ -434,41 +428,13 @@ export function summarizeCalls(calls: readonly ToolCall[]): string {
     .join(" · ");
 }
 
-const CODE_TASK_STATUSES: Readonly<Record<string, string>> = Object.freeze({
-  completed: "completed",
-  failed: "failed",
-  timed_out: "timed out",
-  cancelled: "cancelled",
-  interrupted: "interrupted",
-});
-
-/** A code task's status in words, such as "timed out"; empty for anything else. */
-export function codeTaskStatus(status: StepMetadata["status"]): string {
-  return status !== undefined && Object.hasOwn(CODE_TASK_STATUSES, status)
-    ? (CODE_TASK_STATUSES[status] ?? "")
-    : "";
-}
-
-/** A code task's diffstat from its metadata, such as "2 files · +14 −3"; empty before it has one. */
-export function codeTaskChanges(metadata: StepMetadata): string {
-  const { files_changed: files, insertions, deletions } = metadata;
-  if (files === undefined) return "";
-  return diffstat({ files_changed: files, insertions: insertions ?? 0, deletions: deletions ?? 0 });
-}
-
 /**
- * What a code tool's result metadata says at a glance: a command's non-zero exit code, the step
- * a repeated read points back to, or how a code task ended and what it changed; empty otherwise.
+ * What a tool's result metadata says at a glance: how a browse ended and what it spent, a
+ * command's non-zero exit code, or the step a repeated read points back to; empty otherwise.
  */
 export function toolOutcome(metadata: StepMetadata | undefined): string {
   if (!metadata) return "";
   if (metadata.tool_name === "browse") return browseOutcome(metadata);
-  if (metadata.tool_name === "code_task") {
-    const status = codeTaskStatus(metadata.status);
-    return [status === "completed" ? "" : status, codeTaskChanges(metadata)]
-      .filter(Boolean)
-      .join(" · ");
-  }
   if (metadata.repeat_of !== undefined) return `unchanged since step ${metadata.repeat_of}`;
   if (metadata.tool_name === "shell") {
     if (metadata.timed_out === true) return "timed out";

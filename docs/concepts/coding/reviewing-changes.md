@@ -98,13 +98,6 @@ A subscription agent's run shows the same panel once a turn has changed
 a repository: each turn that did is under **Turn `<n>`**, with a row per
 repository it changed, and **Show diff** fetches that turn's diff.
 
-### The Diff of a code task
-
-Once a code task has an end checkpoint, its block in the run flow
-opens a **Diff** view: the change that one harness turn made. Its
-**Metadata** gives its checkpoints as short commit ids, start → end
-([Code tasks](code-tasks.md#in-the-app)).
-
 ### Reading a diff
 
 A diff shows added lines, removed lines, hunk headers, and file
@@ -118,9 +111,7 @@ shows "Couldn't load the diff" with the reason.
 1. Read the agent's final reply: what it changed, what it ran, and what
    failed.
 2. Open the **Changes** panel and **Show diff** for each repository.
-3. For a surprising change, open the code task block that made it and
-   read its **Result** and **Diff**.
-4. Review the pull request the agent opened on the git host, where the
+3. Review the pull request the agent opened on the git host, where the
    project's own checks run.
 
 ## Rules and limits
@@ -214,7 +205,5 @@ subscription turn's checkpoints, and reading a diff from the machine),
 `apps/orchestrator/src/generation/run-review.ts` (which diff a request
 names), `apps/orchestrator/src/http/coding-routes.ts`, and in the app
 `apps/web/src/features/agent/chat/ChangesPanel.tsx` (the panel and the
-diff view), `apps/web/src/features/agent/chat/changes.ts` (the
-diffstat and line colours), and
-`apps/web/src/features/agent/chat/ToolCallDetail.tsx` (a code task's
-**Diff**).
+diff view), and `apps/web/src/features/agent/chat/changes.ts` (the
+diffstat and line colours).

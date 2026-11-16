@@ -1,4 +1,4 @@
-import { ChevronDown, FolderGit2, Layers, Wrench } from "lucide-react";
+import { ChevronDown, Layers, Wrench } from "lucide-react";
 import { Fragment, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { cn } from "../../cn";
 import { Icon } from "../../primitives/Icon";
@@ -41,8 +41,6 @@ export type FlowEntryProps = Omit<ComponentProps<"li">, "children"> & {
   marker: "step" | "steps";
   /** The mark's colour. */
   tone?: FlowCallTone;
-  /** A step's own mark in place of the dot, such as the logo of the harness its code task runs on. */
-  icon?: ReactNode;
   /** Faded out by an active generation filter. */
   dimmed?: boolean;
   children?: ReactNode;
@@ -52,7 +50,6 @@ export type FlowEntryProps = Omit<ComponentProps<"li">, "children"> & {
 export function FlowEntry({
   marker,
   tone = "ok",
-  icon,
   dimmed,
   className,
   children,
@@ -61,11 +58,7 @@ export function FlowEntry({
   return (
     <li className={cn("relative flex min-w-0 gap-2", dimmed && "opacity-40", className)} {...props}>
       <span aria-hidden className="flex h-9 w-6 shrink-0 items-center justify-center">
-        {icon ? (
-          <span className="flex items-center justify-center rounded-md ring-4 ring-surface">
-            {icon}
-          </span>
-        ) : marker === "steps" ? (
+        {marker === "steps" ? (
           <span className="flex size-5 items-center justify-center bg-surface">
             <Icon icon={Layers} size={14} className={iconTone[tone]} />
           </span>
@@ -249,15 +242,13 @@ export type FlowStepBlockProps = FlowStepCues & {
   note?: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** What shows under the note while folded: its code tasks. */
-  outputs?: ReactNode;
-  /** What shows under the note while open: its reasoning, calls and code tasks, in that order. */
+  /** What shows under the note while open: its reasoning and calls, in that order. */
   children?: ReactNode;
 };
 
 /**
  * One step: a header naming what its calls did, with cues on them, and what the model said under it.
- * Folded, only its code tasks show below; open, its reasoning and everything it did.
+ * Open, its reasoning and everything it did show below.
  */
 export function FlowStepBlock({
   label,
@@ -265,11 +256,9 @@ export function FlowStepBlock({
   note,
   open,
   onOpenChange,
-  outputs,
   children,
   ...cues
 }: FlowStepBlockProps) {
-  const body = open ? children : outputs;
   return (
     <section aria-label={label} className="flex min-w-0 flex-col">
       <StepLine
@@ -289,7 +278,9 @@ export function FlowStepBlock({
           {note}
         </div>
       ) : null}
-      {body ? <div className="flex min-w-0 flex-col gap-1.5 pb-2">{body}</div> : null}
+      {open && children ? (
+        <div className="flex min-w-0 flex-col gap-1.5 pb-2">{children}</div>
+      ) : null}
     </section>
   );
 }
@@ -340,132 +331,5 @@ export function FlowStepRun({ steps, open, onOpenChange, children, ...cues }: Fl
         <div className="min-w-0 border-t border-line px-2 pt-2 pb-2">{children}</div>
       ) : null}
     </div>
-  );
-}
-
-/** Where a harness task stands. */
-export type FlowHarnessStatus = "running" | "done" | "failed";
-
-const harnessStatusLook: Record<FlowHarnessStatus, { pill: string; dot: string }> = {
-  running: { pill: "bg-t-sig text-t-sig-fg", dot: "bg-signal motion-safe:animate-pulse" },
-  done: { pill: "bg-t-tide text-t-tide-fg", dot: "bg-tide" },
-  failed: { pill: "bg-t-plum text-plum-t", dot: "bg-plum" },
-};
-
-export type FlowHarnessTaskProps = Omit<ComponentProps<"article">, "children"> & {
-  /** The harness's name, such as "Codex". */
-  harness: string;
-  /** What the agent asked the harness to do. */
-  prompt: string;
-  /** The repository the harness works in. */
-  repository?: string;
-  status: FlowHarnessStatus;
-  /** How the status reads, such as "Running…", "Done", or "Timed out". */
-  statusLabel: string;
-  /** What it changed, such as "9 files · +1559 −0". */
-  changes?: string;
-  /** Whether it changed tracked state, for the **wrote** tag. */
-  effect?: ToolCallEffect | null;
-  /** Its run time, formatted. */
-  duration?: string;
-  /** The first line of a failure. */
-  error?: string;
-  /** What it has reported while running, under the prompt. */
-  progress?: ReactNode;
-  /** Arguments, result, metadata, diff and log, while open. */
-  detail?: ReactNode;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
-
-/**
- * A task delegated to the coding harness, as its own block on the rail: the harness, what it was
- * asked, where it works, how it ended and what it changed; opening it shows its detail.
- */
-export function FlowHarnessTask({
-  harness,
-  prompt,
-  repository,
-  status,
-  statusLabel,
-  changes,
-  effect,
-  duration,
-  error,
-  progress,
-  detail,
-  open,
-  onOpenChange,
-  className,
-  ...props
-}: FlowHarnessTaskProps) {
-  const look = harnessStatusLook[status];
-  /** Clicks on the card's head open it, unless they land on something that acts on its own. */
-  const onHeadClick = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as Element).closest("a, button")) return;
-    onOpenChange(!open);
-  };
-  return (
-    <article
-      className={cn(
-        "flex min-w-0 flex-col rounded-xl bg-paper text-fg inset-ring inset-ring-line-2",
-        className,
-      )}
-      {...props}
-    >
-      <div
-        onClick={onHeadClick}
-        className="flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl px-4 py-3 transition-colors hover:bg-paper-hi"
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 text-sm font-bold">{harness}</span>
-          <span className="shrink-0 type-meta text-muted">coding task</span>
-          <span
-            className={cn(
-              "inline-flex h-5 shrink-0 items-center gap-1.5 rounded-full px-2 text-2xs font-semibold",
-              look.pill,
-            )}
-          >
-            <span aria-hidden className={cn("size-1.5 rounded-full", look.dot)} />
-            {statusLabel}
-          </span>
-          {effect ? <EffectTag effect={effect} /> : null}
-          <span className="flex-1" />
-          {duration ? <span className="shrink-0 type-meta text-muted">{duration}</span> : null}
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={open ? `Close the ${harness} task` : `Open the ${harness} task`}
-            onClick={() => onOpenChange(!open)}
-            className={triggerClass}
-          >
-            <Icon
-              icon={ChevronDown}
-              size={14}
-              className={cn("transition-transform", !open && "-rotate-90")}
-            />
-          </button>
-        </div>
-        <p className="line-clamp-2 text-sm whitespace-pre-wrap text-fg-2">{prompt}</p>
-        {repository || changes ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-muted">
-            {repository ? (
-              <span className="flex min-w-0 items-center gap-1.5">
-                <Icon icon={FolderGit2} size={14} />
-                <span className="truncate">{repository}</span>
-              </span>
-            ) : null}
-            {changes ? <span className="shrink-0">{changes}</span> : null}
-          </div>
-        ) : null}
-        {error ? (
-          <span className="truncate text-xs text-plum-t" title={error}>
-            {error}
-          </span>
-        ) : null}
-      </div>
-      {progress && !open ? <div className="px-4 pb-3">{progress}</div> : null}
-      {open && detail ? <div className="border-t border-line px-4 pt-3 pb-4">{detail}</div> : null}
-    </article>
   );
 }

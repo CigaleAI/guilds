@@ -73,7 +73,7 @@ and a copy button.
 | Agent **Chat** tab: transcript, run flow, attachments, **Resume**, **Debug in Studio**, the pending wake-up banner with **Cancel** | `/guilds/<id>/agents/<id>` (`?run=…`) | [Run transcript](../concepts/run-transcript.md), [Runs](../concepts/runs.md) |
 | Chat History drawer | `/guilds/<id>/agents/<id>/history` (`?history=true`) | [Run transcript](../concepts/run-transcript.md) |
 | Chat coding strip | agent **Chat** tab | [Coding agents](../concepts/coding/index.md) |
-| Chat `code_task` row and **Changes** panel | agent **Chat** tab | [Code tasks](../concepts/coding/code-tasks.md), [Reviewing changes](../concepts/coding/reviewing-changes.md) |
+| Chat **Changes** panel | agent **Chat** tab | [Reviewing changes](../concepts/coding/reviewing-changes.md) |
 | Chat secret request card | agent **Chat** tab | [Run transcript](../concepts/run-transcript.md), [Secrets](../concepts/secrets.md) |
 | Agent **Prompt** tab | `/guilds/<id>/agents/<id>/prompt` | [Task](../concepts/task.md) |
 | Agent **State › Memory** | `/guilds/<id>/agents/<id>/state/memory` | [Memory](../concepts/memory.md) |

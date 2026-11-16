@@ -5,7 +5,6 @@ import { Segmented } from "../controls/Segmented";
 import {
   FlowBatch,
   FlowEntry,
-  FlowHarnessTask,
   FlowStepBlock,
   FlowStepRun,
   FlowThought,
@@ -48,9 +47,6 @@ type Call = {
   detail?: unknown;
 };
 
-/** A task delegated to the coding harness, shown as its own block. */
-type Task = { prompt: string; repository: string; changes: string; duration: string };
-
 type Step = {
   /** What its calls did, for its header. */
   title: string;
@@ -60,7 +56,6 @@ type Step = {
   /** What the model said alongside its calls. */
   note?: string;
   calls: Call[];
-  task?: Task;
   duration: string;
 };
 
@@ -117,21 +112,8 @@ const steps: Step[] = [
     duration: "0.2s",
   },
   {
-    title: "Code task in landing",
-    thinking: "Now I'll delegate the build to my harness with a self-contained brief.",
-    calls: [],
-    task: {
-      prompt:
-        "Build the landing page hero in src/Hero.tsx: a headline with a staggered fade-in and a background that drifts slowly. Add a test for the reduced-motion fallback, run the tests and lint, and commit on the current branch.",
-      repository: "landing",
-      changes: "9 files · +1559 −0",
-      duration: "1m 44s",
-    },
-    duration: "1m 44s",
-  },
-  {
     title: "Run pnpm test · Read src/Hero.tsx, src/hero.css · Run git push origin main",
-    thinking: "The harness reports done. Now I verify it myself.",
+    thinking: "The hero is in. Now I verify it.",
     calls: [
       { name: "shell", kind: "execute", hint: "pnpm test", duration: "6.1s" },
       { name: "file_read", kind: "read", hint: "src/Hero.tsx", duration: "40ms" },
@@ -207,7 +189,7 @@ function cuesOf(of: readonly Step[]) {
     kinds: kindOrder.filter((kind) => calls.some((call) => call.kind === kind)),
     effect: effectOf(calls),
     failed: calls.filter((call) => call.status === "failed").length,
-    calls: calls.length + of.filter((step) => step.task).length,
+    calls: calls.length,
     duration: { label: `${seconds.toFixed(1)}s`, title: "model and tool time" },
     facts,
   };
@@ -269,35 +251,11 @@ function GenerationFlow() {
     />
   );
 
-  /** A step as one block: folded to its header, its note and its harness task; open onto everything. */
+  /** A step as one block: folded to its header and its note; open onto everything. */
   const stepBlock = (step: Step, index: number) => {
     const key = `step:${index}`;
     const thinking = thinkingHidden ? undefined : step.thinking;
     const [only] = step.calls;
-    const taskKey = `${index}:task`;
-    const outputs = [
-      step.task ? (
-        <FlowHarnessTask
-          key={taskKey}
-          harness="Codex"
-          prompt={step.task.prompt}
-          repository={step.task.repository}
-          status="done"
-          statusLabel="Done"
-          changes={step.task.changes}
-          effect="wrote"
-          duration={step.task.duration}
-          open={openCall === taskKey}
-          onOpenChange={(next) => setOpenCall(next ? taskKey : null)}
-          detail={
-            <CallDetail
-              kind="execute"
-              value={{ brief: step.task.prompt, repo: step.task.repository }}
-            />
-          }
-        />
-      ) : null,
-    ].filter(Boolean);
     return (
       <FlowEntry
         key={key}
@@ -312,7 +270,6 @@ function GenerationFlow() {
           {...cuesOf([step])}
           open={isOpen(key, step.calls)}
           onOpenChange={(next) => toggle(key, next)}
-          {...(outputs.length ? { outputs } : {})}
         >
           {thinking ? (
             <FlowThought
@@ -336,7 +293,6 @@ function GenerationFlow() {
               {step.calls.map((call, position) => card(call, `${index}:${position}`, position + 1))}
             </FlowBatch>
           ) : null}
-          {outputs}
         </FlowStepBlock>
       </FlowEntry>
     );
@@ -375,7 +331,7 @@ function GenerationFlow() {
       silent = [];
     };
     steps.forEach((step, index) => {
-      if (step.note || step.task) {
+      if (step.note) {
         flush();
         entries.push(stepBlock(step, index));
       } else {
@@ -422,8 +378,7 @@ function GenerationFlow() {
 
 /**
  * A generation as one block per step: folded, each names what its calls did with cues on them, and
- * shows what the model said and its harness task under it; open, its reasoning, calls (a batch in
- * one bracket) and task. Steps that produced nothing in a row compact into one block.
+ * shows what the model said under it; open, its reasoning and calls (a batch in one bracket). Steps that produced nothing in a row compact into one block.
  * **Expand all** opens every block; **Writes** or **Errors** open only those holding such calls and
  * dim the rest; **Collapse all** folds it back.
  */
@@ -475,44 +430,3 @@ export const Running: Story = {
   ),
 };
 
-/** A harness task while it runs: its status pulses and its latest progress shows under the prompt. */
-export const HarnessTask: Story = {
-  render: () => (
-    <div className="w-3xl max-w-full rounded-xl bg-surface p-3">
-      <FlowTimeline>
-        <FlowEntry marker="step" tone="running">
-          <FlowHarnessTask
-            harness="Claude Code"
-            prompt="Fix the failing checkout test: the cart total ignores discounts on bundled items. Keep the public API, add a regression test, and commit on the current branch."
-            repository="shop"
-            status="running"
-            statusLabel="Running…"
-            duration="38s"
-            open={false}
-            onOpenChange={() => {}}
-            progress={
-              <pre className="max-h-32 overflow-auto rounded-md bg-surface p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-2">
-                {
-                  "Reading src/cart/total.ts\nRunning pnpm test cart\n2 failing: bundles apply discount"
-                }
-              </pre>
-            }
-          />
-        </FlowEntry>
-        <FlowEntry marker="step" tone="failed">
-          <FlowHarnessTask
-            harness="Codex"
-            prompt="Upgrade the router to v2 and fix every call site."
-            repository="site"
-            status="failed"
-            statusLabel="Timed out"
-            duration="30m 00s"
-            error="the harness ran past its 30-minute limit"
-            open={false}
-            onOpenChange={() => {}}
-          />
-        </FlowEntry>
-      </FlowTimeline>
-    </div>
-  ),
-};
