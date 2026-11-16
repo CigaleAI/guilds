@@ -4,6 +4,7 @@ import { isOptimizedBrowserOn, resolveAgentConfig } from "../agents/config.js";
 import { AgentValidationError, validateAgentConfig } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
+import { HARNESS_MCP_TOOL_PREFIX, isTurnHarness } from "../coding/harnesses.js";
 import { stateRepositories } from "../coding/repositories.js";
 import { modelSourceOf, type AgentConfig, type ResolvedAgentConfig, type RunTaskSource } from "../db/schema/index.js";
 import { ARTIFACT_TOOLS, FILE_TOOLS, NOTE_TOOLS, SCHEDULE_TOOLS } from "../seed/catalog.js";
@@ -18,12 +19,14 @@ import { readMemory } from "../memory/index.js";
 import { NotesError } from "../notes/errors.js";
 import type { NotesStore } from "../notes/store.js";
 import {
+  OWN_TOOL_NAMES,
   PromptError,
   composeSystemPrompt,
   connectorGuidance,
   hydratePrompts,
   hydrateStanding,
   standingForCapabilities,
+  type ToolNaming,
 } from "../prompts/index.js";
 import { prepareBrowserWorkspace, prepareWorkspace } from "../sandbox/index.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -110,7 +113,20 @@ export type PromptCapabilities = {
   schedules: boolean;
   issues: boolean;
   harness: boolean;
+  toolNaming: ToolNaming;
 };
+
+/**
+ * How a run of an agent with `config` names its tools to its model: under the MCP prefix of the
+ * harness that runs a subscription agent's turns, else by their own names.
+ */
+export function runToolNaming(config: Pick<AgentConfig, "model" | "harness">): ToolNaming {
+  const harness = config.harness;
+  if (modelSourceOf(config).kind === "key" || harness === null || !isTurnHarness(harness)) {
+    return OWN_TOOL_NAMES;
+  }
+  return { prefix: HARNESS_MCP_TOOL_PREFIX[harness] };
+}
 
 function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabilities {
   const memory = config.memory;
@@ -130,6 +146,7 @@ function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabil
     schedules: offers(SCHEDULE_TOOLS),
     issues: tools.includes("report_issue"),
     harness: modelSourceOf(config).kind === "subscription",
+    toolNaming: runToolNaming(config),
   };
 }
 

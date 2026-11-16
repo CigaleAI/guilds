@@ -18,6 +18,29 @@ export function promptHash(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+/**
+ * How a run's prompt names a tool to its model: the tool's own name after `prefix`. A model on a
+ * key calls a tool by its own name; a subscription agent's harness calls the orchestrator's MCP
+ * server's tools under the prefix it puts before them.
+ */
+export type ToolNaming = { prefix: string };
+
+/** The naming of a run whose model calls each tool by its own name. */
+export const OWN_TOOL_NAMES: ToolNaming = { prefix: "" };
+
+/** The name `tool` is called by under `naming`. */
+export function toolName(naming: ToolNaming, tool: string): string {
+  return `${naming.prefix}${tool}`;
+}
+
+/** Where a prompt's text names a tool: `<tool>name</tool>`. */
+const TOOL_TAG = /<tool>([A-Za-z0-9_]+)<\/tool>/g;
+
+/** `text` with each tool it names (`<tool>name</tool>`) written by its name under `naming`. */
+export function nameTools(text: string, naming: ToolNaming): string {
+  return text.replace(TOOL_TAG, (_tag, tool: string) => toolName(naming, tool));
+}
+
 /** Whether the offered tools include the one named `name`. */
 export function schemasOffer(schemas: readonly FunctionTool[], name: string): boolean {
   return schemas.some((schema) => schema.function.name === name);
@@ -25,7 +48,7 @@ export function schemasOffer(schemas: readonly FunctionTool[], name: string): bo
 
 export const TASK_INTRO =
   "The operator's standing purpose for you. Follow it. You do not rewrite " +
-  "this section; it is not yours to edit with memory_write.";
+  "this section; it is not yours to edit with <tool>memory_write</tool>.";
 
 const TASK_INTRO_NO_MEMORY =
   "The operator's standing purpose for you. Follow it. You do not rewrite this section.";
@@ -55,6 +78,8 @@ export type StandingCaps = {
   issues?: boolean;
   /** Whether the agent's harness runs its turns: a subscription agent. Missing means off. */
   harness?: boolean;
+  /** How the prompt names the run's tools. Missing names each by its own name. */
+  toolNaming?: ToolNaming;
 };
 
 function memoryOn(caps?: StandingCaps): boolean {
@@ -250,6 +275,10 @@ export function connectorGuidance(offeredSlugs: Iterable<string>): string[] {
   );
 }
 
+/**
+ * The run's system prompt: its Guidelines with the connectors' guidance, its Task, State, and
+ * Memory, with each tool the text names (`<tool>name</tool>`) written as the run calls it.
+ */
 export function composeSystemPrompt(
   standing: string,
   task: string,
@@ -283,7 +312,7 @@ export function composeSystemPrompt(
   if (memoryOn(caps)) {
     parts.push(renderMemorySection(memory, memoryWriteOn(caps)).replace(/\s+$/, ""));
   }
-  return `${parts.join("\n\n")}\n`;
+  return nameTools(`${parts.join("\n\n")}\n`, caps?.toolNaming ?? OWN_TOOL_NAMES);
 }
 
 export function attachState(system: string, state: RunState): string {
