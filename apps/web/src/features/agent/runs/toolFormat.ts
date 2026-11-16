@@ -13,6 +13,7 @@ import {
   isConnectorToolArguments,
   isFileReadArguments,
   isFileToolArguments,
+  isHarnessToolArguments,
   isJsonObject,
   isNamedToolArguments,
   isNoteToolArguments,
@@ -335,6 +336,39 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
     args.id ? `X quotes ${args.id}` : "X quotes",
   ),
   twitterapiio_trends: () => "X trends",
+  Bash: summaryOf(isHarnessToolArguments, (args) => {
+    const command = firstCommandLine(args.command ?? "");
+    return command ? `Run ${command}` : "Run command";
+  }),
+  Read: summaryOf(isHarnessToolArguments, (args) =>
+    args.file_path ? `Read ${args.file_path}` : "Read file",
+  ),
+  Write: summaryOf(isHarnessToolArguments, (args) =>
+    args.file_path ? `Write ${args.file_path}` : "Write file",
+  ),
+  Edit: summaryOf(isHarnessToolArguments, (args) =>
+    args.file_path ? `Edit ${args.file_path}` : "Edit file",
+  ),
+  MultiEdit: summaryOf(isHarnessToolArguments, (args) =>
+    args.file_path ? `Edit ${args.file_path}` : "Edit file",
+  ),
+  Glob: summaryOf(isHarnessToolArguments, (args) =>
+    args.pattern ? `Search files "${args.pattern}"` : "Search files",
+  ),
+  Grep: summaryOf(isHarnessToolArguments, (args) =>
+    args.pattern ? `Search lines "${args.pattern}"` : "Search lines",
+  ),
+  LS: summaryOf(isHarnessToolArguments, (args) => (args.path ? `List ${args.path}` : "List files")),
+  WebFetch: summaryOf(isHarnessToolArguments, (args) =>
+    args.url ? `Fetch ${args.url}` : "Fetch page",
+  ),
+  WebSearch: summaryOf(isHarnessToolArguments, (args) =>
+    args.query ? `Search web "${args.query}"` : "Search web",
+  ),
+  Task: summaryOf(isHarnessToolArguments, (args) =>
+    args.description ? `Delegate ${args.description}` : "Delegate task",
+  ),
+  TodoWrite: () => "Update todos",
 });
 
 /** A call with one short text argument, as `key: value`; empty for any other call. */

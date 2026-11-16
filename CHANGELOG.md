@@ -28,6 +28,12 @@ cannot run a subscription agent's turns yet". The runtime image must
 be rebuilt: `guilds-harness start` takes a `system_prompt` and runs in
 the home without a repository, and `poll` returns the raw events it
 read ([SEC-62](docs/architecture/security-register.md#sec-62--a-subscription-agents-harness-holds-its-whole-prompt-beside-its-secrets-and-the-network)).
+In the operator app, a harness turn reads as a run flow: Claude Code's
+own tools read as what they did, such as **Run** a command, **Read**
+or **Edit** a file, or **Search lines**, coloured by kind, and a call's
+Metadata names the harness under **Called by**. The Model source note
+says Claude Code runs a subscription agent's turns and Codex ones
+cannot run yet.
 
 **Rebuild.** A recipe that lists repositories no longer asks for a
 GitHub connection: applying it adds no `conn:github` step of its own,

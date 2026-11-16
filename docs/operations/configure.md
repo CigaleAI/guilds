@@ -119,7 +119,7 @@ box from another computer, and where that callback is registered.
 |---|---|---|
 | `MAX_CONCURRENT_GENERATIONS` | `0` | Generations running at once across the whole box. `0` is no ceiling. Each organisation's own cap applies under it |
 | `HARNESSES_OFF` | empty | Coding harnesses the box turns off, separated by commas or spaces: `claude-code`, `codex`, `cursor`, `antigravity`. They stay in the runtime image, but Settings does not offer them, the API refuses them as a new pick, and a run of an agent still on one fails at start. An unknown name stops the box from starting ([Harnesses](../concepts/coding/harnesses.md#turning-a-harness-off)) |
-| `SUBSCRIPTION_AGENTS` | empty | `1` offers subscription agents: agents with no model, whose harness, Claude Code or Codex, runs on the operator's own subscription. Any other value refuses a new one and a switch to one; an agent already on a subscription keeps it. Their runs fail at start ([Agents](../concepts/agents.md#model-source)) |
+| `SUBSCRIPTION_AGENTS` | empty | `1` offers subscription agents: agents with no model, whose harness, Claude Code or Codex, runs on the operator's own subscription. Any other value refuses a new one and a switch to one; an agent already on a subscription keeps it. Claude Code runs their turns; on Codex their runs fail at start ([Agents](../concepts/agents.md#model-source)) |
 | `WORKSPACE_MAX_MIB` | `10240` | The host-wide cap on one agent's home, in MiB. An agent's own `max_workspace_mib` takes effect only below it ([Agent home](../concepts/agent-home.md)) |
 | `CODE_RESULT_MAX_BYTES` | `8192` | The cap on what a code tool or `code_task` returns to the model, in bytes. A value under `1024` falls back to the default |
 

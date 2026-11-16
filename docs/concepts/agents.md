@@ -204,8 +204,10 @@ is disabled once the guild is full. Each agent row shows:
    optional focus, and an avatar picker: a mascot set, a random
    variant, and one of six identity colours.
 2. **Model**: while the box offers subscription agents, it starts with
-   **Model source**: **Model on a key** or **Subscription**, with a
-   line saying a subscription agent's runs fail at start. On a key, the
+   **Model source**: **Model on a key** or **Subscription**. Under
+   **Subscription** a line reads "Claude Code runs every turn on your
+   own subscription, with its own tools only. Codex subscription agents
+   can't run yet: their runs fail at start." On a key, the
    model, from the organisation's chosen models grouped by provider,
    preselected with its default when it has one. With no provider
    connected, the step shows a guide to **Model keys** in its place.

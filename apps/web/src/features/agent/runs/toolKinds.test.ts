@@ -199,3 +199,26 @@ test("kindBreakdown lists kinds in table order with counts", () => {
   assert.equal(kindBreakdown(infos), "memory · read × 2 · write · post");
   assert.equal(kindBreakdown([]), "");
 });
+
+test("a call of Claude Code's own tool reads by its kind on the agent's home, or the web", () => {
+  const harnessResult = result("ok", { tool_name: "Bash", from_harness: "claude-code" });
+  assert.deepEqual(classifyToolCall(call("Bash", { command: "ls" }), harnessResult), {
+    name: "Bash",
+    kind: "execute",
+    level: "local",
+    server: null,
+  });
+  assert.equal(classifyToolCall(call("Read", { file_path: "/home/a_1/a.md" })).kind, "read");
+  assert.equal(classifyToolCall(call("Edit", { file_path: "/home/a_1/a.md" })).kind, "write");
+  assert.deepEqual(classifyToolCall(call("WebFetch", { url: "https://example.com" })), {
+    name: "WebFetch",
+    kind: "read",
+    level: null,
+    server: null,
+  });
+  assert.equal(
+    isMutation(classifyToolCall(call("Edit"))),
+    false,
+    "an edit in the home is no tracked state",
+  );
+});

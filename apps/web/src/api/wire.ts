@@ -21,6 +21,7 @@ import type {
   ConnectorToolArguments,
   FileReadArguments,
   FileToolArguments,
+  HarnessToolArguments,
   NamedToolArguments,
   NoteToolArguments,
   RecordToolArguments,
@@ -232,6 +233,19 @@ export function isShellStatusArguments(value: unknown): value is ShellStatusArgu
 /** Whether a tool call's arguments are a `file_read` call's: its path as text, its offset a number. */
 export function isFileReadArguments(value: unknown): value is FileReadArguments {
   return hasTextParameters(value, ["path"]) && isOptionalNumber(value.offset);
+}
+
+/** Whether a tool call's arguments are those a call of a harness's own tool gives as text, or leaves out. */
+export function isHarnessToolArguments(value: unknown): value is HarnessToolArguments {
+  return hasTextParameters(value, [
+    "command",
+    "file_path",
+    "path",
+    "pattern",
+    "url",
+    "query",
+    "description",
+  ]);
 }
 
 /** Whether a tool call's arguments are a `code_search` call's: its pattern, mode and path, as text. */

@@ -179,6 +179,21 @@ export type FileReadArguments = { path?: string; offset?: number };
 /** A `code_search` call's arguments: the pattern, whether it matches lines or file names, and where. */
 export type CodeSearchArguments = { pattern?: string; mode?: string; path?: string };
 
+/**
+ * A call of a harness's own tool's arguments (Claude Code's Bash, Read, Edit, Grep, …), as far as
+ * a summary reads them: the command, the file or path, the pattern, the address, the query, and
+ * the description.
+ */
+export type HarnessToolArguments = {
+  command?: string;
+  file_path?: string;
+  path?: string;
+  pattern?: string;
+  url?: string;
+  query?: string;
+  description?: string;
+};
+
 /** A `code_task` call's arguments: the brief, the repository, and the harness session it resumes. */
 export type CodeTaskArguments = { brief?: string; repo?: string; session_id?: string };
 
@@ -342,13 +357,21 @@ export type RunInputMetadata = {
 };
 
 /**
+ * What a message a harness's CLI wrote records: the harness. A subscription agent's run keeps its
+ * harness's messages, and the calls of the harness's own tools with their results, under it.
+ */
+export type HarnessMessageMetadata = { from_harness: Harness };
+
+/**
  * The metadata of a run's message. Which fields it carries depends on the message: an assistant
- * message has the completion's, a tool result the call's, a system or user message its source.
- * `generation` numbers every message but the system prompt.
+ * message has the completion's, a tool result the call's, a system or user message its source,
+ * and a message of a harness's the harness. `generation` numbers every message but the system
+ * prompt.
  */
 export type MessageMetadata = { generation?: number } & Partial<RunInputMetadata> &
   Partial<CompletionMetadata> &
-  Partial<ToolResultMetadata>;
+  Partial<ToolResultMetadata> &
+  Partial<HarnessMessageMetadata>;
 
 /** One row of a run: system prompt, user turn, assistant turn (with tool calls) or tool result. */
 export type RunMessage = {
@@ -366,7 +389,8 @@ export type RunMessage = {
  * its generation, the completion a model call records, and the call a tool result records.
  */
 export type StepMetadata = { generation?: number } & Partial<CompletionMetadata> &
-  Partial<ToolResultMetadata>;
+  Partial<ToolResultMetadata> &
+  Partial<HarnessMessageMetadata>;
 
 /** A recorded message of a model conversation, a run's or a coach's, as its steps read it. */
 export type StepMessage = Omit<RunMessage, "metadata"> & { metadata: StepMetadata };
