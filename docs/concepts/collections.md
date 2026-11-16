@@ -160,11 +160,15 @@ A collection opens at `/tables/<id>` on **Records**.
     one value in place. It opens the dialog's field for the column,
     with **Cancel** and **Save changes**, and checks and sends the value
     as the dialog does. `id` and `updated_at` have no pencil.
-  - The box on a row selects the record without opening it, and the
-    box in the header selects every shown record, or none. A search,
-    a filter, a sort or a page that hides a selected record takes it
-    out of the selection. A bar shows how many are selected,
-    **Clear selection**, and **Edit selected**.
+  - **Select records** turns on selection mode, and **Exit selection
+    mode** turns it off and clears the selection. In the mode a row
+    opens nothing and its cells have no pencil; the box on a row
+    selects the record, and **Select this page** in the header selects
+    every record of the page, or none. Each change of the search, the
+    filters, the sort or the page clears the selection, even when the
+    same records stay shown; fetching the same view again keeps it. A
+    bar shows how many are selected, **Clear selection**, and **Edit
+    selected**.
   - **Edit selected** sets one column to the same value on every
     selected record, and names their ids. It takes the column, then
     the dialog's field for it, checked as the dialog checks it; an

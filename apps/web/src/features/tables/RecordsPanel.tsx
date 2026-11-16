@@ -1,4 +1,4 @@
-import { Filter, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Filter, ListChecks, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useClearRecords, useDeleteRecord, useRecords } from "../../api/queries/tables";
 import type {
@@ -148,12 +148,18 @@ function FilterInput({ column, filter, onChange }: FilterInputProps) {
 
 /**
  * The records selected among those shown: their ids in the order shown, the set held, and its
- * setter. A record the view stops showing leaves the selection, and does not come back with it.
+ * setter. A new view, named by its search, filters, sort and page, starts with none selected; a
+ * record the view stops showing leaves the selection, and does not come back with it. Fetching the
+ * same view again keeps the selection.
  */
-function useRecordSelection(shown: readonly CollectionRecord[]) {
+function useRecordSelection(shown: readonly CollectionRecord[], view: string) {
   const [selectionIds, setSelectionIds] = useState<ReadonlySet<number>>(new Set());
+  const [selectionView, setSelectionView] = useState(view);
   const selection = recordsInSelection(shown, selectionIds);
-  if (selection.length !== selectionIds.size) setSelectionIds(new Set(selection));
+  if (view !== selectionView) {
+    setSelectionView(view);
+    setSelectionIds(new Set());
+  } else if (selection.length !== selectionIds.size) setSelectionIds(new Set(selection));
   return { selection, selectionIds, setSelectionIds };
 }
 
@@ -161,8 +167,9 @@ type RecordsPanelProps = { collection: Collection };
 
 /**
  * A table's records: a ranked search, or filters with sortable, paged rows. A row opens the
- * record to edit, and a cell's pencil edits its value in place; the shown records selected take one
- * column's value at once. New records and clearing them all start here.
+ * record to edit, and a cell's pencil edits its value in place. In selection mode the rows open
+ * nothing and have no pencils; their boxes select records of the page, which take one column's
+ * value at once. New records and clearing them all start here.
  */
 export function RecordsPanel({ collection }: RecordsPanelProps) {
   const [typed, setTyped] = useState("");
@@ -174,6 +181,7 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
   const [open, setOpen] = useState<CollectionRecord | "new" | null>(null);
   const [clearing, setClearing] = useState(false);
   const [removing, setRemoving] = useState<CollectionRecord | null>(null);
+  const [selecting, setSelecting] = useState(false);
   const [editing, setEditing] = useState<readonly number[] | null>(null);
 
   const where = whereOf(filters, collection.columns);
@@ -187,7 +195,10 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
   });
 
   const shown = records.data?.records ?? [];
-  const { selection, selectionIds, setSelectionIds } = useRecordSelection(shown);
+  const { selection, selectionIds, setSelectionIds } = useRecordSelection(
+    shown,
+    JSON.stringify([query, where, sort, offset]),
+  );
 
   const setFilter = (name: string, filter: ColumnFilter) => {
     setFilters({ ...filters, [name]: filter });
@@ -195,32 +206,25 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
   };
 
   const columns: DataTableColumn<CollectionRecord>[] = [
-    {
-      id: "select",
-      header: (
-        <ShownRecordsBox
-          shownIds={shown.map((row) => row.id)}
-          selectedCount={selection.length}
-          onSelectionChange={setSelectionIds}
-        />
-      ),
-      cell: (row) => (
-        <RecordBox
-          recordId={row.id}
-          selectionIds={selectionIds}
-          onSelectionChange={setSelectionIds}
-        />
-      ),
-    },
+    ...selectionColumns({
+      selecting,
+      page: shown,
+      selectedCount: selection.length,
+      selectionIds,
+      onSelectionChange: setSelectionIds,
+    }),
     { id: "id", header: "#", sortable: !query, cell: (row) => <IdCell value={row.id} /> },
     ...collection.columns.map((column) => ({
       id: column.name,
       header: column.name,
       sortable: !query && column.type !== "array",
       cell: (row: CollectionRecord) => (
-        <EditableCell collectionId={collection.id} record={row} column={column}>
-          <Cell value={row[column.name]} column={column} />
-        </EditableCell>
+        <RecordCell
+          collectionId={collection.id}
+          record={row}
+          column={column}
+          editable={!selecting}
+        />
       ),
     })),
     {
@@ -271,6 +275,13 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
           open={filtersOpen}
           count={filterCount}
           onToggle={() => setFiltersOpen(!filtersOpen)}
+        />
+        <SelectionModeToggle
+          on={selecting}
+          onToggle={() => {
+            setSelecting(!selecting);
+            setSelectionIds(new Set());
+          }}
         />
         <IconButton
           icon={RefreshCw}
@@ -328,7 +339,7 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
             setSort(next);
             setOffset(0);
           }}
-          onRowClick={(row) => setOpen(row)}
+          {...(selecting ? {} : { onRowClick: (row: CollectionRecord) => setOpen(row) })}
           empty={
             records.isPending ? (
               <span className="text-muted">Loading records…</span>
@@ -369,6 +380,65 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
   );
 }
 
+type RecordCellProps = {
+  collectionId: string;
+  record: CollectionRecord;
+  column: Column;
+  /** Whether the cell has a pencil that edits its value in place. */
+  editable: boolean;
+};
+
+/** A record's value in one column, with the pencil that edits it when editable. */
+function RecordCell({ collectionId, record, column, editable }: RecordCellProps) {
+  const value = <Cell value={record[column.name]} column={column} />;
+  if (!editable) return value;
+  return (
+    <EditableCell collectionId={collectionId} record={record} column={column}>
+      {value}
+    </EditableCell>
+  );
+}
+
+type SelectionColumnsOptions = {
+  selecting: boolean;
+  /** The records the page shows. */
+  page: readonly CollectionRecord[];
+  /** How many of them are selected. */
+  selectedCount: number;
+  selectionIds: ReadonlySet<number>;
+  onSelectionChange: (selectionIds: ReadonlySet<number>) => void;
+};
+
+/** The selection's column in selection mode: the page's box in the header and each row's box; none outside it. */
+function selectionColumns({
+  selecting,
+  page,
+  selectedCount,
+  selectionIds,
+  onSelectionChange,
+}: SelectionColumnsOptions): DataTableColumn<CollectionRecord>[] {
+  if (!selecting) return [];
+  return [
+    {
+      id: "select",
+      header: (
+        <PageRecordsBox
+          pageIds={page.map((row) => row.id)}
+          selectedCount={selectedCount}
+          onSelectionChange={onSelectionChange}
+        />
+      ),
+      cell: (row) => (
+        <RecordBox
+          recordId={row.id}
+          selectionIds={selectionIds}
+          onSelectionChange={onSelectionChange}
+        />
+      ),
+    },
+  ];
+}
+
 type RecordBoxProps = {
   recordId: number;
   selectionIds: ReadonlySet<number>;
@@ -390,23 +460,23 @@ function RecordBox({ recordId, selectionIds, onSelectionChange }: RecordBoxProps
   );
 }
 
-type ShownRecordsBoxProps = {
-  /** The ids of the records the view shows. */
-  shownIds: readonly number[];
+type PageRecordsBoxProps = {
+  /** The ids of the records the page shows. */
+  pageIds: readonly number[];
   /** How many of them are selected. */
   selectedCount: number;
   onSelectionChange: (selectionIds: ReadonlySet<number>) => void;
 };
 
-/** The header's box: checked when every shown record is selected, and it selects them all or none. */
-function ShownRecordsBox({ shownIds, selectedCount, onSelectionChange }: ShownRecordsBoxProps) {
-  const everySelected = shownIds.length > 0 && selectedCount === shownIds.length;
+/** The header's box: checked when every record of the page is selected, and it selects them all or none. */
+function PageRecordsBox({ pageIds, selectedCount, onSelectionChange }: PageRecordsBoxProps) {
+  const everySelected = pageIds.length > 0 && selectedCount === pageIds.length;
   return (
     <Checkbox
-      aria-label="Select every shown record"
+      aria-label="Select this page"
       checked={everySelected ? true : selectedCount > 0 ? "indeterminate" : false}
-      disabled={!shownIds.length}
-      onCheckedChange={() => onSelectionChange(new Set(everySelected ? [] : shownIds))}
+      disabled={!pageIds.length}
+      onCheckedChange={() => onSelectionChange(new Set(everySelected ? [] : pageIds))}
     />
   );
 }
@@ -432,6 +502,18 @@ function RecordSelectionBar({ selection, onClear, onEdit }: RecordSelectionBarPr
         Edit selected
       </Button>
     </div>
+  );
+}
+
+type SelectionModeToggleProps = { on: boolean; onToggle: () => void };
+
+/** The button that turns selection mode on, or off. */
+function SelectionModeToggle({ on, onToggle }: SelectionModeToggleProps) {
+  return (
+    <Button variant={on ? "primary" : "outline"} size="md" onClick={onToggle}>
+      <Icon icon={ListChecks} size={14} />
+      {on ? "Exit selection mode" : "Select records"}
+    </Button>
   );
 }
 

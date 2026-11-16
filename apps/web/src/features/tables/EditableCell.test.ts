@@ -142,7 +142,7 @@ test("a cell's pencil edits its value in place: Cancel and an unchanged Save sen
         '[data-slot="popover-content"], [data-radix-popper-content-wrapper]',
       );
     const dialogOpen = () => document.querySelector('[role="dialog"]') !== null;
-    const scoreCell = () => container.querySelector("tbody tr")?.children[2]?.textContent ?? "";
+    const scoreCell = () => container.querySelector("tbody tr")?.children[1]?.textContent ?? "";
     const openEditor = async (name: string) => {
       const trigger = pencil(name);
       assert.ok(trigger, `the pencil of ${name}`);

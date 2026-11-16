@@ -44,7 +44,7 @@ function record(id: number): CollectionRecord {
 /** A PATCH the panel sent: its path and its JSON body. */
 type SentPatch = { path: string; body: string };
 
-test("shown records are selected apart from opening them, and a bulk edit names its records, sends one typed PATCH per record, in turn, keeps the refused ones to retry alone, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
+test("selection mode selects the page's records apart from opening them, a new view clears the selection, and a bulk edit names its records, sends one typed PATCH per record, in turn, keeps the refused ones to retry alone, refreshes either way, refuses one value for several records of a unique column, and names a chosen column the table lost", async () => {
   const window = new Window({ url: "http://localhost/" });
   const globals = {
     window,
@@ -81,7 +81,8 @@ test("shown records are selected apart from opening them, and a bulk edit names 
     for (const [name, value] of Object.entries(globals)) {
       Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
     }
-    // The server: three records, a search that finds the one whose id it names, the ids whose PATCH
+    // The server: three records on every page of a listing of a hundred, a search that finds the
+    // one whose id it names, the ids whose PATCH
     // it refuses, every PATCH it got, and how many it answered at once at most.
     const stored = [record(1), record(2), record(3)];
     const refused = new Map<number, string>();
@@ -106,7 +107,9 @@ test("shown records are selected apart from opening them, and a bulk edit names 
         listFetches += 1;
         const query = url.searchParams.get("query");
         const records = query ? stored.filter((item) => String(item.id) === query) : stored;
-        return Response.json({ total: records.length, records, columns: collection.columns });
+        // The listing claims more records than it sends, and sends the same ones for every page.
+        const total = query ? records.length : 100;
+        return Response.json({ total, records, columns: collection.columns });
       }
       return Response.json({ detail: "Not found" }, { status: 404 });
     };
@@ -172,6 +175,15 @@ test("shown records are selected apart from opening them, and a bulk edit names 
         target.click();
       });
     const rows = () => container.querySelectorAll("tbody tr").length;
+    const clickRow = () => settle(() => container.querySelector<HTMLElement>("tbody tr")?.click());
+    const idFilter = () => {
+      const label = [...container.querySelectorAll("label")].find(
+        (candidate) => candidate.textContent?.trim() === "id",
+      );
+      const input = label ? document.getElementById(label.htmlFor) : null;
+      assert.ok(input instanceof window.HTMLInputElement, "the id filter");
+      return input as unknown as HTMLInputElement;
+    };
     const toolbar = () =>
       [...container.querySelectorAll("span")].find((span) =>
         / selected$/.test(span.textContent ?? ""),
@@ -235,27 +247,67 @@ test("shown records are selected apart from opening them, and a bulk edit names 
     await until(() => rows() === 3, "the records");
     assert.equal(toolbar(), null, "nothing is selected at first");
 
-    // A box selects without opening the record; the header box selects every shown record, then none.
+    // Outside selection mode a row has no box and opens its record, and its cells have pencils.
+    assert.equal(button("Select record #1"), undefined);
+    assert.ok(button("Edit score of record #1"), "a cell's pencil");
+    await clickRow();
+    assert.match(dialog()?.textContent ?? "", /Record #1/);
+    await press("Cancel");
+    assert.equal(dialog(), null);
+
+    // In selection mode a box selects without opening the record, a row opens nothing and has no
+    // pencils, and the header box selects the page, then none.
+    await press("Select records");
+    assert.equal(button("Edit score of record #1"), undefined, "no pencil in selection mode");
     await press("Select record #1");
     await press("Select record #3");
     assert.equal(toolbar(), "2 selected");
     assert.equal(dialog(), null, "selecting never opens the record");
-    await press("Select every shown record");
+    await clickRow();
+    assert.equal(dialog(), null, "a row opens nothing in selection mode");
+    await press("Select this page");
     assert.equal(toolbar(), "3 selected");
-    await press("Select every shown record");
+    await press("Select this page");
     assert.equal(toolbar(), null);
 
-    // A search that hides selected records drops them, and clearing it does not bring them back.
+    // Leaving the mode takes the boxes away and clears the selection.
     await press("Select record #1");
-    await press("Select record #2");
-    await search("2");
-    await until(() => rows() === 1, "the search's hit");
+    await press("Exit selection mode");
+    assert.equal(button("Select record #1"), undefined);
+    await press("Select records");
+    assert.equal(toolbar(), null);
+
+    // Fetching the same view again keeps the selection; each change of the page, the sort, the
+    // filters or the search clears it, even when the view shows the same records.
+    const fetchesBeforeRefresh = listFetches;
+    await press("Select record #1");
+    await press("Refresh the records");
+    await until(() => listFetches > fetchesBeforeRefresh, "the records fetched again");
     assert.equal(toolbar(), "1 selected");
+    await press("Next");
+    assert.equal(toolbar(), null, "a new page");
+    await press("Select record #1");
+    await press("Previous");
+    assert.equal(toolbar(), null, "the previous page");
+    await press("Select record #1");
+    await press("#");
+    assert.equal(toolbar(), null, "a new sort");
+    await press("Filters");
+    await press("Select record #1");
+    await setInput(idFilter(), "1");
+    assert.equal(toolbar(), null, "a new filter");
+    await press("Select record #1");
+    await press("Clear filters");
+    assert.equal(toolbar(), null, "the filters cleared");
+    await press("Filters");
+    await press("Select record #1");
+    await search("1");
+    await until(() => rows() === 1, "the search's hit");
+    assert.equal(toolbar(), null, "a new search");
+    await press("Select record #1");
     await search("");
     await until(() => rows() === 3, "the listing again");
-    assert.equal(toolbar(), "1 selected");
-    await press("Clear selection");
-    assert.equal(toolbar(), null);
+    assert.equal(toolbar(), null, "the search cleared");
 
     // Cancel sends nothing; a value the column refuses is named and not sent.
     await press("Select record #1");
@@ -314,7 +366,7 @@ test("shown records are selected apart from opening them, and a bulk edit names 
     // A refused record is listed with the server's reason and the dialog stays open; the others are
     // saved, and the records are fetched again all the same.
     patches.length = 0;
-    await press("Select every shown record");
+    await press("Select this page");
     assert.equal(toolbar(), "3 selected");
     refused.set(2, "The record changed meanwhile.");
     const fetchesBefore = listFetches;
