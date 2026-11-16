@@ -83,8 +83,8 @@ Endpoint `https://api.githubcopilot.com/mcp/`, with the `repos`,
 the repositories the login picks; a login with none picked lists no
 tools. `create_repository` and `fork_repository` are left out, as
 `policy.exclude`. Its State hook lists the picked repositories under
-`github_repositories`. Coding agents also get `git` and `gh` access to
-the same repositories ([GitHub](github.md)).
+`github_repositories`. Subscription agents also clone and push the
+same repositories with `git` ([GitHub](github.md)).
 
 ## Cigale
 

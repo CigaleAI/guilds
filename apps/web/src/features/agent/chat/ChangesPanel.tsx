@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import { useRunDiff, useTurnDiff } from "../../../api/queries/runs";
+import { useTurnDiff } from "../../../api/queries/runs";
 import type { Run, RunDiff, RunRepositoryChange } from "../../../api/types/runs";
 import { Button, CopyButton, Banner, cn, Icon } from "@guildsrun/ui";
 import { diffLineTone, diffstat } from "./changes";
@@ -46,23 +46,7 @@ export function DiffView({ diff, className }: DiffViewProps) {
   );
 }
 
-type RepositoryChangeProps = { runId: string; change: RunRepositoryChange };
-
-/** What a run changed in one repository, between its checkpoints. */
-function RepositoryChange({ runId, change }: RepositoryChangeProps) {
-  const [open, setOpen] = useState(false);
-  const diff = useRunDiff(runId, open ? change.name : null);
-  return (
-    <ChangeRow
-      change={change}
-      diff={diff}
-      open={open}
-      onToggle={() => setOpen((value) => !value)}
-    />
-  );
-}
-
-type TurnRepositoryChangeProps = RepositoryChangeProps & { callId: string };
+type TurnRepositoryChangeProps = { runId: string; callId: string; change: RunRepositoryChange };
 
 /** What one turn of a subscription agent's run changed in one repository, between the turn's checkpoints. */
 function TurnRepositoryChange({ runId, callId, change }: TurnRepositoryChangeProps) {
@@ -116,24 +100,15 @@ function ChangeRow({ change, diff, open, onToggle }: ChangeRowProps) {
 type ChangesPanelProps = { run: Run };
 
 /**
- * What a coding run changed in each repository, between the working tree at its first
- * generation and at its last, and what each turn of a subscription agent's run changed, under
- * the turn's number: a diffstat per repository, and the diff on demand.
+ * What each turn of a subscription agent's run changed, under the turn's number: a diffstat per
+ * repository, and the diff on demand.
  */
 export function ChangesPanel({ run }: ChangesPanelProps) {
-  const repos = run.repos ?? [];
   const turns = run.turn_changes ?? [];
-  if (!repos.length && !turns.length) return null;
+  if (!turns.length) return null;
   return (
     <section aria-label="Changes" className="flex flex-col gap-2">
       <h3 className="type-label text-muted">Changes</h3>
-      {repos.length ? (
-        <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
-          {repos.map((change) => (
-            <RepositoryChange key={change.name} runId={run.id} change={change} />
-          ))}
-        </div>
-      ) : null}
       {turns.map((turn) => (
         <div key={turn.call_id} className="flex flex-col gap-1">
           <h4 className="text-xs text-muted">Turn {turn.generation}</h4>

@@ -52,14 +52,8 @@ export type Run = {
   updated_at: string;
   group_chat_through_seq: number | null;
   schedule_id?: string;
-  /** What a coding run changed in each repository, between its checkpoints. */
-  repos?: RunRepositoryChange[];
   /** What each turn of a subscription agent's run changed; a turn that changed nothing has none. */
   turn_changes?: RunTurnChange[];
-  /** A coding run's place in a run chain, when it continues an earlier run. */
-  chain?: { root_run_id: string; index: number; previous_run_id: string };
-  /** The run that continued this one after its hand-off. */
-  continued_by_run_id?: string;
   /** The run's pending wake-up, null when it has none; a run list leaves it out. */
   pending_wake?: PendingWake | null;
 };
@@ -91,34 +85,11 @@ export type NewRun = { message: string; files?: File[] };
 /** The operator's next message in a run, with the images attached to it. */
 export type RunMessageInput = { runId: string; content: string; files?: File[] };
 
-/** A run's, a code task's, or a turn's diff in one repository, cut at the server's limit. */
+/** A turn's diff in one repository, cut at the server's limit. */
 export type RunDiff = { repository: string; diff: string; truncated: boolean };
 
-/** `GET /api/runs/:run_id/tasks/:call_id/log`: a code task's kept harness log, redacted. */
-export type HarnessLog = {
-  /** Its events as progress lines, the first 2000. */
-  lines: string[];
-  lines_truncated: boolean;
-  /** Its raw JSONL, whole lines from the start within 256 KiB. */
-  raw: string;
-  raw_truncated: boolean;
-  /** The log's whole size in bytes. */
-  bytes: number;
-  events: number;
-  /** Lines of the log that were not JSON. */
-  unparsed: number;
-};
-
-/**
- * `tool.progress` on a run's stream: the lines a running tool call reported since the last event,
- * and the harness session it runs in when it has one.
- */
-export type ToolProgressEvent = {
-  run_id: string;
-  tool_call_id: string;
-  lines: string[];
-  session_id?: string | null;
-};
+/** `tool.progress` on a run's stream: the lines a running tool call reported since the last event. */
+export type ToolProgressEvent = { run_id: string; tool_call_id: string; lines: string[] };
 
 /**
  * `assistant.delta` or `assistant.reasoning.delta` on a run's or a coach session's stream: the text
@@ -126,8 +97,6 @@ export type ToolProgressEvent = {
  */
 export type LiveDelta = { text: string; content?: string };
 
-/** `run.continued` on a run's stream: the run of its chain that carries on. */
-export type RunContinuation = { run_id: string };
 
 /**
  * What one turn of a subscription agent's run changed: the call id its checkpoints are kept
@@ -175,18 +144,6 @@ export type RecordToolArguments = { collection?: string; query?: string; id?: nu
 /** A file tool's arguments (`file_find`, `file_fetch`, `file_put`, `file_delete`): the search, the file, and the home path it shares. */
 export type FileToolArguments = { query?: string; path?: string; home_path?: string };
 
-/** A `shell` call's arguments: the command, and whether it runs in the background. */
-export type ShellArguments = { command?: string; background?: boolean };
-
-/** A `shell_status` call's arguments: the background command it checks, and whether it stops it. */
-export type ShellStatusArguments = { id?: string; stop?: boolean };
-
-/** A `file_read` call's arguments: the file, and the line it reads from. */
-export type FileReadArguments = { path?: string; offset?: number };
-
-/** A `code_search` call's arguments: the pattern, whether it matches lines or file names, and where. */
-export type CodeSearchArguments = { pattern?: string; mode?: string; path?: string };
-
 /**
  * A call of a harness's own tool's arguments (Claude Code's Bash, Read, Edit, Grep, …), as far as
  * a summary reads them: the command, the file or path, the pattern, the address, the query, and
@@ -204,9 +161,6 @@ export type HarnessToolArguments = {
 
 /** A Codex patch's arguments, as its item reports them: the files it changed, each with how. */
 export type FileChangeArguments = { changes: Array<{ path: string; kind?: string }> };
-
-/** A `code_task` call's arguments: the brief, the repository, and the harness session it resumes. */
-export type CodeTaskArguments = { brief?: string; repo?: string; session_id?: string };
 
 /** The name a call gives the script (`script_run`, `script_create`) or the secret (`secret_store`) it works on. */
 export type NamedToolArguments = { name?: string };
@@ -300,30 +254,10 @@ export type BrowserUsageMetadata = {
 
 /** The fields a native tool reports about its call, kept on the call's result. */
 export type ReportedToolMetadata = {
+  /** The exit code of the command a script or browser tool ran. */
   exit_code?: number | null;
-  /** The directory a `shell` command ended in. */
-  cwd?: string;
-  path?: string;
-  /** The first and last line a `file_read` returned; null for a binary or empty file. */
-  range?: [number, number] | null;
-  content_hash?: string;
-  lines?: number;
-  log_path?: string | null;
-  timed_out?: boolean;
-  background_id?: string;
-  /** A background command's state, as `shell_status` read it. */
-  state?: string;
-  matches?: number;
-  files?: number;
-  harness?: Harness;
+  /** How a `browse` call ended. */
   status?: string;
-  session_id?: string | null;
-  repository?: string | null;
-  files_changed?: number;
-  insertions?: number;
-  deletions?: number;
-  start_sha?: string | null;
-  end_sha?: string | null;
   /** The page a `browse` call ended on; null when it never loaded one. */
   final_url?: string | null;
   /** The browser actions a `browse` call took. */
@@ -344,8 +278,6 @@ export type ToolResultMetadata = {
   error: string | null;
   /** The tool calls the run has left after this one. */
   remaining_tool_calls?: number;
-  /** The step whose result a repeated read of an unchanged range points to. */
-  repeat_of?: number;
 } & ReportedToolMetadata;
 
 /** Where a run's system or user message came from. */

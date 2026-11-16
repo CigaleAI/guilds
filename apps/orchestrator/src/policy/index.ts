@@ -2,8 +2,7 @@ import {
   countOrgAgents,
   countOrgBrowserAgents,
   countOrgGuilds,
-  listOrgAgentHarnessConfigs,
-  type OrgAgentHarnessConfig,
+  countOrgSubscriptionAgents,
 } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { modelSourceOf, type AgentConfig, type CoachRunLimits } from "../db/schema/index.js";
@@ -26,7 +25,7 @@ export type OrgLimits = {
   source: string;
   maxAgents: number | null;
   maxBrowserAgents: number | null;
-  maxCodingAgents: number | null;
+  maxSubscriptionAgents: number | null;
   /** Machines the organisation runs its agents on. */
   maxMachines: number | null;
   /** Agents on one machine; core's own ceiling of 32 still holds above it. */
@@ -77,7 +76,7 @@ export const UNLIMITED: OrgLimits = {
   source: "instance",
   maxAgents: null,
   maxBrowserAgents: null,
-  maxCodingAgents: null,
+  maxSubscriptionAgents: null,
   maxMachines: null,
   maxAgentsPerMachine: null,
   maxGuilds: null,
@@ -95,17 +94,9 @@ export const OPEN_POLICY: OrgPolicy = {
   },
 };
 
-/**
- * Whether an agent counts against `maxCodingAgents`: a coding agent does, and so does a
- * subscription agent, which holds a harness as a coding agent does.
- */
-export function countsAsCodingAgent(config: OrgAgentHarnessConfig): boolean {
-  return config.coding || modelSourceOf(config).kind === "subscription";
-}
-
-/** How many of the organisation's agents count against `maxCodingAgents`. */
-export async function countOrgCodingAgents(db: Queryable, orgId: string): Promise<number> {
-  return (await listOrgAgentHarnessConfigs(db, orgId)).filter(countsAsCodingAgent).length;
+/** Whether an agent counts against `maxSubscriptionAgents`: a subscription agent, which holds a harness, does. */
+export function countsAsSubscriptionAgent(config: Pick<AgentConfig, "model">): boolean {
+  return modelSourceOf(config).kind === "subscription";
 }
 
 /** The live counts the caps are checked against. */
@@ -113,7 +104,7 @@ function orgCounts(db: Queryable) {
   return {
     countOrgAgents: bindQuery(db, countOrgAgents),
     countOrgBrowserAgents: bindQuery(db, countOrgBrowserAgents),
-    countOrgCodingAgents: bindQuery(db, countOrgCodingAgents),
+    countOrgSubscriptionAgents: bindQuery(db, countOrgSubscriptionAgents),
     countOrgGuilds: bindQuery(db, countOrgGuilds),
   };
 }
@@ -134,11 +125,11 @@ export function remaining(limit: number | null, count: number): number | null {
   return limit === null ? null : Math.max(0, limit - count);
 }
 
-/** The agents a create adds, and how many of them have Browser on and count as coding agents. */
-export type AddedAgents = { agents: number; browserAgents: number; codingAgents: number };
+/** The agents a create adds, and how many of them have Browser on and count as subscription agents. */
+export type AddedAgents = { agents: number; browserAgents: number; subscriptionAgents: number };
 
 /** The settings of a new agent its caps are checked by. */
-export type CappedAgentConfig = Pick<AgentConfig, "browser"> & OrgAgentHarnessConfig;
+export type CappedAgentConfig = Pick<AgentConfig, "browser" | "model">;
 
 export async function assertCanCreateAgents(
   policy: OrgPolicy,
@@ -171,11 +162,11 @@ export async function assertCanCreateAgentsThrough(
     throw new LimitError(limits.source, "browser-enabled agents");
   }
   if (
-    adding.codingAgents &&
-    limits.maxCodingAgents !== null &&
-    (await counts.countOrgCodingAgents(orgId)) + adding.codingAgents > limits.maxCodingAgents
+    adding.subscriptionAgents &&
+    limits.maxSubscriptionAgents !== null &&
+    (await counts.countOrgSubscriptionAgents(orgId)) + adding.subscriptionAgents > limits.maxSubscriptionAgents
   ) {
-    throw new LimitError(limits.source, "coding agents");
+    throw new LimitError(limits.source, "subscription agents");
   }
 }
 
@@ -198,7 +189,7 @@ export async function assertCanCreateAgentThrough(
   await assertCanCreateAgentsThrough(policy, counts, orgId, {
     agents: 1,
     browserAgents: config.browser ? 1 : 0,
-    codingAgents: countsAsCodingAgent(config) ? 1 : 0,
+    subscriptionAgents: countsAsSubscriptionAgent(config) ? 1 : 0,
   });
 }
 
@@ -291,19 +282,19 @@ export async function assertCanEnableBrowserThrough(
   }
 }
 
-/** Turning `coding` on, or a subscription, for an existing agent takes one more of the organisation's coding agents. */
-export async function assertCanEnableCoding(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
-  await assertCanEnableCodingThrough(policy, orgCounts(db), orgId);
+/** Moving an existing agent onto a subscription takes one more of the organisation's subscription agents. */
+export async function assertCanAddSubscriptionAgent(policy: OrgPolicy, db: Queryable, orgId: string): Promise<void> {
+  await assertCanAddSubscriptionAgentThrough(policy, orgCounts(db), orgId);
 }
 
-/** `assertCanEnableCoding` through `counts`, the dependencies object a unit test fakes. */
-export async function assertCanEnableCodingThrough(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
+/** `assertCanAddSubscriptionAgent` through `counts`, the dependencies object a unit test fakes. */
+export async function assertCanAddSubscriptionAgentThrough(policy: OrgPolicy, counts: OrgCounts, orgId: string): Promise<void> {
   const { limits, blocked } = await policy.standing(orgId);
   if (blocked) {
     throw blocked;
   }
-  if (limits.maxCodingAgents !== null && (await counts.countOrgCodingAgents(orgId)) >= limits.maxCodingAgents) {
-    throw new LimitError(limits.source, "coding agents");
+  if (limits.maxSubscriptionAgents !== null && (await counts.countOrgSubscriptionAgents(orgId)) >= limits.maxSubscriptionAgents) {
+    throw new LimitError(limits.source, "subscription agents");
   }
 }
 

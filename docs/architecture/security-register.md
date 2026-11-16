@@ -5,7 +5,8 @@ the other chapters, this one keeps history. Each entry says what
 was exposed, how it was fixed or what fixing it takes, and what
 risk remains. Entries are not removed once fixed. Newest first.
 Ids are never reused. A status is **Open**, **Open, accepted** (the
-risk is kept by design), or **Fixed** with its date.
+risk is kept by design), **Fixed** with its date, or **Closed** with
+its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
@@ -44,7 +45,7 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-35](#sec-35--evidence-the-studio-coach-reads-can-steer-a-proposal-to-widen-an-agents-access) | Evidence the Studio coach reads can steer a proposal to widen an agent's access | Open, accepted |
 | [SEC-34](#sec-34--a-studio-session-kept-working-after-its-user-could-no-longer-see-the-guild) | A Studio session kept working after its user could no longer see the guild | Fixed 2026-10-17 |
 | [SEC-33](#sec-33--any-organisation-owner-or-admin-can-find-users-by-name-and-add-them-without-their-consent) | Any organisation owner or admin can find users by name and add them without their consent | Open |
-| [SEC-32](#sec-32--the-harness-log-the-app-reads-is-redacted-only-with-the-agents-secret-values) | The harness log the app reads is redacted only with the agent's secret values | Open |
+| [SEC-32](#sec-32--the-harness-log-the-app-reads-is-redacted-only-with-the-agents-secret-values) | The harness log the app reads is redacted only with the agent's secret values | Closed 2026-11-16 |
 | [SEC-31](#sec-31--cursor-runs-a-repositorys-hooks) | Cursor runs a repository's hooks | Open, accepted |
 | [SEC-30](#sec-30--personal-harness-subscriptions-used-inside-a-shared-organisation-may-fall-outside-the-vendors-terms) | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
 | [SEC-29](#sec-29--a-repository-can-carry-configuration-its-coding-harness-loads) | A repository can carry configuration its coding harness loads | Open |
@@ -68,7 +69,7 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-11](#sec-11--a-github-install-callback-could-name-another-accounts-installation) | A GitHub install callback could name another account's installation | Fixed 2026-09-30 |
 | [SEC-10](#sec-10--a-coding-agents-repository-token-is-readable-by-any-process-in-its-sandbox) | A coding agent's repository token is readable by any process in its sandbox | Open |
 | [SEC-9](#sec-9--grafts-hosted-features-can-send-repository-history-to-its-vendor) | Graft's hosted features can send repository history to its vendor | Fixed 2026-10-13 |
-| [SEC-8](#sec-8--content-a-coding-agent-reads-can-steer-its-commands) | Content a coding agent reads can steer its commands | Open |
+| [SEC-8](#sec-8--content-a-coding-agent-reads-can-steer-its-commands) | Content a coding agent reads can steer its commands | Closed 2026-11-16 |
 | [SEC-7](#sec-7--a-coding-agents-workspace-can-fill-the-shared-disk) | A coding agent's workspace can fill the shared disk | Open |
 | [SEC-6](#sec-6--coding-agents-run-commands-as-root-in-the-container) | Coding agents run commands as root in the container | Open |
 | [SEC-5](#sec-5--background-commands-make-the-sec-3-race-practical) | Background commands make the SEC-3 race practical | Open |
@@ -153,8 +154,8 @@ a contributor guide, command output, and what its Guilds and connector
 tools return. Instructions planted in any of it can steer the harness
 to push what the operator did not intend, to any unprotected branch of
 the repositories its agent picks, the default branch included, or to
-send the token out. No lead model reviews the work before it is
-pushed, as one does a code task's. With the GitHub connector's
+send the token out. No other model reviews the work before it is
+pushed. With the GitHub connector's
 `create_pull_request` On, it can be steered to open a pull request
 too, under that login's own permissions (SEC-47). A repository added
 with an access token pushes with whatever the host grants that token
@@ -164,8 +165,9 @@ with an access token pushes with whatever the host grants that token
 its agent picks. A GitHub token holds `contents: write` alone, which
 pushes a branch and opens no pull request, issue, workflow run, or
 administration change; it lives one hour and is replaced before it
-expires. A code task's token keeps `contents` and `pull_requests`
-write. The CLI's environment holds no `GH_TOKEN`, `GITHUB_TOKEN`, or
+expires. Since 2026-11-16 no token the orchestrator mints for a
+repository holds `pull_requests` write: the coding agent's
+`code_task`, whose token held it, is removed. The CLI's environment holds no `GH_TOKEN`, `GITHUB_TOKEN`, or
 repository token, and the token is redacted from the run's rows. The
 tokens file is emptied when a turn that started ends, however it ends;
 a turn an orchestrator restart cut short, or a generation whose clone
@@ -391,8 +393,9 @@ default. The organisation's model keys never reach the sandbox. Until
 2026-11-16 a box offered subscription agents only with
 `SUBSCRIPTION_AGENTS=1`; since then every box offers them to whoever
 creates agents, and a box that wants none turns Claude Code and Codex
-off with `HARNESSES_OFF`, which turns them off for coding agents too;
-since 2026-11-16 Cursor and Antigravity as well.
+off with `HARNESSES_OFF`; since 2026-11-16 Cursor and Antigravity as
+well. Since 2026-11-16 a subscription agent is the only agent that
+runs a harness, and the only one that works in repositories.
 
 **Fix to make:** start the harness with only its own credential in its
 environment, and limit what the agent's container reaches. Until then,
@@ -412,9 +415,9 @@ and `requireManagedSecret` in `apps/orchestrator/src/secrets/service.ts`,
 behind `POST /api/guilds/:id/repositories`.
 
 **Exposure:** a repository added with an access token gives every
-coding agent of its guild the value of the secret it names; since
-2026-11-16, every subscription agent of its guild that picks it too,
-for each of its turns (SEC-66). The
+agent of its guild that picks it the value of the secret it names, for
+each of its turns (SEC-66); until 2026-11-16 that included each coding
+agent of the guild, for each of its runs. The
 orchestrator writes that value to the agent's tokens file at each
 generation start, as it writes a GitHub token. Unlike a GitHub token,
 it does not expire after an hour and is not limited by the box to
@@ -943,6 +946,10 @@ with 503; the output is never served without them.
 **Residual risk:** what SEC-32 describes: values that are not the
 agent's secrets show as written.
 
+Since 2026-11-16 `harnessLog`, the run-level changes diff, and the
+task diff and log routes are removed with the coding agent (SEC-32). A
+turn's diff keeps the fix.
+
 ## SEC-48 — A run that listed a login's tools for the first time was offered the ones that start Off
 
 **Status:** fixed 2026-10-26.
@@ -987,8 +994,8 @@ Instructions planted in it can steer the agent to call the writing
 tools that are On: comment, edit issues, open, review, or merge pull
 requests, write files, push, or trigger workflows, on any repository
 the login picked. The token the session sends holds every permission
-the installation grants, which is broader than the coding token's
-`contents` and `pull_requests`. A login at the organisation or a guild
+the installation grants, which is broader than a repository token's
+`contents: write`. A login at the organisation or a guild
 serves every agent below it.
 
 **Control in place:** the token stays in the orchestrator and never
@@ -1004,8 +1011,8 @@ behind an operator's approval.
 
 **Residual risk:** an agent with a GitHub writing tool On can be
 steered to use it on any repository its login picked. Content it
-reads can also steer its other tools, as it can a coding agent's
-commands (SEC-8). Since 2026-11-16 a subscription agent that picks
+reads can also steer its other tools, as it can a subscription
+agent's harness (SEC-66). Since 2026-11-16 a subscription agent that picks
 repositories opens its pull requests with this connector's
 `create_pull_request`, which its system prompt names when it is On,
 and pushes the branch with a token of its own that holds
@@ -1293,11 +1300,14 @@ move it off the Google sign-in (`GEMINI_API_KEY`,
 `AGY_ACCOUNT`, and the Google Cloud project variables), and
 `GH_TOKEN` and `GITHUB_TOKEN` like every harness. The settings never
 spend paid credits past the plan and turn telemetry off. The image
-the release workflow publishes carries no Antigravity CLI. Antigravity
-runs no subscription agent, so the push token a subscription agent's
-turn holds since 2026-11-16 (SEC-66) is never beside a repository's
-customisations it loads; Antigravity reaches a repository only through
-a coding agent's `code_task`, whose brief tells it not to push.
+the release workflow publishes carries no Antigravity CLI.
+
+Since 2026-11-16 Antigravity runs only as a subscription agent's
+harness, and only for an agent that picks a repository (SEC-67): the
+coding agent's `code_task`, whose brief told it not to push, is
+removed. Its turn now holds the token that pushes to the repositories
+its agent picks (SEC-66), beside the repository customisations it
+loads.
 
 **Fix to make:** establish what a repository's `.agents/` can run on
 load. Until then an operator who wants no repository customisation to
@@ -1512,7 +1522,7 @@ name lookups to the instance admin.
 
 ## SEC-32 — The harness log the app reads is redacted only with the agent's secret values
 
-**Status:** open.
+**Status:** closed 2026-11-16.
 
 **Found:** 2026-10-16, adding the **Log** view of a `code_task` call.
 
@@ -1542,6 +1552,12 @@ unredacted.
 shows as written. A run's GitHub tokens expire within the hour, so a
 log read later shows an expired token.
 
+**Closed:** 2026-11-16. The route, `harnessLog`, `readHarnessLog`,
+and the `log` op are removed with the **Log** view of a `code_task`
+call. No route serves a harness's event log; the log stays in the
+agent's home, which the members who see the run's guild reach through
+the agent's terminal.
+
 ## SEC-31 — Cursor runs a repository's hooks
 
 **Status:** open, accepted on 2026-10-13: Cursor stays available for every repository.
@@ -1565,10 +1581,13 @@ user-level hooks from `~/.cursor/` before every call, so only the
 repository's own hooks run, and those are versioned in the
 repository, where review sees them. Claude Code and Codex run no
 project hooks (SEC-29). The guild's repositories are the ones its
-operators add. Cursor runs no subscription agent, so the push token
-a subscription agent's turn holds since 2026-11-16 (SEC-66) is never
-beside a repository's Cursor hooks; Cursor reaches a repository only
-through a coding agent's `code_task`.
+operators add.
+
+Since 2026-11-16 Cursor runs only as a subscription agent's harness,
+and only for an agent that picks a repository (SEC-67): the coding
+agent's `code_task` is removed. A repository's Cursor hooks now run
+beside the token that pushes to the repositories the agent picks
+(SEC-66).
 
 **Residual risk:** a Cursor agent on a repository that takes pushes
 from people the organisation does not trust runs their hooks. An
@@ -1690,9 +1709,15 @@ machine (SEC-24). Nothing enforces the preamble.
 
 Since 2026-11-16 a subscription agent's harness pushes on purpose:
 its turn runs in the repositories its agent picks, its system prompt
-tells it to push its branch, and no lead model checks the work before
+tells it to push its branch, and no other model checks the work before
 it does (SEC-66). Its GitHub token holds `contents: write` alone, and
 `GH_TOKEN` and `GITHUB_TOKEN` stay out of its environment.
+
+Since 2026-11-16 a harness runs only as a subscription agent's turn:
+`code_task` (`apps/orchestrator/src/toolbox/harness.ts`), its brief's
+preamble, and the `coding` prompt block are removed. The permission
+prompts stay off on every turn, so the controls in place are the
+container, the environment the driver writes, and those SEC-66 names.
 
 On 2026-10-14 a technical control on `git push` was considered. The
 credential helper reaches git through the system configuration and
@@ -2315,6 +2340,12 @@ its machine for that token's hour. Protecting the default branch
 is the operator's control on GitHub. Placing coding agents of
 different guilds on separate machines keeps their tokens apart.
 
+Since 2026-11-16 the tokens are a subscription agent's alone, written
+for a turn and emptied when it ends (SEC-66): the coding agent, its
+`shell` with `GH_TOKEN`, and its run-long tokens that also wrote pull
+requests are removed. The issue stands for a turn's tokens, readable by
+any process on the machine while the turn runs.
+
 ## SEC-9 — Graft's hosted features can send repository history to its vendor
 
 **Status:** fixed 2026-10-13, when Graft left the image.
@@ -2339,7 +2370,7 @@ or any other package, with a command (SEC-4).
 
 ## SEC-8 — Content a coding agent reads can steer its commands
 
-**Status:** open.
+**Status:** closed 2026-11-16.
 
 **Found:** 2026-09-30, building coding agents.
 
@@ -2367,8 +2398,14 @@ branches of the repositories it picks and opening pull requests with
 its installation token (SEC-10). Its own token cannot reach other
 guilds' repositories; the tokens of other agents on its machine
 can (SEC-24). Since 2026-11-16 a subscription agent's harness reads
-its repositories' content and pushes in its own turn, with no lead
+its repositories' content and pushes in its own turn, with no other
 model between them (SEC-66).
+
+**Closed:** 2026-11-16. The coding agent is removed, and with it the
+`shell` tool, `code_task`, and the `coding` block of `system.md`. No
+agent on a key runs a command it decides on in its sandbox. Content a
+subscription agent's harness reads can steer its commands and its
+pushes; that is SEC-66, with SEC-28 and SEC-62.
 
 ## SEC-7 — A coding agent's workspace can fill the shared disk
 
@@ -2401,6 +2438,10 @@ home against its cap and the machine against the machine's cap.
 the check, and a background command can keep writing until its
 machine's idle stop.
 
+Since 2026-11-16 the coding agent is removed: a subscription agent's
+harness installs, builds, and clones in its home, and scripts and the
+CLI tab write there too; the same check bounds them.
+
 ## SEC-6 — Coding agents run commands as root in the container
 
 **Status:** open.
@@ -2419,6 +2460,10 @@ A container escape would start from root.
 `no_new_privileges`, and limits processes.
 
 **Residual risk:** root inside the container.
+
+Since 2026-11-16 the `shell` tool and `code_task` are removed with the
+coding agent. A subscription agent's harness, scripts, the code
+helper, and the CLI tab run as root.
 
 ## SEC-5 — Background commands make the SEC-3 race practical
 
@@ -2442,6 +2487,11 @@ container.
 Background commands end with the idle stop.
 
 **Fix to make:** SEC-3's fix closes this.
+
+Since 2026-11-16 `shell` and its `background` mode are removed with the
+coding agent. A process a subscription agent's harness or a script
+leaves running is the background process this needs, until the
+machine's idle stop.
 
 ## SEC-4 — Package installs run third-party code beside the agent's secrets
 
@@ -2468,6 +2518,10 @@ coding agent gets the ones its operator granted it.
 agent on its machine, can be read and sent. Default-deny egress is
 not built.
 
+Since 2026-11-16 the coding agent and its `shell` are removed: package
+installs and builds run in a subscription agent's harness turn, and in
+scripts and the CLI tab.
+
 ## SEC-3 — Check-then-open race on agent workspace paths
 
 **Status:** open.
@@ -2491,8 +2545,7 @@ On a write, the window is between walking the folders and opening
 the file.
 
 Winning the race gives the same reach as SEC-1, one call at a
-time. A coding agent's background commands (SEC-5) are such a
-process.
+time. A background process (SEC-5) is such a process.
 
 **Fix to make:** resolve the path relative to an open handle on
 the workspace, with no link allowed at any step. Linux `openat2`

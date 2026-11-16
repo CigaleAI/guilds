@@ -48,7 +48,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     notes,
     scripts: agentScripts(db),
     schedules: agentSchedules(db),
-    policy: limitedPolicy({ maxAgents: 25, maxBrowserAgents: 10, maxCodingAgents: 10 }),
+    policy: limitedPolicy({ maxAgents: 25, maxBrowserAgents: 10, maxSubscriptionAgents: 10 }),
   });
 
   const outsider = await insertUser(db, { userId: "user_other", name: "other", image: null, email: "other@example.com" }, new Date());

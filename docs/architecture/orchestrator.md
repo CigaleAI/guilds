@@ -2,7 +2,7 @@
 
 The control plane is a strict TypeScript service in
 `apps/orchestrator`. The Python in `runtime/` runs inside agent
-sandboxes: user scripts, browser automation, the code tools, and the
+sandboxes: user scripts, browser automation, the code helper, and the
 coding harness drivers.
 
 The process model, the Compose stack, and the trust boundary are
@@ -88,8 +88,7 @@ admin enters takes effect without a restart
 
 A few modules read their own optional variables:
 
-- `CODE_RESULT_MAX_BYTES` (the code tools' and `code_task`'s result
-  cap, default 8192)
+- `CODE_RESULT_MAX_BYTES` (the code helper's result cap, default 8192)
 - `WORKSPACE_MAX_MIB` (host-wide cap on one agent's home, default
   10240; each agent also has `max_workspace_mib`, default the same,
   and each machine a `max_workspace_mib` over every home on it)
@@ -119,14 +118,9 @@ Configurable only in tests:
 - script command timeout = 120 seconds
 - browser tool timeout = 60 seconds
 - browser ready wait = 60 seconds
-- code tool timeout = 120 seconds; `shell` takes 120 seconds by
-  default and at most 600, and its sandbox command waits that plus 30;
-  ripgrep stops after 60 seconds inside the sandbox
-- inline code-tool request = 64 KiB of base64; larger goes through the
-  sandbox file API
-- `code_task` = 30 minutes by default, at most 60; polled every 3
-  seconds; each `guilds-harness` op 60 seconds, each task checkpoint
-  300 seconds; three failed polls in a row end it `interrupted`
+- code helper timeout = 120 seconds
+- inline code helper request = 64 KiB of base64; larger goes through
+  the sandbox file API
 - MCP catalog refresh interval = 10 minutes
 - MCP tools/list timeout = 15 seconds
 - MCP tools/call timeout = 90 seconds
@@ -138,7 +132,8 @@ Configurable only in tests:
   a custom one (0.5 to 8 CPUs in steps of 0.25, 512 to 8192 MiB)
 - agents per machine = 32 (slots 0 to 31)
 - agent minimum = the largest of 0.5 CPU and 256 MiB, 1 CPU and 2 GiB
-  with `browser`, 2 CPU and 4 GiB with `coding`
+  with `browser`, 2 CPU and 4 GiB with a harness (a subscription
+  agent)
   ([Machine sizing](../concepts/machines.md#machine-sizing))
 - overcommit before placement warns = 5× a machine's CPUs, 3× its
   memory
@@ -233,11 +228,7 @@ Run reconciliation:
    interrupted result, marked `from_harness`, for each call of the
    harness's own tools without one
 3. append interruption tool results for unresolved committed tool
-   calls; an unresolved `code_task` first gets `guilds-harness stop`
-   on its machine when the machine is running, its state is cleared
-   once the harness has exited, and the task's end checkpoint is
-   taken; its result is `interrupted`, naming the session and log
-   from the run's `metadata.harness_task`
+   calls
 4. leave direct runs, and runs an operator resumed, active and
    reusable
 5. append a `generation.interrupted` run error to group and
@@ -367,8 +358,6 @@ flowchart TD
   Step -->|tool_calls| Tools["toolbox / MCP / adapters"]
   Tools --> Step
   Step -->|stop / limit / cancel| Done["complete the run if it ends here, free the agent, publish generation.finished"]
-  Step -->|coding, 70% of input limit| Handoff["hand-off step, next run of the chain"]
-  Handoff --> Loop
   Save --> SSE["SSE subscribers"]
 ```
 
@@ -390,8 +379,7 @@ tokens for each image. Counting runs on the server event loop.
 Tools:
 
 - **Native** (`toolbox/`): artifacts, memory, scripts, schedules,
-  browser, code tools, `code_task`, group post, report issue,
-  secrets
+  browser, group post, report issue, secrets
 - **Connectors** (`connectors/`, dispatched by `mcp/`): a remote MCP
   endpoint (Notion, Sentry, Cigale, Etherscan), adapter code
   (CoinGecko, Alchemy, X, TwitterAPI.io, Qonto, DexPaprika, Gmail,
@@ -467,13 +455,12 @@ compile.
 |---|---|---|---|
 | `message.committed` | run, Studio, Builder | durable | A message row committed |
 | `generation.started` | run, Studio, Builder | durable | A generation began |
-| `generation.finished` | run, Studio, Builder | durable | A generation ended. On a run, `{ generation, standing }`, published once the run is completed when it ends with this generation and the generation no longer holds it: `standing` is where the run then stands (`open`, `waiting`, `generating`, `completed`, `capped`, `continued`; `runStanding` in `generation/lifecycle.ts`) |
+| `generation.finished` | run, Studio, Builder | durable | A generation ended. On a run, `{ generation, standing }`, published once the run is completed when it ends with this generation and the generation no longer holds it: `standing` is where the run then stands (`open`, `waiting`, `generating`, `completed`, `capped`; `runStanding` in `generation/lifecycle.ts`) |
 | `run.error` | run | durable | A run error; cancellation has `operation: "generation.cancelled"` |
-| `run.continued` | run | durable | A coding run continued in the run named by `run_id` |
-| `run.wake.changed` | run | durable | `{ pending_wake }`: the run's pending wake-up after it was set, replaced, cancelled, moved to or from the run on a hand-off, or fired; null when none is left |
+| `run.wake.changed` | run | durable | `{ pending_wake }`: the run's pending wake-up after it was set, replaced, cancelled, or fired; null when none is left |
 | `assistant.delta` | run, Studio, Builder | ephemeral | Text being written |
 | `assistant.reasoning.delta` | run, Studio, Builder | ephemeral | Reasoning being written |
-| `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines, session_id?}`: a running `code_task`'s redacted progress lines with its session, or a running `browse` call's redacted step line |
+| `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines}`: a running `browse` call's redacted step line |
 | `session.error` | Studio, Builder | durable | An error of a coach session's running generation; a post the admission refuses publishes none |
 | `draft.changed` | Studio | durable | A Task draft changed |
 | `recipe.changed` | Builder | durable | The draft recipe changed |
@@ -505,24 +492,21 @@ Delivery rules:
   misses one recovers by re-reading PostgreSQL over REST.
 - An ephemeral event cannot be reconstructed. The UI recovers by
   re-fetching committed messages. Their metadata carries the full
-  reasoning text, and a `code_task` result carries the harness's
-  final message and log path.
+  reasoning text.
 - There is no historical replay. After a reconnect the client
   re-reads over REST.
 - A run's generation publishes `generation.started`; then its deltas,
   `message.committed` and `tool.progress` events as it goes; on a
   cancel, the interrupted tool results and the cancel's `run.error`;
   on a terminal cap, `run.wake.changed` and the `run.error` of the
-  cancelled wake-up; then `generation.finished`; and after a hand-off,
-  `run.continued`. A client that re-reads the run on
+  cancelled wake-up; then `generation.finished`. A client that re-reads the run on
   `generation.finished` reads it as the generation left it: not
   generating, and completed when it completes with that generation.
   The `standing` it carries is `open` for an active run that takes an
   operator's message, `waiting` for an active run that takes none (a
-  group or schedule run that was not resumed, or one that continued
-  elsewhere), `completed` for an ended run that can be resumed,
-  `capped` for one that ended on a terminal cap, `continued` for one
-  that handed off, and `generating` for one a generation holds. A
+  group or schedule run that was not resumed), `completed` for an
+  ended run that can be resumed, `capped` for one that ended on a
+  terminal cap, and `generating` for one a generation holds. A
   generation whose finishing fails, such as a failed completion of its
   run, still publishes `generation.finished`, with the standing of the
   run as it is read again; only a run whose row is gone publishes none.
@@ -745,18 +729,17 @@ are `{provider}/{model}`.
 ### Providers
 
 One row per provider (`src/llm/providers.ts`) is its whole
-definition. A provider's kind, whether it is billed, and whether it
-needs `coding` come from the id prefix, never from a catalog row.
+definition. Whether a provider is billed comes from the id prefix,
+never from a catalog row.
 
-| Id | Kind | Billed | API | Catalog | Base URL |
-|---|---|---|---|---|---|
-| `openai` | marketplace | yes | `chat-completions` | models.dev `openai` | `https://api.openai.com/v1` |
-| `anthropic` | marketplace | yes | `messages` | models.dev `anthropic` | `https://api.anthropic.com` |
-| `openrouter` | marketplace | yes | `chat-completions` | models.dev `openrouter` | `https://openrouter.ai/api/v1` |
-| `xai` | marketplace | yes | `chat-completions` | models.dev `xai` | `https://api.x.ai/v1` |
-| `deepinfra` | marketplace | yes | `chat-completions` | models.dev `deepinfra` | `https://api.deepinfra.com/v1/openai` |
-| `local` | marketplace | no | `chat-completions` | the endpoint's `/models` | the organisation's URL |
-| `kimi` | coding | no | `chat-completions` | models.dev `kimi-code-plan-global` | `https://api.kimi.ai/coding/v1` |
+| Id | Billed | API | Catalog | Base URL |
+|---|---|---|---|---|
+| `openai` | yes | `chat-completions` | models.dev `openai` | `https://api.openai.com/v1` |
+| `anthropic` | yes | `messages` | models.dev `anthropic` | `https://api.anthropic.com` |
+| `openrouter` | yes | `chat-completions` | models.dev `openrouter` | `https://openrouter.ai/api/v1` |
+| `xai` | yes | `chat-completions` | models.dev `xai` | `https://api.x.ai/v1` |
+| `deepinfra` | yes | `chat-completions` | models.dev `deepinfra` | `https://api.deepinfra.com/v1/openai` |
+| `local` | no | `chat-completions` | the endpoint's `/models` | the organisation's URL |
 
 An unbilled provider's calls record `cost_source: unavailable`.
 
@@ -825,7 +808,6 @@ The request timeout scales with `max_tokens`, from two to ten minutes.
 | `openai` | `max_completion_tokens` | `reasoning_effort` | none |
 | `openrouter` | `max_tokens` | `reasoning: { effort }` | `cache_control` on the last text, and top-level |
 | `xai`, `deepinfra`, `local` | `max_tokens` | `reasoning_effort` | none |
-| `kimi` | `max_tokens` | `reasoning_effort`, `low` → `low`, `medium` → `high`, `high` → `max` | none |
 
 OpenAI rejects a field it does not know, so a request to it carries
 only the fields in its row.
@@ -939,8 +921,9 @@ Control-plane tools run in Node (notes, records, memory, schedules,
 scripts, secrets, remote MCP servers, adapters). Sandbox tools
 invoke reviewed helpers inside the agent container
 (`script_run` through `guilds-script-run`, Playwright through
-`guilds-browser`, the code tools through `guilds-code`, `code_task`
-through `guilds-harness`).
+`guilds-browser`; a subscription turn's git setup, checkpoints and
+diffs through `guilds-code`, and its harness through
+`guilds-harness`).
 
 A generation is typed by its model source (`generation/generate.ts`):
 a key generation, whose snapshot has a `model`, runs the model loop,
@@ -951,10 +934,12 @@ A subscription generation on no harness fails with `harness.missing`,
 and one whose agent picks repositories, or whose harness needs one
 (`harnessNeedsRepository`, `coding/harnesses.ts`: Cursor and
 Antigravity), with `coding.repositories_missing` or
-`coding.repositories_gone` as a coding run does, before the machine is
-woken. Its tools are narrowed as a key
-generation's are, and no model credential is resolved; its harness is
-checked as a coding run's is. Its turn opens a grant on the
+`coding.repositories_gone`, before the machine is woken. Its tools are
+narrowed as a key generation's are, and no model credential is
+resolved. Once the workspace check passes, `guilds-harness check`
+fails it with `harness.off`, `harness.not_installed`,
+`harness.credential`, or `harness.check`; then the repositories it
+picks are prepared. Its turn opens a grant on the
 `HarnessMcpServer` (`generation/harness-mcp.ts`), starts the CLI with
 the run's first row as its system prompt (in place of the CLI's own,
 or as rules beside it on a harness whose `HARNESS_INFO` prompt is
@@ -981,18 +966,9 @@ stop, and the loop stops the harness and records
 `events.commitMessage` appends one row at a time, so the poll's rows
 and the server's take the next sequence number each. The grant is
 revoked, once its running call is kept, before the turn's own calls
-without a result get theirs. The start, the poll, the stop, the result,
-and the log are the `guilds-harness` ops `code_task` calls too
-(`toolbox/harness-ops.ts`). Browser tools are offered when the run snapshot has
-`browser: true`. The code tools are offered when it has
-`coding: true`. A coding generation runs its start checks in order:
-no `harness` in the snapshot fails with `harness.missing`, an
-agent picking a repository it can no longer use with
-`coding.repositories_gone`, and one picking none with
-`coding.repositories_missing`, all before the machine is woken; once the workspace check passes,
-`guilds-harness check` fails it with `harness.not_installed`,
-`harness.credential`, or `harness.check`; then the repositories are
-prepared. All of them run before the model is called
+without a result get theirs. The start, the poll, the stop, and the result
+are `guilds-harness` ops (`toolbox/harness-ops.ts`). Browser tools are
+offered when the run snapshot has `browser: true`
 ([Runs](../concepts/runs.md#generation)).
 `group_post`, `wake_after`, and `wake_cancel` are offered when their
 binding is on. `secret_request` is offered only on direct runs. `report_issue` is always offered.
@@ -1108,8 +1084,8 @@ the package exports some of them to an extension's tests.
 `MODEL_CONTRACT_API_KEY` from `.env`).
 
 The OpenSandbox contracts start their own server at the pinned
-commit. `coding.test.ts` runs two agents on one machine, and the
-code tools through execd, in `agent-runtime:0.4` (or
+commit. `coding.test.ts` runs two agents on one machine, each in its
+own home with its own Chrome, and checks the image's toolchain, in `agent-runtime:0.4` (or
 `CONTRACT_RUNTIME_IMAGE`). It is skipped until the image is built.
 
 The web app's tests (`pnpm test:web`, `node:test` over

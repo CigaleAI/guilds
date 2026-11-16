@@ -55,12 +55,3 @@ export function isNumber(value: JsonValue | undefined): value is number {
 export function isText(value: JsonValue | undefined): value is string {
   return typeof value === "string";
 }
-
-/** A whole number an argument is read as when it is one: the range it is kept in, and its value otherwise. */
-export type WholeRange = { min: number; max: number; fallback: number };
-
-/** `value` truncated to a whole number within `range`; the range's fallback when it is not a finite number. */
-export function wholeWithin(value: JsonValue | undefined, range: WholeRange): number {
-  const whole = isNumber(value) && Number.isFinite(value) ? Math.trunc(value) : range.fallback;
-  return Math.max(range.min, Math.min(range.max, whole));
-}

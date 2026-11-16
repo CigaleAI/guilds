@@ -15,7 +15,7 @@ type GithubSettingsProps = {
 };
 
 /**
- * The repositories this GitHub login's coding agents clone. Editable on the scope's own login;
+ * The repositories this GitHub login's subscription agents clone. Editable on the scope's own login;
  * inherited logins are read-only until the operator connects here.
  */
 export function GithubSettings({ server, owned }: GithubSettingsProps) {

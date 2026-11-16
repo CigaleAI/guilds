@@ -27,7 +27,6 @@ const run: Run = {
     browser_language: "en-US",
     browser_optimized: false,
     browser_model: null,
-    coding: false,
     harness: null,
     harness_model: null,
     harness_effort: null,

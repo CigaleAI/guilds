@@ -337,20 +337,10 @@ test(
       });
       assert.equal(numberedHarness.statusCode, 422);
       assert.deepEqual(numberedHarness.json().detail[0].loc, ["body", "harness"]);
-      assert.deepEqual(
-        (
-          await app.inject({ method: "GET", url: "/api/runs/run_items/changes", headers: OWNER })
-        ).json(),
-        {
-          repositories: [],
-        },
-      );
-      const unchanged = await app.inject({
-        method: "GET",
-        url: "/api/runs/run_items/changes/docs/diff",
-        headers: OWNER,
-      });
-      assert.equal(unchanged.statusCode, 404, "a run that changed nothing has no diff");
+      for (const url of ["/api/runs/run_items/changes", "/api/runs/run_items/changes/docs/diff"]) {
+        const gone = await app.inject({ method: "GET", url, headers: OWNER });
+        assert.equal(gone.statusCode, 404, `${url} is no route`);
+      }
 
       const member = await insertUser(
         db,

@@ -1,7 +1,7 @@
 import type { GithubSelectedRepository, McpServerAccess } from "../../api/types/access";
 import { isJsonObject } from "../../api/wire";
 
-/** Whether a stored settings value is a repository a GitHub login's coding agents clone. */
+/** Whether a stored settings value is a repository a GitHub login's subscription agents clone. */
 export function isGithubSelectedRepository(value: unknown): value is GithubSelectedRepository {
   return (
     isJsonObject(value) &&

@@ -26,7 +26,7 @@ export function credentialTarget(url: string): Pick<TokenEntry, "host" | "path">
  * A stored access token as a git provider, for a repository on any HTTPS host: its token is the
  * value of the secret the repository names, read when the run starts, and sent with the
  * repository's username. It never expires, so it is never refreshed, and it holds what the host
- * granted it whatever the run's scope.
+ * granted it.
  */
 export class AccessTokenProvider implements GitProvider {
   constructor(private db: AccessTokenProviderDb) {}

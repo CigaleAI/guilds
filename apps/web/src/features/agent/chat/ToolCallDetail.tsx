@@ -1,6 +1,5 @@
 import { Pin } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { useTaskDiff, useTaskLog } from "../../../api/queries/runs";
 import type { CallProgress } from "../../../api/toolProgress";
 import {
   Button,
@@ -19,20 +18,15 @@ import type { JsonTreeValue } from "../runs/toolFormat";
 import {
   callArguments,
   callMetadata,
-  hasTaskDiff,
-  hasTaskLog,
   openingView,
   returnedData,
   toolCallFacts,
   type CallFact,
   type DetailView,
 } from "./callDetail";
-import { DiffView } from "./ChangesPanel";
 
 /** The run a tool call belongs to, as its detail needs it. */
 type CallRun = {
-  /** The run's id, where a code task's diff is fetched from. */
-  id?: string;
   generating: boolean;
   /** What the call has reported while it runs. */
   progress?: CallProgress;
@@ -195,96 +189,16 @@ function ResultPane({ call, run }: ResultPaneProps) {
   );
 }
 
-type TaskDiffProps = { runId: string; callId: string };
+type MetadataPaneProps = { facts: readonly CallFact[] };
 
-function TaskDiff({ runId, callId }: TaskDiffProps) {
-  return <DiffView diff={useTaskDiff(runId, callId)} className="bg-surface" />;
-}
-
-/** How a code task's log reads: its steps, one line each, or its raw JSONL events. */
-type LogView = "steps" | "json";
-
-const logViews: { value: LogView; label: string }[] = [
-  { value: "steps", label: "Steps" },
-  { value: "json", label: "JSON" },
-];
-
-type TaskLogProps = { runId: string; callId: string };
-
-/** A code task's kept harness log, read from the agent's machine once this view opens. */
-function TaskLog({ runId, callId }: TaskLogProps) {
-  const log = useTaskLog(runId, callId);
-  const [view, setView] = useState<LogView>("steps");
-  if (log.isError) {
-    return <Banner tone="error" title="Couldn't load the harness log" meta={log.error.message} />;
-  }
-  if (!log.data) {
-    return <p className="text-xs text-muted">Loading the log from the agent&apos;s machine…</p>;
-  }
-  const { lines, raw } = log.data;
-  const cut =
-    view === "steps"
-      ? log.data.lines_truncated && "Only its first 2000 steps are shown."
-      : log.data.raw_truncated &&
-        `Only its first 256 KiB of ${Math.ceil(log.data.bytes / 1024)} KiB are shown.`;
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <Segmented
-          size="sm"
-          label="Log as"
-          value={view}
-          onValueChange={setView}
-          options={logViews}
-        />
-        <span className="type-meta text-muted">
-          {log.data.events} event{log.data.events === 1 ? "" : "s"}
-        </span>
-        <CopyButton
-          text={view === "steps" ? lines.join("\n") : raw}
-          what="log"
-          className="ml-auto"
-        />
-      </div>
-      {view === "steps" ? (
-        lines.length ? (
-          <ProgressLines lines={lines} />
-        ) : (
-          <p className="text-sm text-muted">The log holds no steps.</p>
-        )
-      ) : (
-        <Code>{raw}</Code>
-      )}
-      {cut ? <p className="text-xs text-muted">{cut}</p> : null}
-    </div>
-  );
-}
-
-type MetadataPaneProps = {
-  facts: readonly CallFact[];
-  /** Opens the call's harness log; its path in the list then leads there. */
-  onOpenLog?: (() => void) | undefined;
-};
-
-function MetadataPane({ facts, onOpenLog }: MetadataPaneProps) {
+function MetadataPane({ facts }: MetadataPaneProps) {
   return (
     <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
       {facts.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="text-muted">{label}</dt>
           <dd className="min-w-0 truncate font-mono text-xs leading-5">
-            {label === "Harness log" && onOpenLog ? (
-              <button
-                type="button"
-                onClick={onOpenLog}
-                title="Open the harness log"
-                className="max-w-full cursor-pointer truncate rounded-sm text-left text-signal-t underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-              >
-                {value}
-              </button>
-            ) : (
-              value
-            )}
+            {value}
           </dd>
         </div>
       ))}
@@ -292,24 +206,12 @@ function MetadataPane({ facts, onOpenLog }: MetadataPaneProps) {
   );
 }
 
-type DetailPaneProps = {
-  view: DetailView;
-  call: FlowCall;
-  run: CallRun;
-  onView: (view: DetailView) => void;
-};
+type DetailPaneProps = { view: DetailView; call: FlowCall; run: CallRun };
 
-function DetailPane({ view, call, run, onView }: DetailPaneProps) {
+function DetailPane({ view, call, run }: DetailPaneProps) {
   if (view === "arguments") return <ArgumentsPane call={call} />;
   if (view === "result") return <ResultPane call={call} run={run} />;
-  if (view === "diff") return <TaskDiff runId={run.id ?? ""} callId={call.id} />;
-  if (view === "log") return <TaskLog runId={run.id ?? ""} callId={call.id} />;
-  return (
-    <MetadataPane
-      facts={toolCallFacts(call, run.progress?.session_id ?? null)}
-      onOpenLog={hasTaskLog(call, run.id) ? () => onView("log") : undefined}
-    />
-  );
+  return <MetadataPane facts={toolCallFacts(call)} />;
 }
 
 /** A view a call opens on, as its switch offers it. */
@@ -321,19 +223,6 @@ const callViews: DetailViewOption[] = [
   { value: "metadata", label: "Metadata" },
 ];
 
-const taskDiffView = { value: "diff", label: "Diff" } satisfies DetailViewOption;
-
-const taskLogView = { value: "log", label: "Log" } satisfies DetailViewOption;
-
-/** The views a call opens on: a code task's diff and log once it has them. */
-function detailViews(call: FlowCall, runId: string | undefined) {
-  return [
-    ...callViews,
-    ...(hasTaskDiff(call, runId) ? [taskDiffView] : []),
-    ...(hasTaskLog(call, runId) ? [taskLogView] : []),
-  ];
-}
-
 type ToolCallDetailProps = {
   call: FlowCall;
   run: CallRun;
@@ -343,7 +232,7 @@ type ToolCallDetailProps = {
 
 /**
  * One tool call opened up: what the agent asked for, what came back (or, while it runs, what it
- * has reported), how it ran, and for a code task the diff it made.
+ * has reported), and how it ran.
  */
 export function ToolCallDetail({ call, run, onAsk }: ToolCallDetailProps) {
   const [view, setView] = useState<DetailView>(openingView(call, run.progress));
@@ -355,7 +244,7 @@ export function ToolCallDetail({ call, run, onAsk }: ToolCallDetailProps) {
           label={`${call.info.name} details`}
           value={view}
           onValueChange={setView}
-          options={detailViews(call, run.id)}
+          options={callViews}
         />
         <span className="ml-auto">
           <ToolCallTags kind={call.info.kind} level={call.info.level} />
@@ -367,7 +256,7 @@ export function ToolCallDetail({ call, run, onAsk }: ToolCallDetailProps) {
           </Button>
         ) : null}
       </div>
-      <DetailPane view={view} call={call} run={run} onView={setView} />
+      <DetailPane view={view} call={call} run={run} />
     </div>
   );
 }

@@ -123,21 +123,11 @@ export const OPTIMIZED_BROWSER_NATIVE_TOOLS = ["browse", "browser_eval"] as cons
 /** Every browser tool, in either mode. */
 const ANY_BROWSER_NATIVE_TOOLS: readonly string[] = [...BROWSER_NATIVE_TOOLS, "browse"];
 
-/** Code tools: offered when the agent's coding capability is on; not bindings. */
-export const CODING_NATIVE_TOOLS = [
-  "code_task",
-  "shell",
-  "shell_status",
-  "file_read",
-  "code_search",
-] as const;
-
 /** Native tools a run always offers; not bindings. */
 export const ALWAYS_NATIVE_TOOLS = ["report_issue"] as const;
 
 const CAPABILITY_NATIVE_TOOLS: readonly string[] = [
   ...ANY_BROWSER_NATIVE_TOOLS,
-  ...CODING_NATIVE_TOOLS,
   ...ALWAYS_NATIVE_TOOLS,
 ];
 
@@ -145,7 +135,6 @@ export type AgentNativeCapabilities = {
   browser?: boolean;
   /** Whether the agent's browser runs as the agent-optimized browser. */
   browser_optimized?: boolean;
-  coding?: boolean;
 };
 
 /**
@@ -173,7 +162,7 @@ export function listedBrowserTools(capabilities?: AgentNativeCapabilities): read
 const toolFamilies: { label: string; matches: (name: string) => boolean }[] = [
   { label: "Notes", matches: (name) => name.startsWith("note_") },
   { label: "Tables", matches: (name) => name.startsWith("record_") },
-  { label: "Files", matches: (name) => name.startsWith("file_") && name !== "file_read" },
+  { label: "Files", matches: (name) => name.startsWith("file_") },
   { label: "Memory", matches: (name) => name.startsWith("memory_") },
   { label: "Scripts", matches: (name) => name.startsWith("script_") },
   { label: "Routines", matches: (name) => name.startsWith("schedule_") },
@@ -181,14 +170,6 @@ const toolFamilies: { label: string; matches: (name: string) => boolean }[] = [
   { label: "Wake-ups", matches: (name) => name.startsWith("wake_") },
   { label: "Secrets", matches: (name) => name.startsWith("secret_") },
   { label: "Browser", matches: (name) => name === "browse" || name.startsWith("browser_") },
-  {
-    label: "Coding",
-    matches: (name) =>
-      name === "shell" ||
-      name === "shell_status" ||
-      name === "file_read" ||
-      name.startsWith("code_"),
-  },
   { label: "Issues", matches: (name) => name === "report_issue" },
 ];
 
@@ -209,7 +190,7 @@ export function withCapabilityNativeTools(
     (tool) => !ANY_BROWSER_NATIVE_TOOLS.includes(tool.name) || browser.includes(tool.name),
   );
   const names = new Set(listed.map((tool) => tool.name));
-  const gated = [...browser, ...CODING_NATIVE_TOOLS, ...ALWAYS_NATIVE_TOOLS];
+  const gated = [...browser, ...ALWAYS_NATIVE_TOOLS];
   return [
     ...listed,
     ...gated
@@ -246,17 +227,16 @@ export function nativeToolDisplay(
       bindable: false,
     };
   }
-  const capability = gatingCapability(item.name);
-  if (capability) {
-    const on = capabilities?.[capability];
-    const mode = item.name === "browse" ? "the agent-optimized browser" : capability;
+  if (ANY_BROWSER_NATIVE_TOOLS.includes(item.name)) {
+    const on = capabilities?.browser;
+    const mode = item.name === "browse" ? "the agent-optimized browser" : "browser";
     return {
       enabled: on ?? true,
       caption:
         scope === "agent"
           ? on
-            ? `Active via ${capability}`
-            : `Offered when ${capability} is on`
+            ? "Active via browser"
+            : "Offered when browser is on"
           : `Offered when an agent has ${mode} on`,
       bindable: false,
     };
@@ -265,12 +245,6 @@ export function nativeToolDisplay(
     return { enabled: true, caption: "Always offered", bindable: false };
   }
   return { enabled: item.enabled, bindable: true };
-}
-
-/** The agent capability a native tool waits for; null for a tool no capability gates. */
-function gatingCapability(name: string): "browser" | "coding" | null {
-  if (ANY_BROWSER_NATIVE_TOOLS.includes(name)) return "browser";
-  return CODING_NATIVE_TOOLS.some((tool) => tool === name) ? "coding" : null;
 }
 
 export function toolFamilyGroups(

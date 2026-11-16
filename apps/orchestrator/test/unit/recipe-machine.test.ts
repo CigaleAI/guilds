@@ -25,24 +25,12 @@ function machineWith(box: MachineBox, agents: number, harnesses: Harness[] | nul
         guild_name: "desk",
         slot,
         browser: false,
-        coding: false,
         model: "deepinfra/zai-org/GLM-5.3-Flash",
         harness: null,
         max_workspace_mib: 10240,
       }),
     ),
   };
-}
-
-/** The three-role recipe with `coding` on for the roles named. */
-function recipeCoding(...roles: string[]): RecipeDocument {
-  const recipe = cryptoThreeRoleRecipe();
-  for (const role of recipe.roles) {
-    if (roles.includes(role.role)) {
-      role.config = { ...role.config, coding: true };
-    }
-  }
-  return recipe;
 }
 
 const ROOMY = { maxAgents: 32, private: false };
@@ -59,7 +47,7 @@ function recipeOnSubscription(harness: Harness, ...roles: string[]): RecipeDocum
   return recipe;
 }
 
-test("a subscription role needs a coding machine whose image carries its harness", () => {
+test("a subscription role needs a code machine whose image carries its harness", () => {
   assert.deepEqual(
     machineFindings(recipeOnSubscription("codex", "researcher"), machineWith("standard", 0), ROOMY).map((finding) => finding.code),
     ["machine.size"],
@@ -74,7 +62,7 @@ test("a subscription role needs a coding machine whose image carries its harness
 });
 
 test("a role whose minimum the machine is below is refused once per role, naming both sizes", () => {
-  const findings = machineFindings(recipeCoding("researcher", "fund"), machineWith("standard", 0), ROOMY);
+  const findings = machineFindings(recipeOnSubscription("codex", "researcher", "fund"), machineWith("standard", 0), ROOMY);
   assert.deepEqual(
     findings.map((finding) => [finding.code, finding.severity, finding.path]),
     [
@@ -88,17 +76,17 @@ test("a role whose minimum the machine is below is refused once per role, naming
   );
 });
 
-test("a custom machine is judged by its size: coding roles fit a code machine, not a 3 GiB custom one", () => {
-  assert.deepEqual(machineFindings(recipeCoding("researcher"), machineWith("code", 0), ROOMY), []);
+test("a custom machine is judged by its size: subscription roles fit a code machine, not a 3 GiB custom one", () => {
+  assert.deepEqual(machineFindings(recipeOnSubscription("codex", "researcher"), machineWith("code", 0), ROOMY), []);
   assert.deepEqual(
-    machineFindings(recipeCoding("researcher"), machineWith("custom", 0), ROOMY).map((finding) => finding.code),
+    machineFindings(recipeOnSubscription("codex", "researcher"), machineWith("custom", 0), ROOMY).map((finding) => finding.code),
     ["machine.size"],
   );
-  assert.deepEqual(machineFindings(recipeCoding(), machineWith("standard", 0), ROOMY), []);
+  assert.deepEqual(machineFindings(recipeOnSubscription("codex"), machineWith("standard", 0), ROOMY), []);
 });
 
 test("more roles than the machine has room for under the cap is one finding naming the room left", () => {
-  const recipe = recipeCoding();
+  const recipe = recipeOnSubscription("codex");
   assert.deepEqual(machineFindings(recipe, machineWith("standard", 1), { maxAgents: 4, private: false }), []);
   const full = machineFindings(recipe, machineWith("standard", 2), { maxAgents: 4, private: false });
   assert.deepEqual(
@@ -110,7 +98,7 @@ test("more roles than the machine has room for under the cap is one finding nami
 });
 
 test("a machine hosting a guild the operator cannot see is refused, alongside the other findings", () => {
-  const findings = machineFindings(recipeCoding("ta"), machineWith("standard", 3), { maxAgents: 4, private: true });
+  const findings = machineFindings(recipeOnSubscription("codex", "ta"), machineWith("standard", 3), { maxAgents: 4, private: true });
   assert.deepEqual(
     findings.map((finding) => finding.code),
     ["machine.size", "machine.full", "machine.private"],

@@ -5,7 +5,6 @@ import type { GroupMessageRow } from "../db/group-chat.js";
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
 import type { NewRun, RunRow } from "../db/runs.js";
 import {
-  modelSourceOf,
   type ResolvedAgentConfig,
   type RunConfigSnapshot,
   type RunMetadata,
@@ -14,8 +13,6 @@ import {
   type RunTypesafe,
 } from "../db/schema/index.js";
 import { promptHash } from "../prompts/index.js";
-import { CODING_TOOLS } from "../toolbox/code.js";
-import { HARNESS_TOOLS } from "../toolbox/harness.js";
 import { schemasFor } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
 import { firstClassScriptSchemas } from "../toolbox/script.js";
@@ -29,27 +26,20 @@ export type RunKind = RunRow["kind"];
 /** What a run offers its agent: the native tools by name, and the connections whose tools it reaches. */
 export type RunOffer = { tools: string[]; mcp: RuntimeAccess["mcp"] };
 
-/** The native tools that run in the agent's sandbox, which a subscription agent's harness has its own of. */
-const SANDBOX_TOOLS: ReadonlySet<string> = new Set<string>([...CODING_TOOLS, ...HARNESS_TOOLS]);
-
 /**
  * What a run of `kind` offers an agent with `config` and `access`: the native tools the access
  * grants under the agent's switches, and its connections. A subscription agent's harness is
- * offered them through the orchestrator's MCP server, less the tools that run in its sandbox.
+ * offered them through the orchestrator's MCP server.
  */
 export function runOffer(config: ResolvedAgentConfig, access: RuntimeAccess, kind: RunKind): RunOffer {
   const tools = offeredToolNames(access.tools, {
     browser: config.browser,
     browserOptimized: isOptimizedBrowserOn(config),
-    coding: config.coding,
     scripting: config.scripting,
     memory: config.memory,
     schedules: kind !== "schedule",
     direct: kind === "direct",
   });
-  if (modelSourceOf(config).kind === "subscription") {
-    return { tools: tools.filter((name) => !SANDBOX_TOOLS.has(name)), mcp: access.mcp };
-  }
   return { tools, mcp: access.mcp };
 }
 

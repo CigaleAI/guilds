@@ -50,16 +50,15 @@ test("keepGenerationFloor clamps invalid keep counts to one generation", () => {
   assert.equal(keepGenerationFloor(5, 1.5), 5);
 });
 
-test("stubToolResultPayload copies path, range, and optional content hash", () => {
+test("stubToolResultPayload names the tool and carries the optional content hash", () => {
   const payload: ToolMessage = { role: "tool", tool_call_id: "c", content: "body" };
-  const source = { ...row(9, 1, payload, { tool_name: "file_read", path: "src/a.ts", range: [1, 4] }), payload };
+  const source = { ...row(9, 1, payload, { tool_name: "note_get" }), payload };
   const hashed = stubToolResultPayload(source, {
     hint: AGENT_TOOL_RESULT_STUB_HINT,
     includeContentHash: true,
   });
   const stub = JSON.parse(hashed.content) as Record<string, unknown>;
-  assert.equal(stub.path, "src/a.ts");
-  assert.deepEqual(stub.range, [1, 4]);
+  assert.equal(stub.tool_name, "note_get");
   assert.equal(stub.content_hash, promptHash("body"));
 });
 
@@ -68,9 +67,9 @@ test("keep 1 stubs previous-generation results above the size floor", () => {
   const messages = projectToolResults({
     history: [
       row(0, 0, { role: "system", content: "sys" }),
-      row(1, 1, { role: "tool", tool_call_id: "old", content: large }, { tool_name: "file_read", path: "src/a.ts" }),
+      row(1, 1, { role: "tool", tool_call_id: "old", content: large }, { tool_name: "note_get" }),
       row(2, 2, { role: "user", content: "again" }),
-      row(3, 2, { role: "tool", tool_call_id: "new", content: large }, { tool_name: "file_read", path: "src/b.ts" }),
+      row(3, 2, { role: "tool", tool_call_id: "new", content: large }, { tool_name: "note_get" }),
     ],
     currentGeneration: 2,
     keepGenerations: 1,
@@ -78,9 +77,8 @@ test("keep 1 stubs previous-generation results above the size floor", () => {
     minStubBytes: TOOL_RESULT_STUB_MIN_BYTES,
   });
   assert.match(toolContent(messages, 0), /"stub":true/);
-  assert.match(toolContent(messages, 0), /file_read/);
-  assert.match(toolContent(messages, 0), /src\/a\.ts/);
-  assert.match(toolContent(messages, 0), /working tree may have changed/);
+  assert.match(toolContent(messages, 0), /note_get/);
+  assert.match(toolContent(messages, 0), /Call the same tool again\./);
   assert.equal(toolContent(messages, 1), large);
 });
 

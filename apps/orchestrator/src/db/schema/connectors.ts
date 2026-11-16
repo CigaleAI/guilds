@@ -214,7 +214,7 @@ export type Overrides = {
   tools?: Record<string, ToolOverride>;
 };
 
-/** A repository a GitHub login picked for its coding agents to clone. */
+/** A repository a GitHub login picked for its subscription agents to clone. */
 export type RepositorySelection = {
   name: string;
   url: string;

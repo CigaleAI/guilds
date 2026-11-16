@@ -64,7 +64,6 @@ export type StandingCaps = {
   browser: boolean;
   /** Whether the browser is the agent-optimized one, which offers `browse`. Missing means off. */
   browserOptimized?: boolean;
-  coding: boolean;
   /** Missing means on, matching agent config. */
   memory?: boolean;
   /** Whether `memory_write` is offered. Missing follows `memory`. */
@@ -236,8 +235,6 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
     files: caps.files === true,
     browser_standard: caps.browser && !browserOptimized,
     browser_optimized: caps.browser && browserOptimized,
-    coding: caps.coding,
-    no_coding: !caps.coding,
     memory_write: memoryWriteOn(caps),
     memory,
     no_memory: !memory,
@@ -263,7 +260,6 @@ const PREVIEW_CAPS = {
   files: true,
   browser: true,
   browserOptimized: false,
-  coding: true,
 } as const;
 
 /** Compose a run prompt, resolving only the Memory capability from the agent's flag. */

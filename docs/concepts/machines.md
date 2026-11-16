@@ -1,7 +1,7 @@
 # Machines
 
 A machine is where agents do their work. It is one container that
-runs commands, a browser, and coding tools, plus one folder on the
+runs commands, a browser, and coding harnesses, plus one folder on the
 host that keeps the agents' files. An [organisation](organisations.md)
 owns a pool of machines. Every [agent](agents.md) sits on exactly one
 machine of its organisation, and many agents share one machine. A
@@ -31,7 +31,7 @@ flowchart TD
   Org --> M2[Machine 'build'<br/>code: 2 CPU, 4 GiB]
   M1 --> A1[Agent, slot 0<br/>home, ports]
   M1 --> A2[Agent with browser, slot 1<br/>home, Chrome, ports]
-  M2 --> A3[Coding agent, slot 0<br/>home, repos, ports]
+  M2 --> A3[Subscription agent, slot 0<br/>home, repos, ports]
 ```
 
 ### Tiers
@@ -68,13 +68,13 @@ runs on:
 | --- | --- | --- |
 | Every agent | 0.5 | 256 MiB |
 | Browser | 1 | 2 GiB |
-| Coding, or a subscription | 2 | 4 GiB |
+| A subscription (a harness) | 2 | 4 GiB |
 
 An agent's minimum is the largest of the minimums of what it has on,
-CPU and memory each. It is not their sum: Chrome and the coding
-toolchains run only while the agent works. A machine below an agent's
-minimum refuses it. With these values a Standard machine takes browser
-agents, a Code machine takes coding agents and subscription agents,
+CPU and memory each. It is not their sum: Chrome and the harness run
+only while the agent works. A machine below an agent's minimum
+refuses it. With these values a Standard machine takes browser
+agents, a Code machine takes subscription agents,
 and a Custom machine takes whatever its size meets.
 
 **Overcommit.** A machine's planned load is the sum of its agents'
@@ -107,8 +107,8 @@ saves, and the app warns.
 An agent is placed on a machine when it is created. With one machine
 in the organisation the agent goes on it. With more, the operator
 picks one. An agent goes only on a machine at or above its minimum.
-Turning the browser or coding on is refused when the agent's machine
-is below the minimum that sets. A subscription agent
+Turning the browser on is refused when the agent's machine is below
+the minimum that sets. A subscription agent
 ([Agents](agents.md#model-source)) goes only on a machine whose image
 carries its harness; a machine whose container never started is taken
 to carry it.
@@ -186,7 +186,7 @@ The organisation's **Settings** page has a **Machines** tab. It lists
 every machine of the organisation with:
 
 - its tier, CPUs, and memory
-- the agents on it, each with its guild and its Browser, Coding, and
+- the agents on it, each with its guild and its Browser and
   Subscription flags; an agent's name opens its Settings on the Machine section
 - the planned load bars, CPU and memory, against its capacity
 - the disk it uses against its disk cap
@@ -214,9 +214,8 @@ may slow down or run out of memory when many work at once; resize it
 or pick another machine. One line says that agents on one machine can
 read each other's files and sessions.
 
-The coding agent dialog's Machine step hints that coding agents need
-a Code machine. A subscription agent's Settings hint that subscription
-agents need one.
+A subscription agent's Settings hint "Subscription agents need a Code
+machine."
 
 **Disk** shows under the picker. It sets the agent's own disk cap
 ([Agent home](agent-home.md#in-the-app)).
@@ -227,8 +226,8 @@ dialog. Saving another machine moves the agent: its processes stop,
 and its home moves with it. A move is refused while the agent
 generates.
 
-The **Model** section greys out **Browser** and **Coding** while they
-are off and the machine is below the minimum they would set, with a
+The **Model** section greys out **Browser** while it is off and the
+machine is below the minimum it would set, with a
 line naming both sizes.
 
 The recipe apply preview has the same picker, and warns the same way
@@ -243,7 +242,7 @@ The recipe apply preview has the same picker, and warns the same way
 | Custom size | 0.5 to 8 CPUs in steps of 0.25; 512 to 8192 MiB |
 | Machine disk cap | 10240 MiB by default |
 | Agents on one machine | at most 32, whatever the organisation's plan says |
-| Agent minimum | 0.5 CPU and 256 MiB; 1 CPU and 2 GiB with a browser; 2 CPUs and 4 GiB with coding or on a subscription |
+| Agent minimum | 0.5 CPU and 256 MiB; 1 CPU and 2 GiB with a browser; 2 CPUs and 4 GiB on a subscription |
 | Subscription agent | only on a machine whose image carries its harness |
 | Overcommit | planned load up to 5× the CPUs and 3× the memory; past it the app warns but saves |
 | Disk reservation | agents' caps past the machine's cap: the app warns but saves |
@@ -287,7 +286,7 @@ the machine's `cpu` and `memory_mib` for `custom`. Its directory on the host is
 
 | Route | Who | Body or result |
 | --- | --- | --- |
-| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `allocated_workspace_mib`, `harnesses`, `planned_cpu` and `planned_mib` (its planned load), `agents` (`id`, `name`, `guild_id`, `guild_name`, `browser`, `coding`, `model_source`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
+| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `allocated_workspace_mib`, `harnesses`, `planned_cpu` and `planned_mib` (its planned load), `agents` (`id`, `name`, `guild_id`, `guild_name`, `browser`, `model_source`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
 | `POST /api/orgs/:id/machines` | owners, admins | `name`, `box`, `cpu`?, `memory_mib`?, `max_workspace_mib`?; 201 with the machine |
 | `PATCH /api/orgs/:id/machines/:machine_id` | owners, admins | the same fields; the body fills in what it leaves out from the machine |
 | `DELETE /api/orgs/:id/machines/:machine_id` | owners, admins | 204 |
@@ -346,8 +345,8 @@ when it names another machine. Agent payloads carry `machine_id` and
 `machine` (`id`, `name`, `box`).
 
 - Creating an agent on a machine below its minimum is 422.
-- Turning `browser` or `coding` on is 422 when the agent's machine is
-  below the minimum that sets.
+- Turning `browser` on is 422 when the agent's machine is below the
+  minimum that sets.
 - Moving an agent to a machine below its minimum is 422.
 - Creating, switching, or moving a subscription agent onto a machine
   whose image lacks its harness is 422 `a subscription agent runs on

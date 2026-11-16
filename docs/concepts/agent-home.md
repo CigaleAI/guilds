@@ -3,7 +3,7 @@
 Every agent has a home: its own folder on its [machine](machines.md).
 The home keeps what the agent builds up between runs: its
 [scripts](scripts.md), its [browser](browser.md) profile and logins,
-a coding agent's repositories, caches, and toolchains. The machine's
+a subscription agent's repositories, caches, and toolchains. The machine's
 container comes and goes, but the home stays.
 
 Every command an agent runs starts in its home. The operator reaches
@@ -40,8 +40,8 @@ The home holds:
 - `.browser/`, its Chrome profile, with its logins
   ([Browser](browser.md))
 - `screenshots/latest.jpg`, the page `browser_screenshot` saved last
-- `repos/`, a coding agent's clones ([Coding agents](coding/index.md))
-- `.runs/`, the logs of its code and harness calls, and the images
+- `repos/`, a subscription agent's clones ([Code work](coding/index.md))
+- `.runs/`, the logs of its harness turns, and the images
   attached to a subscription agent's messages
   ([Runs](runs.md#attachments))
 - `.bash_history`, the CLI tab's shell history
@@ -167,8 +167,7 @@ agent's Settings, Machine section ([Machines](machines.md#the-machine-picker)):
 
 ### Environment
 
-Every command the orchestrator runs for an agent (`shell`, the code
-helper, the harness helper, `script_run`, the browser tools,
+Every command the orchestrator runs for an agent (the code helper, the harness helper, `script_run`, the browser tools,
 maintenance) runs in the agent's home and carries in its own
 environment:
 
@@ -259,5 +258,6 @@ the only way in:
   one at a time, and the file is created or replaced without
   following a link at its name.
 
-The code tools never take this path. They run inside the container,
-so a link resolves there ([Code tools](coding/code-tools.md)).
+The sandbox helpers never take this path. They run inside the
+container, so a link resolves there
+([Process](coding/harnesses.md#process)).

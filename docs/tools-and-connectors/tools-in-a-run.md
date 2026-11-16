@@ -8,8 +8,8 @@ A run draws its tools from three sources:
 
 - [Native tools](native.md) ship in the box. Bindings turn most of
   them on or off ([Access](../concepts/access.md)).
-- [Code tools](../concepts/coding/code-tools.md) and the browser tools
-  follow the agent's `coding` and `browser` flags.
+- The browser tools follow the agent's `browser` flag
+  ([Browser](../concepts/browser.md)).
 - [Connectors](connectors.md) bring the tools of a login an
   organisation, a guild, or an agent signed in with. The
   [connector list](connector-list.md) describes each one.
@@ -26,7 +26,6 @@ Agent flags and the run kind narrow that set:
 | --- | --- |
 | The eight step-by-step browser tools | `config.browser` is true and the agent-optimized browser is not on |
 | `browse` and `browser_eval` | `config.browser` and `config.browser_optimized` are true and the System One platform key is on |
-| The five code tools | `config.coding` is true |
 | The five script tools | `config.scripting` is not false |
 | `memory_write` | `config.memory` is not false |
 | The seven schedule tools | The run is a direct or group-chat run, not a schedule run |
@@ -51,9 +50,8 @@ has returns `ERROR: unknown tool <name>`.
 
 A [subscription agent](../concepts/agents.md#model-source)'s run is
 offered what a run on a key with the same access, flags, and kind is
-offered, connectors included, less the five code tools (`shell`,
-`shell_status`, `file_read`, `code_search`, `code_task`): its harness
-has its own. The run's snapshot records that offer. The harness calls
+offered, connectors included, beside the shell and file tools its
+harness has of its own. The run's snapshot records that offer. The harness calls
 those tools on the orchestrator's MCP server
 ([MCP server](#the-mcp-server)), which Claude Code and Codex name
 `mcp__guilds__<tool>`, Antigravity `mcp_guilds_<tool>`, and Cursor by
@@ -126,8 +124,8 @@ minutes old. A listing that fails keeps the stored list
 ([Tools of a login](connectors.md#tools-of-a-login)).
 
 A GitHub login with no repositories picked lists no tools, so the run
-starts without them. A coding run also reaches GitHub through its
-guild's repositories ([GitHub](github.md)).
+starts without them. A subscription agent's turn also reaches GitHub
+with `git` through the repositories it picks ([GitHub](github.md)).
 
 ### Browser calls
 
@@ -184,9 +182,7 @@ A refused call does nothing. An argument the tool hands on to the part
 of the orchestrator that reads it, such as a record's `where`, `id`
 and `body`, a routine's timing, or a script's `parameters` and
 `arguments`, is taken as any JSON value and refused there in that
-part's words. A timeout the tool keeps within its range, `shell`'s
-`timeout_seconds` and `code_task`'s `timeout_minutes`, is read as a
-whole number, cut to the range, and its default when it is not a
+part's words. A timeout a tool keeps within its range is read as a whole number, cut to the range, and its default when it is not a
 number.
 
 ### Handlers

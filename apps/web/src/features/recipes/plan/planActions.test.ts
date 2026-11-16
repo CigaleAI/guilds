@@ -46,13 +46,13 @@ test("a recipe's repositories become a section and a step to add each with its U
         role: "dev",
         name_suggestion: "dev",
         focus: "",
-        config: { model: "m", coding: true },
+        config: { harness: "codex", repositories: ["api"] },
         task: { body: "Fix bugs.", embeds: [], author: null },
       },
     ],
     repositories: [{ name: "api", purpose: "The HTTP service." }],
   });
-  assert.equal(plan.agents[0]?.coding, true);
+  assert.equal(plan.agents[0]?.model_source, "subscription");
   assert.deepEqual(plan.repositories, [{ name: "api", purpose: "The HTTP service." }]);
   assert.deepEqual(
     plan.actions

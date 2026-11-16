@@ -42,15 +42,15 @@ export const MAX_AGENTS_PER_MACHINE = 32;
 
 /**
  * Machine sizing (docs/concepts/machines.md#machine-sizing). The smallest machine an
- * agent runs on, by what it has on: every agent has `base`, `browser` raises it, and `coding`
- * raises it for a coding agent and for a subscription agent, whose harness runs every turn.
- * An agent's minimum is the largest of these, CPUs and memory each, not their sum: Chrome and the
- * coding toolchain only run while the agent works. Placement refuses a machine below the minimum.
+ * agent runs on, by what it has on: every agent has `base`, `browser` raises it, and `harness`
+ * raises it for a subscription agent, whose harness runs every turn. An agent's minimum is the
+ * largest of these, CPUs and memory each, not their sum: Chrome and the harness only run while
+ * the agent works. Placement refuses a machine below the minimum.
  */
 export const AGENT_MINIMUMS = {
   base: { cpu: 0.5, memory_mib: 256 },
   browser: { cpu: 1, memory_mib: 2048 },
-  coding: { cpu: 2, memory_mib: 4096 },
+  harness: { cpu: 2, memory_mib: 4096 },
 } as const satisfies Record<string, MachineSize>;
 
 /**
@@ -62,16 +62,15 @@ export const AGENT_MINIMUMS = {
 export const OVERCOMMIT = { cpu: 5, memory: 3 } as const;
 
 /**
- * What an agent needs of its machine: Chrome, the coding toolchain, and the harness CLI its every
- * turn runs on, which the machine's image must carry: a subscription agent's, else null.
+ * What an agent needs of its machine: Chrome, and the harness CLI its every turn runs on, which
+ * the machine's image must carry: a subscription agent's, else null.
  */
-export type AgentNeeds = { browser: boolean; coding: boolean; harness: Harness | null };
+export type AgentNeeds = { browser: boolean; harness: Harness | null };
 
 /** What an agent with this config needs of its machine. */
-export function agentNeedsOf(config: Pick<AgentConfig, "browser" | "coding" | "model" | "harness">): AgentNeeds {
+export function agentNeedsOf(config: Pick<AgentConfig, "browser" | "model" | "harness">): AgentNeeds {
   return {
     browser: config.browser,
-    coding: config.coding,
     harness: modelSourceOf(config).kind === "subscription" ? config.harness : null,
   };
 }
@@ -131,7 +130,7 @@ export function agentMinimum(needs: AgentNeeds): MachineSize {
   return largestSize([
     AGENT_MINIMUMS.base,
     ...(needs.browser ? [AGENT_MINIMUMS.browser] : []),
-    ...(needs.coding || needs.harness !== null ? [AGENT_MINIMUMS.coding] : []),
+    ...(needs.harness !== null ? [AGENT_MINIMUMS.harness] : []),
   ]);
 }
 

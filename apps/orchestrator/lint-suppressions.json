@@ -29,11 +29,6 @@
       "count": 1
     }
   },
-  "src/attachments/hydrate.ts": {
-    "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
   "src/attachments/index.ts": {
     "boundary/no-reexport-modules": {
       "count": 1
@@ -141,11 +136,6 @@
   "src/extension.ts": {
     "limits/inline-parameter-type": {
       "count": 5
-    }
-  },
-  "src/generation/chain.ts": {
-    "limits/silent-catch": {
-      "count": 1
     }
   },
   "src/generation/coding.ts": {

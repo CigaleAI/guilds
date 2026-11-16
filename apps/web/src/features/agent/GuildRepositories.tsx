@@ -67,7 +67,7 @@ function credentialLabel(repository: GuildRepository): ReactNode {
 type GuildRepositoriesProps = { guild: Pick<Guild, "id"> };
 
 /**
- * Extra git URLs this guild's coding agents can pick, on any HTTPS host, besides the repositories
+ * Extra git URLs this guild's subscription agents can pick, on any HTTPS host, besides the repositories
  * picked on a GitHub login (Tools → GitHub).
  */
 export function GuildRepositories({ guild }: GuildRepositoriesProps) {
@@ -264,7 +264,7 @@ type CredentialSelectProps = {
 /** What a repository is cloned with: a GitHub login for a GitHub URL, an access token, or nothing for a public one. */
 function CredentialSelect({ logins, credential, onCredentialChange }: CredentialSelectProps) {
   const hints: Record<RepositoryCredential["kind"], string> = {
-    github: "Its coding agents get a GitHub token for this repository at each run.",
+    github: "Its subscription agents get a GitHub token for this repository at each turn.",
     access_token: "A token the git host issued, kept as a secret of the organisation.",
     none: "Without a credential, only a public repository can be cloned.",
   };

@@ -380,7 +380,7 @@ export async function updateMcpConnectionSettings(
   return result.rows[0] ?? null;
 }
 
-/** Replaces the repositories a GitHub login's coding agents clone, in its settings. */
+/** Replaces the repositories a GitHub login's subscription agents clone, in its settings. */
 export async function updateMcpConnectionGithubRepositories(
   pool: Queryable,
   connectionId: string,

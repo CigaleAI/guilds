@@ -74,7 +74,6 @@ function nativeEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAcce
   const offered = offeredToolNames(access.native_tools, {
     browser: config.browser,
     browserOptimized: isOptimizedBrowserOn(config),
-    coding: config.coding,
     scripting: config.scripting,
     memory: config.memory,
     schedules: true,

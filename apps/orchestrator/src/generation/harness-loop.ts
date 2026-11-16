@@ -39,7 +39,6 @@ import {
   type Settled,
 } from "../toolbox/harness-ops.js";
 import type { ToolRun } from "../toolbox/index.js";
-import { completeIfActive } from "./chain.js";
 import {
   GenerationBlocked,
   GenerationCancelled,
@@ -49,6 +48,7 @@ import {
   TOOL_CALL_LIMIT_MESSAGE,
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
+import { completeIfActive } from "./lifecycle.js";
 import type { AgentMachines } from "./machines.js";
 import {
   HARNESS_TURN_STEPS,

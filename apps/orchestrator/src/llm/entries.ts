@@ -1,4 +1,4 @@
-import { catalogModelId, type ProviderDef, type ProviderId, type ProviderKind } from "./providers.js";
+import { catalogModelId, type ProviderDef, type ProviderId } from "./providers.js";
 
 /** USD per token. */
 export type CatalogRates = {
@@ -20,8 +20,6 @@ export type CatalogEntry = {
   context: number | null;
   /** Null for an unbilled provider, or a row without a price. */
   rates: CatalogRates | null;
-  kind: ProviderKind;
-  coding_only: boolean;
   /** Whether the catalog lists it; a well-formed id it does not list takes the default capacities. */
   listed: boolean;
 };
@@ -38,8 +36,6 @@ export function defaultEntry(provider: ProviderDef, model: string): CatalogEntry
     ...DEFAULT_CAPACITIES,
     context: null,
     rates: null,
-    kind: provider.kind,
-    coding_only: provider.kind === "coding",
     listed: false,
   };
 }
@@ -50,7 +46,7 @@ export type CatalogPrice = { input: number; output: number; cache_read: number }
 /** A model as the API lists it: what it accepts, its window, and its prices; null for one without a price. */
 export type CatalogEntryPayload = Pick<
   CatalogEntry,
-  "id" | "model" | "provider" | "label" | "thinking" | "temperature" | "attachments" | "context" | "kind" | "coding_only"
+  "id" | "model" | "provider" | "label" | "thinking" | "temperature" | "attachments" | "context"
 > & { price: CatalogPrice | null };
 
 /** An entry as the API lists it: prices in USD per million tokens. */
@@ -71,7 +67,5 @@ export function entryPayload(entry: CatalogEntry): CatalogEntryPayload {
           cache_read: entry.rates.cacheRead * 1_000_000,
         }
       : null,
-    kind: entry.kind,
-    coding_only: entry.coding_only,
   };
 }

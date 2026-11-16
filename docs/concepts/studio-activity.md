@@ -158,10 +158,11 @@ active in the window.
 - The outcome is `posted` (a `group_post` in the window, with its
   tool-call id), `wrote` (record, note, script, or code writes; memory
   does not count), or no output.
-- A coding wake's code writes come from its run's `metadata.repos`:
-  one write of kind `code` per repository it changed, with the branch,
-  files changed, insertions, and deletions. `file_changes` stays the
-  ledger of artifacts.
+- A wake's code writes come from its run's `metadata.turn_changes`:
+  one write of kind `code` per repository its turns changed, with the
+  branch of the latest turn that changed it and the files changed,
+  insertions, and deletions summed over those turns. `file_changes`
+  stays the ledger of artifacts.
 - Errors in the window mark the wake failed.
 - Each wake lists its tool calls in the window in order (at most 200,
   with the total). Each call has the first 160 characters of its

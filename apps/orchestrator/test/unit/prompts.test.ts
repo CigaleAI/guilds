@@ -206,7 +206,6 @@ test("standing omits script and note guides when those capabilities are off", ()
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
   });
   assert.ok(!off.includes("A script is the only way to execute code"));
   assert.ok(!off.includes("display paths returned by note tools"));
@@ -215,37 +214,11 @@ test("standing omits script and note guides when those capabilities are off", ()
     scripts: true,
     notes: true,
     browser: true,
-    coding: false,
   });
   assert.ok(on.includes("A script is the only way to execute code"));
   assert.ok(on.includes("display paths returned by note tools"));
   assert.ok(!on.includes("code_task"));
   assert.ok(!on.includes("<capability"));
-});
-
-test("the coding block replaces the scripts-only line for coding agents", () => {
-  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
-  const coding = standingForCapabilities(text, {
-    scripts: true,
-    notes: true,
-    browser: false,
-    coding: true,
-  });
-  assert.ok(coding.includes("code_task"));
-  assert.ok(coding.includes("agent/<your name>/<topic>"));
-  assert.ok(!coding.includes("file_edit"));
-  assert.ok(coding.includes("run one-off commands with `<tool>shell</tool>`"));
-  assert.ok(!coding.includes("A script is the only way to execute code"));
-  assert.ok(!coding.includes("<capability"));
-  const noScripts = standingForCapabilities(text, {
-    scripts: false,
-    notes: false,
-    browser: false,
-    coding: true,
-  });
-  assert.ok(noScripts.includes("code_task"));
-  assert.ok(!noScripts.includes("A script is reusable Python"));
-  assert.ok(!noScripts.includes("<capability"));
 });
 
 test("standing omits memory guides when memory is off", () => {
@@ -254,7 +227,6 @@ test("standing omits memory guides when memory is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     memory: false,
   });
   assert.ok(!off.includes("memory_write"));
@@ -266,7 +238,6 @@ test("standing omits memory guides when memory is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     memory: true,
   });
   assert.ok(on.includes("memory_write"));
@@ -276,7 +247,6 @@ test("standing omits memory guides when memory is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     memory: true,
     memoryWrite: false,
   });
@@ -291,7 +261,6 @@ test("compose omits the memory section when memory is off", () => {
     scripts: true,
     notes: true,
     browser: false,
-    coding: false,
     memory: false,
   };
   const composed = composeSystemPrompt(
@@ -316,7 +285,6 @@ test("compose keeps memory but omits memory_write when the write tool is off", (
     scripts: true,
     notes: true,
     browser: false,
-    coding: false,
     memory: true,
     memoryWrite: false,
   };
@@ -341,7 +309,6 @@ test("state intro omits the scripts line when scripting is off", () => {
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
   });
   assert.ok(off.includes("Call listing tools later"));
   assert.ok(!off.includes("note_find"));
@@ -352,7 +319,6 @@ test("state intro omits the scripts line when scripting is off", () => {
     notes: true,
     files: true,
     browser: true,
-    coding: false,
   });
   assert.equal(on, STATE_INTRO);
 });
@@ -363,7 +329,6 @@ test("a run that offers no tool drops the tool budget and every part on a tool i
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     memory: true,
     memoryWrite: false,
     tools: false,
@@ -400,7 +365,7 @@ test("a run that offers no tool drops the tool budget and every part on a tool i
 
 test("a key agent without group_post, schedules, or report_issue loses only those parts", () => {
   const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
-  const caps = { scripts: false, notes: true, browser: false, coding: false };
+  const caps = { scripts: false, notes: true, browser: false };
   const all = standingForCapabilities(text, caps);
   const without = standingForCapabilities(text, { ...caps, groupPost: false, schedules: false, issues: false });
   assert.ok(all.includes("It is only for coordination") && !without.includes("It is only for coordination"));
@@ -416,7 +381,6 @@ test("a subscription agent's harness reads where it runs, its home, and its port
     scripts: false,
     notes: false,
     browser: false,
-    coding: false,
     tools: false,
     artifacts: false,
     groupPost: false,
@@ -438,7 +402,6 @@ const HARNESS_CAPS = {
   scripts: false,
   notes: false,
   browser: false,
-  coding: false,
   tools: true,
   harness: true,
   repositories: true,
@@ -468,7 +431,7 @@ test("a subscription agent with repositories and no pull request tool is told it
 });
 
 test("the state intro of a run that offers no tool says nothing of listing tools or a tool budget", () => {
-  const intro = stateIntroForCapabilities({ scripts: false, notes: false, browser: false, coding: false, tools: false });
+  const intro = stateIntroForCapabilities({ scripts: false, notes: false, browser: false, tools: false });
   assert.ok(!intro.includes("listing tools"));
   assert.ok(!intro.includes("tool-invocation budget"));
   assert.ok(intro.startsWith("A snapshot of the guild at the start of this run. Use it as your initial context.\n"));
@@ -530,7 +493,7 @@ test("compose_system_prompt has four parts", () => {
 
 test("a key run's prompt names each tool by its own name, and a subscription run's as its harness calls it", () => {
   const standing = "Call `<tool>report_issue</tool>` when a tool fails.\n";
-  const caps = { scripts: false, notes: false, browser: false, coding: false, memory: true };
+  const caps = { scripts: false, notes: false, browser: false, memory: true };
   const own = composeSystemPrompt(standing, "Assist.\n", emptyRunState(), EMPTY_MEMORY, caps, ["Use `<tool>tavily_search</tool>`."]);
   assert.ok(own.includes("Call `report_issue` when"));
   assert.ok(own.includes("Use `tavily_search`."));

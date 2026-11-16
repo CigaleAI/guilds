@@ -111,7 +111,7 @@ function builderTool<C, P extends TObject, R>(definition: BuilderToolDefinition<
 export const builderListCapabilities = builderTool({
   name: "builder_list_capabilities",
   description:
-    "List native tools, the browser capability (operator take-control login at apply when a site has no connector), the coding capability (code tools and repositories), published catalog connectors, models, plan caps, remaining capacity, and reusable org/platform connections. Native group ids are tool groups, not recipe role keys. Call this before naming any system.",
+    "List native tools, the browser capability (operator take-control login at apply when a site has no connector), the subscription capability (an agent on a coding harness, which alone works in repositories), published catalog connectors, models, plan caps, remaining capacity, and reusable org/platform connections. Native group ids are tool groups, not recipe role keys. Call this before naming any system.",
   parameters: Type.Object({}),
   run: (ctx: BuilderCapabilityContext) => ctx.capabilities.listCapabilities({ orgId: ctx.orgId }),
 });
@@ -211,7 +211,7 @@ const recipeDocumentParameter: ToolSchema = {
           config: {
             type: "object",
             description:
-              "Agent configuration: model (left out of a subscription role), run limits, browser, coding (true for a role that clones, edits, runs, and pushes code; see the coding capability), harness (a coding role's harness: claude-code, codex, cursor, or antigravity, set only when the operator named one; or a subscription role's: claude-code or codex), harness_model (the model that harness runs; leave it out unless the operator named one), harness_effort (the reasoning effort that model runs at: none, minimal, low, medium, high, xhigh, max, or ultra; leave it out unless the operator named one), repositories (a coding role's list of the recipe's repositories it works on, by name, each once; its agent clones only those), secret_aliases (variable names the role's commands see beside its secrets, each holding the value of the secret it names; leave it out unless the operator asked), and memory (false to omit Memory and memory_write).",
+              "Agent configuration: model (left out of a subscription role), run limits, browser, harness (a subscription role's harness: claude-code, codex, cursor, or antigravity; the one the operator named, else claude-code; see the subscription capability), harness_model (the model that harness runs; leave it out unless the operator named one), harness_effort (the reasoning effort that model runs at: none, minimal, low, medium, high, xhigh, max, or ultra; leave it out unless the operator named one), repositories (a subscription role's list of the recipe's repositories it works on, by name, each once; its agent clones only those), secret_aliases (variable names the role's commands see beside its secrets, each holding the value of the secret it names; leave it out unless the operator asked), and memory (false to omit Memory and memory_write).",
           },
           task: {
             type: "object",
@@ -426,13 +426,13 @@ const recipeDocumentParameter: ToolSchema = {
     repositories: {
       type: "array",
       description:
-        "Git repositories the guild's coding roles work on, by name and purpose only: no URL and no credential. Each coding role lists the ones it works on in config.repositories. Apply asks the operator to add each one with its URL and a credential.",
+        "Git repositories the guild's subscription roles work on, by name and purpose only: no URL and no credential. Each subscription role lists the ones it works on in config.repositories. Apply asks the operator to add each one with its URL and a credential.",
       items: {
         type: "object",
         properties: {
           name: {
             type: "string",
-            description: "Folder name under repos/ in the home of each coding agent that works on it, matching ^[a-z][a-z0-9_-]{0,62}$.",
+            description: "Folder name under repos/ in the home of each agent that works on it, matching ^[a-z][a-z0-9_-]{0,62}$.",
           },
           purpose: {
             type: "string",

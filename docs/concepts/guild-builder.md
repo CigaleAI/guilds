@@ -205,7 +205,7 @@ the recipe records.
   The coach may not name a server that is not in that result.
 - **Specialisation.** Any of these justifies a split: narrower tools,
   narrower access, narrower context (a distinct memory or playbook),
-  volume, browser against non-browser work, coding against non-coding
+  volume, browser against non-browser work, code work against other
   work, and failure isolation. A single role records its reason in
   `design.specialization`.
 - **Hand-offs.** Two or more roles need a queue collection or a
@@ -228,24 +228,24 @@ the recipe records.
   read with `note_get`. A file that must enter every run is embedded
   with `![[org/<key>]]` ([Task](task.md)). Tasks name systems and
   outcomes, not namespaced tool ids.
-- **Coding.** A role that reads, changes, runs, and ships code sets
-  `config.coding`. Its code tools (`code_task`, `shell`,
-  `shell_status`, `file_read`, `code_search`) come with the flag (see
-  [Code tools](coding/code-tools.md)). The coach sets
-  `config.harness`, `config.harness_model`, `config.harness_effort`,
-  and `config.secret_aliases` only when the operator named them;
-  otherwise apply asks for the harness. The recipe lists the
-  repositories by name and purpose, never a URL or credential. Each
-  coding role's Task names its repositories, the checks it runs, and
-  how work reaches its reviewer.
-- **Subscription.** When the operator asks for an agent on their own
-  harness subscription, the coach writes a subscription role:
-  `config.harness` `claude-code` or `codex`, or `cursor` or
-  `antigravity` only for a role that lists the repositories it works
-  in, no `config.model`, `config.coding` off, and no model-loop
-  settings. Apply creates it
-  as a subscription agent ([Agents](agents.md#model-source)); it
-  counts against the coding agents, as a coding role does.
+- **Subscription.** Every role that reads, changes, runs, and ships
+  code in git repositories is a subscription role, and so is any other
+  role the operator asks to run on their own harness subscription
+  ([Code work](coding/index.md)). A role on a key does no code work in
+  a repository. The coach writes no `config.model`, sets
+  `config.harness` to the one the operator named, else `claude-code`,
+  which the operator may change at apply, and `cursor` or
+  `antigravity` only for a role that lists repositories. It sets
+  `config.harness_model`, `config.harness_effort`, and
+  `config.secret_aliases` only when the operator named them, and no
+  model-loop settings. The recipe lists the repositories by name and
+  purpose, never a URL or credential; each role that works in them
+  lists them in `config.repositories`, and its Task names its
+  repositories, the checks it runs, and how work reaches its reviewer:
+  a pushed branch and a pull request opened with the host's connector
+  tool. Apply creates it as a subscription agent
+  ([Agents](agents.md#model-source)); it counts against the
+  subscription agents.
 - **Scripts.** Builder-written scripts are documents. They cannot run
   in the Builder.
 
@@ -310,8 +310,8 @@ rule is refused (`collections[i].columns: column "x": …`). Each
 accepted write:
 
 - recommends the coach's model on every role without `config.model`
-  but a subscription role: one with a `config.harness`, no model, and
-  `config.coding` off ([Recipe format](recipe-format.md))
+  but a subscription role: one with a `config.harness` and no model
+  ([Recipe format](recipe-format.md))
 - keeps a reviewed field's author when its content did not change, and
   marks every other field `{ by: "builder", reviewed: false }`
 - assigns the guild's looks: one DiceBear family, and a unique variant
@@ -324,7 +324,7 @@ Approve assigns looks too when a role still lacks one.
 
 | Tool | Purpose |
 |---|---|
-| `builder_list_capabilities` | Native tools, the browser and coding capabilities (tools, sandbox cost, the limit each counts against), published connectors, models, the organisation's limits and remaining capacity (agents, browser agents, coding agents; `null` where nothing caps it), reusable connections |
+| `builder_list_capabilities` | Native tools, the browser and subscription capabilities (tools, sandbox cost, the limit each counts against), published connectors, models, the organisation's limits and remaining capacity (agents, browser agents, subscription agents; `null` where nothing caps it), reusable connections |
 | `builder_search_capabilities` | Search connector copy and canonical tool names |
 | `builder_describe_server` | One published connector's catalog record |
 | `builder_search_connected` | Search an organisation-connected workspace (Notion databases and pages) |

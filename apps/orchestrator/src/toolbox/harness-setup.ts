@@ -16,7 +16,7 @@ export class HarnessSetupError extends Error {
   }
 }
 
-/** What a coding run or a `code_task` call of an agent with no harness picked fails with. */
+/** What a subscription turn of an agent with no harness picked fails with. */
 export function harnessMissingError(): HarnessSetupError {
   const labels = harnessesOn().map((harness) => HARNESS_INFO[harness].label);
   const choices = labels.length > 1 ? `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1)}` : labels.join("");
@@ -89,8 +89,8 @@ export async function checkHarness(
 }
 
 /**
- * Checks, before a coding generation calls its model, that the run's harness is installed and
- * has a credential, so a run that cannot delegate code work fails at start. Throws
+ * Checks, before a subscription turn starts its CLI, that the run's harness is installed and has
+ * a credential, so a turn whose harness cannot run fails at start. Throws
  * `HarnessSetupError` naming the fix.
  */
 export async function assertHarnessReady(services: ToolServices, run: ToolRun): Promise<void> {

@@ -7,9 +7,6 @@ import {
   cardServer,
   generationStatus,
   revealedCall,
-  taskPrompt,
-  taskRepository,
-  taskStatus,
   writtenNotePath,
 } from "./FlowView";
 
@@ -83,13 +80,8 @@ test("a stopped generation counts its unanswered calls as errors; a generating o
   assert.deepEqual(generationStatus(stats, false), { kind: "completed" });
 });
 
-test("a running code task's hint says its harness is generating", () => {
-  const call = flowCall("c1");
-  assert.equal(
-    callHint(call, "codex", "running"),
-    "Codex is generating… · Code task in guilds/api",
-  );
-  assert.equal(callHint(call, "codex", "ok"), "Code task in guilds/api");
+test("an old code_task call's hint has no summary of its own", () => {
+  assert.equal(callHint(flowCall("c1")), "");
 });
 
 test("a card names its connected server unless the tool's name carries it", () => {
@@ -97,26 +89,6 @@ test("a card names its connected server unless the tool's name carries it", () =
   assert.equal(cardServer(flowCall("c1", { info })), "github");
   assert.equal(cardServer(flowCall("c1", { info: { ...info, name: "github_search" } })), null);
   assert.equal(cardServer(flowCall("c1")), null);
-});
-
-test("a code task's repository is the one its result names, else the one it was asked for", () => {
-  const asked = flowCall("c1");
-  assert.equal(taskRepository(asked), "guilds/api");
-  const named = flowCall("c1", { result: message(4, { repository: "guilds/web" }) });
-  assert.equal(taskRepository(named), "guilds/web");
-  const none = flowCall("c1", { call: codeTaskCall("{}") });
-  assert.equal(taskRepository(none), "");
-});
-
-test("a code task's prompt is its brief, and empty without one", () => {
-  assert.equal(taskPrompt(flowCall("c1")), "Fix it");
-  assert.equal(taskPrompt(flowCall("c1", { call: codeTaskCall('{"brief":3}') })), "");
-});
-
-test("a code task's block reads a finished call as done", () => {
-  assert.equal(taskStatus("ok"), "done");
-  assert.equal(taskStatus("failed"), "failed");
-  assert.equal(taskStatus("running"), "running");
 });
 
 test("a note_write's chip names the note its result's first line names, and none for another path", () => {

@@ -117,7 +117,7 @@ test("ticking a repository adds it after the agent's picks, and unticking takes 
   assert.deepEqual(togglePickedRepository(["shop", "docs"], "shop"), ["docs"]);
 });
 
-test("a coding run needs a pick the agent can use", () => {
+test("a turn in repositories needs a pick the agent can use", () => {
   assert.equal(picksUsableRepository(["shop"], ["shop"]), true);
   assert.equal(picksUsableRepository(["shop"], ["billing"]), false);
   assert.equal(picksUsableRepository(["shop"], []), false);

@@ -75,10 +75,8 @@ import type { ValidationContext } from "./findings.js";
 import {
   prepareRecipeForApply,
   roleBrowses,
-  roleCodes,
   roleRepositories,
   roleRunsOnSubscription,
-  roleTakesHarness,
   roleTaskText,
   schedulesForRole,
   subscriptionHarnessOf,
@@ -115,7 +113,6 @@ function rolesNeeds(recipe: RecipeDocument): Array<AgentNeeds & { role: string }
   return recipe.roles.map((role) => ({
     role: role.role,
     browser: roleBrowses(role),
-    coding: roleCodes(role),
     harness: subscriptionHarnessOf(role),
   }));
 }
@@ -399,10 +396,10 @@ async function setupsNeeded(apply: RecipeApply, orgId: string, recipe: RecipeDoc
   });
 }
 
-/** The models a role may run: one of a connected provider, and a coding provider only for a coding role. */
-function modelFits(role: RecipeRole, connected: Set<string>, id: string | null): id is string {
+/** The models a role may run: one of a connected provider. */
+function modelFits(connected: Set<string>, id: string | null): id is string {
   const parsed = id ? parseModelId(id) : null;
-  return Boolean(parsed && connected.has(parsed.provider.id) && (roleCodes(role) || parsed.provider.kind !== "coding"));
+  return Boolean(parsed && connected.has(parsed.provider.id));
 }
 
 /** The models a preview may pick from: the organisation's connected providers and its default model. */
@@ -422,7 +419,7 @@ function resolveModels(recipe: RecipeDocument, decisions: ModelDecision[], offer
     }
   }
   return recipe.roles.filter((role) => !roleRunsOnSubscription(role)).map((role) => {
-    const fits = (id: string | null): id is string => modelFits(role, offer.connected, id);
+    const fits = (id: string | null): id is string => modelFits(offer.connected, id);
     const recommended = recommendedModelOf(role.config);
     const choice = chosen.get(role.role) || null;
     if (choice && !parseModelId(choice)) {
@@ -468,19 +465,19 @@ function chosenHarness(role: RecipeRole, choice: string | null): Harness | null 
   return choice;
 }
 
-/** The harness each coding or subscription role is created with: the operator's choice, else the recipe's. */
+/** The harness each subscription role is created with: the operator's choice, else the recipe's. */
 function resolveHarnesses(recipe: RecipeDocument, decisions: HarnessDecision[]): RoleHarness[] {
   const chosen = new Map(decisions.map((item) => [item.role, String(item.harness ?? "").trim()]));
   for (const role of chosen.keys()) {
     const found = recipe.roles.find((item) => item.role === role);
-    if (!found || !roleTakesHarness(found)) {
-      throw new RecipeError(`harnesses.${role}: only a coding role or a subscription role takes a harness`);
+    if (!found || !roleRunsOnSubscription(found)) {
+      throw new RecipeError(`harnesses.${role}: only a subscription role takes a harness`);
     }
   }
-  return recipe.roles.filter(roleTakesHarness).map((role) => {
+  return recipe.roles.filter(roleRunsOnSubscription).map((role) => {
     const recommended = recommendedHarness(role);
     const choice = chosenHarness(role, chosen.get(role.role) || null);
-    return { role: role.role, recommended, harness: choice ?? recommended, subscription: roleRunsOnSubscription(role) };
+    return { role: role.role, recommended, harness: choice ?? recommended };
   });
 }
 
@@ -512,7 +509,6 @@ function inventoryFromRecipe(recipe: RecipeDocument, plan: InventoryPlan): Apply
       focus: role.focus,
       model: recommendedModelOf(role.config) ?? "",
       browser: roleBrowses(role),
-      coding: roleCodes(role),
       task: roleTaskText(role, recipe),
       native_tools: Object.entries(role.native_tools)
         .filter(([, enabled]) => enabled)
@@ -640,7 +636,7 @@ export async function previewApply(
     remaining: {
       agents: ctx.remainingAgents,
       browser_agents: ctx.remainingBrowserAgents,
-      coding_agents: ctx.remainingCodingAgents,
+      subscription_agents: ctx.remainingSubscriptionAgents,
     },
     creates: inventoryFromRecipe(recipe, { guildName, names, connections, secrets, collections }),
   };

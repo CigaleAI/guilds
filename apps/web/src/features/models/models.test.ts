@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { CatalogModel, OrgModelProvider, OrgModels } from "../../api/types/models";
 import { formatProviderState, modelOptions, preselectedModel, setupProgress } from "./models";
 
-function model(id: string, kind: "marketplace" | "coding" = "marketplace"): CatalogModel {
+function model(id: string): CatalogModel {
   const [provider, ...rest] = id.split("/");
   return {
     id,
@@ -15,29 +15,23 @@ function model(id: string, kind: "marketplace" | "coding" = "marketplace"): Cata
     attachments: false,
     context: null,
     price: null,
-    kind,
-    coding_only: kind === "coding",
   };
 }
 
 const models: OrgModels = {
   default: "openai/gpt-5",
   providers: [
-    { id: "openai", label: "OpenAI", kind: "marketplace", connected: true, source: "own", key_hint: "abcd", base_url: null },
-    { id: "xai", label: "xAI", kind: "marketplace", connected: false, source: null, key_hint: null, base_url: null },
-    { id: "kimi", label: "Kimi Code", kind: "coding", connected: true, source: "own", key_hint: "efgh", base_url: null },
+    { id: "openai", label: "OpenAI", connected: true, source: "own", key_hint: "abcd", base_url: null },
+    { id: "xai", label: "xAI", connected: false, source: null, key_hint: null, base_url: null },
   ],
-  models: [model("openai/gpt-5"), model("openai/gpt-5-mini"), model("kimi/k3", "coding")],
+  models: [model("openai/gpt-5"), model("openai/gpt-5-mini"), model("xai/grok")],
 };
 
-test("the picker lists chosen models by connected provider, coding rows only for a coding agent", () => {
-  const plain = modelOptions(models, { coding: false });
+test("the picker lists chosen models by connected provider", () => {
+  const plain = modelOptions(models);
   assert.deepEqual(plain.map((group) => [group.label, group.options.map((option) => option.value)]), [
     ["OpenAI", ["openai/gpt-5", "openai/gpt-5-mini"]],
   ]);
-  const coding = modelOptions(models, { coding: true });
-  assert.deepEqual(coding.map((group) => group.label), ["OpenAI", "Kimi Code"]);
-  assert.deepEqual(modelOptions(models, { coding: true, marketplaceOnly: true }).map((group) => group.label), ["OpenAI"]);
   const kept = modelOptions(models, { current: "deepinfra/old" });
   assert.deepEqual(kept[0], { label: "Not offered", options: [{ value: "deepinfra/old", label: "deepinfra/old" }] });
   assert.deepEqual(modelOptions(undefined, { current: "openai/gpt-5" }), [
@@ -48,8 +42,7 @@ test("the picker lists chosen models by connected provider, coding rows only for
 
 test("the default is preselected where the picker lists it, else nothing", () => {
   assert.equal(preselectedModel(models), "openai/gpt-5");
-  assert.equal(preselectedModel({ ...models, default: "kimi/k3" }, { coding: false }), "");
-  assert.equal(preselectedModel({ ...models, default: "kimi/k3" }, { coding: true }), "kimi/k3");
+  assert.equal(preselectedModel({ ...models, default: "xai/grok" }), "", "a provider that is not connected");
   assert.equal(preselectedModel({ ...models, default: null }), "");
   assert.equal(preselectedModel(undefined), "");
 });
@@ -69,7 +62,6 @@ test("setup progress follows a connected provider, chosen models, and a default"
 const provider = (patch: Partial<OrgModelProvider>): OrgModelProvider => ({
   id: "openai",
   label: "OpenAI",
-  kind: "marketplace",
   connected: false,
   source: null,
   key_hint: null,

@@ -206,14 +206,6 @@ returns a JSON-serializable value. `console.log` is not captured. To
 reuse a snippet, the agent writes it to a note and reads it back with
 `note_get`.
 
-## Code
-
-`code_task`, `shell`, `shell_status`, `file_read`, and `code_search`
-are the code tools ([Code tools](../concepts/coding/code-tools.md),
-[Code tasks](../concepts/coding/code-tasks.md)). `code_task` runs
-through `guilds-harness` and hands code work to the agent's coding
-harness. The other four run through `guilds-code`.
-
 ## Group chat
 
 `group_post` takes one required `content` string with non-whitespace
@@ -325,7 +317,7 @@ takes effect from the next run.
 `script_run` runs that file on the agent's machine, in its home,
 through `guilds-script-run`, with a 120-second timeout. The launcher
 writes `arguments` to the script's stdin as JSON, `{}` without one.
-For an agent without `coding`, it is the only tool that runs a command
+For an agent on a key, it is the only tool that runs a command
 there.
 
 `script_delete` removes the stored script, the sandbox file, and the

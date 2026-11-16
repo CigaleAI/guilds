@@ -52,7 +52,7 @@ export type MachineSpec = Pick<Machine, "name" | "box" | "memory_mib" | "max_wor
 export type MachineKey = Pick<Machine, "org_id" | "id">;
 
 /** The settings of an agent on a machine that say what it needs of the machine. */
-export type HostedAgentConfig = Pick<AgentConfig, "browser" | "coding" | "model" | "harness">;
+export type HostedAgentConfig = Pick<AgentConfig, "browser" | "model" | "harness">;
 
 const AGENT_PLACEMENT_KEYS = ["org_id", "config", "machine_id", "machine_slot"] as const;
 
@@ -71,7 +71,6 @@ const MACHINES_WITH_AGENTS = `
                                'id', a.id, 'name', a.name, 'guild_id', a.guild_id, 'guild_name', g.name,
                                'slot', a.machine_slot,
                                'browser', COALESCE((a.config->>'browser')::boolean, FALSE),
-                               'coding', COALESCE((a.config->>'coding')::boolean, FALSE),
                                'model', a.config->'model', 'harness', a.config->'harness',
                                'max_workspace_mib', a.config->'max_workspace_mib')
                              ORDER BY a.machine_slot),
@@ -137,7 +136,6 @@ export async function listMachineSlots(db: Queryable, machineId: string): Promis
 export async function listHostedAgentConfigs(db: Queryable, machineId: string): Promise<HostedAgentConfig[]> {
   const result = await db.query<HostedAgentConfig>(
     `SELECT COALESCE((config->>'browser')::boolean, FALSE) AS browser,
-            COALESCE((config->>'coding')::boolean, FALSE) AS coding,
             config->'model' AS model, config->'harness' AS harness
        FROM agents WHERE machine_id = $1`,
     [machineId],

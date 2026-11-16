@@ -64,12 +64,8 @@ const feed = projectModelsDevFeed(
         "gpt-5-mini": { id: "gpt-5-mini", name: "GPT-5 mini", tool_call: true, modalities: { input: ["text"], output: ["text"] }, cost: { input: 0.1, output: 0.2 } },
       },
     },
-    "kimi-code-plan-global": {
-      id: "kimi-code-plan-global",
-      models: { k3: { id: "k3", name: "Kimi K3", tool_call: true, reasoning: true, modalities: { input: ["text"], output: ["text"] } } },
-    },
   },
-  ["openai", "kimi-code-plan-global"],
+  ["openai"],
 );
 
 function service(
@@ -106,15 +102,14 @@ test("nothing is offered until a provider is connected", async () => {
   assert.equal(payload.default, null);
   assert.deepEqual(payload.models, []);
   assert.deepEqual(
-    payload.providers.map((item) => [item.id, item.kind, item.connected, item.source, item.key_hint]),
+    payload.providers.map((item) => [item.id, item.connected, item.source, item.key_hint]),
     [
-      ["openai", "marketplace", false, null, null],
-      ["anthropic", "marketplace", false, null, null],
-      ["openrouter", "marketplace", false, null, null],
-      ["xai", "marketplace", false, null, null],
-      ["deepinfra", "marketplace", false, null, null],
-      ["local", "marketplace", false, null, null],
-      ["kimi", "coding", false, null, null],
+      ["openai", false, null, null],
+      ["anthropic", false, null, null],
+      ["openrouter", false, null, null],
+      ["xai", false, null, null],
+      ["deepinfra", false, null, null],
+      ["local", false, null, null],
     ],
   );
   assert.deepEqual(await models.connectedProviders("org_1"), new Set());
@@ -128,7 +123,7 @@ test("connecting probes the key, keeps it on a later save, and offers the chosen
     (error: unknown) => error instanceof ModelsError && /openai\/\{model\}/.test(error.message),
   );
   const item = await models.connect("org_1", "openai", { api_key: " sk-openai-1234 ", models: ["openai/gpt-5", "openai/gpt-5", "openai/gpt-5-dated"] });
-  assert.deepEqual(item, { id: "openai", label: "OpenAI", kind: "marketplace", connected: true, source: "own", key_hint: "1234", base_url: null });
+  assert.deepEqual(item, { id: "openai", label: "OpenAI", connected: true, source: "own", key_hint: "1234", base_url: null });
   assert.deepEqual(requests, ["https://api.openai.com/v1/models sk-openai-1234"]);
   const payload = await models.read("org_1");
   assert.equal(payload.providers.find((row) => row.id === "openai")?.connected, true);
@@ -163,7 +158,7 @@ test("the local endpoint takes a URL and an optional key, lists what it reports,
   await assert.rejects(() => models.connect("org_1", "local", { base_url: "ftp://x" }), /http/);
   await assert.rejects(() => models.providerCatalog("org_1", "local"), /URL first/);
   const item = await models.connect("org_1", "local", { base_url: "http://127.0.0.1:11434/v1", models: ["local/qwen3:8b"] });
-  assert.deepEqual(item, { id: "local", label: "Local endpoint", kind: "marketplace", connected: true, source: "own", key_hint: null, base_url: "http://127.0.0.1:11434/v1" });
+  assert.deepEqual(item, { id: "local", label: "Local endpoint", connected: true, source: "own", key_hint: null, base_url: "http://127.0.0.1:11434/v1" });
   assert.deepEqual(requests, ["http://127.0.0.1:11434/v1/models "]);
   const listed = await models.providerCatalog("org_1", "local");
   assert.deepEqual(listed.map((row) => [row.id, row.thinking, row.temperature, row.attachments, row.price]), [
@@ -175,14 +170,9 @@ test("the local endpoint takes a URL and an optional key, lists what it reports,
   assert.deepEqual(payload.models.map((row) => row.id), ["local/qwen3:8b"]);
 });
 
-test("the default is one of the chosen marketplace models, and clears when that choice goes", async () => {
-  const { models } = service({
-    "https://api.openai.com/v1/models": ["gpt-5"],
-    "https://api.kimi.ai/coding/v1/models": ["k3"],
-  });
+test("the default is one of the chosen models, and clears when that choice goes", async () => {
+  const { models } = service({ "https://api.openai.com/v1/models": ["gpt-5"] });
   await models.connect("org_1", "openai", { api_key: "sk-1", models: ["openai/gpt-5", "openai/gpt-5-mini"] });
-  await models.connect("org_1", "kimi", { api_key: "sk-2", models: ["kimi/k3"] });
-  await assert.rejects(() => models.setDefault("org_1", "kimi/k3"), /marketplace/);
   await assert.rejects(() => models.setDefault("org_1", "openai/gpt-5-dated"), /choose openai\/gpt-5-dated under OpenAI/);
   await assert.rejects(() => models.setDefault("org_1", "gpt-5"), /\{provider\}\/\{model\}/);
   assert.deepEqual(await models.setDefault("org_1", "openai/gpt-5"), { default: "openai/gpt-5" });
@@ -195,7 +185,7 @@ test("the default is one of the chosen marketplace models, and clears when that 
   assert.equal(await models.remove("org_1", "openai"), true);
   assert.equal((await models.read("org_1")).default, null, "removing the key clears the default");
   assert.equal(await models.remove("org_1", "openai"), false);
-  assert.deepEqual(await models.connectedProviders("org_1"), new Set(["kimi"]));
+  assert.deepEqual(await models.connectedProviders("org_1"), new Set());
 });
 
 test("a provider the platform serves is marked so, offers its models, and is not the organisation's to remove", async () => {

@@ -105,7 +105,6 @@ export type PromptCapabilities = {
   files: boolean;
   browser: boolean;
   browserOptimized: boolean;
-  coding: boolean;
   memory: boolean;
   memoryWrite: boolean;
   tools: boolean;
@@ -150,7 +149,6 @@ function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: 
     files: offers(FILE_TOOLS),
     browser: Boolean(config.browser),
     browserOptimized: isOptimizedBrowserOn(config),
-    coding: Boolean(config.coding),
     memory,
     memoryWrite: memory && tools.includes("memory_write"),
     tools: tools.length > 0,
@@ -215,7 +213,7 @@ export class RunPreparation {
       scripts: caps.scripts ? await scripts.catalog(agent.id) : [],
       maxToolCalls: config.max_tool_calls,
       connectors: await this.connectorState(agent),
-      repositories: caps.coding || caps.repositories ? stateRepositories(repositories, agent.id) : null,
+      repositories: caps.repositories ? stateRepositories(repositories, agent.id) : null,
     });
     return {
       agent,

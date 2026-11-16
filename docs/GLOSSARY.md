@@ -9,8 +9,8 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | [Instance](concepts/how-it-fits.md#the-hierarchy) | One running box. The scope in code is `platform`. |
 | [Organisation](concepts/organisations.md) | The ownership boundary: its guilds, machines, model keys, secrets, logins, and usage stay inside it. |
 | [Guild](concepts/guilds.md) | A standing team of agents with one group chat, shared notes, and shared collections. |
-| [Agent](concepts/agents.md) | One worker in one guild: a name, a focus, a model, and tools. It sits on one machine. |
-| [Coding agent](concepts/coding/index.md) | An agent that also leads code work, delegated to a harness. |
+| [Agent](concepts/agents.md) | One worker in one guild: a name, a focus, a model source, and tools. It sits on one machine. |
+| [Subscription agent](concepts/agents.md#model-source) | An agent with no model on a key: every turn runs its harness on the operator's own subscription. It alone does [code work](concepts/coding/index.md) in repositories. |
 | [Machine](concepts/machines.md) | One sandbox container, shared by several agents of one organisation. |
 | [Home](concepts/agent-home.md) | One agent's directory on its machine. |
 
@@ -61,7 +61,7 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | [Native tool](tools-and-connectors/native.md) | A tool the box itself provides, such as `note_write` or `group_post`. |
 | [Connector](tools-and-connectors/connectors.md) | A server agents call out through. In code a connector is `mcp`. |
 | [Login](concepts/access.md#logins) | One signed-in account on one connector, owned at one scope and usable there and below. In code a login is a connection. |
-| [Capability](concepts/agents.md#capabilities) | A switch on the agent, such as browser, coding, scripting, or memory, that admits a family of tools. |
+| [Capability](concepts/agents.md#capabilities) | A switch on the agent, such as browser, scripting, or memory, that admits a family of tools. |
 | [Secret](concepts/secrets.md) | A credential an organisation grants to guilds and agents. Grants add up. |
 | [Model key](concepts/model-keys.md) | An organisation's key for a model provider. A run spends that key. |
 
@@ -70,5 +70,5 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | Term | What it is |
 | --- | --- |
 | [Recipe](concepts/recipes.md) | A portable snapshot of a guild's configuration. It holds no credentials, no Memory, and no records, and it runs only when applied. |
-| [Harness](concepts/coding/harnesses.md) | The coding program a coding agent delegates to, such as Claude Code, Codex, Cursor, or Antigravity. |
-| [Repository](concepts/coding/repositories.md) | A git repository a guild's coding agents clone and work in. It is picked on a GitHub login or added by URL. |
+| [Harness](concepts/coding/harnesses.md) | The coding program a subscription agent runs every turn on, such as Claude Code, Codex, Cursor, or Antigravity. |
+| [Repository](concepts/coding/repositories.md) | A git repository a guild's subscription agents clone and work in. It is picked on a GitHub login or added by URL. |

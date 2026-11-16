@@ -51,7 +51,7 @@ export type MachineServices = {
 export type MachineMember = { membership: OrgMembershipRow; userId: string };
 
 /** An agent on a machine as the viewer sees it: who it is, its guild, its model source, and what it runs there. */
-export type MachineItemAgent = Pick<MachineAgent, "id" | "name" | "guild_id" | "guild_name" | "browser" | "coding"> & {
+export type MachineItemAgent = Pick<MachineAgent, "id" | "name" | "guild_id" | "guild_name" | "browser"> & {
   model_source: ModelSource["kind"];
 };
 
@@ -96,7 +96,6 @@ export function machineItem(
       guild_id: agent.guild_id,
       guild_name: agent.guild_name,
       browser: agent.browser,
-      coding: agent.coding,
       model_source: modelSourceOf(agent).kind,
     })),
     hidden_agents: machine.agents.length - visible.length,
@@ -182,7 +181,7 @@ async function resizeMachine(
       if (hosted.length && !sizeMeets(machineSize(machine), minimum)) {
         throw new MachineError(
           409,
-          `this machine's agents need at least ${sizeLabel(minimum)}; move them or turn their browser or coding off first`,
+          `this machine's agents need at least ${sizeLabel(minimum)}; move them or turn their browser off or their subscription to a model first`,
         );
       }
       const after = await updateMachine(

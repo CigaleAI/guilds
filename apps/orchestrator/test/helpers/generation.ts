@@ -33,7 +33,7 @@ import { TEST_CREDENTIALS } from "./models.js";
 import type { AgentPlaceRow, AgentRow, AgentScriptRow, FoundHarnessLogin, NewAgentScript } from "../../src/db/agents.js";
 import type { BlockingIssueRow } from "../../src/db/blocking-issues.js";
 import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
-import { RepositoryTokens, type GitTokenScope } from "../../src/coding/git.js";
+import { RepositoryTokens } from "../../src/coding/git.js";
 import { AccessTokenProvider } from "../../src/coding/access-token-provider.js";
 import { GithubProvider } from "../../src/coding/github-provider.js";
 import type { CodingRepository } from "../../src/coding/repositories.js";
@@ -73,7 +73,6 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
   browser_language: "en-US",
   browser_optimized: false,
   browser_model: null,
-  coding: false,
   harness: null,
   harness_model: null,
   harness_effort: null,
@@ -496,12 +495,11 @@ export class FakeDB {
     return this.mcp_connection;
   }
 
-  /** A run's repository tokens within `scope`, minted and recorded through this fake. */
-  repositoryTokens(repositories: CodingRepository[], scope: GitTokenScope): RepositoryTokens {
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(
       { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
       repositories,
-      scope,
     );
   }
 
@@ -743,12 +741,11 @@ export class RecordingDB {
     return this.mcp_connection;
   }
 
-  /** A run's repository tokens within `scope`, minted and recorded through this fake. */
-  repositoryTokens(repositories: CodingRepository[], scope: GitTokenScope): RepositoryTokens {
+  /** A run's repository tokens, minted and recorded through this fake. */
+  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
     return new RepositoryTokens(
       { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
       repositories,
-      scope,
     );
   }
 
@@ -802,16 +799,13 @@ export class RecordingDB {
       systemPromptHash,
       taskPromptHash,
       memoryPromptHash,
-      extraMessages: rawExtra,
       userMetadata,
     } = input;
-    const extraMessages = rawExtra ?? [];
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
       task_content: taskContent,
       user_content: userContent,
-      extra_messages: extraMessages,
       user_metadata: userMetadata,
     };
     this.messages = [
@@ -823,10 +817,6 @@ export class RecordingDB {
       },
     ];
     let seq = 1;
-    for (const [payload, metadata] of extraMessages) {
-      this.messages.push({ seq, payload, metadata, created_at: now });
-      seq += 1;
-    }
     if (userContent !== null) {
       this.messages.push({
         seq,

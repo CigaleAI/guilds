@@ -17,7 +17,7 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 
 const READER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const OWNER = { ...READER, "content-type": "application/json" };
-const CODER = { model: TEST_MODEL, browser: false, coding: true, harness: "claude-code" };
+const CODER = { model: null, browser: false, harness: "claude-code" };
 
 const dbName = uniqueDbName("agent_platform_agent_repositories");
 
@@ -26,7 +26,7 @@ after(async () => {
 });
 
 test(
-  "a coding agent picks the repositories it works on among those it can use, keeps one it can no longer use, and loses one its guild removes",
+  "a subscription agent picks the repositories it works on among those it can use, keeps one it can no longer use, and loses one its guild removes",
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -74,7 +74,7 @@ test(
       await addRepository(guildId, "docs");
       await addRepository(guildId, "site");
       const view = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/repositories`, headers: READER });
-      assert.deepEqual(view.json().usable, ["docs", "shop", "site"], "a new coding agent of the guild can use each of them");
+      assert.deepEqual(view.json().usable, ["docs", "shop", "site"], "a new subscription agent of the guild can use each of them");
       const create = (name: string, config: Record<string, unknown>, guild = guildId) =>
         app.inject({ method: "POST", url: `/api/guilds/${guild}/agents`, headers: OWNER, payload: { name, config } });
 
@@ -83,7 +83,7 @@ test(
       assert.match(outside.body, /the agent cannot use billing/);
       const plain = await create("plain", { model: TEST_MODEL, browser: false, repositories: ["shop"] });
       assert.equal(plain.statusCode, 422, plain.body);
-      assert.match(plain.body, /repositories are only for coding agents/);
+      assert.match(plain.body, /repositories are only for subscription agents/);
       const twice = await create("twice", { ...CODER, repositories: ["shop", "shop"] });
       assert.equal(twice.statusCode, 422, twice.body);
 

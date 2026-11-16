@@ -129,24 +129,9 @@ export function providerForModel(model: string): ProviderModel {
   return parsed;
 }
 
-/** Kimi Code documents `low` / `high` / `max`; the picker is `none` / `low` / `medium` / `high`. */
-export function reasoningEffortForModel(model: string, level: string): string | null {
-  if (!level || level === "none" || level === "off") {
-    return null;
-  }
-  if (model.startsWith("kimi/")) {
-    if (level === "low") {
-      return "low";
-    }
-    if (level === "medium") {
-      return "high";
-    }
-    if (level === "high") {
-      return "max";
-    }
-    return null;
-  }
-  return level;
+/** The reasoning effort a thinking level asks the provider for; null for none. */
+export function reasoningEffort(level: string): string | null {
+  return !level || level === "none" || level === "off" ? null : level;
 }
 
 /** The assistant message a completion returns: its text, and its tool calls when it made any. */

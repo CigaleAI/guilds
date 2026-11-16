@@ -57,7 +57,7 @@ the database. A value is never shown again. An integration set in
 
 **Set up** links open this tab on one integration. They appear, for
 the instance admin, wherever an integration is missing: **Tools**, an
-agent's browser settings, a coding agent's repositories, and a
+agent's browser settings, a subscription agent's repositories, and a
 recipe's apply pages. Once a value is saved, **Back** returns to the
 page the link came from.
 

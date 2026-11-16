@@ -137,22 +137,6 @@ turns, including the current one, keep their full tool results; a new
 guild keeps 2. An agent's own setting, when set, takes the place of
 its guild's.
 
-### Run chains
-
-A coding agent's runs can grow long. Instead of stopping at the input
-limit, a coding run hands off: it asks the agent for a summary, then
-continues in a fresh run that starts from that summary.
-
-```mermaid
-flowchart LR
-    r1["Run 1<br/>prompt reaches 70%<br/>of max input tokens"] -- "hand-off summary" --> r2["Run 2<br/>fresh prompt +<br/>Continuation"]
-    r2 -- "hand-off summary" --> r3["Run 3"]
-    r3 -.-> r5["… at most 5 runs"]
-```
-
-The chain keeps the kind, the routine, or the group delivery of its
-first run. It holds at most five runs.
-
 ### Wake-ups
 
 A wake-up brings a run back after a delay, in the same conversation.
@@ -161,8 +145,7 @@ an optional note to itself, and cancels it with `wake_cancel`
 ([Native tools](../tools-and-connectors/native.md#wake-ups)). It
 belongs to one run, is due at a set time, and fires once. A run holds
 at most one pending wake-up; setting another replaces it. A run fires
-at most `max_wake_ups` wake-ups, 10 by default, counted across its
-chain. When it fires, the run takes one
+at most `max_wake_ups` wake-ups, 10 by default. When it fires, the run takes one
 more generation that opens with a wake-up message, and the agent
 decides what to do next.
 
@@ -176,8 +159,7 @@ orchestrator was down fires on its first tick.
 | --- | --- |
 | open | the wake-up message starts the next generation |
 | completed at the end of its generation (a group chat or routine run), or because its model could not be called | the run reopens for the wake generation and completes again when it ends; it does not start taking messages |
-| continued in a new run after a hand-off | the wake-up moves to the latest run of the chain and fires there |
-| completed on its tool-call, input-token, or chain cap | the wake-up is cancelled, and the run records the error `wake.cancelled`, naming the cap |
+| completed on its tool-call or input-token cap | the wake-up is cancelled, and the run records the error `wake.cancelled`, naming the cap |
 
 A run that ends on one of those caps cancels its pending wake-up as
 it ends. A wake generation is an ordinary generation: it counts
@@ -212,8 +194,6 @@ run. The body of the tab is the
   new session opened with the plus stays open while another run is
   generating. While a run is open, sparkles, **Debug in Studio**, opens
   it in Studio ([Prompt Studio](prompt-studio.md#opening-studio)).
-- On a coding agent, a coding strip sits under the tab strip
-  ([Coding agents](coding/index.md)).
 
 The **History** drawer lists every run of the agent, newest first,
 grouped by day, 50 at a time. It filters by kind: **Direct**,
@@ -245,21 +225,18 @@ An ended run shows a banner under the transcript:
 - **This session has ended**, with **Resume**, when it can be resumed.
   The same transcript reopens and the next message continues it.
 - **This session reached its limit**, with **New session**, after a
-  tool-call, input-token, or chain cap.
-- **This session continued in a new run**, with **Open it**, after a
-  hand-off. A run that is open while it continues switches to the new
-  run.
+  tool-call or input-token cap.
 
 ## Rules and limits
 
 | Rule | Value or behaviour |
 | --- | --- |
 | Generations at a time | one per agent; a second direct message is 409 |
-| Max steps | 30 by default (200 for a new coding agent) |
-| Max tool calls | 50 by default (200 for a new coding agent); counts every tool result in the run |
+| Max steps | 30 by default |
+| Max tool calls | 50 by default; counts every tool result in the run |
 | Wrap-up warning | when 8 tool calls or fewer are left |
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
-| Max wake-ups | 10 by default, for a coding agent too |
+| Max wake-ups | 10 by default |
 | Max turn minutes | 30 by default; a subscription agent's turn of its harness |
 | Full tool results kept | the agent's setting, else its guild's; 2 user turns for a new guild |
 | Results never stubbed | under 2048 bytes |
@@ -268,15 +245,13 @@ An ended run shows a banner under the transcript:
 | Pending wake-ups | at most 1 per run; a new one replaces it |
 | Wake-up delay | 1 to 360 minutes, whole |
 | Wake-up note | optional, trimmed, at most 1000 characters |
-| Wake-ups per run | `max_wake_ups`, counted over fired wake-ups across the chain |
+| Wake-ups per run | `max_wake_ups`, counted over the run's fired wake-ups |
 | Operator message before a wake-up is due | the wake-up stays pending and fires at its time |
 | Wake-up on a capped run | cancelled, with `wake.cancelled` recorded |
-| Coding run hand-off | at 70% of max input tokens |
-| Runs in a chain | at most 5 |
 | Images per message | at most 4, 10 MiB each, JPEG, PNG, GIF, or WebP |
 | Image cost in token counting | 1600 tokens each |
 | One-shot runs | refuse messages until resumed |
-| Resume | refused after a tool-call, input-token, or chain cap, and on a continued run |
+| Resume | refused after a tool-call or input-token cap |
 | Provider retries | off |
 
 ## Reference
@@ -290,15 +265,13 @@ An ended run shows a banner under the transcript:
 `schedule_id` (schedule runs), `started_by_user_id` (direct runs: the
 person who opened it), the system, task, and memory prompt hashes,
 `created_at`, and `updated_at`. Clearing the group chat or deleting the
-user clears the matching link. A run continued from a chain keeps its
-cause in `metadata.chain` instead ([Chain rules](#chain-rules)).
-Deleting the agent deletes its runs. The app labels `group` **Group
+user clears the matching link. Deleting the agent deletes its runs. The app labels `group` **Group
 chat** and `schedule` **Routine**.
 
 A direct run, or any run the operator has resumed, stays `active`
 after its generation. A group or schedule run becomes `completed`. Any
-run becomes `completed` when it ends on a limit, a hand-off, or a
-model it cannot call ([Generation](#generation)). A completed run that
+run becomes `completed` when it ends on a limit or a model it cannot
+call ([Generation](#generation)). A completed run that
 a wake-up reopens becomes `completed` again after the wake generation
 ([Wake-up rules](#wake-up-rules)).
 
@@ -322,8 +295,7 @@ At provider-request time the orchestrator hydrates image refs into
 Chat Completions `image_url` parts:
 
 - a 15-minute signed URL;
-- a data URL when the store cannot sign;
-- always a data URL for Kimi, which refuses public image URLs.
+- a data URL when the store cannot sign.
 
 A Messages API provider receives the same parts as image blocks: a
 data URL as a base64 source, a signed URL as a URL source.
@@ -335,7 +307,7 @@ directory, at `.runs/<run id>/attachments/<attachment id>/<filename>`,
 and the turn's prompt follows each message's text with one line per
 image: `Attached image: /home/<agent id>/.runs/<run id>/attachments/<attachment id>/<filename>`.
 The files go with the run's folder, which `.runs/` keeps for the
-agent's 20 most recent runs ([Code tasks](coding/code-tasks.md)). An
+agent's 20 most recent runs ([Process](coding/harnesses.md#process)). An
 image the store no longer holds fails the turn at start with
 `harness.start`.
 
@@ -394,27 +366,26 @@ tool-call identity in `file_changes` ([Artifacts](artifacts.md)).
 
 The run stores an immutable snapshot. It holds the agent's config at
 run creation, less `max_scripts`, `max_workspace_mib` and
-`repositories`, which a coding run reads from its agent when it
-starts ([Repositories](coding/repositories.md#where-the-list-comes-from)), with the
+`repositories`, which a subscription agent's turn reads from its agent
+when it starts ([Repositories](coding/repositories.md#where-the-list-comes-from)), with the
 guild's `keep_tool_result_generations` when the agent's is null, and
 with the offered `tools`, `mcp`, `secrets`, and the `scripts`
 ([Scripts](scripts.md#snapshot)). Its `model` states the run's model
 source: a model on a key, or null for a subscription agent's run. A
 subscription agent's run offers the `tools` and `mcp` connections a
-run on a key with the same access would, less the code tools
+run on a key with the same access would
 ([Tools in a run](../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)).
 Its `secrets` reach the harness's environment.
 
 Model settings include `max_tool_calls`, `max_input_tokens`,
 `max_wake_ups`, `max_turn_minutes`, `keep_tool_result_generations`,
 `projection_policy_version`, and `thinking_level`. `max_wake_ups` is
-the most wake-ups the run may fire, counted over the fired wake-ups of
-its chain; `wake_after` is refused past it. `max_turn_minutes` is how
+the most wake-ups the run may fire; `wake_after` is refused past it. `max_turn_minutes` is how
 long a subscription agent's turn runs before its harness is stopped
 ([Harness turns](#harness-turns)).
 
-Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
-`harness` is a coding agent's harness or null, `harness_model` the
+Flags: `browser`, `scripting`, and `memory`. Beside them, `harness` is
+a subscription agent's harness or null, `harness_model` the
 model that harness runs or null for its subscription's default,
 `harness_effort` the effort it runs that model at or null for the
 model's default ([Harnesses](coding/harnesses.md)), and
@@ -434,7 +405,6 @@ The complete tool schemas offered to the model:
 - the browser tools of its mode when `browser` is true: the eight
   step-by-step tools, or `browse` and `browser_eval` while
   `browser_optimized` and the System One platform key are on;
-- the five code tools when `coding` is true;
 - enabled MCP schemas, including curated lists from the CoinGecko,
   Alchemy, X, TwitterAPI.io, Qonto, and DexPaprika adapters, and a
   registry connector's manifest.
@@ -464,8 +434,8 @@ A run whose snapshot has no `model` is a subscription agent's
 harness ([Harness turns](#harness-turns)). Before the machine is
 woken, it fails with `harness.missing` when the snapshot names no
 harness. One whose agent picks repositories, or whose harness is
-Cursor or Antigravity, fails as a coding run does when its agent
-picks none (`coding.repositories_missing`) or one it can no longer use
+Cursor or Antigravity, fails when its agent picks none
+(`coding.repositories_missing`) or one it can no longer use
 (`coding.repositories_gone`).
 
 At start, the loop cancels the machine's idle timer, ensures the
@@ -474,16 +444,14 @@ cap fails the generation with `workspace.full`
 ([Agent home](agent-home.md#the-disk-cap)). After the generation it
 measures and stores both sizes. When the last generation on the
 machine ends, the idle timer starts again
-([Machines](machines.md#idle-timer)). A coding run is checked further
-before the model is called: harness picked, guild repositories,
-harness installed and credentialed, repositories prepared
-([Coding agents](coding/index.md)). A subscription agent's run is
-checked for its harness the same way: not turned off, installed, and
-credentialed, with the same errors
-([Harnesses](coding/harnesses.md#credentials-and-errors)). Its tools
+([Machines](machines.md#idle-timer)). A subscription agent's run is
+checked for its harness before its turn: not turned off, installed,
+and credentialed
+([Harnesses](coding/harnesses.md#credentials-and-errors),
+[Code work](coding/index.md#generation-start-checks)). Its tools
 are narrowed to the agent's live bindings as a model's are; no model
-credential is resolved. One whose agent picks repositories is checked
-for them as a coding run is, then has them prepared before its turn
+credential is resolved. One whose agent picks repositories has them
+prepared before its turn
 ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them)).
 
 It loads every payload in order and repeats the loop up to
@@ -516,9 +484,8 @@ run:
 | `generation.model_credentials` | the extension's model credentials refuse the call |
 | `generation.subscription` | the extension's policy blocks the organisation; core never blocks |
 
-Resume is refused after `generation.max_tool_calls`,
-`generation.max_input_tokens`, and `generation.max_chain`, and allowed
-after the three above.
+Resume is refused after `generation.max_tool_calls` and
+`generation.max_input_tokens`, and allowed after the three above.
 
 A `report_issue` call that files a blocking issue ends the
 generation after its result is stored. Each later call of the same
@@ -534,7 +501,7 @@ delivery, a routine, or a wake-up.
 
 A subscription agent's generation is one turn of its harness's CLI,
 under the call id `turn_<generation>_<run id>`
-([Process](coding/code-tasks.md#process)):
+([Process](coding/harnesses.md#process)):
 
 1. **Start.** `guilds-harness start` runs the CLI in the agent's home,
    or in the working tree of the one repository it picks, under
@@ -592,7 +559,7 @@ under the call id `turn_<generation>_<run id>`
 | Operation | Cause |
 | --- | --- |
 | `harness.start` | `start` failed: "`<Harness>` did not start: `<reason>`" |
-| `harness.failed` | the CLI exited otherwise, or its turn ended in error: "`<Harness>`'s turn failed (`<detail>`)", the detail as a code task's ([Result](coding/code-tasks.md#result)) |
+| `harness.failed` | the CLI exited otherwise, or its turn ended in error: "`<Harness>`'s turn failed (`<detail>`)", the detail the most telling of the CLI's error, its stderr's last lines, or its exit code |
 | `harness.lost` | a poll found the turn's state gone, or the CLI exited and its result could not be read |
 | `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
 | `harness.timed_out` | the turn ran its snapshot's `max_turn_minutes`: "`<Harness>` was stopped after `<minutes>` minutes."; the harness got `stop` |
@@ -627,8 +594,8 @@ held message as it is.
 
 `metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
-`.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`, under the
-same retention as a code task's. A turn in repositories that changed
+`.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`
+([Agent home](agent-home.md)). A turn in repositories that changed
 one appends an entry to `metadata.turn_changes`
 ([Reviewing changes](coding/reviewing-changes.md#refs)).
 
@@ -689,8 +656,8 @@ window are replaced with a short stub:
 
 Assistant `tool_calls` stay. User and assistant text stay.
 
-Here a generation is one user turn and the tool loop that follows, not
-a run in a chain. `keep_tool_result_generations` (the agent's, else
+Here a generation is one user turn and the tool loop that follows.
+`keep_tool_result_generations` (the agent's, else
 its guild's; snapshotted) is how many generations stay live,
 including the current one:
 
@@ -703,57 +670,10 @@ is still over `max_input_tokens`, the oldest live results above that
 floor are stubbed until four remain or the count fits. Policy version
 `1`.
 
-### Chain rules
-
-A run whose snapshot has `coding` on continues in a new run when its
-projected prompt grows. History stays append-only; each run's rows
-are the store the projection was built from. Runs without `coding`
-keep the input cap above.
-
-1. When the count before a model call reaches 70% of
-   `max_input_tokens`, the orchestrator appends a hand-off request: a
-   user row with `metadata.source: "handoff"` asking for text only, no
-   tool calls, giving the goal, what is done, what is decided, what
-   remains, and the files that matter as `path:line`.
-2. It makes one model call. The offered tools stay as snapshotted, so
-   the reply may still call one: each call gets the result
-   `ERROR: a hand-off was requested; reply with text only` and is not
-   run.
-3. It creates the next run for the same agent, of the same kind, from
-   a freshly prepared snapshot and system prompt, with one user message
-   (`metadata.source: "continuation"`):
-   `Continuation: { "previous_run_id": ..., "handoff": ... }`. A reply
-   with no text gives `"handoff": null` and a note to work from Memory,
-   notes, and the working tree.
-4. The run records `metadata.continued_by_run_id` and completes. The
-   new run records `metadata.chain` (`root_run_id`, `index` from 2,
-   `previous_run_id`). The agent's generation lock passes to the new
-   run without being released, the first run's subscribers get
-   `run.continued` with the new `run_id`, and the new run generates.
-
-A continuation that cannot be created records `generation.continue`,
-and the run stays as it is.
-
-A schedule continuation keeps the routine's `schedule_id` and
-`instruction_hash`. A group continuation keeps the delivery's
-`group_chat_through_seq` and completes itself. The group delivery
-waits for the whole chain, then completes the chain's first run and
-advances the agent's cursor.
-
-A chain holds at most 5 runs. The fifth run, at the hand-off point,
-records `generation.max_chain` and completes. If the hand-off request
-itself puts the prompt above `max_input_tokens`, the run records
-`generation.max_input_tokens` and completes without a continuation.
-
-A user message or Resume on a run with `continued_by_run_id` is 409; it
-names the latest run of the chain. Cancelling the running continuation
-stops the chain. The run payload carries `chain` and
-`continued_by_run_id` when they are set.
-
 ### Wake-up rules
 
 `run_wakes` holds a run's wake-ups: `id` (`wk_…`), `run_id`,
-`root_run_id` (the first run of the chain), `agent_id`, `due_at`,
+`agent_id`, `due_at`,
 `message` (the agent's note, or null), `state` (`pending`, `fired`,
 or `cancelled`), `cancel_reason` (`replaced`, `agent`, `operator`, or
 `limit`, set only on a cancelled one), `set_tool_call_id`,
@@ -765,12 +685,9 @@ Each tick of the scheduler, before the due routines:
 
 1. It lists the pending wake-ups with `due_at` at or before now.
 2. It skips a wake-up whose agent is busy. It stays due.
-3. It loads the run. A run with `continued_by_run_id` hands the
-   wake-up to the latest run of its chain; when that run already has a
-   pending wake-up, this one is cancelled as `replaced`.
-4. A run that recorded `generation.max_tool_calls`,
-   `generation.max_input_tokens`, or `generation.max_chain` has its
-   wake-up cancelled as `limit`. The run records `wake.cancelled`,
+3. It loads the run.
+4. A run that recorded `generation.max_tool_calls` or
+   `generation.max_input_tokens` has its wake-up cancelled as `limit`. The run records `wake.cancelled`,
    whose message names the wake-up and the cap, and publishes it as
    `run.error`.
 5. It takes the agent's generation lock. A conflict leaves the
@@ -799,8 +716,8 @@ Wake-up: {
 }
 ```
 
-`wake_ups_left` is the run's snapshot `max_wake_ups` less the
-wake-ups fired across its chain, this one included, and never below
+`wake_ups_left` is the run's snapshot `max_wake_ups` less the run's
+fired wake-ups, this one included, and never below
 0. Tool results of earlier generations are stubbed as usual
 ([Stubbing rules](#stubbing-rules)).
 
@@ -810,18 +727,15 @@ A run completes when the generation its
 refuses messages, and a completed group run it reopens completes
 without moving the agent's group cursor.
 
-When a run ends on `generation.max_tool_calls`,
-`generation.max_input_tokens`, or `generation.max_chain`, the
-generation cancels its pending wake-up as `limit` and records
-`wake.cancelled` as it ends. A hand-off moves the pending wake-up to
-the continuation as soon as the continuation is created.
+When a run ends on `generation.max_tool_calls` or
+`generation.max_input_tokens`, the generation cancels its pending
+wake-up as `limit` and records `wake.cancelled` as it ends.
 
 ### Streaming
 
 Committed assistant and tool rows, and a fired wake-up's message, are
 published over SSE after the database transaction. Reasoning and token deltas may stream first, and
-a running `code_task` streams its progress lines, and a running
-`browse` call each of its steps, as `tool.progress`.
+a running `browse` call streams each of its steps as `tool.progress`.
 History is the committed row. On reconnect the UI reloads ordered
 history, then consumes new events.
 
@@ -836,9 +750,8 @@ cancellation or restart appends `ERROR: execution interrupted` for
 every unresolved call, so the next model request is valid.
 
 On orchestrator startup, unresolved tool calls in active runs get
-those interruption results. Startup does not replay a model call. An
-unresolved `code_task` is stopped and checkpointed first
-([Code tools](coding/code-tools.md)). A subscription agent's run with
+those interruption results. Startup does not replay a model call. A
+subscription agent's run with
 a `metadata.harness_turn` has its harness turn ended first: the turn's
 CLI gets `stop` on the agent's machine when the machine runs, the
 session its result names replaces the one kept, so the run's next
@@ -856,10 +769,8 @@ generates.
 
 ### Resume
 
-`POST /api/runs/:id/resume` reopens a completed run that has no
-continuation and did not hit
-`generation.max_tool_calls`, `generation.max_input_tokens`, or
-`generation.max_chain`. It sets `status` back to `active` and stores
+`POST /api/runs/:id/resume` reopens a completed run that did not hit
+`generation.max_tool_calls` or `generation.max_input_tokens`. It sets `status` back to `active` and stores
 `metadata.resumed_at`. An active run is returned unchanged.
 
 The same transcript then accepts later user messages. A group or
@@ -896,8 +807,8 @@ results.
 | `POST /api/agents/:id/runs` | creates a direct run, with optional `message` and attachment ids | 201 idle, 202 generating | 422 empty message, a `message` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 agent generating, guild being deleted |
 | `GET /api/runs/:id` | the run, with `pending_wake` | 200 | 404 |
 | `GET /api/runs/:id/messages` | its rows in order | 200 | 404 |
-| `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty, a `content` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 one-shot not resumed, continued, ended, or generating |
-| `POST /api/runs/:id/resume` | reopens a completed run | 200 | 409 continued or capped |
+| `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty, a `content` that is neither a string nor null, or `attachment_ids` that are neither a list of strings nor null; 409 one-shot not resumed, ended, or generating |
+| `POST /api/runs/:id/resume` | reopens a completed run | 200 | 409 capped |
 | `POST /api/runs/:id/cancel` | cancels the current generation | 202, or 204 with nothing to cancel | 404; 409 `run is not active` |
 | `DELETE /api/runs/:id/wake` | cancels the run's pending wake-up as the operator | 204 | 404 `run not found`, or `no pending wake-up` |
 | `GET /api/runs/:id/stream` | the run's SSE stream | 200 | |
@@ -909,7 +820,7 @@ or the run's pending wake-up as `{ id, due_at, message, created_at }`.
 A run list and a new run do not carry it. Every change of the pending
 wake-up publishes `run.wake.changed` with `{ pending_wake }` in the
 same shape on the run's stream: set, replaced, cancelled by the agent,
-the operator, or a cap, moved on a hand-off (on both runs), and fired.
+the operator, or a cap, and fired.
 `DELETE /api/runs/:id/wake` is open to whoever may read the run, as
 cancel and resume are, and records `cancel_reason: "operator"`.
 
@@ -934,7 +845,6 @@ cancel and resume are, and records `cancel_reason: "operator"`.
   - `tool-calls.ts`: tool calls and interruption results
   - `events.ts`: committed rows, run errors, and stream events
   - `run-secrets.ts`: the secrets of each generation
-  - `chain.ts`: hand-offs and continuations
   - `wakes.ts`: firing due wake-ups, and cancelling one on a capped run
   - `caps.ts`: the caps a resume cannot lift and a wake-up does not
     reopen

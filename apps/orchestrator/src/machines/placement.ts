@@ -25,9 +25,6 @@ export type MoveAgentResult = {
 
 /** What an agent with these needs is called in a refusal. */
 function needsLabel(needs: AgentNeeds): string {
-  if (needs.coding) {
-    return "a coding agent";
-  }
   if (needs.harness !== null) {
     return "a subscription agent";
   }

@@ -20,7 +20,6 @@ import { isText } from "../toolbox/schema.js";
 import { dynamicScriptTools, liveExtraForAgent } from "../toolbox/script.js";
 import type { ActiveGenerations } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
-import { chainOf, completeIfActive, HANDOFF_FRACTION, type RunChains } from "./chain.js";
 import {
   agentRepositoriesProblem,
   codingRepositoriesDatabase,
@@ -40,7 +39,7 @@ import {
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { HarnessLoop, SubscriptionGeneration } from "./harness-loop.js";
-import { runStanding, runWasResumed } from "./lifecycle.js";
+import { completeIfActive, runStanding, runWasResumed } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
   liveOfferedNames,
@@ -72,27 +71,16 @@ type RunSandboxes = { machine: SandboxHandle; agent: SandboxHandle };
 /** What a generation offers the model: the tool names, the scripts its snapshot pins, and its connection tools. */
 type ToolOffer = { names: Set<string>; scripts: RunScriptSnapshot[]; connections: Map<string, ConnectionTarget> };
 
-/** A coding run's prompt reached the hand-off share of its input limit. */
-class HandoffDue extends Error {
-  constructor() {
-    super("hand-off due");
-    this.name = "HandoffDue";
-  }
-}
-
 /**
  * Whether the run completes when its generation `generation` ends: a run a wake-up reopened for
- * that generation does, a schedule run does, and a group continuation does, since the group
- * delivery completes only the chain's first run. A resumed run stays open.
+ * that generation does, and a schedule run does. A resumed run stays open, and a group run is
+ * completed by its delivery.
  */
 function completesAfter(run: RunRow, generation: number): boolean {
   if (run.metadata.wake_reopened_generation === generation) {
     return true;
   }
-  if (runWasResumed(run)) {
-    return false;
-  }
-  return run.kind === "schedule" || (run.kind === "group" && chainOf(run).index > 1);
+  return !runWasResumed(run) && run.kind === "schedule";
 }
 
 /** The instruction the run's schedule wake-up message carries; empty when it carries none. */
@@ -141,10 +129,6 @@ export function runGeneratorDatabase(db: Queryable): RunGeneratorDatabase {
 
 /** What a memory write in this run names as its source: the run, and what woke it. */
 async function memoryReplacedBy(db: Pick<RunGeneratorDatabase, "listMessages">, run: RunRow): Promise<string> {
-  const position = chainOf(run);
-  if (position.previous_run_id !== null) {
-    return `run ${run.id} (continuation of ${position.previous_run_id})`;
-  }
   if (run.kind === "direct") {
     return `run ${run.id} (direct)`;
   }
@@ -171,7 +155,6 @@ export type RunGeneratorServices = {
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
   secrets: RunSecrets;
-  chains: RunChains;
   starter: Pick<GenerationStarter, "endGeneration">;
   wakes: Pick<RunWakes, "cancelForCap">;
 };
@@ -179,16 +162,12 @@ export type RunGeneratorServices = {
 /**
  * Generates runs: the agent's home, secrets, container, and tools set up, then, on a model on a
  * key, model steps and their tool calls until the model stops, a limit or failure ends the
- * generation, a coding run hands off, or a cancel stops it; on a subscription, one turn of the
- * agent's harness.
+ * generation, or a cancel stops it; on a subscription, one turn of the agent's harness.
  */
 export class RunGenerator {
   constructor(private readonly services: RunGeneratorServices) {}
 
-  /**
-   * Generates the run. A run that handed off generates its continuation in the same admission;
-   * any other generation frees its agent when it ends.
-   */
+  /** Generates the run, and frees its agent once the generation ends. */
   async generate(runId: string, generation: number): Promise<void> {
     const turn: RunGeneration = { runId, generation, log: { run_id: runId } };
     let cancelled = false;
@@ -199,7 +178,8 @@ export class RunGenerator {
       try {
         ended = await this.finish(turn, cancelled);
       } finally {
-        await this.continueOrEnd(turn, ended, cancelled);
+        this.services.starter.endGeneration(turn.runId);
+        await this.publishFinished(turn, ended);
       }
     }
   }
@@ -310,20 +290,6 @@ export class RunGenerator {
   }
 
   /**
-   * Generates the run's continuation when it handed off and was not cancelled; otherwise ends the
-   * generation and tells the run's subscribers it finished, once it no longer holds the run.
-   */
-  private async continueOrEnd(turn: RunGeneration, ended: RunRow | null, cancelled: boolean): Promise<void> {
-    const next = this.services.chains.takeContinuation(turn.runId);
-    if (next !== null && !cancelled) {
-      await this.continueChain(turn, ended, next);
-      return;
-    }
-    this.services.starter.endGeneration(turn.runId);
-    await this.publishFinished(turn, ended);
-  }
-
-  /**
    * Tells the run's subscribers the generation finished, with where the run it left stands. The
    * run is read again when finishing it did not get as far as returning it; nothing is published
    * when the run is gone.
@@ -338,24 +304,9 @@ export class RunGenerator {
   }
 
   /**
-   * Hands the agent's admission from a run to its continuation without releasing it, tells the
-   * first run's subscribers its generation finished and where the work went, and generates the
-   * continuation. The agent stays busy across the chain.
-   */
-  private async continueChain(from: RunGeneration, ended: RunRow | null, toRunId: string): Promise<void> {
-    const { generations, events } = this.services;
-    generations.handOver(from.runId, toRunId);
-    await this.publishFinished(from, ended);
-    await events.publish(from.runId, "run.continued", { run_id: toRunId });
-    const task = this.generate(toRunId, 1);
-    generations.setTask(toRunId, task);
-    await task;
-  }
-
-  /**
    * Sets the generation up and runs it, in model steps on a key or in a turn of the harness on a
-   * subscription; afterwards a coding run's checkpoints, a subscription turn's end in its
-   * repositories, and the workspace sizes are kept.
+   * subscription; afterwards a subscription turn's end in its repositories and the workspace
+   * sizes are kept.
    */
   private async runGeneration(gen: Generation): Promise<void> {
     const { coding, workspace, generations, harness } = this.services;
@@ -372,8 +323,6 @@ export class RunGenerator {
     } finally {
       if (gen.source === "subscription") {
         await coding.endTurnInRepositories(gen, ready.sandbox, ready.tools.run.code_repositories);
-      } else if (gen.snapshot.coding) {
-        await coding.recordCheckpoints(gen.runId, gen.agent, ready.sandbox, ready.tools.run.code_repositories);
       }
       if (!generations.isCancelled(gen.runId)) {
         logOperationFailure(await workspace.recordSize(gen.runId, gen.agent, ready.sandbox), "warn");
@@ -403,24 +352,15 @@ export class RunGenerator {
   }
 
   /**
-   * A coding run starts only with a harness picked and repositories its agent picks and can use;
-   * a subscription run whose agent picks repositories, or whose harness needs one, only when its
-   * agent picks one and can use each of them.
+   * A subscription run whose agent picks repositories, or whose harness needs one, starts only when
+   * its agent picks one and can use each of them.
    */
   private async isStartable(gen: Generation): Promise<boolean> {
-    if (gen.source === "subscription") {
-      const inRepositories = gen.agent.config.repositories.length > 0 || harnessNeedsRepository(gen.snapshot.harness);
-      return !inRepositories || this.canUseItsRepositories(gen);
-    }
-    if (!gen.snapshot.coding) {
+    if (gen.source === "key") {
       return true;
     }
-    if (gen.snapshot.harness === null) {
-      const missing = harnessMissingError();
-      await this.services.events.recordError(gen, missing.code, missing);
-      return false;
-    }
-    return this.canUseItsRepositories(gen);
+    const inRepositories = gen.agent.config.repositories.length > 0 || harnessNeedsRepository(gen.snapshot.harness);
+    return !inRepositories || this.canUseItsRepositories(gen);
   }
 
   /** Whether the agent picks a repository and can use each one it picks; the run says why not. */
@@ -485,22 +425,18 @@ export class RunGenerator {
   }
 
   /**
-   * Whether the generation may take its first step: the workspace has room, a subscription's or a
-   * coding run's harness is ready, and the repositories a coding run or a subscription turn works
-   * in are cloned.
+   * Whether the generation may take its first step: the workspace has room, and on a subscription
+   * the harness is ready and the repositories the turn works in are cloned.
    */
   private async isReady(gen: Generation, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     const { workspace, coding } = this.services;
     if (!(await workspace.hasRoom(gen, gen.agent, sandbox))) {
       return false;
     }
-    if (gen.source === "subscription") {
-      return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareTurnRepositories(gen, sandbox, tools));
-    }
-    if (!gen.snapshot.coding) {
+    if (gen.source === "key") {
       return true;
     }
-    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareRepositories(gen, sandbox, tools));
+    return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareTurnRepositories(gen, sandbox, tools));
   }
 
   /**
@@ -575,7 +511,6 @@ export class RunGenerator {
     const seat = agentSeat(agent);
     return createToolRun({
       run_id: runId,
-      chain_root_run_id: chainOf(gen.run).root_run_id,
       agent_id: agent.id,
       guild_id: agent.guild_id,
       sandbox: sandboxes.agent,
@@ -661,21 +596,17 @@ export class RunGenerator {
   }
 
   /**
-   * One model step with its tool calls; null when the step ended the generation: a hand-off, a
-   * blocking issue the agent reported, a limit that completes the run, or a failed model call,
-   * and the run says which.
+   * One model step with its tool calls; null when the step ended the generation: a blocking issue
+   * the agent reported, a limit that completes the run, or a failed model call, and the run says
+   * which.
    */
   private async stepOrStop(gen: KeyGeneration, tools: GenerationTools): Promise<ToolCall[] | null> {
-    const { db, events, chains, toolCalls } = this.services;
+    const { db, events, toolCalls } = this.services;
     try {
       return await this.modelStep(gen, tools);
     } catch (error) {
       if (error instanceof GenerationCancelled) {
         throw error;
-      }
-      if (error instanceof HandoffDue) {
-        await chains.handOff(gen, tools);
-        return null;
       }
       if (error instanceof GenerationBlocked) {
         await toolCalls.resolveUnresolved(gen.runId, gen.generation);
@@ -692,10 +623,7 @@ export class RunGenerator {
     }
   }
 
-  /**
-   * Calls the model with the run's history and runs the tool calls it makes. A history over
-   * the input limit ends the run; a coding run's history at the hand-off share hands off.
-   */
+  /** Calls the model with the run's history and runs the tool calls it makes; a history over the input limit ends the run. */
   private async modelStep(gen: KeyGeneration, tools: GenerationTools): Promise<ToolCall[]> {
     const { db, completion, events, toolCalls } = this.services;
     const maxInputTokens = gen.snapshot.max_input_tokens;
@@ -704,9 +632,6 @@ export class RunGenerator {
     const tokens = historyTokens(gen.snapshot, history, tools.schemas);
     if (tokens > maxInputTokens) {
       throw new RunLimitError("generation.max_input_tokens", INPUT_TOKEN_LIMIT_MESSAGE);
-    }
-    if (gen.snapshot.coding && tokens >= Math.floor(maxInputTokens * HANDOFF_FRACTION)) {
-      throw new HandoffDue();
     }
     const reply = await completion.complete(gen.runId, completionRequest(gen.snapshot, history.payloads, tools.schemas));
     await events.commitMessage(gen.runId, reply.payload, { generation: gen.generation, ...reply.metadata });

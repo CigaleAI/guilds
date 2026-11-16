@@ -9,15 +9,11 @@ import type {
 import { configFormOf, defaultAgentConfig } from "./configForm";
 import { withBrowser, withBrowserOptimized } from "./BrowserFields";
 
-function provider(
-  id: OrgModelProvider["id"],
-  kind: OrgModelProvider["kind"],
-  connected: boolean,
-): OrgModelProvider {
-  return { id, label: id, kind, connected, source: null, key_hint: null, base_url: null };
+function provider(id: OrgModelProvider["id"], connected: boolean): OrgModelProvider {
+  return { id, label: id, connected, source: null, key_hint: null, base_url: null };
 }
 
-function model(id: string, kind: CatalogModel["kind"]): CatalogModel {
+function model(id: string): CatalogModel {
   return {
     id,
     model: id.slice(id.indexOf("/") + 1),
@@ -28,14 +24,12 @@ function model(id: string, kind: CatalogModel["kind"]): CatalogModel {
     attachments: false,
     context: null,
     price: null,
-    kind,
-    coding_only: kind === "coding",
   };
 }
 
 function providerOf(id: string): ModelProvider {
   const prefix = id.slice(0, id.indexOf("/"));
-  const known: readonly ModelProvider[] = ["openai", "xai", "kimi"];
+  const known: readonly ModelProvider[] = ["openai", "xai"];
   const found = known.find((item) => item === prefix);
   if (!found) throw new RangeError(`no test provider for ${id}`);
   return found;
@@ -43,12 +37,8 @@ function providerOf(id: string): ModelProvider {
 
 const catalog: OrgModels = {
   default: "openai/gpt-5",
-  providers: [provider("kimi", "coding", true), provider("openai", "marketplace", true)],
-  models: [
-    model("kimi/k3", "coding"),
-    model("openai/gpt-5-mini", "marketplace"),
-    model("openai/gpt-5", "marketplace"),
-  ],
+  providers: [provider("openai", true)],
+  models: [model("openai/gpt-5-mini"), model("openai/gpt-5")],
 };
 
 const browsing = { ...configFormOf(defaultAgentConfig, "key"), browser: true };
@@ -71,27 +61,23 @@ test("turning the agent-optimized browser on starts on the organisation's defaul
   assert.equal(on.browser_model, "openai/gpt-5");
 });
 
-test("a default that is a coding plan's model gives way to the first marketplace model", () => {
-  const on = withBrowserOptimized(browsing, true, { ...catalog, default: "kimi/k3" });
+test("a default the organisation does not offer gives way to the first model it offers", () => {
+  const on = withBrowserOptimized(browsing, true, { ...catalog, default: "xai/grok" });
   assert.equal(on.browser_model, "openai/gpt-5-mini");
 });
 
 test("a default whose provider is not connected gives way to the first connected model", () => {
   const models: OrgModels = {
     default: "openai/gpt-5",
-    providers: [provider("openai", "marketplace", false), provider("xai", "marketplace", true)],
-    models: [model("openai/gpt-5", "marketplace"), model("xai/grok", "marketplace")],
+    providers: [provider("openai", false), provider("xai", true)],
+    models: [model("openai/gpt-5"), model("xai/grok")],
   };
   assert.equal(withBrowserOptimized(browsing, true, models).browser_model, "xai/grok");
 });
 
-test("without a marketplace model to offer, the browser model stays unpicked", () => {
-  const codingOnly: OrgModels = {
-    default: "kimi/k3",
-    providers: [provider("kimi", "coding", true)],
-    models: [model("kimi/k3", "coding")],
-  };
-  assert.equal(withBrowserOptimized(browsing, true, codingOnly).browser_model, "");
+test("without a model to offer, the browser model stays unpicked", () => {
+  const none: OrgModels = { default: null, providers: [provider("openai", true)], models: [] };
+  assert.equal(withBrowserOptimized(browsing, true, none).browser_model, "");
   assert.equal(withBrowserOptimized(browsing, true, undefined).browser_model, "");
 });
 

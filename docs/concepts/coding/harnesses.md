@@ -1,14 +1,13 @@
 # Harnesses
 
-A harness is the coding CLI that writes the code for a
-[coding agent](index.md): Claude Code, Codex, Cursor, or Antigravity.
-A [subscription agent](../agents.md#model-source) has a harness too,
-as its model source instead of a model.
-It runs headless in the agent's sandbox, in one of the guild's
-[repositories](repositories.md), on the operator's own subscription.
+A harness is the coding CLI a
+[subscription agent](../agents.md#model-source) runs every turn on, as
+its model source instead of a model: Claude Code, Codex, Cursor, or
+Antigravity. It runs headless in the agent's sandbox, in the agent's
+home or in the guild's [repositories](repositories.md) the agent picks
+([Code work](index.md)), on the operator's own subscription.
 The agent picks one harness, and optionally the model it runs and the
-effort it runs it at. Each [code task](code-tasks.md) is one turn of
-that harness.
+effort it runs it at.
 
 The harness runs on a credential the agent has: a subscription token
 granted to it as a [secret](../secrets.md), or a login made in its
@@ -20,8 +19,8 @@ organisation's [model keys](../model-keys.md) never reach the sandbox.
 Harnesses are tuned for code work: they read a codebase, edit many
 files, and run commands far faster than a general agent loop. Many
 operators already pay for one. Running it on that subscription keeps
-code work off the organisation's model bill: a harness call records no
-usage or cost.
+the agent's turns off the organisation's model bill: a turn records
+its tokens at no price.
 
 ## How it works
 
@@ -70,14 +69,13 @@ A token or login on the agent's machine is readable by what runs there
 A check asks the machine whether the harness's CLI is installed, its
 version, and the credential it would run on. It runs:
 
-- at every generation start of a coding run or a subscription agent's
-  run, with the run's secrets;
-- before every code task;
+- at every generation start of a subscription agent's run, with the
+  run's secrets;
 - from Settings, with **Check login**. That check runs outside any
   run, without the agent's secrets, so it finds a login or nothing.
 
 A check that finds a login records when it saw it and whose it is,
-when the login says. The coding strip and Settings show both. A check
+when the login says. Settings shows both. A check
 that finds no credential at all forgets the login.
 
 ### Model and effort
@@ -111,7 +109,7 @@ all four. The published image carries Codex only.
 
 When a machine's container is created, the platform reads which
 harness CLIs its image carries. A harness the image lacks is shown as
-unavailable in the app, and a coding run on it fails at start.
+unavailable in the app, and a run on it fails at start.
 
 ### Turning a harness off
 
@@ -125,24 +123,22 @@ stays in the runtime image, but it is not offered and not run:
   "`<Harness>` is turned off on this box: pick another harness in the
   agent's Settings". An agent already on it keeps it until it picks
   another.
-- A coding run of an agent still on it fails at start with
-  `harness.off` and the same message. A code task fails the same way.
+- A run of an agent still on it fails at start with `harness.off` and
+  the same message.
 - "no harness is picked" names only the harnesses that are on.
 - Recipe validation warns with `harness.off` for a role on it: apply
   asks for another harness ([Applying recipes](../applying-recipes.md)).
 
 A name in `HARNESSES_OFF` that is not a harness stops the box from
-starting. The coding readiness warning and the coding strip do not
-show a harness turned off.
+starting. The Settings readiness banner does not show a harness turned
+off.
 
 ### Subscription agents
 
 A subscription agent has no model: its harness is its model source
 ([Agents](../agents.md#model-source)). It names the harness, its
-model, and its effort in the same `harness`, `harness_model`, and
-`harness_effort` as a coding agent, and its credential, login record,
-harness check, and readiness read the same way. It has no code tools.
-It may pick repositories, which its turns work in
+model, and its effort in `harness`, `harness_model`, and
+`harness_effort`. It may pick repositories, which its turns work in
 ([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
 
 - Each harness runs a subscription agent's turns: each generation of
@@ -160,13 +156,12 @@ It may pick repositories, which its turns work in
   A create or update of such an agent without one is refused, and a
   run of one whose repositories are all gone fails at start
   ([Agents](../agents.md#configuration-keys)).
-- A harness turned off with `HARNESSES_OFF` is refused as a new pick
-  for a subscription agent as for a coding agent.
+- A harness turned off with `HARNESSES_OFF` is refused as a new pick.
 
 ### Managed configuration
 
-The agent is the only source of a harness's state: the brief, the
-notes it appends, and the session it resumes. Before every call, the
+The agent's run is the only source of a harness's state: the run's
+system prompt, its messages, and the session it resumes. Before every call, the
 harness's own configuration and memory are removed from the agent's
 home, whoever wrote them: the agent's commands, the CLI tab, or an
 earlier turn. Each call then passes the harness its configuration
@@ -195,8 +190,9 @@ and the container is the boundary
 
 ### Picking a harness
 
-The create dialog's **Harness** step and the **Harness** section of a
-coding agent's Settings show the same choice:
+The create dialog's **Model** step, with **Model source** on
+**Subscription**, and the **Harness** section of a subscription agent's
+Settings show the same choice:
 
 - **Harness**: a button with its logo for each harness the box offers,
   **Claude Code** (Anthropic), **Codex** (OpenAI), **Cursor** (Cursor),
@@ -231,43 +227,13 @@ coding agent's Settings show the same choice:
 - A note, "Tasks run on your own subscription. Ensure shared use
   complies with your vendor plan."
 
-### Subscription, when creating
-
-Under the harness, the create dialog's **Subscription** group sets the
-credential:
-
-- For Claude Code, a segmented choice: **Paste token**, **Use saved
-  secret**, or **Log in via CLI**. A pasted token is labelled
-  **Subscription token**, with the placeholder "Run claude setup-token
-  and paste the result".
-- For Cursor: **Paste API key** or **Use saved secret**. A pasted key is
-  labelled **Cursor API key**.
-- **Use saved secret** offers a **Subscription token** select over the
-  secrets reaching the guild, "read as" the harness's variable.
-- **Log in via CLI** shows "No secret needed now. After creation,
-  open `<Harness>`'s CLI tab and authenticate."
-- For Codex and Antigravity, a card, **CLI Login Required**:
-  "`<Harness>` runs on `<account>`. Once the agent is created, log in
-  from its CLI tab." The account reads "your ChatGPT subscription" for
-  Codex and "your Google account" for Antigravity.
-
-A pasted token is saved, once the agent exists, as a secret granted to
-the new agent alone, with a description of what it is for. It is named
-after the variable, or `<VARIABLE>_<AGENT_NAME>` when a secret of the
-variable's name already reaches the guild. `<AGENT_NAME>` is the
-agent's name upper-cased, with each run of other characters turned
-into `_`. The agent's `secret_aliases` then point the variable at that
-name. A saved secret picked in the select is written as the alias in
-the same way.
-
 ### Harness section of Settings
 
-A subscription agent's Settings have **Identity**, **Harness**, and
-**Machine**. Its **Harness** section starts with **Model source**, to
+A subscription agent's Settings have **Identity**, **Harness**,
+**Machine**, and **Repositories**. Its **Harness** section starts with **Model source**, to
 move it to a model on a key, then the harness buttons, with the
 harness's model and effort, then **Agent
-capabilities** without Coding and **Run limits** without the model
-loop's: max steps, max tool calls, max wake-ups, and **Max scripts**.
+capabilities** and **Run limits** without the model loop's: max steps, max tool calls, max wake-ups, and **Max scripts**.
 A subscription agent that is not ready opens on the banner "The
 subscription isn't ready", listing what its harness lacks.
 
@@ -303,7 +269,7 @@ needs:
 
 When the stored harness is one the machine's image lacks, a warning
 replaces all of this: "This machine's image doesn't carry `<Harness>`,
-so its code tasks fail. Pick another harness, or move the agent to a
+so its turns fail. Pick another harness, or move the agent to a
 machine that has it."
 
 ## Rules and limits
@@ -311,9 +277,9 @@ machine that has it."
 | Rule | Value or behaviour |
 | --- | --- |
 | Harnesses | `claude-code`, `codex`, `cursor`, `antigravity` |
-| Harness | Only for coding agents and subscription agents, and required on them |
+| Harness | Only for subscription agents, and required on them |
 | Subscription harness | Any of the four; Cursor and Antigravity only with a repository |
-| Subscription agents | Each generation one turn of its harness of at most the agent's `max_turn_minutes`, 30 by default, polled every second; a `code_task` call keeps its own `timeout_minutes` |
+| Subscription agents | Each generation one turn of its harness of at most the agent's `max_turn_minutes`, 30 by default, polled every second |
 | Harness turned off | Not offered, refused as a new pick, and a run on it fails at start |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
 | Harness effort | One the model runs at; blank saves as null; needs a harness |
@@ -321,7 +287,7 @@ machine that has it."
 | Codex credential | A ChatGPT login only; an `auth.json` holding only an API key is no credential |
 | Antigravity credential | A Google sign-in only |
 | Organisation model keys | Never in the sandbox |
-| Usage and cost | None recorded for a `code_task` call; a subscription agent's turn records its tokens on its reply, at no price ([Usage](../usage.md#cost-of-a-harness-turn)) |
+| Usage and cost | A subscription agent's turn records its tokens on its reply, at no price ([Usage](../usage.md#cost-of-a-harness-turn)) |
 | Image | Codex always; Claude Code, Cursor, and Antigravity when built with them |
 | Harness configuration in the home | Removed before every call; logins and sessions kept |
 
@@ -330,8 +296,7 @@ machine that has it."
 ### Configuration
 
 - `harness`: `claude-code`, `codex`, `cursor`, `antigravity`, or null.
-  Rules and errors are in [Coding agents](index.md#configuration-keys),
-  and for a subscription agent in
+  Rules and errors are in [Code work](index.md#configuration-keys) and
   [Agents](../agents.md#configuration-keys).
 - `harness_model`: matches
   `^[A-Za-z0-9][A-Za-z0-9._:/=,[\]-]{0,119}$`, or null. A blank value
@@ -396,7 +361,7 @@ harness). The CLI names a Cursor model starts under stay on the server.
 | `harness_model` | Its model, or null |
 | `harness_effort` | Its effort, or null |
 | `machine_harnesses` | The harness CLIs the agent's machine carries; null until its container first started |
-| `repositories` | The names of the repositories a coding run, or a subscription agent's turn, clones: those the agent picks and can use, in its order |
+| `repositories` | The names of the repositories a subscription agent's turn clones: those the agent picks and can use, in its order |
 | `usable_repositories` | The names of the repositories the agent can use ([Repositories](repositories.md#an-agents-picks)) |
 | `harnesses` | One entry per harness, below |
 
@@ -464,7 +429,7 @@ A harness the box turns off is `harness.off`
 ([Turning a harness off](#turning-a-harness-off)).
 
 A driver that parses none of its CLI's output fails the call, naming
-the CLI's version ([Result](code-tasks.md#result)).
+the CLI's version.
 
 ### Image build
 
@@ -492,7 +457,7 @@ The Antigravity binary sits under `/opt/antigravity/<version>` and
 starts through the `agy` wrapper (`runtime/agy`). Before every start,
 the wrapper marks the CLI's update check as just done, in
 `~/.gemini/antigravity-cli/last_check.timestamp`, so the pinned binary
-stays in place for code tasks and the CLI tab alike.
+stays in place for the agent's turns and the CLI tab alike.
 
 Claude Code also reads `/etc/claude-code/managed-settings.json`, baked
 into the image. It sets `disableAllHooks` and
@@ -564,7 +529,7 @@ calls with the result subtype `error_max_turns`; `result` then says
 `max_turns: true`. Codex, Cursor, and Antigravity have no such limit
 and refuse one (`<harness> takes no turn limit`), and a value that is
 not a whole number of 0 or more is refused (`max_turns is invalid`),
-before the call starts. A `code_task` call sends none.
+before the call starts.
 
 The orchestrator resolves the agent's model and effort through the
 catalogue before the call: a listed Cursor model becomes its CLI name
@@ -587,7 +552,7 @@ Driver environment:
 | Antigravity | none | `GEMINI_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, `AGY_ADC_AUTH`, `AGY_LLM_GATEWAY_URL`, `AGY_ACCOUNT`, `GOOGLE_CLOUD_QUOTA_PROJECT`, `GOOGLE_CLOUD_LOCATION` |
 
 The variables every harness loses, and the rest of its environment, are
-in [Harness environment](code-tasks.md#harness-environment).
+in [Harness environment](#harness-environment).
 
 A turn ends:
 
@@ -650,6 +615,68 @@ A repository's own harness configuration (`.claude/`, `.mcp.json`,
 What a repository can still steer is recorded in
 [SEC-29](../../architecture/security-register.md#sec-29--a-repository-can-carry-configuration-its-coding-harness-loads).
 
+### Process
+
+`guilds-harness` runs one short exec per op. The request is base64
+JSON on the command line, carrying the op, its arguments, the run id,
+the agent id, the call id, and the result's byte cap. A request whose
+encoding passes 64 KiB, and a request that holds a credential, such as
+a start that gives the turn its MCP server, is written through the
+sandbox file API to `/run/guilds/requests/<run id>-<call id>.json`
+instead, and the helper reads and deletes it. Only root reads
+`/run/guilds`. The helper answers with one base64 JSON envelope,
+`{ ok, text, meta }` or `{ ok: false, error }`. Each op waits up to 60
+seconds.
+
+| Op | Does |
+| --- | --- |
+| `check` | Whether the harness's CLI is installed, its version, its credential (`secret`, `login`, or none), and with a login its `account` |
+| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives one, the system prompt file, forks a supervisor in its own session, and returns |
+| `poll` | The raw events after a byte offset into the log as whole lines, their progress lines, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
+| `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
+| `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |
+
+The supervisor starts the CLI in its own process group in
+`repos/<repo>`, or in the agent's home when the request names no
+repository, appends the CLI's raw events to the log, waits for it, and
+records its exit code.
+
+A call's state is under `/run/guilds/<agent id>/harness/` (mode 0700),
+which goes with the container: `<call id>.json` (what was started),
+`.pid` (the CLI's process group), `.exit`, `.session`, and `.stderr`.
+`result` removes them and the prompt files once the CLI has exited.
+
+The raw event log, `.runs/<run id>/<call id>.harness.jsonl` in the
+agent's home, is stored unredacted. `.runs/` keeps the folders of the
+agent's 20 most recent runs, so the log of an older run is gone.
+
+### Harness environment
+
+The harness gets the environment of every command the orchestrator
+runs for the agent: `HOME`, `GUILDS_AGENT_HOME`, `PORT`,
+`GUILDS_PORTS`, the agent's secrets, and its secret aliases
+([Agent home](../agent-home.md)). It also gets `PAGER=cat`,
+`GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
+`DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and
+`GUILD_AGENT_ID`, so commit trailers work
+([Reviewing changes](reviewing-changes.md#commit-trailers)).
+
+`GH_TOKEN`, `GITHUB_TOKEN`, and `GUILDS_RUN_DIR` are never in a
+harness's environment: the harness opens a pull request with its
+provider's connector tool. git still reads its token through the
+credential helper ([Tokens](repositories.md#tokens)). Each driver also
+sets its own variables and removes those that would move the harness
+off the subscription ([Drivers](#drivers)).
+
+### Sessions
+
+Session ids are the harness's own ([Drivers](#drivers)). Each harness
+keeps its session state in the agent's home (`~/.claude`, `~/.codex`,
+`~/.cursor`, `~/.gemini`), so a session survives container recreation
+and counts against `max_workspace_mib`. A run keeps the session its
+latest turn reported, and its next turn resumes it
+([Runs](../runs.md#harness-turns)).
+
 ### Code
 
 `apps/orchestrator/src/coding/harnesses.ts` (the harnesses, the ones
@@ -669,4 +696,4 @@ in the app `apps/web/src/features/agent/harness.ts`,
 `apps/web/src/features/agent/settings/HarnessFields.tsx`,
 `apps/web/src/features/agent/settings/HarnessReadiness.tsx`,
 `apps/web/src/features/agent/settings/credentialNote.ts`, and
-`apps/web/src/features/agent/CreateCodingAgent.tsx`.
+`apps/web/src/features/agent/settings/ModelSourceField.tsx`.

@@ -21,8 +21,7 @@ export function runIsCapped(run: Run): boolean {
   return run.errors.some(
     (error) =>
       error.operation === "generation.max_tool_calls" ||
-      error.operation === "generation.max_input_tokens" ||
-      error.operation === "generation.max_chain",
+      error.operation === "generation.max_input_tokens",
   );
 }
 

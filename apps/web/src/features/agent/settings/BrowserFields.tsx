@@ -81,11 +81,8 @@ export function withBrowserOptimized(
   models: OrgModels | undefined,
 ): ConfigForm {
   if (!on) return { ...form, browser_optimized: false, browser_model: "" };
-  const marketplace = { marketplaceOnly: true };
   const model =
-    form.browser_model ||
-    preselectedModel(models, marketplace) ||
-    (modelOptions(models, marketplace)[0]?.options[0]?.value ?? "");
+    form.browser_model || preselectedModel(models) || (modelOptions(models)[0]?.options[0]?.value ?? "");
   return { ...form, browser_optimized: true, browser_model: model };
 }
 
@@ -174,7 +171,7 @@ function BrowserModelField({ form, onChange, models, error }: BrowserModelFieldP
       hint="The model the browse tool plans and reads pages with, on the organisation's key."
       value={form.browser_model}
       onValueChange={(value) => onChange({ ...form, browser_model: value })}
-      options={modelOptions(models, { current: form.browser_model, marketplaceOnly: true })}
+      options={modelOptions(models, { current: form.browser_model })}
       {...(error ? { error } : {})}
     />
   );

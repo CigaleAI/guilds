@@ -47,11 +47,6 @@ export const NATIVE_TOOL_NAMES = new Set([
   "browser_scroll",
   "browser_screenshot",
   "browser_eval",
-  "shell",
-  "shell_status",
-  "file_read",
-  "code_search",
-  "code_task",
   "secret_store",
   "secret_request",
 ]);

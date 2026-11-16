@@ -70,7 +70,7 @@ test("hydrateMessages turns stored refs into image_url parts without writing byt
   assert.equal(JSON.stringify(rows[0]?.payload), JSON.stringify({ role: "user", content: "look" }));
 });
 
-test("hydrateMessages inlines images when the provider refuses public URLs", async () => {
+test("hydrateMessages signs each image's URL, and inlines the image when the store signs none", async () => {
   const store: BlobStore = {
     async put() {},
     async get() {
@@ -93,7 +93,7 @@ test("hydrateMessages inlines images when the provider refuses public URLs", asy
   const signedUrl = ((signed?.content as Array<Record<string, unknown>>)[1]?.image_url as { url: string })
     .url;
   assert.equal(signedUrl, "https://signed.example/shot.png");
-  const [inline] = await hydrateMessages(rows, store, "org_1", { inlineImages: true });
+  const [inline] = await hydrateMessages(rows, { ...store, signedReadUrl: async () => null }, "org_1");
   const inlineUrl = ((inline?.content as Array<Record<string, unknown>>)[1]?.image_url as { url: string })
     .url;
   assert.match(inlineUrl, /^data:image\/png;base64,/);

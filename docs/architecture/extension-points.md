@@ -20,7 +20,7 @@ repository.
    module imports an extension's, reads its settings, queries its
    tables, or branches on the extension that is running.
 2. **Core is the whole product.** Guilds, agents, runs, tools,
-   connectors, coding agents, Studio, Builder, recipes, collections,
+   connectors, subscription agents, Studio, Builder, recipes, collections,
    and usage are core. An extension adds no agent feature.
 3. **Core starts on Docker alone.** No cloud account, email
    provider, payment provider, or object store. Every instance key
@@ -108,7 +108,9 @@ and `trusted-header`. Paths below are under
   and `GET /api/auth/me` are core's (`http/me-routes.ts`).
 - **Organisation policy.** `standing(orgId)` returns the
   organisation's `OrgLimits` and whether it is blocked. The limits
-  are the agent, browser-agent, coding-agent, guild, machine
+  are the agent (`maxAgents`), browser-agent (`maxBrowserAgents`),
+  subscription-agent (`maxSubscriptionAgents`, every agent that holds
+  a harness, as `countsAsSubscriptionAgent` reads it), guild, machine
   (`maxMachines`), agents-per-machine (`maxAgentsPerMachine`, never
   above core's 32), and concurrent-run caps; the monthly Studio and
   Builder quota and their generation budgets; the organisation's own

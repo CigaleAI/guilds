@@ -194,14 +194,9 @@ export type RunStreamState = { live: LiveTurn | null; progress: ToolProgress };
  * Follows one open run: streamed reasoning and text arrive as `live`, the lines a running tool
  * call reports arrive as `progress` until its result is committed, committed rows go straight
  * into the cached transcript, and the end of a generation marks the cached run idle and
- * refreshes it. Each (re)connect drops what was streamed and re-reads the run. A run that
- * continues in a new one of its chain hands `onContinued` the new run's id.
+ * refreshes it. Each (re)connect drops what was streamed and re-reads the run.
  */
-export function useRunStream(
-  agentId: string,
-  runId: string | undefined,
-  onContinued?: (nextRunId: string) => void,
-): RunStreamState {
+export function useRunStream(agentId: string, runId: string | undefined): RunStreamState {
   const client = useQueryClient();
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [progress, setProgress] = useState<ToolProgress>(() => new Map());
@@ -265,10 +260,6 @@ export function useRunStream(
         "generation.finished": () => {
           cacheGenerating(runId, false);
           resetToServer();
-        },
-        "run.continued": (continuation) => {
-          refreshRun();
-          onContinued?.(continuation.run_id);
         },
         "run.wake.changed": ({ pending_wake }) =>
           client.setQueryData<Run>(runKeys.run(runId), (run) =>

@@ -135,5 +135,5 @@ Keep going, one page each:
 - [Give it web search](web-search.md): let agents search the web.
 - [Save a recipe](save-a-recipe.md): save the guild as one file and
   apply it again.
-- [Add a coding agent](add-a-coding-agent.md): add an agent that
-  changes code in one of your repositories.
+- [Add an agent that works on code](add-a-coding-agent.md): add a
+  subscription agent that changes code in one of your repositories.

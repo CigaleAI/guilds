@@ -45,9 +45,7 @@ and a copy button.
 | Collapsed rail (⌘B / Ctrl+B): the same entries, guild tag and issue badges, and **Settings** | every page | [Guilds](../concepts/guilds.md) |
 | Account menu: **Organisation** switch, **Theme**, **Message chime**, **Chime sound**, **Desktop notifications** (when the browser supports them), **Settings**, **Admin**, **Sign out** | every page | [Organisations](../concepts/organisations.md), [Users](../concepts/users.md), [Inbox and issues](../concepts/inbox.md) |
 | **Create a guild** dialog | from the sidebar or the empty Home | [Guilds](../concepts/guilds.md) |
-| **Create an agent**: choice of agent or coding agent | from **Add agent** or the guild's **New agent** | [Agents](../concepts/agents.md) |
-| **Create an agent** (Identity, Model, Machine) | from **Add agent** | [Agents](../concepts/agents.md), [Machines](../concepts/machines.md), [Agent home](../concepts/agent-home.md) for **Disk** |
-| **Create a coding agent** (Identity, Machine, Harness, Lead model, Repositories) | from **Add agent** | [Coding agents](../concepts/coding/index.md), [Harnesses](../concepts/coding/harnesses.md), [Repositories](../concepts/coding/repositories.md) |
+| **Create an agent** (Identity, Model, Machine), with **Model source** on a key or a subscription | from **Add agent** or the guild's **New agent** | [Agents](../concepts/agents.md), [Harnesses](../concepts/coding/harnesses.md), [Machines](../concepts/machines.md), [Agent home](../concepts/agent-home.md) for **Disk** |
 | Guild header and **Guild options** menu: **Open in Studio**, **New agent**, **Save as recipe**, **Guild settings**, **Clear group chat** | `/guilds/<id>` | [Guilds](../concepts/guilds.md), [Group chat](../concepts/group-chat.md) |
 | Guild message-budget button | `/guilds/<id>` | [Group chat](../concepts/group-chat.md) |
 | Open recipe apply strip | `/guilds/<id>` | [Applying recipes](../concepts/applying-recipes.md) |
@@ -68,12 +66,10 @@ and a copy button.
 | Guild **Secrets** tab | `/guilds/<id>/secrets` | [Secrets](../concepts/secrets.md) |
 | Guild **Usage** tab | `/guilds/<id>/usage` | [Usage](../concepts/usage.md) |
 | Agent inspector header and menu | `/guilds/<id>/agents/<id>` | [Agents](../concepts/agents.md) |
-| Coding readiness warning | agent inspector | [Coding agents](../concepts/coding/index.md) |
 | **Browser login needed** strip | agent inspector | [Browser](../concepts/browser.md) |
 | Agent **Chat** tab: transcript, run flow, attachments, **Resume**, **Debug in Studio**, the pending wake-up banner with **Cancel** | `/guilds/<id>/agents/<id>` (`?run=…`) | [Run transcript](../concepts/run-transcript.md), [Runs](../concepts/runs.md) |
 | Chat History drawer | `/guilds/<id>/agents/<id>/history` (`?history=true`) | [Run transcript](../concepts/run-transcript.md) |
-| Chat coding strip | agent **Chat** tab | [Coding agents](../concepts/coding/index.md) |
-| Chat `code_task` row and **Changes** panel | agent **Chat** tab | [Code tasks](../concepts/coding/code-tasks.md), [Reviewing changes](../concepts/coding/reviewing-changes.md) |
+| Chat **Changes** panel | agent **Chat** tab | [Reviewing changes](../concepts/coding/reviewing-changes.md) |
 | Chat secret request card | agent **Chat** tab | [Run transcript](../concepts/run-transcript.md), [Secrets](../concepts/secrets.md) |
 | Agent **Prompt** tab | `/guilds/<id>/agents/<id>/prompt` | [Task](../concepts/task.md) |
 | Agent **State › Memory** | `/guilds/<id>/agents/<id>/state/memory` | [Memory](../concepts/memory.md) |
@@ -87,7 +83,7 @@ and a copy button.
 | Agent **Tools** tab | `/guilds/<id>/agents/<id>/tools` | [Access](../concepts/access.md) |
 | Agent **Secrets** tab | `/guilds/<id>/agents/<id>/secrets` | [Secrets](../concepts/secrets.md) |
 | Agent **Usage** tab | `/guilds/<id>/agents/<id>/usage` | [Usage](../concepts/usage.md), [Agent home](../concepts/agent-home.md) for disk |
-| Agent **Settings**: **Identity**, **Model** / **Lead model** | `/guilds/<id>/agents/<id>/settings` (`?section=identity`, `model`) | [Agents](../concepts/agents.md) |
+| Agent **Settings**: **Identity**, **Model** | `/guilds/<id>/agents/<id>/settings` (`?section=identity`, `model`) | [Agents](../concepts/agents.md) |
 | Agent Settings: **Machine** | `?section=machine` | [Machines](../concepts/machines.md) |
 | Agent Settings: **Harness** | `?section=harness` | [Harnesses](../concepts/coding/harnesses.md) |
 | Agent Settings: **Repositories** | `?section=repositories` | [Repositories](../concepts/coding/repositories.md) |

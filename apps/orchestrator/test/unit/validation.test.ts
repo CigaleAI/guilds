@@ -12,17 +12,13 @@ import {
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TEMPERATURE,
-  CODING_MAX_STEPS,
-  CODING_MAX_TOOL_CALLS,
 } from "../../src/agents/config.js";
 import {
   AgentValidationError,
-  assertCodingAgent,
   assertUsableRepositories,
   assertSubscriptionAgent,
   isValidSecretAliases,
   validateAgentConfig,
-  validateNewAgentConfig,
   validateThinkingLevel,
   validateAvatarColor,
   validateAvatarShape,
@@ -197,14 +193,7 @@ test("config requires a model with a provider prefix, whatever the catalog lists
   assert.throws(() => validateAgentConfig({ ...VALID_CONFIG, model: "openrouter/" }), /unknown model provider/);
   assert.throws(() => validateAgentConfig({ ...VALID_CONFIG, model: "gpt-4o" }), /unknown model provider/);
   assert.throws(() => validateAgentConfig({ model: "" }), /non-empty/);
-  assert.throws(
-    () => validateAgentConfig({ ...VALID_CONFIG, model: "kimi/kimi-for-coding", coding: false }),
-    /coding API models are only for coding agents/,
-  );
-  assert.equal(
-    validateAgentConfig({ ...VALID_CONFIG, model: "kimi/kimi-for-coding", coding: true }).model,
-    "kimi/kimi-for-coding",
-  );
+  assert.throws(() => validateAgentConfig({ ...VALID_CONFIG, model: "kimi/kimi-for-coding" }), /unknown model provider/);
 });
 
 test("config defaults missing generation keys", () => {
@@ -254,16 +243,15 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 24);
+  assert.equal(CONFIG_KEYS.size, 23);
   assert.throws(() => validateAgentConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateAgentConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateAgentConfig({ model }), false);
 });
 
-test("a config that leaves out the flags has no browser, no coding, no harness, and no secret aliases", () => {
+test("a config that leaves out the flags has no browser, no harness, and no secret aliases", () => {
   const config = validateAgentConfig({ model: VALID_CONFIG.model });
   assert.equal(config.browser, false);
-  assert.equal(config.coding, false);
   assert.equal(config.harness, null);
   assert.equal(config.harness_model, null);
   assert.equal(config.harness_effort, null);
@@ -288,7 +276,6 @@ test("a config that leaves out every setting but its model takes every default",
     browser_language: "en-US",
     browser_optimized: false,
     browser_model: null,
-    coding: false,
     harness: null,
     harness_model: null,
     harness_effort: null,
@@ -305,48 +292,27 @@ test("a config without a model is refused, naming the missing key", () => {
   assert.throws(() => validateAgentConfig({ extra: 1 }), /missing keys: model; unknown keys: extra/);
 });
 
-test("a new coding agent's payload takes the coding budgets for the limits it leaves out", () => {
-  const model = VALID_CONFIG.model;
-  const coder = validateNewAgentConfig({ model, coding: true });
-  assert.equal(coder.max_steps, CODING_MAX_STEPS);
-  assert.equal(coder.max_tool_calls, CODING_MAX_TOOL_CALLS);
-  const explicit = validateNewAgentConfig({ model, coding: true, max_steps: 5 });
-  assert.equal(explicit.max_steps, 5);
-  assert.equal(explicit.max_tool_calls, CODING_MAX_TOOL_CALLS);
+test("a config with coding is refused as an unknown key", () => {
+  assert.throws(() => validateAgentConfig({ model: VALID_CONFIG.model, coding: true }), /unknown keys: coding/);
+  assert.throws(() => validateAgentConfig({ model: null, harness: "codex", coding: false }), /unknown keys: coding/);
 });
 
-test("a new agent's payload without coding takes the default limits", () => {
-  const model = VALID_CONFIG.model;
-  assert.deepEqual(validateNewAgentConfig({ model }), validateAgentConfig({ model }));
-  assert.deepEqual(validateNewAgentConfig({ model, coding: false }), validateAgentConfig({ model, coding: false }));
-  assert.equal(validateNewAgentConfig({ model }).max_steps, DEFAULT_MAX_STEPS);
-  assert.equal(validateNewAgentConfig({ model }).max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
-});
-
-test("harness is one of the coding harnesses, and only a coding agent has one", () => {
+test("harness is one of the coding harnesses, and only a subscription agent has one", () => {
   const model = VALID_CONFIG.model;
   assert.equal(validateAgentConfig({ model }).harness, null);
-  assert.equal(validateAgentConfig({ model, coding: true, harness: "codex" }).harness, "codex");
-  assert.throws(() => validateAgentConfig({ model, coding: true, harness: "opencode" }), /harness must be one of/);
-  assert.throws(
-    () => validateAgentConfig({ model, coding: false, harness: "cursor" }),
-    /harness is for a coding agent, or a subscription agent, which has no model/,
-  );
+  assert.equal(validateAgentConfig({ model: null, harness: "codex" }).harness, "codex");
+  assert.throws(() => validateAgentConfig({ model: null, harness: "opencode" }), /harness must be one of/);
+  assert.throws(() => validateAgentConfig({ model, harness: "cursor" }), /harness is for a subscription agent, which has no model/);
 });
 
 test("an agent without a model is a subscription agent on its harness, any of the four", () => {
   const subscription = validateAgentConfig({ model: null, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "high" });
   assert.equal(subscription.model, null);
-  assert.equal(subscription.coding, false);
   assert.equal(subscription.harness, "codex");
   assert.equal(subscription.harness_model, "gpt-6-luna");
   assert.equal(subscription.harness_effort, "high");
   assert.equal(validateAgentConfig({ model: null, harness: "claude-code" }).harness, "claude-code");
   assert.throws(() => validateAgentConfig({ model: null }), /an agent without a model is a subscription agent: it needs a harness/);
-  assert.throws(
-    () => validateAgentConfig({ model: null, coding: true, harness: "codex" }),
-    /a coding agent needs a model: the lead model it runs on a key/,
-  );
   assert.equal(validateAgentConfig({ model: null, harness: "cursor" }).harness, "cursor", "a stored agent whose repositories are gone still validates");
   assert.equal(validateAgentConfig({ model: null, harness: "antigravity", repositories: ["app"] }).harness, "antigravity");
   assert.throws(() => validateAgentConfig({ model: "  " }), /model must be a non-empty string, or null for a subscription agent/);
@@ -407,14 +373,11 @@ test("a subscription agent on Cursor or Antigravity is created and updated only 
     const codex = validateAgentConfig({ model: null, harness: "codex" });
     assert.throws(() => assertSubscriptionAgent({ ...codex, harness }, codex), refusal, "a switch to it without one");
     assert.doesNotThrow(() => assertSubscriptionAgent(codex), "Claude Code and Codex run without one");
-    const keyed = validateAgentConfig({ model: VALID_CONFIG.model, coding: true, harness });
-    assert.doesNotThrow(() => assertSubscriptionAgent(keyed), "a coding agent's harness is no subscription");
   }
 });
 
 test("harness_model is a model name for a set harness; blank or missing leaves the subscription's default", () => {
-  const model = VALID_CONFIG.model;
-  const coder = { model, coding: true, harness: "claude-code" };
+  const coder = { model: null, harness: "claude-code" };
   assert.equal(validateAgentConfig(coder).harness_model, null);
   assert.equal(validateAgentConfig({ ...coder, harness_model: "  " }).harness_model, null);
   assert.equal(validateAgentConfig({ ...coder, harness_model: " opus " }).harness_model, "opus");
@@ -426,12 +389,11 @@ test("harness_model is a model name for a set harness; blank or missing leaves t
   assert.throws(() => validateAgentConfig({ ...coder, harness_model: "opus; rm -rf /" }), /harness_model must be a model name/);
   assert.throws(() => validateAgentConfig({ ...coder, harness_model: 4 }), /harness_model must be a model name/);
   assert.throws(() => validateAgentConfig({ ...coder, harness_model: "x".repeat(121) }), /harness_model must be a model name/);
-  assert.throws(() => validateAgentConfig({ model, harness_model: "opus" }), /harness_model needs a harness/);
+  assert.throws(() => validateAgentConfig({ model: VALID_CONFIG.model, harness_model: "opus" }), /harness_model needs a harness/);
 });
 
 test("harness_effort is one its model runs at; blank or missing leaves the harness's default", () => {
-  const model = VALID_CONFIG.model;
-  const coder = { model, coding: true, harness: "codex", harness_model: "gpt-6-luna" };
+  const coder = { model: null, harness: "codex", harness_model: "gpt-6-luna" };
   assert.equal(validateAgentConfig(coder).harness_effort, null);
   assert.equal(validateAgentConfig({ ...coder, harness_effort: "  " }).harness_effort, null);
   assert.equal(validateAgentConfig({ ...coder, harness_effort: " high " }).harness_effort, "high");
@@ -439,21 +401,19 @@ test("harness_effort is one its model runs at; blank or missing leaves the harne
   assert.throws(() => validateAgentConfig({ ...coder, harness_effort: "ultra" }), /one of low, medium, high, xhigh, max for gpt-6-luna/);
   assert.throws(() => validateAgentConfig({ ...coder, harness_effort: "turbo" }), /harness_effort must be one of: none,/);
   assert.throws(() => validateAgentConfig({ ...coder, harness_effort: 3 }), /harness_effort must be one of: none,/);
-  assert.throws(() => validateAgentConfig({ model, harness_effort: "high" }), /harness_effort needs a harness/);
+  assert.throws(() => validateAgentConfig({ model: VALID_CONFIG.model, harness_effort: "high" }), /harness_effort needs a harness/);
 });
 
 test("harness_effort on the default model or a custom one is any effort the harness takes", () => {
-  const model = VALID_CONFIG.model;
-  const claude = { model, coding: true, harness: "claude-code" };
+  const claude = { model: null, harness: "claude-code" };
   assert.equal(validateAgentConfig({ ...claude, harness_effort: "max" }).harness_effort, "max");
   assert.throws(() => validateAgentConfig({ ...claude, harness_effort: "none" }), /for the default model/);
-  const codex = { model, coding: true, harness: "codex", harness_model: "gpt-5-codex" };
+  const codex = { model: null, harness: "codex", harness_model: "gpt-5-codex" };
   assert.equal(validateAgentConfig({ ...codex, harness_effort: "minimal" }).harness_effort, "minimal");
 });
 
 test("a Cursor agent's effort is one its listed model is named for; others carry it in the name", () => {
-  const model = VALID_CONFIG.model;
-  const cursor = { model, coding: true, harness: "cursor" };
+  const cursor = { model: null, harness: "cursor", repositories: ["app"] };
   assert.equal(validateAgentConfig({ ...cursor, harness_model: "gpt-5.6-sol", harness_effort: "none" }).harness_effort, "none");
   assert.throws(() => validateAgentConfig({ ...cursor, harness_model: "grok-4.7", harness_effort: "max" }), /one of low, medium, high, xhigh for grok-4.7/);
   assert.throws(() => validateAgentConfig({ ...cursor, harness_model: "composer-2.5", harness_effort: "low" }), /composer-2.5 takes no effort on cursor/);
@@ -485,8 +445,8 @@ test("secret aliases are valid exactly when a config takes them", () => {
   assert.equal(isValidSecretAliases(undefined), false);
 });
 
-test("a coding agent's repositories are a list of repository names, each once", () => {
-  const coding = { model: VALID_CONFIG.model, coding: true, harness: "codex" };
+test("a subscription agent's repositories are a list of repository names, each once", () => {
+  const coding = { model: null, harness: "codex" };
   assert.deepEqual(validateAgentConfig({ ...coding, repositories: ["shop", "docs"] }).repositories, ["shop", "docs"]);
   assert.deepEqual(validateAgentConfig(coding).repositories, [], "a config that leaves them out picks none");
   assert.throws(() => validateAgentConfig({ ...coding, repositories: "shop" }), /repositories must be a list of repository names/);
@@ -495,57 +455,30 @@ test("a coding agent's repositories are a list of repository names, each once", 
   assert.throws(() => validateAgentConfig({ ...coding, repositories: ["shop", "shop"] }), /repositories: shop is listed twice/);
 });
 
-test("only a coding agent picks repositories", () => {
+test("only a subscription agent picks repositories", () => {
   const model = VALID_CONFIG.model;
-  assert.throws(() => validateAgentConfig({ model, repositories: ["shop"] }), /repositories are only for coding agents/);
+  assert.throws(() => validateAgentConfig({ model, repositories: ["shop"] }), /repositories are only for subscription agents/);
   assert.deepEqual(validateAgentConfig({ model, repositories: [] }).repositories, []);
 });
 
-test("a subscription agent picks repositories, as a coding agent does", () => {
-  const subscription = validateAgentConfig({ model: null, harness: "claude-code", repositories: ["shop", "docs"] });
-  assert.deepEqual(subscription.repositories, ["shop", "docs"]);
-  assert.equal(subscription.coding, false);
-});
-
 test("a config picks only repositories the agent can use, and keeps one it already picked", () => {
-  const model = VALID_CONFIG.model;
-  const config = validateAgentConfig({ model, coding: true, harness: "codex", repositories: ["shop", "billing", "wiki"] });
+  const config = validateAgentConfig({ model: null, harness: "codex", repositories: ["shop", "billing", "wiki"] });
   assert.throws(
     () => assertUsableRepositories(config, ["shop"]),
     (error: unknown) =>
       error instanceof AgentValidationError && /the agent cannot use billing, wiki: add it to the guild's Repositories first/.test(error.message),
   );
   assert.doesNotThrow(() => assertUsableRepositories(config, ["shop", "billing", "wiki"]));
-  const previous = validateAgentConfig({ model, coding: true, harness: "codex", repositories: ["billing"] });
+  const previous = validateAgentConfig({ model: null, harness: "codex", repositories: ["billing"] });
   assert.throws(() => assertUsableRepositories(config, ["shop"], previous), /cannot use wiki:/);
   assert.doesNotThrow(() => assertUsableRepositories({ ...config, repositories: ["billing"] }, [], previous));
 });
 
-test("a coding agent needs a harness to save; a stored one without it still validates", () => {
-  const model = VALID_CONFIG.model;
-  const unharnessed = validateAgentConfig({ model, coding: true });
-  assert.equal(unharnessed.harness, null);
-  assert.throws(() => assertCodingAgent(unharnessed), /coding agents need a harness: claude-code, codex, cursor/);
-  const coding = { model, coding: true, harness: "cursor" };
-  assert.doesNotThrow(() => assertCodingAgent(validateAgentConfig(coding)));
-  assert.doesNotThrow(() => assertCodingAgent(validateAgentConfig({ ...coding, browser: true })));
-  assert.doesNotThrow(() => assertCodingAgent(validateAgentConfig({ model })));
-});
-
-test("an update cannot switch a coding agent's coding off", () => {
-  const model = VALID_CONFIG.model;
-  const coder = validateAgentConfig({ model, coding: true, harness: "codex" });
-  const plain = validateAgentConfig({ model });
-  assert.throws(() => assertCodingAgent(plain, coder), /coding cannot be switched off/);
-  assert.doesNotThrow(() => assertCodingAgent(plain, plain));
-  assert.doesNotThrow(() => assertCodingAgent(coder, plain));
-});
-
-test("max_wake_ups defaults to 10 for every agent, coding or not, and takes a positive whole number", () => {
+test("max_wake_ups defaults to 10 for every agent, on a key or a subscription, and takes a positive whole number", () => {
   const model = VALID_CONFIG.model;
   assert.equal(DEFAULT_MAX_WAKE_UPS, 10);
   assert.equal(validateAgentConfig({ model }).max_wake_ups, DEFAULT_MAX_WAKE_UPS);
-  assert.equal(validateNewAgentConfig({ model, coding: true, harness: "codex" }).max_wake_ups, DEFAULT_MAX_WAKE_UPS);
+  assert.equal(validateAgentConfig({ model: null, harness: "codex" }).max_wake_ups, DEFAULT_MAX_WAKE_UPS);
   assert.equal(validateAgentConfig({ model, max_wake_ups: 1 }).max_wake_ups, 1);
   for (const refused of [0, -1, 2.5, "3", null]) {
     assert.throws(() => validateAgentConfig({ model, max_wake_ups: refused }), /max_wake_ups must be a positive integer/);
@@ -565,7 +498,7 @@ test("max_turn_minutes defaults to 30, a subscription agent's harness turn's tim
 test("keep_tool_result_generations is left to the guild unless the config sets a positive whole number", () => {
   const model = VALID_CONFIG.model;
   assert.equal(validateAgentConfig({ model }).keep_tool_result_generations, null);
-  assert.equal(validateNewAgentConfig({ model, coding: true, harness: "codex" }).keep_tool_result_generations, null);
+  assert.equal(validateAgentConfig({ model: null, harness: "codex" }).keep_tool_result_generations, null);
   assert.equal(validateAgentConfig({ model, keep_tool_result_generations: null }).keep_tool_result_generations, null);
   assert.equal(validateAgentConfig({ model, keep_tool_result_generations: 3 }).keep_tool_result_generations, 3);
   for (const refused of [0, -1, 2.5, "3"]) {
@@ -675,14 +608,13 @@ test("the agent-optimized browser needs the browser on", () => {
   assert.equal(validateAgentConfig({ ...optimized, browser: true }).browser_optimized, true);
 });
 
-test("the agent-optimized browser needs a marketplace browser_model", () => {
+test("the agent-optimized browser needs a browser_model", () => {
   const optimized = { ...VALID_CONFIG, browser: true, browser_optimized: true };
-  const refused = /browser_model must be a marketplace \{provider\}\/\{model\} when browser_optimized is on/;
+  const refused = /browser_model must be a \{provider\}\/\{model\} when browser_optimized is on/;
   assert.throws(() => validateAgentConfig(optimized), refused, "missing");
   assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "  " }), refused, "blank");
   assert.throws(() => validateAgentConfig({ ...optimized, browser_model: 4 }), refused, "not a string");
   assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "nowhere/model" }), refused, "unknown provider");
-  assert.throws(() => validateAgentConfig({ ...optimized, browser_model: "kimi/kimi-for-coding" }), refused, "coding only");
   assert.equal(validateAgentConfig({ ...optimized, browser_model: ` ${VALID_CONFIG.model} ` }).browser_model, VALID_CONFIG.model);
 });
 

@@ -22,7 +22,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("a captured coding guild applies with repository steps, each giving its repository to the agents whose role lists it", { timeout: 60_000 }, async () => {
+test("a captured guild of subscription agents applies with repository steps, each giving its repository to the agents whose role lists it", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
@@ -54,7 +54,7 @@ test("a captured coding guild applies with repository steps, each giving its rep
       });
       assert.equal(added.statusCode, 201, added.body);
     }
-    const coderConfig = { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code" };
+    const coderConfig = { model: null, browser: false, harness: "claude-code" };
     for (const [name, repositories] of [
       ["coder", ["api"]],
       ["reviewer", ["web", "api"]],
@@ -73,7 +73,8 @@ test("a captured coding guild applies with repository steps, each giving its rep
     ]);
     assert.equal(JSON.stringify(body).includes("git.example.com"), false);
     const roles = body.roles as Array<{ role: string; config: Record<string, unknown> }>;
-    assert.equal(roles[0]?.config.coding, true);
+    assert.equal(roles[0]?.config.harness, "claude-code");
+    assert.equal("model" in (roles[0]?.config ?? {}), false, "a subscription role carries no model");
     assert.deepEqual(
       Object.fromEntries(roles.map((role) => [role.role, role.config.repositories])),
       { coder: ["api"], reviewer: ["web", "api"] },
@@ -85,12 +86,12 @@ test("a captured coding guild applies with repository steps, each giving its rep
     assert.equal(published.statusCode, 200, published.body);
     const preview = await call("POST", `/api/recipes/${recipeId}/preview`, {});
     assert.equal(preview.statusCode, 200, preview.body);
-    assert.equal(preview.json().creates.agents[0].coding, true);
+    assert.deepEqual(preview.json().harnesses.map((item: { role: string }) => item.role), ["coder", "reviewer"]);
     assert.deepEqual(preview.json().creates.repositories, [
       { name: "api", purpose: "" },
       { name: "web", purpose: "" },
     ]);
-    assert.equal(preview.json().remaining.coding_agents, null, "nothing caps coding agents here");
+    assert.equal(preview.json().remaining.subscription_agents, null, "nothing caps subscription agents here");
     assert.deepEqual(preview.json().setups, [], "repositories need no GitHub App while the box has none: each is added with its own credential");
 
     const applied = await call("POST", `/api/recipes/${recipeId}/apply`, {
@@ -109,7 +110,7 @@ test("a captured coding guild applies with repository steps, each giving its rep
     const picks = async () =>
       Object.fromEntries((await listAgents(db, apply.guild_id)).map((agent) => [agent.name, agent.config.repositories]));
     const target = await listAgents(db, apply.guild_id);
-    assert.equal(target[0]?.config.coding, true);
+    assert.equal(target[0]?.config.model, null);
     assert.deepEqual(await picks(), { "coder-two": [], "reviewer-two": [] }, "the new guild has none of the repositories yet");
 
     const early = await call("POST", `/api/applies/${apply.id}/steps/${encodeURIComponent("repo:api")}/verify`);

@@ -57,7 +57,7 @@ first working content, as Design describes.
 4. When search returns nothing adequate, use this fallback ladder in order and
    write the choice into `design.systems` with `proposed_by: "builder"` and
    `accepted: false` until the operator agrees:
-   1. a native capability (notes, collections, memory, scripts, schedules, browser, coding);
+   1. a native capability (notes, collections, memory, scripts, schedules, browser, a subscription role's repositories);
    2. a reviewed script adapter plus a named secret;
    3. a browser role plus an operator take-control login step at apply;
    4. a narrowed composition of available capabilities;
@@ -80,7 +80,7 @@ first working content, as Design describes.
    has more than one standing purpose, skill, system, cadence, or body of
    learned context. Any of these justifies a split: narrower tools, narrower
    access, narrower context (a distinct Memory or playbook), volume one Task
-   cannot hold, browser against non-browser work, coding against non-coding
+   cannot hold, browser against non-browser work, code work against other
    work, and failure isolation (a broken login on one role must not stop
    another). Keep one role only when the whole job is one skill, one
    cadence, one login, and one playbook. Do not invent a role per verb when
@@ -236,34 +236,31 @@ Fields the write tool's schema does not spell out:
 login_failure_policy }`. That is what creates the apply take-control login
   step. Do not invent a connector. The six `browser_*` tools are offered by the
   `config.browser` flag — do not list them under `native_tools`.
-- coding (a role that reads, changes, runs, and ships code in git repositories):
-  `config.coding: true`. `code_task`, `shell`, `file_read`, and `code_search`
-  come with the flag — do not list them under `native_tools`. A coding agent
-  delegates code changes to a coding harness on the operator's own subscription:
-  `config.harness` is `claude-code`, `codex`, `cursor`, or `antigravity`. Set it
-  only when the operator named one; otherwise leave it out and apply asks for it. List the repositories the
-  guild works in at the top level as `repositories: [{ name, purpose }]`:
-  `name` is the folder under `repos/` in a coding agent's home (`^[a-z][a-z0-9_-]{0,62}$`),
-  `purpose` one line on what the repository holds. Never a URL, an owner, or
-  a credential; apply asks the operator to add each one with its URL and a credential.
-  Each coding role lists the ones it works in as `config.repositories`, names
-  from that top-level list, each once; a coding agent clones only those, and a
-  repository no role lists warns as unused. Each coding role's Task names the
-  repositories it works in, the checks it
-  runs before handing work over, and how work reaches its reviewer (a branch
-  and a pull or merge request, recorded where the guild tracks work). Coding roles
-  count against the organisation's coding agents (`remaining.coding_agents`
-  from `builder_list_capabilities`; `null` means no limit).
-- subscription (a role whose agent runs every turn on its harness, on the
-  operator's own subscription, instead of a model on a key): only when the
-  operator asks for one. Leave `config.model` out, set `config.harness` to
-  `claude-code` or `codex`, and leave `config.coding` off; `cursor` and
-  `antigravity` keep their own system prompt, so set one of them only for a
-  role that works in the repositories it lists as `config.repositories`.
-  `harness_model` and `harness_effort` only when the operator named them. The harness brings its
-  own shell and file tools and reaches the role's other tools as any agent's;
-  leave the model-loop settings (`temperature`, `thinking_level`,
-  `max_tokens`, `max_input_tokens`) out. A subscription role counts against
-  the organisation's coding agents, as a coding role does.
+- subscription (a role whose agent runs every turn on a coding harness, on the
+  operator's own subscription, instead of a model on a key): every role that
+  reads, changes, runs, and ships code in git repositories, and any other role
+  only when the operator asks for one. A role on a key does no code work in a
+  repository. Leave `config.model` out and set `config.harness`: the one the
+  operator named, else `claude-code`; apply lets the operator pick another.
+  `cursor` and `antigravity` keep their own system prompt and run only in
+  repositories, so set one of them only for a role that lists repositories.
+  `harness_model` and `harness_effort` only when the operator named them. The
+  harness brings its own shell and file tools and reaches the role's other
+  tools as any agent's; leave the model-loop settings (`temperature`,
+  `thinking_level`, `max_tokens`, `max_input_tokens`) out. List the
+  repositories the guild works in at the top level as
+  `repositories: [{ name, purpose }]`: `name` is the folder under `repos/` in
+  the agent's home (`^[a-z][a-z0-9_-]{0,62}$`), `purpose` one line on what the
+  repository holds. Never a URL, an owner, or a credential; apply asks the
+  operator to add each one with its URL and a credential. Each role that works
+  in repositories lists them as `config.repositories`, names from that
+  top-level list, each once; its agent clones only those, and a repository no
+  role lists warns as unused. Its Task names the repositories it works in, the
+  checks it runs before handing work over, and how work reaches its reviewer (a
+  pushed branch and a pull or merge request opened with the repository host's
+  connector tool, recorded where the guild tracks work). Subscription roles
+  count against the organisation's subscription agents
+  (`remaining.subscription_agents` from `builder_list_capabilities`; `null`
+  means no limit).
 
 {{AGENT_PROMPT}}

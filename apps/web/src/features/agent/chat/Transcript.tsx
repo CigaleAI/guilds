@@ -252,10 +252,8 @@ function TranscriptFlow({ agent, run, flow, progress, reveal, onAskCall }: Trans
     <>
       <FlowView
         flow={flow}
-        runId={run.id}
         generating={run.generating}
         {...(progress ? { progress } : {})}
-        harness={agent.config.harness}
         {...(reveal ? { reveal } : {})}
         inspector={{ guildId: agent.guild_id, agentId: agent.id }}
         onAskCall={onAskCall}

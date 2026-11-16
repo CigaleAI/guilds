@@ -49,7 +49,6 @@ export async function hydrateMessages(
   rows: AttachedMessage[],
   store: BlobStore,
   orgId: string,
-  options: { inlineImages?: boolean } = {},
 ): Promise<ModelMessage[]> {
   const messages: ModelMessage[] = [];
   for (const row of rows) {
@@ -66,7 +65,7 @@ export async function hydrateMessages(
     }
     for (const ref of refs) {
       const key = objectKey(orgId, ref.id);
-      const url = options.inlineImages ? null : await store.signedReadUrl(key, SIGNED_URL_TTL_MS);
+      const url = await store.signedReadUrl(key, SIGNED_URL_TTL_MS);
       const imageUrl = url ?? dataUrl(ref.mime, await store.get(key));
       parts.push({ type: "image_url", image_url: { url: imageUrl } });
     }

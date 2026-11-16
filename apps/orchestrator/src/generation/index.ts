@@ -31,12 +31,12 @@ import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
 import { agentSchedules, type Schedules } from "../schedules/service.js";
 import { agentScripts, type Scripts } from "../scripts/catalog.js";
 import { defaultGroupRouter } from "../typesafe/group.js";
+import { getPendingRunWake } from "../db/wakes.js";
 import { pendingWakeItem, type PendingWakeView } from "../wakes/item.js";
 import { agentWakes, type Wakes } from "../wakes/service.js";
 import { AdmissionCoordinator } from "../admission/coordinator.js";
 import { ActiveGenerations, activeGenerationsDatabase } from "./active-generations.js";
 import { terminalCapOf } from "./caps.js";
-import { continuedBy, latestInChain, RunChains, runChainsDatabase } from "./chain.js";
 import { CodingRuns, codingRunsDatabase } from "./coding.js";
 import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
 import { isAdmissionRefusal, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
@@ -83,6 +83,7 @@ function loopDatabase(db: Queryable) {
     completeGroupDelivery: bindQuery(db, completeGroupDelivery),
     deleteAgent: bindQuery(db, deleteAgent),
     deleteGuild: bindQuery(db, deleteGuild),
+    getPendingRunWake: bindQuery(db, getPendingRunWake),
   };
 }
 
@@ -99,7 +100,6 @@ function generationDatabase(db: Queryable) {
     ...toolCallsDatabase(db),
     ...runSecretsDatabase(db),
     ...runsDatabase(db),
-    ...runChainsDatabase(db),
     ...runWakesDatabase(db),
     ...harnessLoopDatabase(db),
     ...harnessMcpDatabase(db),
@@ -191,7 +191,6 @@ export class GenerationLoop implements GroupRunner {
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
   secrets: RunSecrets;
-  chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
   wakes: Wakes;
@@ -249,7 +248,6 @@ export class GenerationLoop implements GroupRunner {
       events: this.events,
       generations: this.generations,
       machines: this.machines,
-      coding: this.coding,
       tools,
     });
     this.harnessMcp = new HarnessMcpServer({ db, toolCalls: this.toolCalls }, services.harnessMcpUrl);
@@ -279,13 +277,6 @@ export class GenerationLoop implements GroupRunner {
       },
       timings.schedulerTickMs,
     );
-    this.chains = new RunChains({
-      db,
-      events: this.events,
-      completion: this.completion,
-      runs: this.runs,
-      wakes: this.wakes,
-    });
     this.generator = new RunGenerator({
       db,
       scripts: this.scripts,
@@ -298,7 +289,6 @@ export class GenerationLoop implements GroupRunner {
       workspace: this.workspace,
       toolCalls: this.toolCalls,
       secrets: this.secrets,
-      chains: this.chains,
       starter: this,
       wakes: this.runWakes,
     });
@@ -441,12 +431,8 @@ export class GenerationLoop implements GroupRunner {
     if (run.status !== "completed") {
       throw new RunRequestError(409, "run cannot be resumed");
     }
-    const next = continuedBy(run);
-    if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}`);
-    }
     if (terminalCapOf(run) !== null) {
-      throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
+      throw new RunRequestError(409, "this run hit its tool or token cap; start a new run");
     }
     if ((await this.db.getAgent(run.agent_id)) === null) {
       throw new RunRequestError(404, "agent not found");
@@ -481,7 +467,7 @@ export class GenerationLoop implements GroupRunner {
     return this.currentRunView(runId);
   }
 
-  /** The run, refused unless it takes an operator's message: active, direct or resumed, and not continued. */
+  /** The run, refused unless it takes an operator's message: active, and direct or resumed. */
   private async runTakingMessages(runId: string): Promise<RunRow> {
     const run = await this.db.getRun(runId);
     if (run === null) {
@@ -489,10 +475,6 @@ export class GenerationLoop implements GroupRunner {
     }
     if (run.kind !== "direct" && !runWasResumed(run)) {
       throw new RunRequestError(409, `${run.kind}-triggered runs do not accept later messages`);
-    }
-    const next = continuedBy(run);
-    if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await latestInChain(this.db, next)}; send the message there`);
     }
     if (run.status !== "active") {
       throw new RunRequestError(409, "this run has ended; resume it to continue");

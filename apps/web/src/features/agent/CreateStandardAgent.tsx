@@ -29,7 +29,7 @@ type StandardAgentFormProps = {
 };
 
 /**
- * A new agent without coding, step by step: its identity; its model source, a model on a key or a
+ * A new agent, step by step: its identity; its model source, a model on a key or a
  * subscription on a harness, with its capabilities and run limits; and the machine it goes on,
  * with its disk cap. Its focus seeds its Task.
  */
@@ -47,7 +47,7 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
   const base =
     config ??
     configFormOf(
-      { ...defaultAgentConfig, model: preselectedModel(models.data, { coding: false }) },
+      { ...defaultAgentConfig, model: preselectedModel(models.data) },
       "key",
     );
   const machine = chosenMachine(machines.data, base.machine_id);
@@ -110,7 +110,6 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
             setConfig={setConfig}
             errors={errors}
             machine={machine}
-            lead={false}
             models={models.data}
             noProvider={noProvider}
           />
@@ -122,7 +121,6 @@ export function StandardAgentForm({ guild, onClose }: StandardAgentFormProps) {
             errors={errors}
             machine={machine}
             machines={machines}
-            coding={false}
             onDiskTyped={disk.onTyped}
           />
         ) : null}

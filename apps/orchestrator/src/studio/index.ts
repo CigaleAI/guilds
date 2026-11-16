@@ -5,7 +5,7 @@ import {
   coreModelCredentials,
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
-import { isMarketplaceModel } from "../llm/providers.js";
+import { parseModelId } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
@@ -258,14 +258,14 @@ export class StudioService {
     return viewSession(session);
   }
 
-  /** The coach's model: a marketplace model whose provider the organisation has connected. */
+  /** The coach's model: a `{provider}/{model}` id whose provider the organisation has connected. */
   async validateModel(orgId: string, model: string): Promise<string> {
     const id = model.trim();
     if (!id) {
       throw new StudioUnprocessableError("model is required");
     }
-    if (!isMarketplaceModel(id)) {
-      throw new StudioUnprocessableError("the coach needs a marketplace model");
+    if (parseModelId(id) === null) {
+      throw new StudioUnprocessableError("model must be {provider}/{model}");
     }
     await assertModelConnected(this.credentials, orgId, id);
     return id;

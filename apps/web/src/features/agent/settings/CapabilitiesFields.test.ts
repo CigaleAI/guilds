@@ -7,25 +7,18 @@ const form = configFormOf(defaultAgentConfig, "key");
 const tiny = { cpu: 0.1, memory_mib: 64 };
 const large = { cpu: 64, memory_mib: 262144 };
 
-test("a machine too small for Browser and Coding blocks both while they are off, Coding first", () => {
+test("a machine too small for Browser blocks it while it is off", () => {
   assert.deepEqual(
-    blockedCapabilities(form, tiny, true).map((item) => item.what),
-    ["Coding", "Browser"],
-  );
-});
-
-test("a capability already on, or a Coding card the form leaves out, is not blocked", () => {
-  assert.deepEqual(
-    blockedCapabilities({ ...form, browser: true }, tiny, false).map((item) => item.what),
-    [],
-  );
-  assert.deepEqual(
-    blockedCapabilities({ ...form, coding: true }, tiny, true).map((item) => item.what),
+    blockedCapabilities(form, tiny).map((item) => item.what),
     ["Browser"],
   );
 });
 
+test("a browser already on is not blocked", () => {
+  assert.deepEqual(blockedCapabilities({ ...form, browser: true }, tiny), []);
+});
+
 test("nothing is blocked on a machine that fits, or before one is chosen", () => {
-  assert.deepEqual(blockedCapabilities(form, large, true), []);
-  assert.deepEqual(blockedCapabilities(form, undefined, true), []);
+  assert.deepEqual(blockedCapabilities(form, large), []);
+  assert.deepEqual(blockedCapabilities(form, undefined), []);
 });

@@ -82,8 +82,6 @@ export type AgentSecretStore = {
 /** What a run's tools work with, the same for every call: whose run it is, where its commands run, and what it offers. */
 export type ToolRun = {
   run_id: string;
-  /** The first run of the run's chain: the run itself unless it continues another. */
-  chain_root_run_id: string;
   agent_id: string;
   guild_id: string;
   guild_name: string;
@@ -124,10 +122,8 @@ export type ToolRun = {
   harness_model: string | null;
   /** The effort the run's harness runs its model at, from its snapshot; null for the harness's default. */
   harness_effort: Effort | null;
-  /** The repositories a coding run works on, the ones its agent picks, by their folder under `repos/`. */
+  /** The repositories a subscription turn works on, the ones its agent picks, by their folder under `repos/`. */
   code_repositories: string[];
-  /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
-  code_default_cwd: string;
 };
 
 /** The hooks the loop composes for one run, each bound to what the run record does not hold. */
@@ -151,7 +147,6 @@ export function createToolRun(
   partial: Pick<ToolRun, "run_id" | "agent_id" | "guild_id" | "sandbox" | "secrets"> & Partial<ToolRun>,
 ): ToolRun {
   return {
-    chain_root_run_id: partial.run_id,
     guild_name: "",
     agent_name: "",
     org_slug: "",
@@ -174,7 +169,6 @@ export function createToolRun(
     harness_model: null,
     harness_effort: null,
     code_repositories: [],
-    code_default_cwd: "",
     ...partial,
   };
 }

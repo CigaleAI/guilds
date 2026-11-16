@@ -97,7 +97,6 @@ test("each repository's token is minted by its own provider; one without a provi
       codingRepository({ name: "infra", url: "https://gitlab.com/acme/infra", provider: "access_token", secret_id: "sec_1", username: "oauth2" }),
       codingRepository({ name: "public", url: "https://git.example.com/public.git" }),
     ],
-    "push_and_pull_requests",
   );
   await tokens.mint();
   assert.deepEqual(githubAsked, [["shop"]]);
@@ -116,7 +115,6 @@ test("access tokens alone never need a refresh", async () => {
       access_token: fixedProvider({ token: "glpat", expires_at: null, host: "gitlab.com", username: "oauth2", provider: "access_token" }, []),
     },
     [codingRepository({ name: "infra", url: "https://gitlab.com/acme/infra", provider: "access_token", secret_id: "sec_1", username: "oauth2" })],
-    "push",
   );
   await tokens.mint();
   assert.equal(tokens.hasExpiringTokens, false);

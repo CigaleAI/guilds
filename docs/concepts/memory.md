@@ -232,7 +232,6 @@ operator edit never silently discards the agent's version.
   - `run <run_id> (group delivery: @name, …)`, or
     `run <run_id> (group delivery)` without tags
   - `run <run_id> (schedule wake-up: "<instruction>")`
-  - `run <run_id> (continuation of <run_id>)` for a run chain
   - `host <user name>` for a save on the Memory view
 - Each version has a display path,
   `org/<org_id>/agents/<agent_id>/history-archive/<stamp>-<source>.md`:

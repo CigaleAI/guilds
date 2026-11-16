@@ -30,7 +30,7 @@ export type StateGroup = {
 /** A collection as State lists it: the catalog's entry, without a display path when it has none. */
 export type StateCollection = Omit<CatalogCollection, "display_path"> & Partial<Pick<CatalogCollection, "display_path">>;
 
-/** What core fills in a run's State, under the `CORE_STATE_KEYS`. A coding agent's State alone has `repositories`. */
+/** What core fills in a run's State, under the `CORE_STATE_KEYS`. A subscription agent's State alone has `repositories`. */
 export type CoreState = UtcClock & {
   max_tool_calls: number;
   group: StateGroup;
@@ -72,7 +72,7 @@ export type RunStateInputs = {
   maxToolCalls?: number;
   /** The entries connectors' State hooks returned, by key. A key core uses is not one of them. */
   connectors?: JsonObject;
-  /** The repositories a coding agent picks; other agents' State has no `repositories`. */
+  /** The repositories a subscription agent picks; other agents' State has no `repositories`. */
   repositories?: StateRepository[] | null;
   now?: Date;
 };

@@ -18,28 +18,20 @@ import {
   type AgentSeat,
   type MachineSpec,
 } from "../../src/sandbox/index.js";
-import { invokeTool, schemasFor } from "../../src/toolbox/index.js";
-import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { schemasFor } from "../../src/toolbox/index.js";
 import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensandbox-server.js";
 import { toolFixture } from "../helpers/toolbox.js";
 
-// A live turn of each harness in the runtime image, on a real subscription, and live turns of a
-// subscription agent on each harness, one of each calling a Guilds tool on the orchestrator's MCP
-// server; Cursor's and Antigravity's in a repository, under the run's prompt as a rule. Each runs
-// when its credential is in the environment: CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, for Codex
+// Live turns of a subscription agent on each harness in the runtime image, on a real
+// subscription, one of each calling a Guilds tool on the orchestrator's MCP server; Cursor's and
+// Antigravity's in a repository, under the run's prompt as a rule. Each runs when its credential
+// is in the environment: CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, for Codex
 // CODEX_AUTH_JSON, the path of an auth.json from `codex login`, and for Antigravity
 // ANTIGRAVITY_OAUTH_TOKEN, the path of the `antigravity-oauth-token` a sign-in with `agy` writes.
 const IMAGE = process.env.CONTRACT_RUNTIME_IMAGE ?? "agent-runtime:0.4";
 const imageMissing =
   gated || (run("docker", ["image", "inspect", IMAGE], false).status !== 0 ? `build ${IMAGE} first (make runtime-image)` : false);
 const MACHINE: MachineSpec = { id: "mach_harness", orgId: "org_contract", box: "code", cpu: 2, memoryMib: 4096 };
-
-const LIVE: Array<{ harness: Harness; credential: string }> = [
-  { harness: "claude-code", credential: "CLAUDE_CODE_OAUTH_TOKEN" },
-  { harness: "codex", credential: "CODEX_AUTH_JSON" },
-  { harness: "cursor", credential: "CURSOR_API_KEY" },
-  { harness: "antigravity", credential: "ANTIGRAVITY_OAUTH_TOKEN" },
-];
 
 /** The login files each harness that logs in reads in the home, from the file its credential variable names. */
 const LOGIN_FILES: Partial<Record<string, string>> = {
@@ -58,67 +50,6 @@ async function writeLogin(machine: Awaited<ReturnType<RunSandboxes["ensure"]>>, 
   if (file !== undefined) {
     await machine.files!.writeFiles([{ path: `${agentHome(agentId)}/${file}`, data: readFileSync(String(process.env[credential]), "utf8") }]);
   }
-}
-
-for (const { harness, credential } of LIVE) {
-  const skip = imageMissing || (process.env[credential] ? false : `set ${credential} to run the live ${harness} turn`);
-  test(`a live ${harness} turn changes a file in the repository and names its session`, { skip, timeout: 600_000 }, async () => {
-    process.env.SECRETS_MASTER_KEY ??= HEX_MASTER_KEY;
-    const server = await startOpenSandboxServer();
-    const sandboxes = new RunSandboxes({
-      url: server.url,
-      apiKey: server.apiKey,
-      image: IMAGE,
-      workspaceRoot: server.workspaceRoot,
-    });
-    await sandboxes.start();
-    const agentId = `a_live_${harness.replace("-", "_")}`;
-    const seat: AgentSeat = { agentId, machineId: MACHINE.id, slot: 0, browserLanguage: "en-US" };
-    try {
-      prepareWorkspace(server.workspaceRoot, MACHINE.id, agentId);
-      const machine = await sandboxes.ensure(MACHINE);
-      const secrets = liveSecrets(credential);
-      const sandbox = agentSandbox(machine, agentHome(agentId), { ...secrets, ...seatEnvironment(seat) });
-      await writeLogin(machine, agentId, credential);
-      const setup = await sandbox.commands.run(
-        "mkdir -p repos/live && cd repos/live && git init -q -b main && git -c user.name=t -c user.email=t@t.invalid commit -q --allow-empty -m start && echo ready",
-        { timeoutSeconds: 30 },
-      );
-      assert.equal(stdoutOf(setup).trim(), "ready");
-      const ctx = toolFixture({
-        run_id: "r_live",
-        agent_id: agentId,
-        guild_id: "g_1",
-        sandbox,
-        secrets,
-        harness,
-        code_repositories: ["live"],
-      });
-      const [payload, metadata] = await invokeTool(
-        ctx.services, ctx.run, ctx.hooks,
-        {
-          id: "call_live",
-          type: "function",
-          function: {
-            name: "code_task",
-            arguments: JSON.stringify({
-              brief: "Create a file named hello.txt whose only content is the word hi. Do not commit.",
-              timeout_minutes: 8,
-            }),
-          },
-        },
-      );
-      const text = String(payload.content);
-      assert.equal(metadata.status, "completed", text);
-      assert.ok(typeof metadata.session_id === "string" && metadata.session_id, text);
-      assert.equal(metadata.files_changed, 1, text);
-      assert.ok(text.includes("hello.txt"), text);
-    } finally {
-      await sandboxes.destroy(MACHINE.id).catch(() => undefined);
-      await sandboxes.close();
-      await server.stop();
-    }
-  });
 }
 
 const claudeSkip = imageMissing || (process.env.CLAUDE_CODE_OAUTH_TOKEN ? false : "set CLAUDE_CODE_OAUTH_TOKEN to run the live subscription turn");
@@ -218,7 +149,7 @@ async function liveSubscriptionTurn(
     });
     const schemas = schemasFor(offered);
     const tools: GenerationTools = { run: ctx.run, hooks: ctx.hooks, schemas, secrets, connections: new Map(), maxToolCalls: 50 };
-    const agent = { id: agentId, org_id: "org_contract", guild_id: "g_1", config: { model: null, harness, browser: false, coding: false, scripting: false, memory: false } };
+    const agent = { id: agentId, org_id: "org_contract", guild_id: "g_1", config: { model: null, harness, browser: false, scripting: false, memory: false } };
     const toolCalls = new ToolCalls({
       db: { getAgent: async () => null, getRun: async () => null, listMessages: async () => rows },
       events,

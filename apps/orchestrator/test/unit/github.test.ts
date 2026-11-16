@@ -387,12 +387,11 @@ function connection(id: string, status: McpConnectionRow["status"], installation
   return connectionRow({ id, status, account_hint: "acme", ciphertext, nonce });
 }
 
-/** The tokens of `rows` as a coding run mints them, through GitHub on `db` with `options`; no row here uses an access token. */
+/** The tokens of `rows` as a run mints them, through GitHub on `db` with `options`; no row here uses an access token. */
 function githubTokens(db: unknown, rows: CodingRepository[], options: MintOptions): RepositoryTokens {
   return new RepositoryTokens(
     { github: new GithubProvider(db as never, options), access_token: new AccessTokenProvider({} as never) },
     rows,
-    "push_and_pull_requests",
   );
 }
 
@@ -434,8 +433,8 @@ test("repository tokens: one per connection, limited to its repositories, refres
   await tokens.mint();
   assert.deepEqual(minted, ["11:101,102", "22:201"]);
   assert.deepEqual(permissions, [
-    { contents: "write", pull_requests: "write" },
-    { contents: "write", pull_requests: "write" },
+    { contents: "write" },
+    { contents: "write" },
   ], "what a coding agent's git and gh need");
   assert.deepEqual(Object.keys(tokens.entries).sort(), ["infra", "shop", "site"]);
   assert.deepEqual(tokens.entries.site, {
@@ -478,7 +477,6 @@ test("a token minted to push asks GitHub for contents write alone, on the same r
   const tokens = new RepositoryTokens(
     { github: new GithubProvider(db as never, { app: APP, fetch: fake.fetch, masterKey: MASTER }), access_token: new AccessTokenProvider({} as never) },
     [codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 })],
-    "push",
   );
   await tokens.mint();
   assert.deepEqual(asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");

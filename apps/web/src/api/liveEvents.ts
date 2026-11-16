@@ -9,7 +9,6 @@ import { issueSeverities, type IssueNotice, type IssueSeverity } from "./types/i
 import type {
   LiveDelta,
   MessagePayload,
-  RunContinuation,
   RunMessage,
   RunWakeChange,
   ToolCall,
@@ -190,13 +189,8 @@ export function isToolProgressEvent(data: unknown): data is ToolProgressEvent {
   return (
     isJsonObject(data) &&
     hasFields(data, ["run_id", "tool_call_id"], isString) &&
-    isStringList(data.lines) &&
-    (data.session_id === undefined || isStringOrNull(data.session_id))
+    isStringList(data.lines)
   );
-}
-
-export function isRunContinuation(data: unknown): data is RunContinuation {
-  return isJsonObject(data) && isString(data.run_id);
 }
 
 export function isRunWakeChange(data: unknown): data is RunWakeChange {
@@ -278,7 +272,6 @@ export type RunEvents = {
   "tool.progress": ToolProgressEvent;
   "run.error": unknown;
   "generation.finished": unknown;
-  "run.continued": RunContinuation;
   "run.wake.changed": RunWakeChange;
 };
 
@@ -290,7 +283,6 @@ export const runEventGuards: PayloadGuards<RunEvents> = {
   "tool.progress": isToolProgressEvent,
   "run.error": isAnyPayload,
   "generation.finished": isAnyPayload,
-  "run.continued": isRunContinuation,
   "run.wake.changed": isRunWakeChange,
 };
 

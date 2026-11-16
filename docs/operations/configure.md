@@ -142,7 +142,7 @@ box from another computer, and where that callback is registered.
 | `MAX_CONCURRENT_GENERATIONS` | `0` | Generations running at once across the whole box. `0` is no ceiling. Each organisation's own cap applies under it |
 | `HARNESSES_OFF` | empty | Coding harnesses the box turns off, separated by commas or spaces: `claude-code`, `codex`, `cursor`, `antigravity`. They stay in the runtime image, but Settings does not offer them, the API refuses them as a new pick, and a run of an agent still on one fails at start. An unknown name stops the box from starting ([Harnesses](../concepts/coding/harnesses.md#turning-a-harness-off)) |
 | `WORKSPACE_MAX_MIB` | `10240` | The host-wide cap on one agent's home, in MiB. An agent's own `max_workspace_mib` takes effect only below it ([Agent home](../concepts/agent-home.md)) |
-| `CODE_RESULT_MAX_BYTES` | `8192` | The cap on what a code tool or `code_task` returns to the model, in bytes. A value under `1024` falls back to the default |
+| `CODE_RESULT_MAX_BYTES` | `8192` | The cap on what the code helper returns from the agent's machine, in bytes. A value under `1024` falls back to the default |
 
 Agents' CPU, memory, and disk are bounded by their organisation's
 machines, not by `.env`. Owners and admins create and size them under

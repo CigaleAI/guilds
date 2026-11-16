@@ -31,9 +31,9 @@ import {
 } from "./machines";
 
 const tierHint: Record<MachineBox, string> = {
-  standard: `${machineSizeLabel(machineTiers.standard)}. Hosts agents with a browser, scripts, notes and connectors; no coding.`,
-  code: `${machineSizeLabel(machineTiers.code)}. Hosts any agent, coding agents included.`,
-  custom: `A size you choose, ${customMachineBounds.minCpu} to ${customMachineBounds.maxCpu} CPUs and ${customMachineBounds.minMemoryMib} to ${customMachineBounds.maxMemoryMib} MiB. Hosts any agent, coding agents included.`,
+  standard: `${machineSizeLabel(machineTiers.standard)}. Hosts agents with a browser, scripts, notes and connectors; no subscription agent.`,
+  code: `${machineSizeLabel(machineTiers.code)}. Hosts any agent, subscription agents included.`,
+  custom: `A size you choose, ${customMachineBounds.minCpu} to ${customMachineBounds.maxCpu} CPUs and ${customMachineBounds.minMemoryMib} to ${customMachineBounds.maxMemoryMib} MiB. Hosts any agent, subscription agents included.`,
 };
 
 const tierOptions = machineBoxes.map((box) => ({

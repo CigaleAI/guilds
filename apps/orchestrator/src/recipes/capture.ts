@@ -34,7 +34,7 @@ import { listSchedules } from "../db/schedules.js";
 import { listSecrets, type SecretRow } from "../db/secrets.js";
 import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { countsAsCodingAgent } from "../policy/index.js";
+import { countsAsSubscriptionAgent } from "../policy/index.js";
 
 /** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -94,18 +94,18 @@ const HARNESS_TOKEN_VARIABLES = new Set(
 );
 
 /**
- * The secrets the harnesses of a coding or subscription agent read their subscription tokens
+ * The secrets the harnesses of a subscription agent read their subscription tokens
  * from. They are the operator's own subscription, so a recipe leaves them out: the applying
  * operator sets one up for the harness they pick.
  */
 function harnessTokenSecrets(config: AgentConfig): Set<string> {
-  if (!countsAsCodingAgent(config)) return new Set();
+  if (!countsAsSubscriptionAgent(config)) return new Set();
   return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, config.secret_aliases) ?? []));
 }
 
-/** The role's secret aliases a recipe carries: a coding or subscription role's harness token aliases stay behind. */
+/** The role's secret aliases a recipe carries: a subscription role's harness token aliases stay behind. */
 function portableSecretAliases(config: AgentConfig): Record<string, string> {
-  if (!countsAsCodingAgent(config)) return config.secret_aliases;
+  if (!countsAsSubscriptionAgent(config)) return config.secret_aliases;
   return Object.fromEntries(
     Object.entries(config.secret_aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)),
   );
@@ -141,7 +141,6 @@ export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
     max_workspace_mib: config.max_workspace_mib,
     browser: config.browser,
     browser_language: config.browser_language,
-    coding: config.coding,
     ...(config.harness === null ? {} : { harness: config.harness }),
     ...(config.harness_model === null ? {} : { harness_model: config.harness_model }),
     ...(config.harness_effort === null ? {} : { harness_effort: config.harness_effort }),
@@ -332,7 +331,7 @@ function captureSecret(capture: Capture, secret: SecretRow, role: string): void 
   }
 }
 
-/** The secrets an agent gets, but a coding agent's harness tokens: those are the operator's own subscription. */
+/** The secrets an agent gets, but a subscription agent's harness tokens: those are the operator's own subscription. */
 async function captureSecrets(capture: Capture, agent: GuildAgentRow): Promise<void> {
   const harnessTokens = harnessTokenSecrets(agent.config);
   for (const secret of await capture.deps.db.listSecrets(capture.orgId, { agentId: agent.id })) {

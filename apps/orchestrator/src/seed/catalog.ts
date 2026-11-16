@@ -61,6 +61,11 @@ export const DROPPED_NATIVE_TOOLS = [
   "object_put",
   "object_delete",
   "schedule_create",
+  "code_task",
+  "shell",
+  "shell_status",
+  "file_read",
+  "code_search",
 ] as const;
 
 // Connectors that no longer exist. Seed deletes the row, which cascades

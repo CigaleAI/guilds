@@ -76,7 +76,7 @@ type AccessToolsProps = {
   hideFamilies?: string[];
   /** Which of the two sections to show. */
   panes?: readonly ToolsPane[];
-  /** Agent capabilities that gate browser and coding tools. */
+  /** Agent capabilities that gate the browser tools. */
   capabilities?: AgentNativeCapabilities;
   /** The viewer may add and remove the organisation's own remote servers. */
   serverManager?: boolean;
@@ -228,7 +228,7 @@ export function AccessTools({
       ) : (
         <Pane
           title="Native tools"
-          description="Notes, tables, memory, scripts, routines, group chat and secrets, served by the orchestrator; browser and coding follow the agent's capabilities. No login to connect."
+          description="Notes, tables, memory, scripts, routines, group chat and secrets, served by the orchestrator; the browser follows the agent's capabilities. No login to connect."
         >
           <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
             {toolFamilyGroups(withCapabilityNativeTools(tools, capabilities))

@@ -310,18 +310,17 @@ link the agent planted cannot point the orchestrator at its own
 files. The check-then-open race that remains is SEC-3 in the
 [security register](security-register.md).
 
-### Coding agents
+### Subscription agents
 
-A coding agent's `shell` runs any command on its machine as root
-with open egress. Its code changes are the work of a coding harness:
-`code_task` runs `guilds-harness` in the container, which starts the
-harness CLI there. The harness runs on the operator's subscription
+A subscription agent's turn runs `guilds-harness` in the container,
+which starts the harness CLI there. The CLI runs any command on the
+machine as root with open egress. The harness runs on the operator's subscription
 token or on a login stored in the agent's home. An organisation
-model key never reaches it. The code tools, `code_task` included,
-run inside the container and never open a path in its home from the
-orchestrator ([Code tools](../concepts/coding/code-tools.md)).
+model key never reaches it. The sandbox helpers run inside the
+container and never open a path in its home from the orchestrator
+([Process](../concepts/coding/harnesses.md#process)).
 
-A coding agent's repository tokens sit in `/run/guilds/<agent id>/`,
+A subscription agent's repository tokens sit in `/run/guilds/<agent id>/`,
 outside every home: GitHub installation tokens, and the values of the
 secrets that hold its repositories' access tokens. They are readable
 by any process on its machine, whichever agent started it: a GitHub

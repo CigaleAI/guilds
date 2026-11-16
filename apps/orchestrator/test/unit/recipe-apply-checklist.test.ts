@@ -13,7 +13,6 @@ import {
   configFromRecipeRole,
   prepareRecipeForApply,
   roleRunsOnSubscription,
-  roleTakesHarness,
   subscriptionLoopSettings,
 } from "../../src/recipes/prepare.js";
 import { TEST_MODEL } from "../helpers/models.js";
@@ -159,24 +158,16 @@ test("a recipe's repositories add a check per repository, each asking for its UR
   assert.equal(listed.find((item) => item.id === "conn:github")?.setup, "Install the App.");
 });
 
-test("apply carries the coding flag and turns a missing one off", () => {
-  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
-  recipe.roles[0]!.config = { coding: true };
-  assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, true);
-  recipe.roles[0]!.config = {};
-  assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, false);
-});
-
-test("apply gives a coding role its repositories, and no other role, nor a list that does not validate, any", () => {
+test("apply gives a subscription role its repositories, and no other role, nor a list that does not validate, any", () => {
   const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
   const role = recipe.roles[0]!;
-  role.config = { coding: true, repositories: ["web", "api"] };
+  role.config = { harness: "codex", repositories: ["web", "api"] };
   assert.deepEqual(configFromRecipeRole(role).repositories, ["web", "api"]);
-  role.config = { coding: false, repositories: ["web"] };
+  role.config = { model: TEST_MODEL, repositories: ["web"] };
   assert.deepEqual(configFromRecipeRole(role).repositories, []);
-  role.config = { coding: true, repositories: ["web", "web"] };
+  role.config = { harness: "codex", repositories: ["web", "web"] };
   assert.deepEqual(configFromRecipeRole(role).repositories, []);
-  role.config = { coding: true };
+  role.config = { harness: "codex" };
   assert.deepEqual(configFromRecipeRole(role).repositories, []);
 });
 
@@ -191,11 +182,9 @@ test("a subscription role applies with no model, its harness, and none of the mo
   const role = recipe.roles[0]!;
   role.config = { harness: "codex", harness_model: "gpt-6-luna", temperature: 0.2, max_tokens: 8192, max_steps: 5 };
   assert.equal(roleRunsOnSubscription(role), true);
-  assert.equal(roleTakesHarness(role), true);
   assert.deepEqual(subscriptionLoopSettings(role), ["temperature"]);
   const config = configFromRecipeRole(role, { model: "deepinfra/zai-org/GLM-5.3-Flash" });
   assert.equal(config.model, null, "a chosen model does not apply to a subscription role");
-  assert.equal(config.coding, false);
   assert.equal(config.harness, "codex");
   assert.equal(config.harness_model, "gpt-6-luna");
   assert.equal("temperature" in config, false);
@@ -203,41 +192,38 @@ test("a subscription role applies with no model, its harness, and none of the mo
   assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness, "claude-code");
   role.config = { model: "deepinfra/zai-org/GLM-5.3-Flash", harness: "codex" };
   assert.equal(roleRunsOnSubscription(role), false, "a role with a model is on a key");
-  assert.equal(roleTakesHarness(role), false);
   assert.deepEqual(subscriptionLoopSettings(role), []);
-  role.config = { coding: true, harness: "codex" };
-  assert.equal(roleRunsOnSubscription(role), false, "a coding role is on a key");
   role.config = { harness: "opencode" };
   assert.equal(roleRunsOnSubscription(role), false, "an unknown harness is no subscription");
 });
 
-test("apply gives a coding role the harness chosen, else the recipe's, and no other role one", () => {
+test("apply gives a subscription role the harness chosen, else the recipe's, and no other role one", () => {
   const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
   const role = recipe.roles[0]!;
-  role.config = { coding: true, harness: "codex" };
+  role.config = { harness: "codex" };
   assert.equal(configFromRecipeRole(role).harness, "codex");
   assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, "cursor");
-  role.config = { coding: true };
-  assert.equal(configFromRecipeRole(role).harness, null);
-  role.config = { model: "deepinfra/zai-org/GLM-5.3-Flash", coding: false, harness: "codex" };
+  role.config = {};
+  assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, null, "a role with neither a model nor a harness is on a key");
+  role.config = { model: "deepinfra/zai-org/GLM-5.3-Flash", harness: "codex" };
   assert.equal(configFromRecipeRole(role, { harness: "cursor" }).harness, null);
-  role.config = { coding: true, harness: "claude-code", harness_model: "opus" };
+  role.config = { harness: "claude-code", harness_model: "opus" };
   assert.equal(configFromRecipeRole(role).harness_model, "opus");
   assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_model, "opus");
   assert.equal(configFromRecipeRole(role, { harness: "codex" }).harness_model, null, "another harness takes its default");
-  role.config = { coding: true, harness: "codex", harness_model: "gpt-5.6-terra", harness_effort: "ultra" };
+  role.config = { harness: "codex", harness_model: "gpt-5.6-terra", harness_effort: "ultra" };
   assert.equal(configFromRecipeRole(role).harness_effort, "ultra");
   assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_effort, null, "another harness takes its default");
-  role.config = { coding: true, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "ultra" };
+  role.config = { harness: "codex", harness_model: "gpt-6-luna", harness_effort: "ultra" };
   assert.equal(configFromRecipeRole(role).harness_effort, null, "an effort its model does not run at");
-  role.config = { coding: true, harness: "codex", harness_effort: "turbo" };
+  role.config = { harness: "codex", harness_effort: "turbo" };
   assert.equal(configFromRecipeRole(role).harness_effort, null);
-  role.config = { coding: true, harness: "claude-code", harness_model: "--bad" };
+  role.config = { harness: "claude-code", harness_model: "--bad" };
   assert.equal(configFromRecipeRole(role).harness_model, null);
-  role.config = { coding: true };
+  role.config = { harness_model: "opus" };
   assert.equal(configFromRecipeRole(role).harness_model, null);
-  role.config = { coding: true, harness: "codex" };
-  assert.equal(configFromRecipeRole(role).browser, false, "a coding role has the browser only when it asks for it");
+  role.config = { harness: "codex" };
+  assert.equal(configFromRecipeRole(role).browser, false, "a subscription role has the browser only when it asks for it");
   role.config = { browser: true, browser_optimized: true, browser_model: TEST_MODEL };
   assert.equal(configFromRecipeRole(role).browser_optimized, false, "a role browses with the step-by-step browser tools");
   assert.equal(configFromRecipeRole(role).browser_model, null);
@@ -249,21 +235,19 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const findings = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx).filter((item) => item.code.startsWith("harness."));
   };
-  const credential = findings({ coding: true, harness: "claude-code" });
+  const credential = findings({ harness: "claude-code" });
   assert.deepEqual(credential.map((item) => [item.code, item.severity]), [["harness.credential", "warning"]]);
   assert.match(credential[0]!.message, /grant the secret CLAUDE_CODE_OAUTH_TOKEN/);
-  assert.match(findings({ coding: true })[0]!.message, /apply asks for its harness/);
-  assert.deepEqual(findings({ coding: true, harness: "pi" }).map((item) => item.code), ["harness.unknown", "harness.credential"]);
-  assert.deepEqual(findings({ model: TEST_MODEL, coding: false, harness: "codex" }).map((item) => item.code), ["harness.coding"]);
-  assert.deepEqual(findings({ coding: false, harness: "codex" }).map((item) => item.code), ["harness.credential"], "a subscription role's harness");
-  assert.ok(findings({ coding: true, harness: "codex" }).every((item) => item.severity === "warning"));
+  assert.deepEqual(findings({ harness: "pi" }).map((item) => item.code), ["harness.unknown"]);
+  assert.deepEqual(findings({ model: TEST_MODEL, harness: "codex" }).map((item) => item.code), ["harness.model"]);
+  assert.ok(findings({ harness: "codex" }).every((item) => item.severity === "warning"));
 });
 
 test("a subscription role is refused while the box turns them off, warned on Cursor or a model-loop setting", () => {
@@ -273,7 +257,7 @@ test("a subscription role is refused while the box turns them off, warned on Cur
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const findings = (config: RecipeRole["config"]) => {
@@ -303,9 +287,9 @@ test("a subscription role is refused while the box turns them off, warned on Cur
   assert.deepEqual(findings({ model: TEST_MODEL, harness: "cursor", thinking_level: "high" }), [], "a role on a key is no subscription");
   const capacity = (config: RecipeRole["config"]) => {
     role.config = config;
-    return validateRecipe(recipe, { ...ctx, remainingCodingAgents: 0 }).filter((item) => item.code === "capacity.coding");
+    return validateRecipe(recipe, { ...ctx, remainingSubscriptionAgents: 0 }).filter((item) => item.code === "capacity.subscription");
   };
-  assert.equal(capacity({ harness: "codex" }).length, 1, "a subscription role takes a coding agent");
+  assert.equal(capacity({ harness: "codex" }).length, 1, "a subscription role takes a subscription agent");
   assert.equal(capacity({ model: TEST_MODEL }).length, 0);
 });
 
@@ -316,7 +300,7 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const codes = (config: RecipeRole["config"]) => {
@@ -325,20 +309,20 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
       .filter((item) => item.code.startsWith("harness_model."))
       .map((item) => [item.code, item.severity]);
   };
-  assert.deepEqual(codes({ coding: true, harness: "claude-code", harness_model: "opus" }), []);
-  assert.deepEqual(codes({ coding: true, harness: "claude-code" }), []);
-  assert.deepEqual(codes({ coding: true, harness: "claude-code", harness_model: "--bad" }), [["harness_model.invalid", "warning"]]);
-  assert.deepEqual(codes({ coding: true, harness_model: "opus" }), [["harness_model.harness", "warning"]]);
+  assert.deepEqual(codes({ harness: "claude-code", harness_model: "opus" }), []);
+  assert.deepEqual(codes({ harness: "claude-code" }), []);
+  assert.deepEqual(codes({ harness: "claude-code", harness_model: "--bad" }), [["harness_model.invalid", "warning"]]);
+  assert.deepEqual(codes({ harness_model: "opus" }), [["harness_model.harness", "warning"]]);
   const effortCodes = (config: RecipeRole["config"]) => {
     role.config = config;
     return validateRecipe(recipe, ctx)
       .filter((item) => item.code.startsWith("harness_effort."))
       .map((item) => [item.code, item.severity]);
   };
-  assert.deepEqual(effortCodes({ coding: true, harness: "claude-code", harness_model: "opus", harness_effort: "high" }), []);
-  assert.deepEqual(effortCodes({ coding: true, harness: "claude-code", harness_effort: "turbo" }), [["harness_effort.invalid", "warning"]]);
-  assert.deepEqual(effortCodes({ coding: true, harness_effort: "high" }), [["harness_effort.harness", "warning"]]);
-  assert.deepEqual(effortCodes({ coding: true, harness: "cursor", harness_model: "composer-2.5", harness_effort: "low" }), [
+  assert.deepEqual(effortCodes({ harness: "claude-code", harness_model: "opus", harness_effort: "high" }), []);
+  assert.deepEqual(effortCodes({ harness: "claude-code", harness_effort: "turbo" }), [["harness_effort.invalid", "warning"]]);
+  assert.deepEqual(effortCodes({ harness_effort: "high" }), [["harness_effort.harness", "warning"]]);
+  assert.deepEqual(effortCodes({ harness: "cursor", harness_model: "composer-2.5", harness_effort: "low" }), [
     ["harness_effort.model", "warning"],
   ]);
   const aliasCodes = (config: RecipeRole["config"]) => {
@@ -358,7 +342,7 @@ test("a connector the box lacks is installable from the registry or the recipe, 
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
     registryConnectors: new Map([["notion", { version: "1.2.0", verified: true }]]),
   };
@@ -423,7 +407,7 @@ test("a role config with a key an agent config does not have is an error", () =>
     publishedServers: new Set<string>(),
     remainingAgents: 20,
     remainingBrowserAgents: 5,
-    remainingCodingAgents: 5,
+    remainingSubscriptionAgents: 5,
     groupLimit: 20,
   };
   const unknown = () => validateRecipe(recipe, ctx).filter((item) => item.code === "config.unknown");

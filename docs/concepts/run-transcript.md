@@ -82,8 +82,7 @@ per generation. Its header shows:
 
 Below the header, the generation reads down a rail as one block per
 model step. Each block sits on a dot. The dot is plum when a call
-failed, pulses while a call runs, and shows the harness's logo for a
-step that ran a code task. A step is reasoning, then calls, and
+failed, and pulses while a call runs. A step is reasoning, then calls, and
 sometimes text the model wrote alongside them. The model's final reply
 has no calls, so it is a bubble after the flow, not a step.
 
@@ -109,8 +108,7 @@ results' spend included. A step cut by
 other than stopping or calling tools is tagged too.
 
 Under the header sits the text the model wrote alongside the calls,
-as muted lines. A folded step shows two lines of plain text and its
-code tasks. An open step adds its name, **Step N**, and shows in
+as muted lines. A folded step shows two lines of plain text. An open step adds its name, **Step N**, and shows in
 order:
 
 - a **thinking** line for its reasoning, folded to its opening line;
@@ -119,9 +117,8 @@ order:
   from one model turn are a batch: their cards, numbered in the order
   they ran, held by one bracket. The calls of a batch run one after
   another, with no model turn between them.
-- its code tasks
 
-Two or more steps in a row with no text and no code task compact into
+Two or more steps in a row with no text compact into
 one block on a stack: **N steps**, with the same cues over all their
 calls. Opening it shows them as step blocks on a rail of their own.
 
@@ -140,8 +137,7 @@ on, starts open.
   flow.
 
 Tracked state is a note, memory, record, collection, or script that a
-call created, edited, or deleted, or source code changed through
-`code_task`. Commands, script runs, posts, schedules, and browser
+call created, edited, or deleted. Commands, script runs, posts, schedules, and browser
 actions are not writes.
 
 ### Tool calls
@@ -155,10 +151,6 @@ place of its result mark.
 - A `note_write`, `memory_write`, or `script_create` call carries a
   chip naming the note, memory, or script it wrote. The chip opens it
   in the agent's State tab.
-- A `shell` call reads **Run**, or **Start** for a background command,
-  and the command's first line, then its exit code when it is not 0.
-- A `file_read` call reads **Read** and the path. A repeated read
-  names the step it points to.
 - A `secret_store` call reads **Stored NAME**. A `secret_request` call
   reads **Asked for NAME**.
 - A `browse` call reads **Browse**, or **Browse from** and its start
@@ -169,26 +161,18 @@ card, such as each step of a `browse` call.
 
 Opening a call expands its card onto its arguments and result. Each
 shows as a folding JSON tree or raw text, with a copy button. Its
-metadata follows: call id, duration, output filter, exit code, the
-full-output log path, the working directory, the file and its lines,
-the step a repeated read points to, stored bytes, and tool calls
-left. The call's kind and level sit beside the views.
-
-### Code tasks
-
-A `code_task` call is its own block in its step. It shows even while
-the step is folded. While it runs, its latest progress lines show
-under its brief. Opening it shows its result, its metadata (status,
-harness, repository, session, diffstat, and log path), and its
-**Diff** ([Code tools](coding/code-tools.md#in-the-app)).
+metadata follows: call id, the harness that called it, duration,
+output filter, exit code, stored bytes, and tool calls left. The call's kind and level sit beside the views.
 
 Progress lines are live only. They stream while the run view is open
 and are not stored, so a reload shows the call without them until the
 result lands.
 
-A run with repository changes ends with a **Changes** panel: each
-repository with its branch and diffstat, and **Show diff**, which
-fetches the run's diff from the agent's machine
+### Changes
+
+A run whose turns changed a repository ends with a **Changes** panel:
+each turn's repositories with their branch and diffstat, and **Show
+diff**, which fetches that turn's diff from the agent's machine
 ([Reviewing changes](coding/reviewing-changes.md)).
 
 ### Harness turns
@@ -275,8 +259,7 @@ opens that run and step in Studio's **History**
 ### Live updates
 
 The transcript renders committed rows. Reasoning, text deltas, and
-the progress lines of a running call, such as `code_task` or
-`browse`, stream over the run's SSE stream before
+the progress lines of a running `browse` call stream over the run's SSE stream before
 their row lands ([Runs](runs.md#streaming)). On reconnect the view
 reloads the ordered history, then consumes new events.
 

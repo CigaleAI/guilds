@@ -91,8 +91,6 @@ export type ToolResultMetadata = {
   error: string | null;
   /** The tool calls the run has left after this one. */
   remaining_tool_calls?: number;
-  /** The step whose result a repeated read of an unchanged range points to. */
-  repeat_of?: number;
 } & ReportedToolMetadata;
 
 /**
@@ -112,30 +110,10 @@ export type BrowserUsageMetadata = {
 
 /** The fields a native tool reports about its call, kept on the call's result. */
 export type ReportedToolMetadata = {
+  /** The exit code of the command a script or browser tool ran. */
   exit_code?: number | null;
-  /** The directory a `shell` command ended in. */
-  cwd?: string;
-  path?: string;
-  /** The first and last line a `file_read` returned; null for a binary or empty file. */
-  range?: [number, number] | null;
-  content_hash?: string;
-  lines?: number;
-  log_path?: string | null;
-  timed_out?: boolean;
-  background_id?: string;
-  /** A background command's state, as `shell_status` read it. */
-  state?: string;
-  matches?: number;
-  files?: number;
-  harness?: Harness;
+  /** How a `browse` call ended. */
   status?: string;
-  session_id?: string | null;
-  repository?: string | null;
-  files_changed?: number;
-  insertions?: number;
-  deletions?: number;
-  start_sha?: string | null;
-  end_sha?: string | null;
   /** The blocking issue a `report_issue` call filed; the generation ends after the call. */
   blocking_issue_id?: string;
   /** The page a `browse` call ended on; null when it never loaded one. */
@@ -147,7 +125,7 @@ export type ReportedToolMetadata = {
 };
 
 /** Where a run's system or user message came from. */
-export type RunMessageSource = "system" | "ui" | "continuation" | "schedule" | "group_chat" | "handoff" | "wake";
+export type RunMessageSource = "system" | "ui" | "schedule" | "group_chat" | "wake";
 
 /** What a run's system or user message records about where it came from. */
 export type RunInputMetadata = {
@@ -155,7 +133,6 @@ export type RunInputMetadata = {
   /** The run's task source, copied from the run's metadata. */
   task_source?: RunTaskSource;
   attachments?: AttachmentRef[];
-  previous_run_id?: string;
   schedule_id?: string;
   instruction_hash?: string;
   /** The wake-up a `wake` message fires. */

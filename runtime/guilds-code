@@ -1,66 +1,37 @@
 #!/usr/bin/env python3
-"""The code tools inside an agent sandbox.
+"""The agent's repositories and disk use, inside an agent sandbox.
 
 Usage: guilds-code <base64 JSON request> | guilds-code @<request file>
 
-The orchestrator runs this once per tool call. A request names an `op` plus its
-arguments; a large request arrives as a file under /run/guilds/requests, which
+The orchestrator runs this once per op: `git_setup` (the agent's git identity and its
+repositories' clones), `checkpoint` and `diff` (a harness turn's checkpoints of the working
+trees, and the change between them), `workspace_size` and `machine_size`. A request names an
+`op` plus its arguments; a large request arrives as a file under /run/guilds/requests, which
 this helper reads and deletes. The helper prints one base64 JSON envelope:
-{"ok": true, "text": ..., "meta": {...}} or {"ok": false, "error": ...}. `text`
-is already shaped to `max_bytes`; `meta` becomes tool-call metadata.
+{"ok": true, "text": ..., "meta": {...}} or {"ok": false, "error": ...}. `text` is already
+shaped to `max_bytes`.
 """
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
-import time
 import urllib.parse
 from pathlib import Path
 from typing import Any
 
 HOME = Path(os.environ["GUILDS_AGENT_HOME"]) if os.environ.get("GUILDS_AGENT_HOME") else Path.home()
-RUN_DIR = Path(os.environ.get("GUILDS_RUN_DIR", "/run/guilds"))
-# The agent's runtime files on its machine, outside every home: tokens and background processes.
-AGENT_RUN = RUN_DIR / HOME.name
-RUNS = HOME / ".runs"
 REPOS = HOME / "repos"
-BACKGROUND = AGENT_RUN / "background"
-KEEP_RUNS = 20
 DEFAULT_MAX_BYTES = 8192
-SHELL_HEAD_BYTES = 2048
-SHELL_DEFAULT_TIMEOUT = 120
-SHELL_MAX_TIMEOUT = 600
-READ_DEFAULT_LINES = 200
-READ_MAX_LINES = 500
-READ_LINE_CHARS = 400
-STATUS_TAIL_LINES = 40
-BINARY_PROBE = 8000
-SEARCH_TIMEOUT = 60
-SEARCH_LINE_CHARS = 300
-SEARCH_FILES_LIMIT = 30
-SEARCH_CONTENT_LIMIT = 40
-SEARCH_PER_FILE = 10
 GIT_TIMEOUT = 60
 CHECKPOINT_TIMEOUT = 120
 CHECKPOINT_FILES = 30
 CLONE_TIMEOUT = 600
-ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]")
-CHILD_ENV = {
-    "PAGER": "cat",
-    "GIT_PAGER": "cat",
-    "GIT_TERMINAL_PROMPT": "0",
-    "NO_COLOR": "1",
-    "TERM": "dumb",
-    "DEBIAN_FRONTEND": "noninteractive",
-}
 
 
 class ToolError(Exception):
@@ -111,18 +82,7 @@ def _int(spec: dict[str, Any], name: str, default: int, low: int, high: int) -> 
     return max(low, min(high, int(value)))
 
 
-def _text_arg(spec: dict[str, Any], name: str, required: bool = True) -> str:
-    value = spec.get(name)
-    if value is None or value == "":
-        if required:
-            raise ToolError(f"{name} is required")
-        return ""
-    if not isinstance(value, str):
-        raise ToolError(f"{name} must be a string")
-    return value
-
-
-# --- runs, working directory, paths ----------------------------------------
+# --- paths ----------------------------------------------------------------
 
 
 def _safe_segment(value: Any, name: str) -> str:
@@ -130,655 +90,6 @@ def _safe_segment(value: Any, name: str) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", text) or text in {".", ".."}:
         raise ToolError(f"{name} is invalid")
     return text
-
-
-def _run_dir(spec: dict[str, Any]) -> Path:
-    run_id = _safe_segment(spec.get("run_id"), "run_id")
-    folder = RUNS / run_id
-    if not folder.is_dir():
-        folder.mkdir(parents=True, exist_ok=True)
-        _prune_runs(folder)
-    return folder
-
-
-def _prune_runs(current: Path) -> None:
-    entries = []
-    for entry in RUNS.iterdir():
-        if entry.is_symlink() or not entry.is_dir():
-            continue
-        entries.append((entry.stat().st_mtime, entry))
-    entries.sort(key=lambda item: item[0], reverse=True)
-    for _, entry in entries[KEEP_RUNS:]:
-        if entry != current:
-            shutil.rmtree(entry, ignore_errors=True)
-
-
-def _default_cwd(spec: dict[str, Any]) -> Path:
-    """Where a run's working directory starts: `default_cwd` inside the workspace, else its root."""
-    raw = spec.get("default_cwd")
-    if isinstance(raw, str) and raw and not raw.startswith("/"):
-        candidate = HOME / raw
-        if candidate.is_dir() and _within_home(Path(os.path.realpath(candidate))):
-            return candidate
-    return HOME
-
-
-def _cwd(spec: dict[str, Any]) -> Path:
-    stored = _run_dir(spec) / "cwd"
-    try:
-        text = stored.read_text(encoding="utf-8").strip()
-    except OSError:
-        text = ""
-    if text and Path(text).is_dir():
-        return Path(text)
-    return _default_cwd(spec)
-
-
-def _within_home(path: Path) -> bool:
-    home = Path(os.path.realpath(HOME))
-    return path == home or home in path.parents
-
-
-def _resolve(spec: dict[str, Any], raw: str) -> Path:
-    if not raw:
-        raise ToolError("path is required")
-    if raw == "~" or raw.startswith("~/"):
-        candidate = HOME / raw[2:]
-    else:
-        candidate = Path(raw)
-        if not candidate.is_absolute():
-            candidate = _cwd(spec) / candidate
-    real = Path(os.path.realpath(candidate))
-    if not _within_home(real):
-        raise ToolError(f"{raw} is outside {HOME}")
-    return real
-
-
-def _shown(spec: dict[str, Any], path: Path) -> str:
-    cwd = Path(os.path.realpath(_cwd(spec)))
-    try:
-        relative = path.relative_to(cwd)
-    except ValueError:
-        return str(path)
-    text = str(relative)
-    return text if text != "." else str(path)
-
-
-# --- text shaping -----------------------------------------------------------
-
-
-def _clean(text: str) -> str:
-    text = ANSI.sub("", text)
-    if "\r" not in text:
-        return text
-    lines = []
-    for line in text.split("\n"):
-        if "\r" in line:
-            parts = [part for part in line.split("\r") if part]
-            line = parts[-1] if parts else ""
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def _cut_head(data: bytes, size: int) -> str:
-    return data[:size].decode("utf-8", errors="ignore")
-
-
-def _cut_tail(data: bytes, size: int) -> str:
-    return data[-size:].decode("utf-8", errors="ignore") if size > 0 else ""
-
-
-def _cap(text: str, max_bytes: int) -> str:
-    data = text.encode("utf-8")
-    if len(data) <= max_bytes:
-        return text
-    marker = "\n[truncated]"
-    return _cut_head(data, max_bytes - len(marker.encode("utf-8"))) + marker
-
-
-# --- shell ------------------------------------------------------------------
-
-
-def _die_with_parent() -> None:
-    if not sys.platform.startswith("linux"):
-        return
-    try:
-        import ctypes
-
-        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)
-    except Exception:
-        pass
-
-
-def _child_env(spec: dict[str, Any], cwd: Path) -> dict[str, str]:
-    env = dict(os.environ)
-    env.pop("GUILDS_RUN_DIR", None)
-    env.update(CHILD_ENV)
-    for key, name in (("run_id", "GUILD_RUN_ID"), ("agent_id", "GUILD_AGENT_ID")):
-        value = spec.get(key)
-        if isinstance(value, str) and value:
-            env[name] = value
-    token = _repository_token(cwd)
-    if token:
-        env["GH_TOKEN"] = token
-    return env
-
-
-def _repository_token(cwd: Path) -> str:
-    """The token of the GitHub repository that holds `cwd`, for `gh`; another provider's gives none."""
-    try:
-        tokens = json.loads((AGENT_RUN / "git-tokens.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ""
-    repos = tokens.get("repositories") if isinstance(tokens, dict) else None
-    if not isinstance(repos, dict):
-        return ""
-    real = Path(os.path.realpath(cwd))
-    for name, entry in repos.items():
-        root = Path(os.path.realpath(HOME / "repos" / str(name)))
-        if (real == root or root in real.parents) and isinstance(entry, dict):
-            token = entry.get("token")
-            return token if isinstance(token, str) and entry.get("provider") == "github" else ""
-    return ""
-
-
-def _group_alive(pgid: int, child: subprocess.Popen[bytes] | None) -> bool:
-    if child is not None:
-        child.poll()
-    try:
-        os.killpg(pgid, 0)
-    except (ProcessLookupError, PermissionError):
-        return False
-    return True
-
-
-def _stop_group(pgid: int, grace: float = 2.0, child: subprocess.Popen[bytes] | None = None) -> None:
-    """SIGTERM the process group, then SIGKILL whatever is left after `grace` seconds."""
-    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 1.0)):
-        try:
-            os.killpg(pgid, sig)
-        except (ProcessLookupError, PermissionError):
-            return
-        deadline = time.monotonic() + wait
-        while time.monotonic() < deadline:
-            if not _group_alive(pgid, child):
-                return
-            time.sleep(0.05)
-
-
-def _shape_output(log: Path, budget: int) -> tuple[str, bool]:
-    """The whole output when it fits `budget`, else its start and its end around a marker."""
-    size = log.stat().st_size
-    if size <= budget:
-        return _clean(log.read_bytes().decode("utf-8", errors="replace")), False
-    budget -= 160
-    head_size = min(SHELL_HEAD_BYTES, budget // 4)
-    tail_size = budget - head_size
-    with log.open("rb") as handle:
-        head = handle.read(head_size)
-        handle.seek(max(0, size - tail_size))
-        tail = handle.read(tail_size)
-    elided = size - len(head) - len(tail)
-    middle = f"\n[… {elided} bytes elided; full output: {log} …]\n"
-    return _clean(_cut_head(head, head_size)) + middle + _clean(_cut_tail(tail, tail_size)), True
-
-
-def op_shell(spec: dict[str, Any]) -> dict[str, Any]:
-    command = _text_arg(spec, "command")
-    call_id = _safe_segment(spec.get("call_id"), "call_id")
-    timeout = _int(spec, "timeout_seconds", SHELL_DEFAULT_TIMEOUT, 1, SHELL_MAX_TIMEOUT)
-    run_dir = _run_dir(spec)
-    cwd = _cwd(spec)
-    env = _child_env(spec, cwd)
-    log = run_dir / f"{call_id}.log"
-    if spec.get("background") is True:
-        return _start_background(spec, command, cwd, env, log)
-    cwd_file = run_dir / "cwd"
-    env["GUILDS_CWD_FILE"] = str(cwd_file)
-    script = "trap 'printf \"%s\" \"$PWD\" > \"$GUILDS_CWD_FILE\"' EXIT\n" + command
-    with log.open("wb") as out:
-        child = subprocess.Popen(
-            ["bash", "-c", script],
-            cwd=str(cwd),
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=out,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            preexec_fn=_die_with_parent,
-        )
-
-        def forward(signum: int, _frame: Any) -> None:
-            _stop_group(child.pid, 0.5, child)
-            raise SystemExit(128 + signum)
-
-        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-            signal.signal(sig, forward)
-        timed_out = False
-        try:
-            code = child.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            _stop_group(child.pid, 2.0, child)
-            code = child.wait()
-    if timed_out:
-        code = 124
-    text, elided = _shape_output(log, _max_bytes(spec) - 120)
-    if not elided:
-        log.unlink(missing_ok=True)
-    lines = [text.rstrip("\n")] if text.strip() else []
-    if timed_out:
-        lines.append(f"[timed out after {timeout}s; the command was stopped]")
-    if code != 0:
-        lines.append(f"exit_code: {code}")
-    meta: dict[str, Any] = {"exit_code": code, "cwd": str(_cwd(spec))}
-    if elided:
-        meta["log_path"] = str(log)
-    if timed_out:
-        meta["timed_out"] = True
-    return {"text": "\n".join(lines) if lines else "(no output)", "meta": meta}
-
-
-def _background_id() -> str:
-    BACKGROUND.mkdir(parents=True, exist_ok=True)
-    number = 1
-    while True:
-        marker = BACKGROUND / f"b{number}.json"
-        try:
-            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            number += 1
-            continue
-        os.close(fd)
-        return f"b{number}"
-
-
-def _start_background(
-    spec: dict[str, Any], command: str, cwd: Path, env: dict[str, str], log: Path
-) -> dict[str, Any]:
-    ident = _background_id()
-    exit_file = BACKGROUND / f"{ident}.exit"
-    env["GUILDS_EXIT_FILE"] = str(exit_file)
-    script = "trap 'echo $? > \"$GUILDS_EXIT_FILE\"' EXIT\n" + command
-    with log.open("wb") as out:
-        child = subprocess.Popen(
-            ["bash", "-c", script],
-            cwd=str(cwd),
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=out,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-    record = {
-        "id": ident,
-        "pid": child.pid,
-        "command": command,
-        "cwd": str(cwd),
-        "log_path": str(log),
-        "run_id": spec.get("run_id"),
-        "started_at": time.time(),
-    }
-    (BACKGROUND / f"{ident}.json").write_text(json.dumps(record), encoding="utf-8")
-    text = (
-        f"started {ident} in the background (pid {child.pid})\n"
-        f"log: {log}\n"
-        f"check it with shell_status id {ident}"
-    )
-    return {"text": text, "meta": {"background_id": ident, "log_path": str(log)}}
-
-
-def _background_records() -> list[dict[str, Any]]:
-    if not BACKGROUND.is_dir():
-        return []
-    records = []
-    for path in BACKGROUND.glob("b*.json"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if isinstance(record, dict) and "pid" in record:
-            records.append(record)
-    records.sort(key=lambda item: int(str(item["id"])[1:]))
-    return records
-
-
-def _pid_running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    stat = Path(f"/proc/{pid}/stat")
-    try:
-        fields = stat.read_text().rsplit(")", 1)[1].split()
-        return fields[0] != "Z"
-    except (OSError, IndexError):
-        return True
-
-
-def _state(record: dict[str, Any]) -> tuple[str, int | None]:
-    if (BACKGROUND / f"{record['id']}.stopped").exists():
-        return ("stopped" if not _pid_running(int(record["pid"])) else "stopping"), None
-    exit_file = BACKGROUND / f"{record['id']}.exit"
-    try:
-        return "exited", int(exit_file.read_text().strip())
-    except (OSError, ValueError):
-        pass
-    if _pid_running(int(record["pid"])):
-        return "running", None
-    return "ended", None
-
-
-def _elapsed(record: dict[str, Any]) -> str:
-    """How long the command ran: until its exit file was written, or until now."""
-    try:
-        end = (BACKGROUND / f"{record['id']}.exit").stat().st_mtime
-    except OSError:
-        end = time.time()
-    seconds = max(0, int(end - float(record.get("started_at") or end)))
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m{seconds:02d}s"
-
-
-def _tail_lines(path: Path, count: int, max_bytes: int) -> str:
-    try:
-        size = path.stat().st_size
-    except OSError:
-        return ""
-    with path.open("rb") as handle:
-        handle.seek(max(0, size - max_bytes))
-        data = handle.read()
-    text = _clean(data.decode("utf-8", errors="replace"))
-    lines = text.splitlines()[-count:]
-    return "\n".join(lines)
-
-
-def op_shell_status(spec: dict[str, Any]) -> dict[str, Any]:
-    ident = spec.get("id")
-    records = _background_records()
-    if not ident:
-        if not records:
-            return {"text": "no background commands", "meta": {}}
-        rows = []
-        for record in records:
-            state, code = _state(record)
-            label = f"exited {code}" if state == "exited" else state
-            command = str(record.get("command", "")).splitlines()[0][:120]
-            rows.append(f"{record['id']}  {label}  {_elapsed(record)}  {command}")
-        return {"text": "\n".join(rows), "meta": {}}
-    record = next((item for item in records if item.get("id") == ident), None)
-    if record is None:
-        raise ToolError(f"no background command {ident}")
-    state, code = _state(record)
-    if spec.get("stop") is True and state == "running":
-        (BACKGROUND / f"{ident}.stopped").touch()
-        _stop_group(int(record["pid"]), 5.0)
-        state, code = _state(record)
-    max_bytes = _max_bytes(spec)
-    label = f"exited {code}" if state == "exited" else state
-    header = f"{ident}  {label}  {_elapsed(record)}\nlog: {record['log_path']}"
-    tail = _tail_lines(Path(record["log_path"]), STATUS_TAIL_LINES, max_bytes - len(header) - 64)
-    text = header + ("\n\n" + tail if tail else "\n\n(no output yet)")
-    meta: dict[str, Any] = {"background_id": ident, "state": state, "log_path": record["log_path"]}
-    if code is not None:
-        meta["exit_code"] = code
-    return {"text": _cap(text, max_bytes), "meta": meta}
-
-
-# --- files ------------------------------------------------------------------
-
-
-def _read_check(path: Path) -> None:
-    if not path.exists():
-        raise ToolError(f"{path} does not exist")
-    if path.is_dir():
-        raise ToolError(f"{path} is a directory")
-    if not path.is_file():
-        raise ToolError(f"{path} is not a regular file")
-
-
-def _numbered(number: int, width: int, raw: bytes) -> str:
-    line = raw.rstrip(b"\n").rstrip(b"\r").decode("utf-8", errors="replace")
-    if len(line) > READ_LINE_CHARS:
-        line = f"{line[:READ_LINE_CHARS]}… [+{len(line) - READ_LINE_CHARS} chars]"
-    return f"{number:>{width}}  {line}"
-
-
-def op_file_read(spec: dict[str, Any]) -> dict[str, Any]:
-    raw = _text_arg(spec, "path")
-    path = _resolve(spec, raw)
-    _read_check(path)
-    shown = _shown(spec, path)
-    start = _int(spec, "offset", 1, 1, 2**31)
-    limit = _int(spec, "limit", READ_DEFAULT_LINES, 1, READ_MAX_LINES)
-    last = start + limit - 1
-    digest = hashlib.sha256()
-    selected: list[bytes] = []
-    total = 0
-    with path.open("rb") as handle:
-        probe = handle.read(BINARY_PROBE)
-        binary = b"\x00" in probe
-        handle.seek(0)
-        if binary:
-            for chunk in iter(lambda: handle.read(1 << 20), b""):
-                digest.update(chunk)
-        else:
-            for line in handle:
-                digest.update(line)
-                total += 1
-                if start <= total <= last:
-                    selected.append(line)
-    meta: dict[str, Any] = {"path": str(path), "range": None, "content_hash": digest.hexdigest()}
-    if binary:
-        size = path.stat().st_size
-        return {"text": f"{shown} · binary file, {size} bytes; not shown", "meta": meta}
-    meta["lines"] = total
-    if total == 0:
-        return {"text": f"{shown} · empty file", "meta": meta}
-    if start > total:
-        return {"text": f"{shown} · {total} lines; offset {start} is past the end", "meta": meta}
-    width = len(str(min(total, last)))
-    budget = _max_bytes(spec) - 160
-    body: list[str] = []
-    used = 0
-    end = start - 1
-    for index, line in enumerate(selected):
-        row = _numbered(start + index, width, line)
-        size = len(row.encode("utf-8")) + 1
-        if body and used + size > budget:
-            break
-        body.append(row)
-        used += size
-        end = start + index
-    footer = ""
-    if end < min(total, last):
-        footer = (
-            f"\n[stopped at line {end} to stay under {_max_bytes(spec)} bytes; "
-            f"continue with offset {end + 1}]"
-        )
-    meta["range"] = [start, end]
-    header = f"{shown} · lines {start}–{end} of {total}"
-    return {"text": header + "\n" + "\n".join(body) + footer, "meta": meta}
-
-
-# --- code search --------------------------------------------------------------
-
-
-def _target(spec: dict[str, Any]) -> Path:
-    raw = spec.get("path")
-    if raw is None or raw == "":
-        return Path(os.path.realpath(_cwd(spec)))
-    if not isinstance(raw, str):
-        raise ToolError("path must be a string")
-    return _resolve(spec, raw)
-
-
-def _rel(spec: dict[str, Any], path: Path) -> str:
-    """A path as the model should pass it back: relative to the working directory."""
-    cwd = Path(os.path.realpath(_cwd(spec)))
-    relative = os.path.relpath(path, cwd)
-    return relative if not relative.startswith("../../..") else str(path)
-
-
-def _args_for(spec: dict[str, Any], target: Path) -> list[str]:
-    """The search root as an argument: none for the working directory itself, so results
-    carry plain relative paths."""
-    cwd = Path(os.path.realpath(_cwd(spec)))
-    relative = os.path.relpath(target, cwd)
-    return [] if relative == "." else [relative]
-
-
-def _clip(line: str, width: int = SEARCH_LINE_CHARS) -> str:
-    line = line.rstrip("\n").rstrip("\r")
-    if len(line) > width:
-        return f"{line[:width]}… [+{len(line) - width} chars]"
-    return line
-
-
-def _run_tool(argv: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(
-            argv,
-            cwd=str(cwd),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=timeout,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise ToolError(f"{argv[0]} is not installed in this sandbox") from exc
-
-
-def _fit(lines: list[str], footer: list[str], max_bytes: int) -> str:
-    """Joins lines under the byte budget, keeping every footer line."""
-    budget = max_bytes - sum(len(line.encode("utf-8")) + 1 for line in footer) - 64
-    kept: list[str] = []
-    used = 0
-    for line in lines:
-        size = len(line.encode("utf-8")) + 1
-        if kept and used + size > budget:
-            footer = [f"[{len(lines) - len(kept)} more lines past the size cap]"] + footer
-            break
-        kept.append(line)
-        used += size
-    return "\n".join(kept + footer)
-
-
-def _rg_base(spec: dict[str, Any]) -> list[str]:
-    argv = ["rg", "--no-messages", "--color=never"]
-    if spec.get("fixed") is True:
-        argv.append("--fixed-strings")
-    if spec.get("ignore_case") is True:
-        argv.append("--ignore-case")
-    glob = spec.get("glob")
-    if isinstance(glob, str) and glob:
-        argv += ["--glob", glob]
-    return argv
-
-
-def _search_files(spec: dict[str, Any], pattern: str, target: Path) -> dict[str, Any]:
-    cwd = Path(os.path.realpath(_cwd(spec)))
-    limit = _int(spec, "limit", SEARCH_FILES_LIMIT, 1, SEARCH_FILES_LIMIT)
-    argv = _rg_base(spec) + ["--count-matches", "--with-filename", "--", pattern, *_args_for(spec, target)]
-    done = _run_tool(argv, cwd, SEARCH_TIMEOUT)
-    if done.returncode not in (0, 1):
-        raise ToolError(done.stderr.strip() or f"rg failed with exit code {done.returncode}")
-    counts: list[tuple[str, int]] = []
-    for line in done.stdout.splitlines():
-        name, _, count = line.rpartition(":")
-        if name and count.isdigit():
-            counts.append((name, int(count)))
-    if not counts:
-        return {"text": f"no matches for {pattern!r} in {_rel(spec, target)}", "meta": {"matches": 0, "files": 0}}
-    counts.sort(key=lambda item: (-item[1], item[0]))
-    total = sum(count for _, count in counts)
-    lines = [f"{name}: {count}" for name, count in counts[:limit]]
-    footer = []
-    if len(counts) > limit:
-        footer.append(f"… {len(counts) - limit} more files")
-    footer.append(f"{total} matches in {len(counts)} files")
-    return {"text": _fit(lines, footer, _max_bytes(spec)), "meta": {"matches": total, "files": len(counts)}}
-
-
-def _rg_text(data: dict[str, Any]) -> str:
-    lines = data.get("lines") or {}
-    if "text" in lines:
-        return str(lines["text"])
-    raw = lines.get("bytes")
-    return base64.b64decode(raw).decode("utf-8", errors="replace") if raw else ""
-
-
-def _search_content(spec: dict[str, Any], pattern: str, target: Path) -> dict[str, Any]:
-    cwd = Path(os.path.realpath(_cwd(spec)))
-    limit = _int(spec, "limit", SEARCH_CONTENT_LIMIT, 1, SEARCH_CONTENT_LIMIT)
-    context = _int(spec, "context", 0, 0, 5)
-    argv = _rg_base(spec) + [
-        "--json",
-        "--max-count",
-        str(SEARCH_PER_FILE),
-        "--context",
-        str(context),
-        "--",
-        pattern,
-        *_args_for(spec, target),
-    ]
-    done = _run_tool(argv, cwd, SEARCH_TIMEOUT)
-    if done.returncode not in (0, 1):
-        raise ToolError(done.stderr.strip() or f"rg failed with exit code {done.returncode}")
-    lines: list[str] = []
-    matched = 0
-    files = 0
-    last: tuple[str, int] | None = None
-    for raw in done.stdout.splitlines():
-        try:
-            event = json.loads(raw)
-        except ValueError:
-            continue
-        kind = event.get("type")
-        data = event.get("data") or {}
-        if kind == "begin":
-            files += 1
-            continue
-        if kind not in ("match", "context"):
-            continue
-        name = (data.get("path") or {}).get("text", "")
-        number = int(data.get("line_number") or 0)
-        if kind == "match":
-            matched += 1
-        if last is not None and context and (last[0] != name or number > last[1] + 1):
-            lines.append("--")
-        separator = ":" if kind == "match" else "-"
-        lines.append(f"{name}{separator}{number}{separator} {_clip(_rg_text(data))}")
-        last = (name, number)
-    if not matched:
-        return {"text": f"no matches for {pattern!r} in {_rel(spec, target)}", "meta": {"matches": 0, "files": 0}}
-    footer = []
-    shown = lines[:limit]
-    if len(lines) > limit:
-        footer.append(f"[{len(lines) - limit} more lines; narrow with path, glob, or a longer pattern]")
-    footer.append(f"{matched} matching lines in {files} files (at most {SEARCH_PER_FILE} per file)")
-    return {
-        "text": _fit(shown, footer, _max_bytes(spec)),
-        "meta": {"matches": matched, "files": files},
-    }
-
-
-def op_code_search(spec: dict[str, Any]) -> dict[str, Any]:
-    pattern = _text_arg(spec, "pattern")
-    mode = spec.get("mode") or "files"
-    target = _target(spec)
-    if not target.exists():
-        raise ToolError(f"{_rel(spec, target)} does not exist")
-    if mode == "files":
-        return _search_files(spec, pattern, target)
-    if mode == "content":
-        return _search_content(spec, pattern, target)
-    raise ToolError("mode must be files or content")
 
 
 # --- repositories ---------------------------------------------------------------
@@ -935,14 +246,11 @@ def _snapshot(root: Path, message: str) -> str:
 
 
 def _checkpoint_prefix(spec: dict[str, Any]) -> tuple[str, str]:
-    """The refs a checkpoint writes under, and how its commit message names it: the run's,
-    or with `task` one harness call's, `refs/guild/runs/<run id>/tasks/<call id>`."""
+    """The refs a checkpoint of one harness call, `task`, writes under,
+    `refs/guild/runs/<run id>/tasks/<call id>`, and how its commit message names it."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
-    task = spec.get("task")
-    if task:
-        call = _safe_segment(task, "task")
-        return f"refs/guild/runs/{run_id}/tasks/{call}", f"guild run {run_id} task {call}"
-    return f"refs/guild/runs/{run_id}", f"guild run {run_id}"
+    call = _safe_segment(spec.get("task"), "task")
+    return f"refs/guild/runs/{run_id}/tasks/{call}", f"guild run {run_id} task {call}"
 
 
 def _changed_files(root: Path, start: str, end: str) -> list[dict[str, Any]]:
@@ -961,9 +269,9 @@ def _changed_files(root: Path, start: str, end: str) -> list[dict[str, Any]]:
 
 
 def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
-    """Records <prefix>/start (once) or <prefix>/end (each time) in every working tree under
-    the agent's repos/, or those `repositories` names, and at the end the change since the
-    start. With `task`, the end also lists the changed files, at most CHECKPOINT_FILES."""
+    """Records <prefix>/start (once) or <prefix>/end (each time) of the harness call `task` in
+    every working tree under the agent's repos/, or those `repositories` names, and at the end
+    the change since the start and the changed files, at most CHECKPOINT_FILES."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
     which = spec.get("which")
     if which not in ("start", "end"):
@@ -1003,8 +311,7 @@ def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
                 ):
                     match = re.search(pattern, stat)
                     record[key] = int(match.group(1)) if match else 0
-                if spec.get("task"):
-                    record["files"] = _changed_files(root, start, commit)[:CHECKPOINT_FILES]
+                record["files"] = _changed_files(root, start, commit)[:CHECKPOINT_FILES]
             records.append(record)
         except (ToolError, subprocess.TimeoutExpired) as exc:
             errors.append(f"{name}: {exc}")
@@ -1015,7 +322,7 @@ def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def op_diff(spec: dict[str, Any]) -> dict[str, Any]:
-    """The change between a run's checkpoints, or with `task` one harness call's."""
+    """The change between the checkpoints of one harness call, `task`."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
     name = _safe_segment(spec.get("repository"), "repository")
     root = REPOS / name
@@ -1025,8 +332,7 @@ def op_diff(spec: dict[str, Any]) -> dict[str, Any]:
     start = _git_out(root, ["rev-parse", "--verify", "--quiet", f"{prefix}/start"])
     end = _git_out(root, ["rev-parse", "--verify", "--quiet", f"{prefix}/end"])
     if not start or not end:
-        what = f"task {spec.get('task')} of run {run_id}" if spec.get("task") else f"run {run_id}"
-        raise ToolError(f"{what} has no checkpoints in {name}")
+        raise ToolError(f"task {spec.get('task')} of run {run_id} has no checkpoints in {name}")
     done = _git(root, ["diff", "--no-color", "--no-ext-diff", start, end])
     if done.returncode != 0:
         raise ToolError(done.stderr.strip() or "git diff failed")
@@ -1063,10 +369,6 @@ def op_machine_size(_spec: dict[str, Any]) -> dict[str, Any]:
 
 
 OPS = {
-    "shell": op_shell,
-    "shell_status": op_shell_status,
-    "file_read": op_file_read,
-    "code_search": op_code_search,
     "git_setup": op_git_setup,
     "checkpoint": op_checkpoint,
     "diff": op_diff,

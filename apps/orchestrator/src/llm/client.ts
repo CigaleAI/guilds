@@ -18,7 +18,7 @@ import {
   assistantPayload,
   completionTimeoutMs,
   providerForModel,
-  reasoningEffortForModel,
+  reasoningEffort,
   type ContentPart,
   type ModelEndpoint,
   type ModelEvent,
@@ -349,7 +349,7 @@ function providerFields(provider: ProviderDef, request: ModelRequest): Partial<C
   if (openrouter) {
     fields.cache_control = PROMPT_CACHE_CONTROL;
   }
-  const effort = reasoningEffortForModel(request.model, request.thinking_level ?? "none");
+  const effort = reasoningEffort(request.thinking_level ?? "none");
   if (effort && openrouter) {
     fields.reasoning = { effort };
   } else if (effort) {

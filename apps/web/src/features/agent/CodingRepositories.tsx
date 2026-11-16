@@ -121,7 +121,7 @@ type CodingRepositoriesProps = {
 };
 
 /**
- * The repositories a coding or subscription agent works on, picked among those it can use, then the guild's
+ * The repositories a subscription agent works on, picked among those it can use, then the guild's
  * repositories it picks from: its GitHub login and the repositories picked on it, then those added
  * by URL. While the agent picks none it can use, `missingNote` says what that means where it shows.
  */

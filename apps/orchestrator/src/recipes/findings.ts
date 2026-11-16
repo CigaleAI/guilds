@@ -13,7 +13,7 @@ export type ValidationContext = {
   /** How many more agents the organisation may hold; null when uncapped. */
   remainingAgents: number | null;
   remainingBrowserAgents: number | null;
-  remainingCodingAgents: number | null;
+  remainingSubscriptionAgents: number | null;
   groupLimit: number;
   /** The model providers the organisation has connected. */
   connectedProviders?: Set<string>;

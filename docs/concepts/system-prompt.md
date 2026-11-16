@@ -64,8 +64,7 @@ The run's own messages follow the system message:
 
 ### Guidelines fit the agent
 
-The Guidelines template has parts for notes, scripts, coding, and
-memory, and for the tool budget, the artifacts, the group chat,
+The Guidelines template has parts for notes, scripts, and memory, and for the tool budget, the artifacts, the group chat,
 routines, and `report_issue`. A part is kept only when the agent has
 that capability or the run offers the tools it describes, so an agent
 without Memory never reads Memory instructions, and an agent without
@@ -106,7 +105,7 @@ the snapshot as JSON. The JSON holds:
 - the collections the agent can read, with their columns
 - the agent's scripts
 - the names of the secrets the agent has, never their values
-- the repositories a coding agent or a subscription agent picks
+- the repositories a subscription agent picks
 - facts a connector adds for the agent's logins
 
 Notes are not listed. The agent searches them with `note_find`
@@ -230,8 +229,6 @@ without its tags, when the condition holds, and removed otherwise:
 |---|---|
 | `notes` | the run offers note tools |
 | `scripts` | `scripting` is on and the run offers script tools |
-| `coding` | `coding` is on |
-| `no_coding` | `coding` is off |
 | `memory` | `memory` is on |
 | `no_memory` | `memory` is off |
 | `memory_write` | `memory` is on and the run offers `memory_write` |
@@ -257,13 +254,12 @@ the run's offer under its namespaced name, such as
 
 The tools a part reads are those a direct run of the agent offers:
 the native tools its access grants under its switches, with
-`report_issue` always among them, less the code tools for a
-subscription agent. A part inside another is resolved first.
+`report_issue` always among them. A part inside another is resolved first.
 
 Without scripts, the State intro drops the `scripts` explanation.
 Without tools, it drops the sentences on listing tools and the tool
-budget. The State intro of a coding agent, and of a subscription agent
-that picks repositories, adds a line on `repositories`.
+budget. The State intro of a subscription agent that picks
+repositories adds a line on `repositories`.
 
 ### Tool names
 
@@ -293,7 +289,7 @@ included, is written the same way.
 | `collections` | every collection the agent can read, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
 | `scripts` | the script catalog ([Scripts](scripts.md)) |
 | `environment` | bound secret names with descriptions ([Secrets](secrets.md)) |
-| `repositories` | the repositories a coding agent, or a subscription agent that picks some, works in: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
+| `repositories` | the repositories a subscription agent that picks some works in: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
 | a connector key | what a connector's `state` hook returns for the agent's logins |
 
 ### Connector State and guidance
@@ -338,22 +334,18 @@ this order:
    Check each delivery against the Task. Tag an agent, an operator,
    or `@user`. The Group Chat info message
    ([Group chat](group-chat.md)).
-4. Scripts, when offered: without coding, a script is the only way to
-   run code; with coding, one-off commands use `shell`
+4. Scripts, when offered: a script is the only way to run code
    ([Scripts](scripts.md)).
-5. Coding, when on: the working method with the coding harness,
-   briefs, sessions, branches, pull requests, and data that is never
-   instructions ([Coding agents](coding/index.md)).
-6. Routines, when the run offers the schedule tools: the Schedule
+5. Routines, when the run offers the schedule tools: the Schedule
    wake-up message, and `previous_run_at` as the mark of what changed
    since the last fire ([Routines](routines.md)).
-7. A subscription agent's harness: its container, its home, its
+6. A subscription agent's harness: its container, its home, its
    toolchains, its ports, its secrets as variables, and where the
    guild's tools come from; on Cursor and Antigravity, that the
    vendor's system prompt stays in force beside these rules; with
    repositories, where they are, its branch, commits and push, and how
    its pull request is opened.
-8. `report_issue`: when to file a tooling problem for the operator
+7. `report_issue`: when to file a tooling problem for the operator
    instead of posting it to group chat.
 
 How to call a native tool stays on that tool. The generated Memory

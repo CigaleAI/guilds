@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { modelAcceptsAttachments } from "../llm/catalog.js";
-import { modelNeedsInlineImages } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { iso } from "../db/views.js";
 import { sanitizeFilename, sniffImage } from "./sniff.js";
@@ -50,14 +49,8 @@ export class AttachmentService {
     readonly blobs: BlobStore,
   ) {}
 
-  async projectMessages(
-    orgId: string,
-    rows: AttachedMessage[],
-    model = "",
-  ): Promise<ModelMessage[]> {
-    return hydrateMessages(rows, this.blobs, orgId, {
-      ...(modelNeedsInlineImages(model) ? { inlineImages: true } : {}),
-    });
+  async projectMessages(orgId: string, rows: AttachedMessage[]): Promise<ModelMessage[]> {
+    return hydrateMessages(rows, this.blobs, orgId);
   }
 
   async upload(args: {

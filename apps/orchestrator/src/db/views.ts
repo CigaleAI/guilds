@@ -2,7 +2,7 @@ import { numberOrNull } from "../lib/numbers.js";
 import { formatColumnTimestamp } from "./codecs.js";
 import type { GroupMessageRow } from "./group-chat.js";
 import type { MessageRow, RunRow } from "./runs.js";
-import type { RunChain, RunConfigSnapshot, RunMetadata, RunRepositoryChange, RunTurnChange } from "./schema/index.js";
+import type { RunConfigSnapshot, RunMetadata, RunTurnChange } from "./schema/index.js";
 
 export function iso(value: string | Date): string {
   if (value instanceof Date) {
@@ -63,10 +63,7 @@ export type RunView = Pick<
   updated_at: string;
   schedule_id?: string;
   instruction_hash?: string | null;
-  repos?: RunRepositoryChange[];
   turn_changes?: RunTurnChange[];
-  chain?: RunChain;
-  continued_by_run_id?: string;
 };
 
 /** A run's config snapshot as the API sends it: without the scripts it pins. */
@@ -93,20 +90,14 @@ export function runItem(row: RunRow, generating: boolean): RunView {
     kind: row.kind,
     group_chat_through_seq: row.group_chat_through_seq,
     ...scheduleFields(row.schedule_id, row.metadata),
-    ...codingFields(row.metadata),
+    ...turnChangeFields(row.metadata),
   };
 }
 
-// A coding run carries what it changed in each repository, and its place in a run chain; a
-// subscription agent's run, what each of its turns changed. Other runs omit the keys.
-function codingFields(metadata: RunMetadata): Pick<RunView, "repos" | "turn_changes" | "chain" | "continued_by_run_id"> {
-  const { repos, turn_changes: turnChanges, chain, continued_by_run_id: continuedBy } = metadata;
-  return {
-    ...(repos ? { repos } : {}),
-    ...(turnChanges ? { turn_changes: turnChanges } : {}),
-    ...(chain ? { chain } : {}),
-    ...(continuedBy ? { continued_by_run_id: continuedBy } : {}),
-  };
+// A subscription agent's run carries what each of its turns changed. Other runs omit the key.
+function turnChangeFields(metadata: RunMetadata): Pick<RunView, "turn_changes"> {
+  const turnChanges = metadata.turn_changes;
+  return turnChanges ? { turn_changes: turnChanges } : {};
 }
 
 // Schedule runs carry the routine that woke them and the hash of the

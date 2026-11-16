@@ -16,8 +16,8 @@ export type AgentRowProps = Omit<ComponentProps<"button">, "children"> & {
   state: AgentState;
   /** The agent has a browser. */
   browser?: boolean;
-  /** The agent codes through a harness. */
-  coding?: boolean;
+  /** The agent runs on a subscription, on its harness. */
+  subscription?: boolean;
   /** Embeds in its Task that do not resolve to a file the agent can read. */
   brokenLinks?: readonly string[];
   /** The agent open in the inspector. */
@@ -29,14 +29,14 @@ export type AgentRowProps = Omit<ComponentProps<"button">, "children"> & {
 
 function AgentMarkers({
   broken,
-  coding,
+  subscription,
   browser,
 }: {
   broken: string | null;
-  coding: boolean | undefined;
+  subscription: boolean | undefined;
   browser: boolean | undefined;
 }) {
-  if (!broken && !coding && !browser) return null;
+  if (!broken && !subscription && !browser) return null;
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-muted">
       {broken ? (
@@ -44,9 +44,9 @@ function AgentMarkers({
           <Icon icon={Unlink} size={14} label={broken} />
         </span>
       ) : null}
-      {coding ? (
-        <span title="Coding agent" className="flex">
-          <Icon icon={Code2} size={14} label="Coding agent" />
+      {subscription ? (
+        <span title="Runs on a subscription" className="flex">
+          <Icon icon={Code2} size={14} label="Runs on a subscription" />
         </span>
       ) : null}
       {browser ? (
@@ -58,14 +58,14 @@ function AgentMarkers({
   );
 }
 
-/** An agent under its guild in the sidebar: avatar, handle, coding and browser flags and live state dot. */
+/** An agent under its guild in the sidebar: avatar, handle, subscription and browser flags and live state dot. */
 export function AgentRow({
   name,
   tone,
   src,
   state,
   browser,
-  coding,
+  subscription,
   brokenLinks,
   selected,
   asChild,
@@ -93,7 +93,7 @@ export function AgentRow({
     >
       <Avatar name={name} tone={tone} size={24} {...(src ? { src } : {})} aria-hidden />
       <span className="min-w-0 flex-1 truncate font-mono text-sm">{name}</span>
-      <AgentMarkers broken={broken} coding={coding} browser={browser} />
+      <AgentMarkers broken={broken} subscription={subscription} browser={browser} />
       <AgentStatus state={state} label={false} />
       <Slot.Slottable>{children}</Slot.Slottable>
     </Comp>
