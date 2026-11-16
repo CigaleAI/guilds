@@ -9,7 +9,6 @@ import {
   isIssueNotice,
   isLiveDelta,
   isMessageNotice,
-  isRunContinuation,
   isRunMessage,
   isSessionFailure,
   isStudioMessageCommit,
@@ -190,11 +189,6 @@ test("isToolProgressEvent refuses an event that names no call or holds lines tha
   assert.equal(isToolProgressEvent({ ...progress, lines: "a" }), false);
 });
 
-test("isRunContinuation admits the run that carries on", () => {
-  assert.equal(isRunContinuation({ run_id: "r2" }), true);
-  assert.equal(isRunContinuation({ run_id: 2 }), false);
-});
-
 test("isStudioMessageCommit admits the committed coach row and refuses a bare row", () => {
   assert.equal(isStudioMessageCommit({ message: studioMessage }), true);
   assert.equal(isStudioMessageCommit({ message: { ...studioMessage, cost_usd: "0.002" } }), false);
@@ -269,7 +263,6 @@ function recordingHandlers(calls: string[]): LiveEventHandlers<RunEvents> {
     "tool.progress": record("tool.progress"),
     "run.error": record("run.error"),
     "generation.finished": record("generation.finished"),
-    "run.continued": record("run.continued"),
     "run.wake.changed": record("run.wake.changed"),
   };
 }
@@ -300,14 +293,14 @@ test("run.wake.changed carries the run's pending wake-up, or null when none is l
 
 test("dispatchLiveEvent hands a payload that passes its guard to the event's handler", () => {
   const calls: string[] = [];
-  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.continued", { run_id: "r2" });
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", { pending_wake: null });
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.error", undefined);
-  assert.deepEqual(calls, ['run.continued:{"run_id":"r2"}', "run.error:undefined"]);
+  assert.deepEqual(calls, ['run.wake.changed:{"pending_wake":null}', "run.error:undefined"]);
 });
 
 test("dispatchLiveEvent ignores a payload that fails its guard and an event it does not name", () => {
   const calls: string[] = [];
-  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.continued", {});
+  dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "run.wake.changed", {});
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "message.committed", null);
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "draft.changed", {});
   dispatchLiveEvent(runEventGuards, recordingHandlers(calls), "toString", {});

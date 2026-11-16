@@ -61,7 +61,7 @@ test("an ended run is judged by its last error", () => {
 test("only the tool-call and input-token caps end a run for good", () => {
   assert.equal(runIsCapped(run({ errors: [error("generation.max_tool_calls")] })), true);
   assert.equal(runIsCapped(run({ errors: [error("generation.max_input_tokens")] })), true);
-  assert.equal(runIsCapped(run({ errors: [error("generation.max_chain")] })), true);
+  assert.equal(runIsCapped(run({ errors: [error("generation.max_chain")] })), false);
   assert.equal(runIsCapped(run({ errors: [error("generation.max_steps")] })), false);
 });
 

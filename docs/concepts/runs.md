@@ -245,10 +245,7 @@ An ended run shows a banner under the transcript:
 - **This session has ended**, with **Resume**, when it can be resumed.
   The same transcript reopens and the next message continues it.
 - **This session reached its limit**, with **New session**, after a
-  tool-call, input-token, or chain cap.
-- **This session continued in a new run**, with **Open it**, after a
-  hand-off. A run that is open while it continues switches to the new
-  run.
+  tool-call or input-token cap.
 
 ## Rules and limits
 

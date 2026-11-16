@@ -56,10 +56,6 @@ export type Run = {
   repos?: RunRepositoryChange[];
   /** What each turn of a subscription agent's run changed; a turn that changed nothing has none. */
   turn_changes?: RunTurnChange[];
-  /** A coding run's place in a run chain, when it continues an earlier run. */
-  chain?: { root_run_id: string; index: number; previous_run_id: string };
-  /** The run that continued this one after its hand-off. */
-  continued_by_run_id?: string;
   /** The run's pending wake-up, null when it has none; a run list leaves it out. */
   pending_wake?: PendingWake | null;
 };
@@ -111,8 +107,6 @@ export type ToolProgressEvent = {
  */
 export type LiveDelta = { text: string; content?: string };
 
-/** `run.continued` on a run's stream: the run of its chain that carries on. */
-export type RunContinuation = { run_id: string };
 
 /**
  * What one turn of a subscription agent's run changed: the call id its checkpoints are kept

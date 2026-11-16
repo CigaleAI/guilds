@@ -163,28 +163,11 @@ type SessionEndProps = {
 };
 
 /**
- * How an ended session goes on: in the run it handed over to, by resuming it, or in a new
- * session once it reached its limit; nothing while it is active.
+ * How an ended session goes on: by resuming it, or in a new session once it reached its limit;
+ * nothing while it is active.
  */
 function SessionEnd({ run, resuming, onResume, onSelect }: SessionEndProps) {
   if (run.status === "active") return null;
-  const continuedIn = run.continued_by_run_id ?? null;
-  if (continuedIn) {
-    return (
-      <Banner
-        tone="info"
-        title="This session continued in a new run"
-        className="mx-auto w-full max-w-240"
-        action={
-          <Button variant="outline" size="sm" onClick={() => onSelect(continuedIn)}>
-            Open it
-          </Button>
-        }
-      >
-        The agent handed its work over near its input limit; the next run picks it up.
-      </Banner>
-    );
-  }
   const canResume = !runIsCapped(run);
   return (
     <Banner
@@ -302,7 +285,7 @@ export function AgentChat() {
   const log = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
-  const { live, progress } = useRunStream(agentId, runId, (next) => selectRun(next));
+  const { live, progress } = useRunStream(agentId, runId);
   const progressLines = progressLineCount(progress);
 
   useLayoutEffect(() => {
