@@ -46,11 +46,14 @@ export function useUploadFile() {
   });
 }
 
-/** Deletes a shared file by id and refreshes every files list; the delete settles once they have refetched. */
+/**
+ * Deletes a shared file by id. Every files list is refreshed either way, so a refused delete sees
+ * the file as it now is; the delete settles once they have refetched.
+ */
 export function useDeleteFile() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<undefined>(`/api/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    onSuccess: () => client.invalidateQueries({ queryKey: fileKeys.fileLists }),
+    onSettled: () => client.invalidateQueries({ queryKey: fileKeys.fileLists }),
   });
 }

@@ -8,6 +8,15 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A guild's or an agent's **State → Files** selects several
+files at once: each file has a box that selects it without opening
+it, and a bar shows how many are selected, **Clear selection**, and
+**Delete selected**. The delete asks first, naming each file, then
+deletes them one at a time and reports the files deleted and those
+refused apart; refused files stay selected. A search or a refresh
+that hides a selected file takes it out of the selection. Every files
+list now refreshes after a refused delete too.
+
 **Rebuild.** Studio shows why the coach stopped as a toast, as Builder
 does. In every chat, a message the server refuses goes back into the
 composer with its images, unless the operator has typed in it since.

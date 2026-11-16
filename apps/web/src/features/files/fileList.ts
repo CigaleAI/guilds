@@ -3,7 +3,7 @@ import { FILE_MAX_BYTES } from "../../api/files";
 import { formatSize } from "../../app/format";
 import type { ItemSections } from "../../api/types/access";
 import type { FileItem } from "../../api/types/files";
-import { filterSections } from "../access/listedItems";
+import { filterSections, listedItems } from "../access/listedItems";
 
 /** A page's files whose name or description holds the search, in each section; all of them without one. */
 export function searchFiles(sections: ItemSections<FileItem>, query: string): ItemSections<FileItem> {
@@ -12,6 +12,19 @@ export function searchFiles(sections: ItemSections<FileItem>, query: string): It
   return filterSections(sections, (item) =>
     `${item.name} ${item.description}`.toLowerCase().includes(needle),
   );
+}
+
+/**
+ * The files of the selection the page shows, once each, in the order it shows them: an id in the
+ * selection that the search hides, or the page no longer lists, is left out.
+ */
+export function filesInSelection(shown: ItemSections<FileItem>, selectionIds: ReadonlySet<string>): FileItem[] {
+  const seen = new Set<string>();
+  return listedItems(shown).filter((item) => {
+    if (!selectionIds.has(item.id) || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 /** Why an upload cannot be sent, or null when it can: a file is chosen, fits, and is described. */
