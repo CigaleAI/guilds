@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
 import type { FastifyInstance } from "fastify";
@@ -37,6 +38,28 @@ const INITIALIZE = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize",
 
 function post(path: string, body: string, headers: Record<string, string> = {}): Promise<Response> {
   return fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
+}
+
+/**
+ * Posts headers declaring `body`'s length and reads the answer before sending any of the body.
+ * The listener refuses a body past its limit on the declared length, without reading it, and
+ * closes the connection: a client still writing the body then meets a reset that may come before
+ * the answer, so the body is held back.
+ */
+function postDeclaringLength(path: string, body: string): Promise<{ status: number; json: unknown }> {
+  return new Promise((resolve, reject) => {
+    const headers = { "content-type": "application/json", "content-length": String(Buffer.byteLength(body)) };
+    const sent = httpRequest(`${base}${path}`, { method: "POST", headers }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () => {
+        sent.destroy();
+        resolve({ status: response.statusCode ?? 0, json: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
+      });
+    });
+    sent.on("error", reject);
+    sent.flushHeaders();
+  });
 }
 
 test("the orchestrator's own MCP client initializes, lists the run's tools, and speaks the session through the listener", async () => {
@@ -89,7 +112,7 @@ test("a message that is not JSON-RPC, and one too large, are refused by status a
   const bad = await post("/mcp/a_1", JSON.stringify({ method: "initialize" }));
   assert.equal(bad.status, 400);
   assert.deepEqual(await bad.json(), { error: "bad request" });
-  const large = await post("/mcp/a_1", JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { pad: "x".repeat(1024 * 1024) } }));
+  const large = await postDeclaringLength("/mcp/a_1", JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { pad: "x".repeat(1024 * 1024) } }));
   assert.equal(large.status, 413);
-  assert.deepEqual(await large.json(), { error: "request too large" });
+  assert.deepEqual(large.json, { error: "request too large" });
 });
