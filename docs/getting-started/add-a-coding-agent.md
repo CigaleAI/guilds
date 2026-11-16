@@ -43,16 +43,17 @@ steps.
 4. **Lead model**: the lead model is the agent's own model. It plans,
    talks to you, and reviews the harness's work. Keep the model it
    offers. Click **Next**.
-5. **Repositories**: a repository is shared by every coding agent of
-   the guild. Each agent gets its own copy. Fill in the form at the
-   bottom of the step:
+5. **Repositories**: a repository belongs to the guild, and each coding
+   agent picks the ones it works on. Each agent gets its own copy of
+   the ones it picks. Fill in the form at the bottom of the step:
    - **Name**: `demo`
    - **URL**: the address of your repository, such as
      `https://github.com/you/demo`
 
    Set **Credential** to **None: clone anonymously**. Click **Add
    repository**. You
-   should see `demo` in the list, tagged **anonymous**. Click
+   should see `demo` in the list, tagged **anonymous**, and an empty
+   box for `demo` under **This agent works on**. Tick it. Click
    **Create agent**.
 
 You should see `coder` under the guild in the sidebar. Its panel opens

@@ -212,12 +212,12 @@ before **Next**.
    **Agent capabilities** with Browser, Scripting, and Memory, and
    **Run limits**, starting at 200 steps and 200 tool calls, with
    scripting on.
-5. **Repositories**: the guild's GitHub login and repositories
-   ([Repositories, In the app](repositories.md#in-the-app)). While the
-   guild has none, an ochre line reads "No repository yet. You can
-   create the agent and add one later in the guild's Settings." and the
-   last button reads **Create without a repository** instead of
-   **Create agent**.
+5. **Repositories**: a checkbox per repository the new agent can use,
+   then the guild's GitHub login and repositories
+   ([Repositories, In the app](repositories.md#in-the-app)). While none
+   is ticked, an ochre line reads "No repository picked. You can create
+   the agent and pick one later in its Settings." and the last button
+   reads **Create without a repository** instead of **Create agent**.
 
 Create sends the agent. A pasted token is then saved as a secret
 granted to the new agent alone. When it cannot be saved, a toast says
@@ -275,7 +275,7 @@ on hover and links to the Settings section that sets it:
 | --- | --- | --- | --- |
 | Harness | the harness's logo; "`<Harness>` is not in this machine's image" when the image lacks it | "`<Harness>` codes with `<harness model>`", or "its default model" without one, then "at `<effort>` effort" once an effort is set | **Harness** |
 | Credential | a dot, then "Token `<secret>`" when the secret the harness reads reaches the agent; else "Logged in" when a check found a login; else "Not logged in" | who added the secret, or whose the login is and when a check last saw it | **Harness** |
-| Repositories | "1 repo" or "`<n>` repos"; "No repos" with none | the repositories' names | **Repositories** |
+| Repositories | "1 repo" or "`<n>` repos", counting the ones a coding run clones; "No repos" with none, whose hover reads "A coding run of an agent without a repository picked fails at start." | the repositories' names | **Repositories** |
 
 With no harness picked, one part, "No harness picked", stands for the
 harness and the credential. A part that names a problem is bold, its

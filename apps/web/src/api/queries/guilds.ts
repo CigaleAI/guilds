@@ -4,14 +4,14 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { api } from "../client";
-import { refreshMachines } from "./agents";
+import { refreshAgentRepositories, refreshMachines } from "./agents";
 import { noteKeys } from "./notes";
 import type {
   GuildInput,
   GuildUsage,
   Guild,
   GuildRepository,
-  GithubLogin,
+  GuildRepositoryView,
   RepositoryInput,
   GuildOperatorRole,
   NewGuild,
@@ -65,10 +65,7 @@ export function useUpdateGuild(guildId: string) {
 export function useGuildRepositories(guildId: string) {
   return useQuery({
     queryKey: guildKeys.guildRepositories(guildId),
-    queryFn: () =>
-      api<{ repositories: GuildRepository[]; github_connections: GithubLogin[] }>(
-        `${guildPath(guildId)}/repositories`,
-      ),
+    queryFn: () => api<GuildRepositoryView>(`${guildPath(guildId)}/repositories`),
   });
 }
 
@@ -77,7 +74,10 @@ export function useAddGuildRepository(guildId: string) {
   return useMutation({
     mutationFn: (input: RepositoryInput) =>
       api<GuildRepository>(`${guildPath(guildId)}/repositories`, { method: "POST", body: input }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: guildKeys.guildRepositories(guildId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: guildKeys.guildRepositories(guildId) });
+      refreshAgentRepositories(client);
+    },
   });
 }
 
@@ -88,7 +88,10 @@ export function useRemoveGuildRepository(guildId: string) {
       api<void>(`${guildPath(guildId)}/repositories/${encodeURIComponent(repositoryId)}`, {
         method: "DELETE",
       }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: guildKeys.guildRepositories(guildId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: guildKeys.guildRepositories(guildId) });
+      refreshAgentRepositories(client);
+    },
   });
 }
 

@@ -169,6 +169,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.deepEqual((await app.inject({ method: "GET", url: base, headers: OWNER })).json(), {
       repositories: [],
       github_connections: [],
+      usable: [],
     });
     const plain = await app.inject({
       method: "POST",
@@ -312,6 +313,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       afterConnect.json().github_connections.map((row: { id: string; account_hint: string }) => [row.id, row.account_hint]),
       [[remoteId, "acme"]],
     );
+    assert.deepEqual([...afterConnect.json().usable].sort(), ["docs", "shop"], "a new coding agent can use every repository of the guild");
 
     // GitHub refusing the installation while the picker lists it disconnects the login.
     installationGone = true;

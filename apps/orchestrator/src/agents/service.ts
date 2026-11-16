@@ -17,7 +17,6 @@ import {
   updateAgentConfig,
   type AgentConfigPatch,
   type AgentPlacement,
-  type AgentPlaceRow,
   type AgentRow,
   type NewAgent,
 } from "../db/agents.js";
@@ -26,7 +25,7 @@ import { recordFileChange } from "../db/file-changes.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { AgentConfig } from "../db/schema/index.js";
-import { codingRepositoriesDatabase, loadUsableRepositories } from "../coding/agent-repositories.js";
+import { codingRepositoriesDatabase, loadUsableRepositories, type RepositoryPlace } from "../coding/agent-repositories.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
 import { requireAdministeredGuild } from "../guilds/access.js";
@@ -144,7 +143,7 @@ async function assertBrowserOptimizedChangeReady(
  */
 async function assertRepositoriesUsable(
   db: Queryable,
-  agent: AgentPlaceRow,
+  agent: RepositoryPlace,
   config: AgentConfig,
   previous?: AgentConfig,
 ): Promise<void> {
@@ -294,8 +293,7 @@ export async function createAgent(
   }
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
   await assertBrowserOptimizedReady(services, guild.org_id, config);
-  const agentId = newId("a");
-  await assertRepositoriesUsable(db, { id: agentId, guild_id: guild.id, org_id: guild.org_id }, config);
+  await assertRepositoriesUsable(db, { id: null, guild_id: guild.id, org_id: guild.org_id }, config);
   const needs = { browser: config.browser, coding: config.coding };
   await assertCanCreateAgent(policy, db, guild.org_id, needs);
   await assertGuildAgentRoom(db, guild.id, 1);
@@ -308,6 +306,7 @@ export async function createAgent(
       needs,
     },
   );
+  const agentId = newId("a");
   const draft: AgentDraft = {
     agent: { agentId, guildId: guild.id, name, config, focus, wakeTriggers, avatarShape, avatarColor },
     task: focus,

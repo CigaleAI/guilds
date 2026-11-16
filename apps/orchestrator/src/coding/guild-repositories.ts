@@ -32,7 +32,7 @@ import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
-import { unpickUnusableRepositories } from "./agent-repositories.js";
+import { codingRepositoriesDatabase, loadUsableRepositories, unpickUnusableRepositories } from "./agent-repositories.js";
 import type { McpPool } from "../mcp/pool.js";
 import type { LoginRetirement } from "../mcp/service.js";
 import type { RepositorySecretCheck } from "../secrets/service.js";
@@ -67,8 +67,11 @@ export async function retireInstallationGone(
   await services.retireLogin(connection, "installation_gone");
 }
 
-/** A guild's repositories, and the GitHub logins its repositories may be added with. */
-export type GuildRepositoryView = { repositories: GuildRepository[]; github_connections: GithubLogin[] };
+/**
+ * A guild's repositories, the GitHub logins its repositories may be added with, and the names of
+ * the repositories a new coding agent of the guild can use.
+ */
+export type GuildRepositoryView = { repositories: GuildRepository[]; github_connections: GithubLogin[]; usable: string[] };
 
 /** A repository's fields as a request sends them, before validation: its name, URL and branch. */
 const RepositoryFields = {
@@ -191,7 +194,11 @@ function reachedRepository(reached: GithubRepository[], url: string): GithubRepo
   return match;
 }
 
-/** The guild's repositories, and the GitHub logins of the guilds the user sees that they could use. */
+/**
+ * The guild's repositories, the GitHub logins of the guilds the user sees that they could use, and
+ * the repositories a new coding agent of the guild can use: those, with the ones picked on the
+ * guild's GitHub login, else the organisation's.
+ */
 export async function listGuildRepositoryView(
   db: Queryable,
   guild: GuildRow,
@@ -204,9 +211,11 @@ export async function listGuildRepositoryView(
     guild.org_id,
     visible.map((item) => item.id),
   );
+  const usable = await loadUsableRepositories(codingRepositoriesDatabase(db), { id: null, guild_id: guild.id, org_id: guild.org_id });
   return {
     repositories: (await listGuildRepositories(db, guild.id)).map(repositoryItem),
     github_connections: connections.map(githubLoginItem),
+    usable: usable.map((repository) => repository.name),
   };
 }
 

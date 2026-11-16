@@ -27,6 +27,12 @@ export class AgentRepositoriesError extends Error {
   }
 }
 
+/**
+ * Where the repositories an agent can use are read for: an agent's place, or with a null `id` the
+ * place of an agent its guild does not have yet, which has no GitHub login of its own.
+ */
+export type RepositoryPlace = Pick<AgentPlaceRow, "guild_id" | "org_id"> & { id: AgentPlaceRow["id"] | null };
+
 /** The db/ functions the repositories an agent can use are read through. */
 export type CodingRepositoriesDatabase = {
   listGuildRepositories: BoundQuery<typeof listGuildRepositories>;
@@ -44,7 +50,7 @@ export function codingRepositoriesDatabase(db: Queryable): CodingRepositoriesDat
 /** The GitHub connection an agent clones with: the agent's, else its guild's, else its organisation's, while connected. */
 async function githubConnectionOf(
   db: CodingRepositoriesDatabase,
-  agent: AgentPlaceRow,
+  agent: RepositoryPlace,
 ): Promise<McpConnectionRow | null> {
   for (const [scope, ownerId] of [
     ["agent", agent.id],
@@ -62,7 +68,7 @@ async function githubConnectionOf(
 /** The repositories the agent can use: its guild's, with those picked on the GitHub login it clones with. */
 export async function loadUsableRepositories(
   db: CodingRepositoriesDatabase,
-  agent: AgentPlaceRow,
+  agent: RepositoryPlace,
 ): Promise<CodingRepository[]> {
   return usableRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }

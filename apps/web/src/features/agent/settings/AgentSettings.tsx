@@ -202,7 +202,8 @@ function SettingsFooter({ dirty, invalid, saving, onDiscard, onSave }: SettingsF
  * the model and reasoning, the capabilities (Browser and Coding greyed out on a machine below their minimum),
  * and the run limits. Machine holds the machine (a new one moves the agent there) and the disk
  * cap against what the machine's other agents reserve. Harness holds the coding harness with its
- * credentials and model. Repositories holds the guild's. The sections follow the form's Coding, and
+ * credentials and model. Repositories holds the ones the agent works on, picked among those it can
+ * use, over the guild's. The sections follow the form's Coding, and
  * one with an error or a coding-readiness problem is flagged. A coding agent whose saved setup is
  * not ready opens on a banner that lists what is missing. Save sends every section at once.
  */
@@ -330,7 +331,10 @@ export function AgentSettings() {
     repositories: (
       <CodingRepositories
         guild={{ id: guildId, name: guild.data?.name ?? "this guild" }}
-        missingNote="No repository yet, so this agent's coding runs fail at start."
+        usable={harness.data?.usable_repositories}
+        picked={form.repositories}
+        onPick={(repositories) => set({ repositories })}
+        missingNote="No repository picked, so this agent's coding runs fail at start."
       />
     ),
   };

@@ -72,6 +72,8 @@ test(
       const shopId = await addRepository(guildId, "shop");
       await addRepository(guildId, "docs");
       await addRepository(guildId, "site");
+      const view = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/repositories`, headers: READER });
+      assert.deepEqual(view.json().usable, ["docs", "shop", "site"], "a new coding agent of the guild can use each of them");
       const create = (name: string, config: Record<string, unknown>, guild = guildId) =>
         app.inject({ method: "POST", url: `/api/guilds/${guild}/agents`, headers: OWNER, payload: { name, config } });
 

@@ -277,7 +277,9 @@ saves.
   ([Machines](machines.md), [Agent home](agent-home.md)).
 - **Harness** and **Repositories**, on a coding agent:
   [Harnesses](coding/harnesses.md) and
-  [Repositories](coding/repositories.md).
+  [Repositories](coding/repositories.md). **Repositories** ticks the
+  repositories the agent works on, saved with the rest of Settings.
+  Turning **Coding** off before the first save unticks them.
 
 ## Rules and limits
 

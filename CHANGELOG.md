@@ -28,6 +28,14 @@ operator app together.
 a GitHub login's pick, unpicks it from each agent that picks it and
 can no longer use it, in the same transaction.
 
+**Rebuild.** A coding agent's **Repositories**, in its Settings and
+in the create dialog, ticks the repositories it works on among those
+it can use, above the guild's own list; a pick it can no longer use
+shows ticked and tagged "no longer in the guild". The create dialog's
+last button reads **Create without a repository** while none is
+ticked. `GET /api/guilds/:id/repositories` gains `usable`, the
+repositories a new coding agent of the guild can use.
+
 **Breaking for recipes.** A recipe's coding role lists the
 repositories its agent works on in `config.repositories`, each a name
 from the recipe's `repositories`; another name is the

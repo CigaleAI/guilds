@@ -142,9 +142,10 @@ The guild's **Settings** tab has two parts for coding:
   commits. Its hint reads "A verified email on the GitHub account that
   owns the Vercel project (Hobby: the account owner). Empty uses each
   agent's platform address." It is saved with **Save**.
-- **Repositories**: the extra git URLs each coding agent of the guild
-  clones into `repos/<name>` in its home, at its next run, under the
-  line "Other git repositories, added by URL." Each row
+- **Repositories**: the extra git URLs the guild's coding agents can
+  pick. Each agent that picks one clones it into `repos/<name>` in its
+  home, at its next run. They sit under the line "Other git
+  repositories, added by URL." Each row
   shows the name, URL, and default branch, a tag, "anonymous",
   "GitHub · `<account>`", "`<account>` disconnected", or
   "Token · `<secret>`", and a remove button. With none, "No extra
@@ -166,11 +167,29 @@ are not part of the Settings **Save**.
 ### The coding agent's Repositories
 
 The create dialog's **Repositories** step and the **Repositories**
-section of a coding agent's Settings show the guild's repositories.
-Changes there are the guild's, saved as they are made.
+section of a coding agent's Settings pick the repositories the agent
+works on, then show the guild's repositories it picks from.
 
-A line reads "Code tasks run in these repositories, shared by every
-coding agent of `<guild>`." Then the guild's GitHub login:
+A line reads "Code tasks run in the repositories this agent picks. The
+repositories of `<guild>` below are shared by its coding agents; each
+picks the ones it works on." Under **This agent works on**, a checkbox
+per repository the agent can use, ticked when the agent picks it. A
+repository the agent picks and can no longer use follows, ticked and
+tagged "no longer in the guild", so it can be unticked. A repository
+ticked joins the end of the agent's picks. With none to pick, "The
+guild has no repository yet. Add one below." The ticks are part of
+the agent's config: Settings saves them with **Save**, and the create
+dialog sends them with the agent. In the create dialog the boxes list
+what a new agent of the guild can use; in Settings, what this agent
+can use, which its own GitHub login may change.
+
+While the agent picks no repository it can use, an ochre line says so:
+in the create dialog, "No repository picked. You can create the agent
+and pick one later in its Settings."; in Settings, "No repository
+picked, so this agent's coding runs fail at start."
+
+Then the guild's GitHub login, whose changes are the guild's, saved as
+they are made:
 
 - When the GitHub App is not set up on the box: "GitHub is not set up
   on this box.", then **Set up**, which opens the GitHub App under
@@ -187,13 +206,11 @@ coding agent of `<guild>`." Then the guild's GitHub login:
   organisation's login)", its repositories listed read-only, and
   **Connect GitHub**, which connects a login of the guild's own.
 
-Then the guild's **Repositories**, as on the guild's Settings. While
-the guild has none, picked or added, an ochre line says so: in the
-create dialog, "No repository yet. You can create the agent and add
-one later in the guild's Settings."; in Settings, "No repository yet,
-so this agent's coding runs fail at start."
+Then the guild's **Repositories**, as on the guild's Settings, also
+saved as they are made. A repository added there joins the boxes
+above, unticked.
 
-The coding strip counts the repositories
+The coding strip counts the repositories a coding run clones
 ([Coding agents](index.md#coding-strip)).
 
 ## Rules and limits
@@ -257,10 +274,14 @@ POST   /api/guilds/:id/repositories
 DELETE /api/guilds/:id/repositories/:repository_id
 ```
 
-`GET` returns `{ repositories, github_connections }`. `repositories`
-are this guild's git URLs. `github_connections` are the GitHub logins
-the caller can see in the organisation: `id`, `owner_scope`,
-`owner_id`, `account_hint`, `status`.
+`GET` returns `{ repositories, github_connections, usable }`.
+`repositories` are this guild's git URLs. `github_connections` are the
+GitHub logins the caller can see in the organisation: `id`,
+`owner_scope`, `owner_id`, `account_hint`, `status`. `usable` names
+the repositories a new coding agent of the guild can use: those picked
+on the guild's GitHub login, else the organisation's, while connected,
+and the guild's other repositories
+([Where the list comes from](#where-the-list-comes-from)).
 
 A repository payload carries `id`, `guild_id`, `name`, `url`,
 `default_branch`, `provider` (`github`, `access_token`, or null),
@@ -469,8 +490,9 @@ email), `apps/orchestrator/src/http/coding-routes.ts` (routes), and in
 the app `apps/web/src/features/agent/GuildRepositories.tsx` (the
 guild's repositories and the add form),
 `apps/web/src/features/agent/repositories.ts` (the login a URL is
-added with), `apps/web/src/features/agent/CodingRepositories.tsx` (the
-coding agent's Repositories),
+added with, and the agent's repository checklist),
+`apps/web/src/features/agent/CodingRepositories.tsx` (the coding
+agent's Repositories),
 `apps/web/src/features/access/GithubRepositories.tsx` (a login's
 repository picker), and
 `apps/web/src/features/guild/pages/GuildSettings.tsx` (the **Git**
