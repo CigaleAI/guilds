@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { claudeCodeAssistantMessage, claudeCodeToolRecord, interruptedHarnessToolRecord, NOT_TEXT_OUTPUT } from "../../src/generation/harness-rows.js";
+import { claudeCodeAssistantMessage, claudeCodeTurnSteps, harnessToolRecord, interruptedHarnessToolRecord, NOT_TEXT_OUTPUT } from "../../src/generation/harness-rows.js";
 import { parseClaudeCodeEvents, type ClaudeCodeMessage } from "../../src/generation/parse-claude-code.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
 
@@ -112,7 +112,7 @@ test("a message's text becomes an assistant row, and its tool uses its tool call
 
 test("a tool's result becomes a tool row marked as the harness's, redacted and capped as a tool's output", () => {
   const call = { id: "toolu_03", type: "function", function: { name: "Bash", arguments: "{}" } };
-  const [payload, metadata] = claudeCodeToolRecord({ tool_use_id: "toolu_03", output: "token tok-123" }, call, 1200, { TOKEN: "tok-123" });
+  const [payload, metadata] = harnessToolRecord({ harness: "claude-code", tool_use_id: "toolu_03", output: "token tok-123" }, call, 1200, { TOKEN: "tok-123" });
   assert.deepEqual(payload, { role: "tool", tool_call_id: "toolu_03", content: "token [REDACTED:TOKEN]" });
   assert.equal(metadata.tool_name, "Bash");
   assert.equal(metadata.tool_call_id, "toolu_03");
@@ -123,7 +123,7 @@ test("a tool's result becomes a tool row marked as the harness's, redacted and c
   const previous = process.env.TOOL_RESULT_MAX_BYTES;
   process.env.TOOL_RESULT_MAX_BYTES = "1024";
   try {
-    const [long, cut] = claudeCodeToolRecord({ tool_use_id: "toolu_03", output: "x".repeat(5000) }, call, 0, {});
+    const [long, cut] = harnessToolRecord({ harness: "claude-code", tool_use_id: "toolu_03", output: "x".repeat(5000) }, call, 0, {});
     assert.equal(cut.truncated, true);
     assert.equal(cut.original_bytes, 5000);
     assert.ok(Buffer.byteLength(long.content) <= 1024 + 200);
@@ -134,7 +134,7 @@ test("a tool's result becomes a tool row marked as the harness's, redacted and c
       process.env.TOOL_RESULT_MAX_BYTES = previous;
     }
   }
-  assert.equal(claudeCodeToolRecord({ tool_use_id: "toolu_03", output: null }, call, 0, {})[0].content, NOT_TEXT_OUTPUT);
+  assert.equal(harnessToolRecord({ harness: "claude-code", tool_use_id: "toolu_03", output: null }, call, 0, {})[0].content, NOT_TEXT_OUTPUT);
 });
 
 test("a tool the turn ended inside gets the interrupted result, marked as the harness's", () => {
@@ -144,4 +144,18 @@ test("a tool the turn ended inside gets the interrupted result, marked as the ha
   assert.equal(metadata.generation, 2);
   assert.equal(metadata.error, "execution interrupted");
   assert.equal(metadata.from_harness, "claude-code");
+});
+
+test("a recorded Claude Code turn makes its messages and its tools' results, each result naming only its call", () => {
+  const steps = claudeCodeTurnSteps(RECORDED, {});
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["message", "result", "message", "result", "message", "result", "message"],
+  );
+  assert.deepEqual(steps[1], {
+    kind: "result",
+    result: { harness: "claude-code", tool_use_id: "toolu_01", output: "1\tprint('hello')\n" },
+    call: null,
+  });
+  assert.equal(claudeCodeTurnSteps(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: " " }] } }), {}).length, 0);
 });

@@ -12,6 +12,7 @@ import {
 } from "../db/runs.js";
 import {
   modelSourceOf,
+  type AssistantMessage,
   type Harness,
   type RunConfigSnapshot,
   type RunHarnessTurn,
@@ -45,17 +46,13 @@ import {
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
 import {
-  claudeCodeAssistantMessage,
-  claudeCodeToolRecord,
+  HARNESS_TURN_STEPS,
+  harnessToolRecord,
   interruptedHarnessToolRecord,
+  type HarnessResultStep,
 } from "./harness-rows.js";
 import { HARNESS_TURN_MINUTES, harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
 import type { HarnessGrant, HarnessMcpServer } from "./harness-mcp.js";
-import {
-  parseClaudeCodeEvents,
-  type ClaudeCodeMessage,
-  type ClaudeCodeToolResults,
-} from "./parse-claude-code.js";
 import { pendingToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
 
@@ -383,33 +380,24 @@ export class HarnessLoop {
     return polled.poll.exited === true ? "exited" : null;
   }
 
-  /** Keeps the rows of the Claude Code events one poll read, in order. */
+  /** Keeps the rows of the harness's events one poll read, in order. */
   private async keepEvents(
     gen: SubscriptionGeneration,
     secrets: Record<string, string>,
     turn: HarnessRunTurn,
     raw: string,
   ): Promise<void> {
-    for (const event of parseClaudeCodeEvents(raw)) {
-      if (event.type === "assistant") {
-        await this.keepMessage(gen, secrets, turn, event);
+    for (const step of HARNESS_TURN_STEPS[turn.harness](raw, secrets)) {
+      if (step.kind === "message") {
+        await this.keepMessage(gen, turn, step.payload);
       } else {
-        await this.keepResults(gen, secrets, turn, event);
+        await this.keepResult(gen, secrets, turn, step);
       }
     }
   }
 
   /** Keeps a message of the harness's as an assistant row; its tool calls wait for their results. */
-  private async keepMessage(
-    gen: SubscriptionGeneration,
-    secrets: Record<string, string>,
-    turn: HarnessRunTurn,
-    message: ClaudeCodeMessage,
-  ): Promise<void> {
-    const payload = claudeCodeAssistantMessage(message, secrets);
-    if (payload === null) {
-      return;
-    }
+  private async keepMessage(gen: SubscriptionGeneration, turn: HarnessRunTurn, payload: AssistantMessage): Promise<void> {
     await this.services.events.commitMessage(gen.runId, payload, {
       generation: gen.generation,
       from_harness: turn.harness,
@@ -420,30 +408,30 @@ export class HarnessLoop {
     }
   }
 
-  /** Keeps each result of a call the harness made as its tool row; a result for no call it made is dropped. */
-  private async keepResults(
+  /**
+   * Keeps the result of a call the harness made as its tool row, after the call's own row when the
+   * log announced it only with its result; a result for no call it made is dropped.
+   */
+  private async keepResult(
     gen: SubscriptionGeneration,
     secrets: Record<string, string>,
     turn: HarnessRunTurn,
-    event: ClaudeCodeToolResults,
+    step: HarnessResultStep,
   ): Promise<void> {
-    for (const result of event.results) {
-      const pending = turn.pending.get(result.tool_use_id);
-      if (pending === undefined) {
-        continue;
-      }
-      turn.pending.delete(result.tool_use_id);
-      const [payload, metadata] = claudeCodeToolRecord(
-        result,
-        pending.call,
-        Date.now() - pending.seen,
-        secrets,
-      );
-      await this.services.events.commitMessage(gen.runId, payload, {
-        generation: gen.generation,
-        ...metadata,
-      });
+    const id = step.result.tool_use_id;
+    if (!turn.pending.has(id) && step.call !== null) {
+      await this.keepMessage(gen, turn, { role: "assistant", content: "", tool_calls: [step.call] });
     }
+    const pending = turn.pending.get(id);
+    if (pending === undefined) {
+      return;
+    }
+    turn.pending.delete(id);
+    const [payload, metadata] = harnessToolRecord(step.result, pending.call, Date.now() - pending.seen, secrets);
+    await this.services.events.commitMessage(gen.runId, payload, {
+      generation: gen.generation,
+      ...metadata,
+    });
   }
 
   /** Keeps the session the harness reported, so the run's next turn resumes it. */

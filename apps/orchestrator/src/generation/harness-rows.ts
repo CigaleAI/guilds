@@ -6,13 +6,13 @@ import type {
   ToolMessage,
   ToolResultMetadata,
 } from "../db/schema/index.js";
-import { HARNESS_MCP_TOOL_PREFIX } from "../coding/harnesses.js";
+import { HARNESS_MCP_TOOL_PREFIX, type TurnHarness } from "../coding/harnesses.js";
 import { redact } from "../secrets/index.js";
 import { identityOutput, processOutput, toolResultMaxBytes } from "../toolbox/index.js";
-import type {
-  ClaudeCodeMessage,
-  ClaudeCodeToolResult,
-  ClaudeCodeToolUse,
+import {
+  parseClaudeCodeEvents,
+  type ClaudeCodeMessage,
+  type ClaudeCodeToolUse,
 } from "./parse-claude-code.js";
 import { interruptionRecord } from "./tool-calls.js";
 
@@ -27,6 +27,23 @@ export const NOT_TEXT_OUTPUT = "(the tool returned no text)";
 /** A call of a harness's own tool's result, as the run keeps it: the message, and the call's metadata marked as the harness's. */
 export type HarnessToolRecord = [ToolMessage, ToolResultMetadata & HarnessMessageMetadata];
 
+/** What one of a harness's own tools returned for the call `tool_use_id` names; `output` is null when it is not text. */
+export type HarnessToolResult = { harness: Harness; tool_use_id: string; output: string | null };
+
+/** The result of a call of a harness's own tool, with the call itself when the log did not announce it before its result. */
+export type HarnessResultStep = { kind: "result"; result: HarnessToolResult; call: ToolCall | null };
+
+/**
+ * What an event of a harness's log makes of the run's rows: a message of the harness's, redacted,
+ * whose calls of its own tools wait for their results; or the result of such a call.
+ */
+export type HarnessTurnStep = { kind: "message"; payload: AssistantMessage } | HarnessResultStep;
+
+/** Whether `harness` called one of its own tools, named `name` to its model, rather than one of the orchestrator's MCP server. */
+function isHarnessOwnTool(harness: TurnHarness, name: string): boolean {
+  return !name.startsWith(HARNESS_MCP_TOOL_PREFIX[harness]);
+}
+
 /** A call of one of Claude Code's own tools, as a tool call of the run, its input redacted with `secrets`. */
 function claudeCodeToolCall(use: ClaudeCodeToolUse, secrets: Record<string, string>): ToolCall {
   return {
@@ -34,11 +51,6 @@ function claudeCodeToolCall(use: ClaudeCodeToolUse, secrets: Record<string, stri
     type: "function",
     function: { name: use.name, arguments: redact(JSON.stringify(use.input), secrets) },
   };
-}
-
-/** Whether Claude Code called one of its own tools, rather than one of the orchestrator's MCP server. */
-function isClaudeCodeOwnTool(use: ClaudeCodeToolUse): boolean {
-  return !use.name.startsWith(HARNESS_MCP_TOOL_PREFIX["claude-code"]);
 }
 
 /**
@@ -54,7 +66,7 @@ export function claudeCodeAssistantMessage(
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n");
   const calls = message.content.flatMap((block) =>
-    block.type === "tool_use" && isClaudeCodeOwnTool(block) ? [claudeCodeToolCall(block, secrets)] : [],
+    block.type === "tool_use" && isHarnessOwnTool("claude-code", block.name) ? [claudeCodeToolCall(block, secrets)] : [],
   );
   if (!text.trim() && !calls.length) {
     return null;
@@ -64,11 +76,31 @@ export function claudeCodeAssistantMessage(
 }
 
 /**
- * The row of a result of `call`, a call of one of Claude Code's own tools that took
+ * The steps Claude Code's `stream-json` lines in `raw` make, in order, redacted with `secrets`:
+ * each message with text or calls of its own tools, and each result its tools returned. A result
+ * names only its call, which its message announced.
+ */
+export function claudeCodeTurnSteps(raw: string, secrets: Record<string, string>): HarnessTurnStep[] {
+  return parseClaudeCodeEvents(raw).flatMap((event): HarnessTurnStep[] => {
+    if (event.type === "user") {
+      return event.results.map((result) => ({ kind: "result", result: { harness: "claude-code", ...result }, call: null }));
+    }
+    const payload = claudeCodeAssistantMessage(event, secrets);
+    return payload === null ? [] : [{ kind: "message", payload }];
+  });
+}
+
+/** The steps each harness that runs a subscription agent's turns makes of the raw lines of its log. */
+export const HARNESS_TURN_STEPS: Record<TurnHarness, (raw: string, secrets: Record<string, string>) => HarnessTurnStep[]> = {
+  "claude-code": claudeCodeTurnSteps,
+};
+
+/**
+ * The row of `result`, the result of `call`, a call of one of its harness's own tools that took
  * `durationMs`: its output redacted with `secrets` and capped as a tool's output is.
  */
-export function claudeCodeToolRecord(
-  result: ClaudeCodeToolResult,
+export function harnessToolRecord(
+  result: HarnessToolResult,
   call: ToolCall,
   durationMs: number,
   secrets: Record<string, string>,
@@ -87,7 +119,7 @@ export function claudeCodeToolRecord(
       duration_ms: durationMs,
       output_filter: "identity",
       ...output,
-      from_harness: "claude-code",
+      from_harness: result.harness,
     },
   ];
 }
