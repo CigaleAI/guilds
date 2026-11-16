@@ -26,11 +26,8 @@ Your key goes to that provider and nowhere else.
 The provider bills you for what your agents use. guilds.run sets no
 spending limit. Set one on the provider's side if you want one.
 
-The dialog also lists **Kimi Code** under **For coding agents only**.
-Skip it for now. It serves coding agents only, and it cannot be the
-default.
-[Model keys](../concepts/model-keys.md#providers)
-explains it.
+[Model keys](../concepts/model-keys.md#providers) lists what each
+provider serves.
 
 ### If you run a local model server
 

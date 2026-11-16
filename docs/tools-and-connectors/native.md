@@ -317,7 +317,7 @@ takes effect from the next run.
 `script_run` runs that file on the agent's machine, in its home,
 through `guilds-script-run`, with a 120-second timeout. The launcher
 writes `arguments` to the script's stdin as JSON, `{}` without one.
-For an agent without `coding`, it is the only tool that runs a command
+For an agent on a key, it is the only tool that runs a command
 there.
 
 `script_delete` removes the stored script, the sandbox file, and the

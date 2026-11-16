@@ -156,10 +156,11 @@ Each concept has a page of its own.
 - [Secrets](secrets.md): encrypted values handed to agents as
   environment variables.
 
-### Coding agents
+### Code work
 
-- [Coding agents](coding/index.md): an agent that leads code work
-  through a coding harness, alone or with others in one guild.
+- [Code work](coding/index.md): a subscription agent working in
+  repositories through its coding harness, alone or with others in
+  one guild.
 - [Harnesses](coding/harnesses.md): Claude Code, Codex, Cursor, and
   Antigravity.
 - [Repositories](coding/repositories.md): the guild's git

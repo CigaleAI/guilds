@@ -76,7 +76,7 @@ copies a secret the agent already gets. It never widens who gets a
 secret. When the secret does not reach the agent, the alias is
 absent. An alias wins over a secret that has the alias's own name.
 
-This is how each coding agent runs on its own operator's harness
+This is how each subscription agent runs on its own operator's harness
 subscription: each operator's token is a secret of its own name, and
 the agent's alias points the harness's variable at it
 ([Harnesses](coding/harnesses.md)).
@@ -88,8 +88,7 @@ agent's environment, decrypts the values, and passes them, with the
 agent's aliases, to every command it runs for the agent:
 
 - the agent's scripts ([Scripts](scripts.md))
-- a coding agent's `shell` commands and what they start
-- a coding agent's harness and the commands it runs, less a few
+- a subscription agent's harness and the commands it runs, less a few
   variables the harness driver removes ([Reference](#run-environment))
 - the browser tools ([Browser](browser.md))
 
@@ -97,8 +96,8 @@ Each command also carries the agent's home and port variables
 ([Agent home](agent-home.md#the-environment-of-every-command)).
 
 A secret can also hold a guild repository's access token. A
-repository that names it gives its value to git on every coding
-agent of the guild, through the agent's tokens file, whoever the
+repository that names it gives its value to git on every
+subscription agent of the guild that picks it, through the agent's tokens file, whoever the
 secret is granted to; only a member who manages the secret may name
 it there ([Access tokens](coding/repositories.md#access-tokens)).
 
@@ -131,7 +130,7 @@ The orchestrator replaces every exact secret value in tool results,
 log lines, and repository diffs with a marker. Tool results are
 redacted before the model reads them or the database stores them.
 The same goes for the credentials of the logins the run uses and a
-coding run's repository tokens.
+subscription turn's repository tokens.
 
 Redaction matches exact strings only. A value that a command
 transformed, encoded, or split is not caught. A value the model has
@@ -457,7 +456,7 @@ Redaction uses:
 - the OAuth tokens, API keys, and signing keys of the connected
   catalog logins the run offers tools from
 - the platform keys that serve platform connector logins
-- a coding run's repository tokens, once minted: GitHub installation
+- a subscription turn's repository tokens, once minted: GitHub installation
   tokens and access tokens, each as `GIT_TOKEN_<n>`
 - a value `secret_store` saved during the generation
 

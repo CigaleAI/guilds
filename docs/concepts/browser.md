@@ -13,8 +13,8 @@ Sites the operator logs the agent in to stay logged in across runs.
 
 Turn the browser on when the agent works on websites that have no
 connector: reading a dashboard, filling a form, checking a web front
-end. A coding agent that debugs a web page can have both the browser
-and [coding](coding/index.md) on.
+end. A subscription agent that debugs a web page in its repositories
+can have the browser on too ([Code work](coding/index.md)).
 
 Use the Browser tab to log the agent in to a site once. The login
 stays in its profile, so later runs start logged in.
@@ -109,7 +109,7 @@ agent has no browser** with **Open Settings**.
 
 Sidebar agents with the browser on show a marker.
 
-**Settings**, Model section (**Lead model** on a coding agent): the
+**Settings**, Model section (Harness on a subscription agent): the
 **Browser** button under **Agent capabilities** turns it on and off. The create dialog offers the same
 button. **Browser language** shows while the browser is on; changing
 it restarts the browser. The button is greyed out while off on a
@@ -120,8 +120,7 @@ browsing to the `browse` tool. While the System One platform key is
 not on, the switch cannot be turned on and a **Not set up** line says
 what the key lacks; a platform admin gets **Set up**, which opens it
 under Admin, Platform keys. With the switch on, **Browser model** picks
-the model `browse` runs among the organisation's models that are not
-for coding agents only, starting on the organisation's default when it
+the model `browse` runs among the organisation's models, starting on the organisation's default when it
 is one of them, else on the first. Turning the switch or the browser
 off clears the model. While the switch and the System One key are on,
 the agent's Tools tab lists `browse` and `browser_eval` under Browser
@@ -178,8 +177,8 @@ show it.
   System One platform key is not on. An update that leaves both as
   they were saves whatever the key has become.
 - `browser_model` is the `provider/model` the agent-optimized browser
-  plans and reads with: not for coding agents only while
-  `browser_optimized` is on, else null, a 422 otherwise. On the same
+  plans and reads with while `browser_optimized` is on, else null, a
+  422 otherwise. On the same
   create or update that checks the key, its provider must be connected
   under Model keys, else 422.
 

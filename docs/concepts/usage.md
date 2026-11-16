@@ -28,8 +28,8 @@ reads (the part of the input the provider served from its cache). Its
 cost comes from the provider when the provider reports one. Otherwise
 it is computed from the model catalog's prices, with cache reads at
 the cache-read rate. A model with no catalog price records a cost of
-0, marked unavailable. A provider that is not billed, such as a local
-endpoint or Kimi Code, has no catalog price.
+0, marked unavailable. A provider that is not billed, the local
+endpoint, has no catalog price.
 
 ### Cost of a harness turn
 

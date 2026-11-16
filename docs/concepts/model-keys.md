@@ -40,23 +40,19 @@ flowchart LR
 
 ### Providers
 
-| Provider | Models | Key from | Kind | Cost shown |
-|---|---|---|---|---|
-| OpenAI | GPT models, from OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | Marketplace | Yes |
-| Anthropic | Claude models, from Anthropic | [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys) | Marketplace | Yes |
-| OpenRouter | Hundreds of models behind one key, Claude and Gemini included | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | Marketplace | Yes |
-| xAI | Grok models | [console.x.ai](https://console.x.ai/) | Marketplace | Yes |
-| DeepInfra | Open-weight models, priced low | [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys) | Marketplace | Yes |
-| Local endpoint | Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run ([details](#the-local-endpoint)) | None required | Marketplace | No |
-| Kimi Code | Kimi models on a Kimi Code plan, for coding agents | [kimi.com/code](https://www.kimi.com/code) | Coding API | No |
+| Provider | Models | Key from | Cost shown |
+|---|---|---|---|
+| OpenAI | GPT models, from OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | Yes |
+| Anthropic | Claude models, from Anthropic | [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys) | Yes |
+| OpenRouter | Hundreds of models behind one key, Claude and Gemini included | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | Yes |
+| xAI | Grok models | [console.x.ai](https://console.x.ai/) | Yes |
+| DeepInfra | Open-weight models, priced low | [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys) | Yes |
+| Local endpoint | Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run ([details](#the-local-endpoint)) | None required | No |
 
-A **Marketplace** provider serves agents, [Prompt
+Every provider serves agents on a key, [Prompt
 Studio](prompt-studio.md), and the [Guild builder](guild-builder.md).
-
-A **Coding API** provider serves [coding agents](coding/index.md)
-only. Its models are offered only to an agent with **Coding** on.
-They cannot be the default. Studio and the Builder do not use them.
-Kimi Code is the one coding provider in core.
+A [subscription agent](agents.md#model-source) runs on its harness
+and uses no model key.
 
 ### Chosen models and the default
 
@@ -64,7 +60,7 @@ The organisation ticks the models it offers from each connected
 provider. Those are the models every picker in the app offers, and
 nothing else.
 
-One chosen marketplace model can be the organisation's default. A new
+One chosen model can be the organisation's default. A new
 agent starts on it. The Studio and Builder landings preselect it.
 Without a default, the create-agent form waits for a choice. Any
 agent can be switched to another chosen model in its **Settings**.
@@ -77,7 +73,7 @@ no spend cap. A limit set on the provider's side is the only one.
 On a provider marked **Cost shown**, each run records what it cost.
 The figure comes from the provider when it reports one, and from the
 catalog's rates otherwise. The **Usage** tabs add it up
-([Usage](usage.md)). A local endpoint and Kimi Code record no cost.
+([Usage](usage.md)). A local endpoint records no cost.
 
 ### Three kinds of key
 
@@ -101,8 +97,7 @@ owner or admin walks through one provider in four steps.
 [Connect a model](../getting-started/model-keys.md) is that walk.
 
 1. **Pick a provider.** One tile per provider, with its logo and a
-   line on what it is for. Coding providers stand apart under **For
-   coding agents only**.
+   line on what it is for.
 2. **Connect.** The key goes into **API key**. The field links to
    where the provider issues one. **Connect** checks the key with
    the provider before saving it. A rejected key is not saved, and
@@ -113,8 +108,7 @@ owner or admin walks through one provider in four steps.
    ticked. **Continue** saves the list.
 4. **Pick a default.** One of the ticked models. New agents, Studio,
    and the Builder start on it. **Finish** saves it. **Skip for now**
-   leaves none, and the create-agent form then waits for a choice. A
-   coding provider ends at step 3.
+   leaves none, and the create-agent form then waits for a choice.
 
 The dialog stays open through steps 3 and 4 once the key is saved,
 so the pickers are not left empty. Then it closes. On a box with no
@@ -129,8 +123,7 @@ on its own once a provider is connected.
 
 **Settings**, **Model keys** holds the same controls as the dialog,
 for every provider at once. It is the one place the full catalog is
-browsed. The providers are split into **Marketplace** and **Coding
-APIs**.
+browsed. The providers sit under **Marketplace**.
 
 The top of the page names the default model. With none, it says that
 every picker starts empty until one is marked.
@@ -169,7 +162,7 @@ it keeps running. Its picker shows the model under **Not offered**.
 
 ### The default
 
-**Make default** on a chosen marketplace model names the
+**Make default** on a chosen model names the
 organisation's default. **Clear default** leaves none.
 
 **Investigate in Studio** on an issue needs a default, and asks for
@@ -198,7 +191,6 @@ then **Replace** it here.
 |---|---|
 | Create an agent, Studio, the Builder, and recipe apply, while no provider is connected | **Connect a model provider first**, with **Open Model keys**, in place of the model picker |
 | Saving an agent on a provider that is not connected | `Connect a <Provider> key on Model keys first.` |
-| An agent with **Coding** off, on a Kimi Code model | `Turn Coding on to use this model.` |
 | A run on a provider whose key was removed | The run ends with `connect a <Provider> key on Model keys` |
 
 Connecting the provider again, with any valid key, lets those agents
@@ -214,8 +206,7 @@ run as they were.
 | Who reads the Model keys page | Every member |
 | Models ticked in the welcome dialog | At least one |
 | Chosen models per provider | At most 500 |
-| Default model | One chosen model on a connected marketplace provider, or none |
-| Coding API models | Only on an agent with **Coding** on. Never the default |
+| Default model | One chosen model on a connected provider, or none |
 | Key check | The provider lists its models for the key, within ten seconds. Nothing is saved on failure |
 | Spend cap | None in guilds.run. Only the provider's own |
 | Key shown | Its last four characters only |
@@ -226,15 +217,14 @@ run as they were.
 
 ### Provider ids
 
-| Id | Label | Kind | Cost computed | API | Base URL | Catalog source |
-|---|---|---|---|---|---|---|
-| `openai` | OpenAI | `marketplace` | Yes | Chat Completions | `https://api.openai.com/v1` | models.dev `openai` |
-| `anthropic` | Anthropic | `marketplace` | Yes | Messages | `https://api.anthropic.com` | models.dev `anthropic` |
-| `openrouter` | OpenRouter | `marketplace` | Yes | Chat Completions | `https://openrouter.ai/api/v1` | models.dev `openrouter` |
-| `xai` | xAI | `marketplace` | Yes | Chat Completions | `https://api.x.ai/v1` | models.dev `xai` |
-| `deepinfra` | DeepInfra | `marketplace` | Yes | Chat Completions | `https://api.deepinfra.com/v1/openai` | models.dev `deepinfra` |
-| `local` | Local endpoint | `marketplace` | No | Chat Completions | The saved `base_url` | The endpoint's `/models` |
-| `kimi` | Kimi Code | `coding` | No | Chat Completions | `https://api.kimi.ai/coding/v1` | models.dev `kimi-code-plan-global` |
+| Id | Label | Cost computed | API | Base URL | Catalog source |
+|---|---|---|---|---|---|
+| `openai` | OpenAI | Yes | Chat Completions | `https://api.openai.com/v1` | models.dev `openai` |
+| `anthropic` | Anthropic | Yes | Messages | `https://api.anthropic.com` | models.dev `anthropic` |
+| `openrouter` | OpenRouter | Yes | Chat Completions | `https://openrouter.ai/api/v1` | models.dev `openrouter` |
+| `xai` | xAI | Yes | Chat Completions | `https://api.x.ai/v1` | models.dev `xai` |
+| `deepinfra` | DeepInfra | Yes | Chat Completions | `https://api.deepinfra.com/v1/openai` | models.dev `deepinfra` |
+| `local` | Local endpoint | No | Chat Completions | The saved `base_url` | The endpoint's `/models` |
 
 A stored model id is `{provider}/{model}`. The provider id is its
 prefix. An unbilled provider's calls record `cost_source:
@@ -284,12 +274,12 @@ An owner or admin route called by a member is also 404. An unknown
 provider is 422.
 
 - `GET /api/orgs/:id/models`, for every member. It returns the
-  organisation's `default`, its `providers` (`id`, `label`, `kind`,
+  organisation's `default`, its `providers` (`id`, `label`,
   `connected`, `source` (`own`, `platform`, or null while not
   connected), `key_hint`, and `base_url` for the local endpoint), and
   its chosen `models` with their capacities (`thinking`,
   `temperature`, `attachments`, `context`, `price` per million
-  tokens, `kind`, `coding_only`). Every picker reads this.
+  tokens). Every picker reads this.
 - `GET /api/orgs/:id/model-providers/:provider/catalog`, for every
   member. It returns `{ models }`: the provider's full catalog, or
   the local endpoint's live list once its URL is saved (422 `save the
@@ -307,13 +297,11 @@ provider is 422.
   with http:// or https://`, `models must be <provider>/{model} ids`,
   `at most 500 models per provider`.
 - `PUT /api/orgs/:id/default-model`, for owners and admins. The body
-  takes `model`: one of the chosen models on a connected marketplace
-  provider, or null (an empty string also clears). It returns
+  takes `model`: one of the chosen models on a connected provider, or
+  null (an empty string also clears). It returns
   `{ default }`. A `model` that is neither a string nor null is 422
   naming the field. 422 `model must be {provider}/{model}` when the
-  id has no provider. 422 when
-  the provider is a coding one (`the default must be a marketplace
-  model`), or when the model is not chosen (`choose <id>
+  id has no provider. 422 when the model is not chosen (`choose <id>
   under <Provider> on Model keys first`).
 - `DELETE /api/orgs/:id/model-providers/:provider`, for owners and
   admins. 204, or 404 when the provider is not connected. 409
@@ -382,8 +370,7 @@ core every connected provider is `own`.
   is `platform` and offers models. Each such provider has a card with
   its models and **Make default**, and no key field, **Choose
   models**, or **Remove**.
-- Under **Marketplace** and **Coding APIs**, a `platform` provider's
-  card reads **Provided by the platform** with the key field.
+- Under **Marketplace**, a `platform` provider's card reads **Provided by the platform** with the key field.
   Connecting the organisation's key makes it `own`: the card then
   holds its models, they leave the platform section, and the
   organisation chooses them from then on.

@@ -47,8 +47,9 @@ anything:
   renamed.
 - **Models.** A role's model in the recipe is a recommendation. Each
   agent gets the model the operator picks.
-- **Harnesses.** Each coding role needs a [harness](coding/harnesses.md).
-  There is no default.
+- **Harnesses.** Each subscription role needs a
+  [harness](coding/harnesses.md): the recipe's, or one the operator
+  picks.
 - **Machine.** Every agent of the apply goes on one
   [machine](machines.md). The machine must be big enough for the
   largest agent and have room for all of them.
@@ -62,7 +63,7 @@ anything:
   recipe's. Otherwise it is a conflict the operator resolves by
   renaming the recipe collection.
 - **Limits.** The organisation must have room for all the agents,
-  browser agents, and coding agents at once.
+  browser agents, and subscription agents at once.
 
 [Models and harnesses](#models-and-harnesses) says where each picker
 starts.
@@ -136,18 +137,17 @@ it shows:
   disabled. The chosen machine shows its planned load bars with what
   the recipe's agents add, and its `machine.*` findings.
 - the plan, as on the recipe's page, with only the sections that have
-  entries. Each agent's card adds its **Agent name**, its **Model**,
-  and for a coding agent its **Harness**. A subscription agent's card
-  has a **Harness**, Cursor and Antigravity only for a role that lists
-  a repository, and no **Model**. The
-  model list is the organisation's chosen models, with a hint naming
-  the recipe's recommendation. The agent's **Coding** or
-  **Subscription** chip names the harness picked. A taken name says *An agent already has this name. Rename
+  entries. Each agent's card adds its **Agent name**, and its
+  **Model**, or on a subscription agent its **Harness**, Cursor and
+  Antigravity only for a role that lists a repository. The model list
+  is the organisation's chosen models, with a hint naming the recipe's
+  recommendation. A subscription agent's **Subscription** chip names
+  the harness picked. A taken name says *An agent already has this name. Rename
   it before creating.* Each connector card adds a **Login**: a live
   login to reuse, or **Connect after the guild exists**.
 
 **Create guild** waits until every agent on a key has a model, every
-coding or subscription agent has a harness, and, with several
+subscription agent has a harness, and, with several
 machines, one is chosen. While no model provider is connected and an
 agent is on a key, a guide to [Model keys](model-keys.md) stands in
 for the model pickers. The
@@ -208,9 +208,9 @@ created, and returns to the library.
 | One open checklist per guild | A guild has at most one open apply |
 | Agent names | Must be free on the whole box |
 | Model | Every agent needs one; none is picked for you when the organisation has no fitting model |
-| Harness | Every coding agent needs one; no default |
+| Harness | Every subscription agent needs one: the recipe's, else the operator's pick |
 | Machine | One machine for all agents; at least the largest agent's minimum; room for all of them, at most 32 agents per machine or the policy's lower cap |
-| Organisation limits | Checked once for the whole batch: agents, browser agents, coding agents, guilds |
+| Organisation limits | Checked once for the whole batch: agents, browser agents, subscription agents, guilds |
 | Routines | Created paused; start on Activate |
 | Secret values | Never written by apply |
 | Organisation-wide secrets and bindings | Never created by apply |
@@ -262,8 +262,7 @@ routine of the recipe.
 
 A role's `config.model` is a recommendation, kept exactly as written.
 Validation warns about one that is unknown, not connected for the
-organisation, or a coding-API model on a role without `coding`, and
-never refuses a recipe for a model reason. The apply preview shows a
+organisation, and never refuses a recipe for a model reason. The apply preview shows a
 picker per role, preselected with the recommendation when the
 organisation has its provider, else the organisation's default, else
 nothing.
@@ -274,12 +273,14 @@ or it is refused. The Builder writes the coach's model into the roles
 it drafts without one. Capturing a guild keeps each agent's live
 model; a subscription agent's role carries its harness and no model.
 
-A coding role's `config.harness` works the same way, with no default.
-The preview shows a harness picker per coding role, preselected with
+A subscription role's `config.harness` works the same way. The
+preview shows a harness picker per subscription role, preselected with
 the role's harness unless the box turns that harness off. The apply
 request carries `harnesses` (`[{ role, harness }]`), and apply refuses
-with `choose a harness for …` while a coding role has none. A harness
-for a role without `coding`, or one the box turns off, is refused. Only a coding role keeps a harness. A role keeps
+with `choose a harness for …` while a subscription role has none. A
+harness for a role on a key is refused with `harnesses.<role>: only a
+subscription role takes a harness`, and one the box turns off is
+refused. Only a subscription role keeps a harness. A role keeps
 the recipe's `harness_model` only when it applies with the harness the
 recipe names; with another harness, its model is the subscription's
 default. It keeps the recipe's `harness_effort` under the same
@@ -289,18 +290,14 @@ validate; otherwise apply leaves them out.
 
 A subscription role ([Recipe format](recipe-format.md)) takes no
 model: the preview lists none for it, and a model chosen for it is
-refused with `models.<role>: a subscription role takes no model`. It
-takes a harness as a coding role does. Cursor and Antigravity run it
+refused with `models.<role>: a subscription role takes no model`.
+Cursor and Antigravity run it
 only when it lists a repository in `config.repositories`: for a role
 that lists none, a recipe's Cursor or Antigravity is not preselected,
 and a chosen one is refused with `harnesses.<role>: <Harness> runs a
 subscription agent only with a repository, since it keeps its own
 system prompt: pick a repository, or another harness`. Its agent is
-created with no model, `coding` off, its harness, and its
-repositories.
-
-Agents from roles with `config.coding: true` are created with coding
-on.
+created with no model, its harness, and its repositories.
 
 ### Preview
 
@@ -311,16 +308,14 @@ on.
 - each role's name: the operator's, else `name_suggestion`, against the
   charset and reserved `user`. A name any agent on the box already
   holds is listed in `collisions`
-- each role's model and each coding or subscription role's harness,
+- each role's model and each subscription role's harness,
   as [Models and harnesses](#models-and-harnesses) describes. The
   preview's `models` lists each role's but a subscription role's
   `recommended` and resolved `model`; its `harnesses` lists each
-  coding or subscription role's `recommended` and resolved `harness`,
-  and `subscription`, whether the role runs on a subscription
+  subscription role's `recommended` and resolved `harness`
 - the organisation's remaining capacity for the whole batch: agents,
-  browser agents, and coding agents (roles with `config.coding: true`,
-  and subscription roles),
-  each against the organisation's limit, `null` where nothing caps it.
+  browser agents, and subscription agents (subscription roles), each
+  against the organisation's limit, `null` where nothing caps it.
   The preview's `remaining` carries `agents`, `browser_agents`, and
   `subscription_agents`
 - the machine every role goes on: the operator's choice
@@ -368,7 +363,7 @@ on.
 The answer also carries `recipe_id`, `recipe_name`, `guild_id`,
 `names`, `findings`, `errors` (the blocking ones), and `creates`, the
 inventory of everything the apply would create: the guild, each agent
-(name, focus, model, browser, coding, Task, enabled native tools),
+(name, focus, model, browser, Task, enabled native tools),
 collections, notes, scripts, routines, connections, secrets, and
 repositories.
 
@@ -411,7 +406,7 @@ applying `read` to a reused table the guild already writes leaves it at
 
 `POST /api/recipes/:id/apply` re-runs the preview, then requires
 `status=ready`, no blocking errors, a machine, no name collision, a
-model for every role, and a harness for every coding role. It answers
+model for every role, and a harness for every subscription role. It answers
 201 with the apply. The steps are ordered so no intermediate state is
 broken:
 

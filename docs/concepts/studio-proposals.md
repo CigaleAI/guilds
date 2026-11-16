@@ -242,7 +242,7 @@ connection tool the agent cannot use today. The widget
 binds a hash of the agent's resolved access
 rendered as text, so a binding moved at any scope since makes the
 request stale and apply a 409 (`apps/orchestrator/src/studio/access.ts`).
-The browser, coding, scripting, and memory switches are agent
+The browser, harness, scripting, and memory switches are agent
 configuration, outside these requests. Access to notes and
 collections is set on each item's access list, outside these
 requests too; a collection request changes the rows of the source

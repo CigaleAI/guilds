@@ -40,7 +40,7 @@ flowchart TD
 - **Its own collections.** A collection that belongs to the guild
   starts read and written by its agents
   ([Collections](collections.md)).
-- **Repositories** its coding agents work in
+- **Repositories** its subscription agents work in
   ([Repositories](coding/repositories.md)).
 
 Notes and files belong to the organisation, not to a guild. Which
@@ -104,7 +104,7 @@ visibility.
   ([Runs](runs.md#tool-result-stubbing)). A new guild starts at 2.
   Only a guild admin changes it, and only a guild admin sets or
   clears an agent's own.
-- **Commit author email** is the address coding agents put on
+- **Commit author email** is the address its agents put on
   commits. Empty, each agent uses its own platform address
   ([Repositories](coding/repositories.md)).
 

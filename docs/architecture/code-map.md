@@ -11,7 +11,7 @@ flowchart LR
   Orch --> Place["sandbox provider"]
   Place --> OS[OpenSandbox]
   Orch --> LLM[model providers<br/>on the organisation's keys]
-  OS --> Docker["one agent-runtime container per machine<br/>Chromium + coding, sized by tier, shared by its agents"]
+  OS --> Docker["one agent-runtime container per machine<br/>Chromium + coding harnesses, sized by tier, shared by its agents"]
 ```
 
 ## Repository
@@ -60,14 +60,14 @@ A repository that extends core holds this one as a submodule
 | Directory | What it holds |
 | --- | --- |
 | `http/` | One `*-routes.ts` file per domain, registered in `routes.ts`, and what the routes share: who a request is from under each `AUTH_MODE` (`identity.ts`), the host and origin check (`origin.ts`), domain errors as HTTP answers (`errors.ts`, `error-handler.ts`), SSE (`sse.ts`), the sandbox proxies (`sandbox-proxy.ts`), the web build (`web-app.ts`), and the MCP listener's routes (`harness-mcp-routes.ts`) |
-| `generation/` | `GenerationLoop` (`index.ts`) and everything a run goes through: its config snapshot, the preparation of its prompts and State, the model calls, its tool calls, a subscription agent's harness turns and their rows (`harness-loop.ts`, `harness-prompt.ts`, `harness-ending.ts`, `parse-claude-code.ts`, `parse-codex.ts`, `parse-cursor.ts`, `parse-antigravity.ts`, `harness-rows.ts`), the MCP server their harnesses call their Guilds tools on (`harness-mcp.ts`), its event stream, the machines' containers, coding runs and their review, idle stops, and the runs an operator opens (`operator.ts`) ([Generation](orchestrator.md#generation)) |
-| `toolbox/` | The native tools, one module per family, the tools a run offers (`offered.ts`), the sandbox command runner (`shell.ts`), the output pipeline (`output.ts`), `code_task` (`harness.ts`), and the `guilds-harness` ops it and a subscription agent's turns share (`harness-ops.ts`) ([Native tools](../tools-and-connectors/native.md)) |
+| `generation/` | `GenerationLoop` (`index.ts`) and everything a run goes through: its config snapshot, the preparation of its prompts and State, the model calls, its tool calls, a subscription agent's harness turns and their rows (`harness-loop.ts`, `harness-prompt.ts`, `harness-ending.ts`, `parse-claude-code.ts`, `parse-codex.ts`, `parse-cursor.ts`, `parse-antigravity.ts`, `harness-rows.ts`), the MCP server their harnesses call their Guilds tools on (`harness-mcp.ts`), its event stream, the machines' containers, a subscription turn's repositories and their review (`coding.ts`, `run-review.ts`), idle stops, and the runs an operator opens (`operator.ts`) ([Generation](orchestrator.md#generation)) |
+| `toolbox/` | The native tools, one module per family, the tools a run offers (`offered.ts`), the sandbox command runner (`shell.ts`), the output pipeline (`output.ts`), the sandbox helper transport (`code.ts`), and the `guilds-harness` ops a subscription agent's turns run (`harness-ops.ts`, `harness-setup.ts`, `harness-result.ts`) ([Native tools](../tools-and-connectors/native.md)) |
 | `connectors/` | One folder per connector core ships, the manifest schema (`manifest.ts`), the adapter contract (`types.ts`), the installed connectors (`registry.ts`), the servers configured from them (`servers.ts`), and the platform integrations they bring (`instance.ts`, `instance-keys.ts`) ([Connectors](../tools-and-connectors/connectors.md)) |
 | `registry/` | Installing connectors from a registry, the code tier, and the instance admin's registry view and changes (`admin.ts`), each applied without a restart ([Connector registry](../tools-and-connectors/connector-registry.md)) |
 | `mcp/` | `McpPool` (`pool.ts`), the catalog and its policy, MCP sessions, logins and the tools they list, an operator's direct tool call, who sees a connector and a login, and the connect flows (`connect-*.ts`, `github-install.ts`, `github-app-manifest.ts`) |
 | `oauth/` | The OAuth mechanics of a manifest's `auth.oauth` (`index.ts`), and the callback and installation-picker pages (`html.ts`) |
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
-| `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), the repositories an agent can use (`agent-repositories.ts`), a coding agent's git side and its git providers (`git.ts`, `github-provider.ts`, `access-token-provider.ts`), the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
+| `coding/` | Guild repositories and the GitHub logins they use (`guild-repositories.ts`), the repositories an agent can use (`agent-repositories.ts`), a subscription agent's git side and its git providers (`git.ts`, `github-provider.ts`, `access-token-provider.ts`), the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Code work](../concepts/coding/index.md)) |
 | `machines/` | Tiers, sizes, slots, placement and who may place on a machine, an organisation's machines as its members manage them (`service.ts`), and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
 | `access/` | Binding resolution and its change log, a run's tools, MCP, and secrets (`runtime.ts`), the access view a scope's page shows (`view.ts`), an agent's page (`agent-page.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM and environment fingerprints (`crypto.ts`), owner and secret validation, and the scopes a credential is visible at |
@@ -132,7 +132,7 @@ One directory per area. The screens are in the
 | `shell/` | Sidebar and rail, guild tag and issue counts, the band over disabled agents, account menu, and the chime and desktop notifications for new messages and reported issues |
 | `home/` | `/`, the empty state, and the not-found page |
 | `guild/` | Guild workspace and its menu, group chat with its message queue and budget, the State tab, and the guild pages (`pages/`) |
-| `agent/` | Create-agent dialogs, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's coding agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
+| `agent/` | The create-agent dialog, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's subscription agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
 | `agent/runs/` | How a run's rows read: grouped into generations, steps, and tool calls (`runFlowModel.ts`), each call's kind (`toolKinds.ts`), and its arguments and result as text (`toolFormat.ts`) |
 | `notes/` | The notes browser, the provenance strip (`LatestChange.tsx`, `changeActor.ts`), and the notes and tables a Task or a note embeds (`embeds.ts`, `InsertPicker.tsx`, `EmbedPreview.tsx`) |
 | `files/` | The files browser: its two sections, upload, download, access, and delete of shared files |
@@ -173,8 +173,8 @@ helper that acts for one agent takes its id, or reads its home from
 | Path | What it is |
 | --- | --- |
 | `Dockerfile` | `python:3.12-slim` plus Chromium or Chrome, TigerVNC, noVNC, ttyd, gost, Playwright 1.52.0, Node.js 24, build tools, GitHub CLI, mise, the coding harnesses, and the helpers below. Codex (`CODEX_VERSION`) is always installed. Claude Code, the Cursor CLI, and the Antigravity CLI (`CLAUDE_CODE_VERSION`, `CURSOR_VERSION`, `ANTIGRAVITY_VERSION`) are installed when the `HARNESSES` build argument names them, which its default does. The harness CLIs it carries are listed at `/usr/local/share/guilds/harnesses` |
-| `guilds-code` | `shell` and background commands, `file_read`, ripgrep search, output shaping, home and machine sizes, and git setup, clones, checkpoints, and diffs; reads the agent's tokens from `/run/guilds/<agent id>/git-tokens.json` |
-| `guilds-harness` | The coding harnesses behind `code_task` and a subscription agent's turns: `check`, `start`, `poll`, `result`, `stop`, and `log`; one driver per harness (Claude Code, Codex, Cursor, Antigravity); call state under `/run/guilds/<agent id>/harness/` ([Harnesses](../concepts/coding/harnesses.md)) |
+| `guilds-code` | Home and machine sizes, and git setup, clones, checkpoints, and diffs; reads the agent's tokens from `/run/guilds/<agent id>/git-tokens.json` |
+| `guilds-harness` | The coding harnesses behind a subscription agent's turns: `check`, `start`, `poll`, `result`, and `stop`; one driver per harness (Claude Code, Codex, Cursor, Antigravity); call state under `/run/guilds/<agent id>/harness/` ([Harnesses](../concepts/coding/harnesses.md)) |
 | `agy` | The Antigravity CLI at the pinned version, installed as `/usr/local/bin/agy` |
 | `claude-code-managed-settings.json` | Claude Code's managed settings at `/etc/claude-code/managed-settings.json`: hooks off, no project MCP servers |
 | `guilds-git-credential` | The git credential helper for every HTTPS host: the token and username of the guild repository git talks to, for its host and path only |

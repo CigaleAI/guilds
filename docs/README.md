@@ -42,9 +42,9 @@ Then one short page each:
   search the web.
 - [Save a recipe](getting-started/save-a-recipe.md) saves the guild
   as one file and applies it again.
-- [Add a coding agent](getting-started/add-a-coding-agent.md) gives
-  the guild an agent that writes code with Claude Code, Codex,
-  Cursor, or Antigravity.
+- [Add an agent that works on code](getting-started/add-a-coding-agent.md)
+  gives the guild a subscription agent that writes code with Claude
+  Code, Codex, Cursor, or Antigravity.
 
 ## Why guilds.run
 
@@ -141,10 +141,10 @@ How the product works, for the operator. Start with
 - [Secrets](concepts/secrets.md) — values handed to an agent's
   commands
 
-**Coding agents**
+**Code work**
 
-- [Coding agents](concepts/coding/index.md) — an agent that leads
-  code work with a coding CLI, alone or with other coding agents
+- [Code work](concepts/coding/index.md) — a subscription agent working
+  in repositories with a coding CLI, alone or with other agents
 - [Harnesses](concepts/coding/harnesses.md) — Claude Code, Codex,
   Cursor, Antigravity, and your subscription
 - [Repositories](concepts/coding/repositories.md) — the guild's git

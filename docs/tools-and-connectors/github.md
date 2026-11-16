@@ -2,7 +2,7 @@
 
 Connecting GitHub gives agents tools for the issues, pull requests,
 branches, files, and CI runs of the repositories you pick, and lets
-coding agents clone and push to them. It runs through one GitHub App
+subscription agents clone and push to them. It runs through one GitHub App
 per box. You set it up in three steps:
 
 1. A platform admin creates the App, once per box.
@@ -65,10 +65,10 @@ A guild or agent without its own login uses its organisation's
 repositories, and an agent its guild's. Connecting a login at the
 narrower scope lets it pick a different set.
 
-Each coding agent the login reaches can then pick these repositories
-in its Settings, and clones the ones it picks at its next run
-([Repositories](../concepts/coding/repositories.md),
-[Add a coding agent](../getting-started/add-a-coding-agent.md)). A
+Each subscription agent the login reaches can then pick these
+repositories in its Settings, and clones the ones it picks at its next
+turn ([Repositories](../concepts/coding/repositories.md),
+[Add an agent that works on code](../getting-started/add-a-coding-agent.md)). A
 repository taken out of the pick is unpicked from each agent the
 login reaches that can no longer use it.
 
@@ -230,9 +230,10 @@ repositories cannot use them. Tools that write start Off
 repositories picked lists no tools.
 
 Tools lists a login's tools like any connector's. The connector's
-On/Off switch turns its tools on or off for that scope. Coding runs
-reach the guild's repositories either way, and also use `git` and
-`gh` in the sandbox.
+On/Off switch turns its tools on or off for that scope. A subscription
+agent's turns reach the repositories it picks with `git` either way;
+its pull requests are opened with these tools, `create_pull_request`
+among them.
 
 The connector's State hook puts `github_repositories` in every run of
 an agent that has GitHub on: the login's picked repositories as
@@ -259,7 +260,8 @@ agents, or the organisation's) that can no longer use it
 ### Tokens
 
 The App's private key and the installation id never leave the
-orchestrator. At each generation start of a coding agent, it signs an
+orchestrator. At each turn of a subscription agent that picks
+repositories, it signs an
 App token (RS256, 9 minutes) and mints, per connection, an
 installation token limited to the repositories the agent picks that
 use that connection, valid one hour ([Repositories](../concepts/coding/repositories.md#tokens)).
@@ -284,5 +286,5 @@ fails with a 422.
 
 When GitHub refuses a token because the installation was removed or
 suspended (404 or 403), the connection becomes `disconnected`, and
-the coding generation or tool call that needed it fails. Deleting the
+the subscription turn or tool call that needed it fails. Deleting the
 connection deletes the guild repositories added through it.

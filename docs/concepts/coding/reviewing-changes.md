@@ -7,13 +7,12 @@ subscription agent that works in repositories ([Repositories](repositories.md#wh
 The difference between two checkpoints is the diff the operator
 reviews: what one harness turn changed.
 
-Checkpoints are separate from the agent's own commits. A coding agent
-commits and pushes with `shell`, a subscription agent's harness with
-its own tools, and either opens pull or merge requests with its host's
-connector tools. Those go through the project's usual review
-on its git host. A commit made by
-the agent or its [harness](harnesses.md) also names the run and the
-agent in its message.
+Checkpoints are separate from the agent's own commits. The agent's
+harness commits and pushes with its own tools, and the agent opens pull
+or merge requests with its host's connector tools. Those go through the
+project's usual review on its git host. A commit made by the agent's
+[harness](harnesses.md) also names the run and the agent in its
+message.
 
 ## Why it exists
 
@@ -51,8 +50,7 @@ at 256 KiB.
 
 ### Commit trailers
 
-A commit made through `shell` or by a harness gets two trailers in its
-message:
+A commit made by a harness gets two trailers in its message:
 
 ```text
 Guild-Run: <run id>
@@ -98,7 +96,7 @@ shows "Couldn't load the diff" with the reason.
 | Where | Local refs in the agent's clone, never pushed, never deleted |
 | Diff size | At most 256 KiB, then cut |
 | Redaction | Every diff, with the agent's secret values |
-| Trailers | On commits made through `shell` or by a harness |
+| Trailers | On commits made by a harness |
 
 ## Reference
 
@@ -146,8 +144,8 @@ GET /api/runs/:id/turns/:call_id/changes/:repository/diff
 The hook is `prepare-commit-msg` in `/usr/local/share/guilds/git-template`,
 the image's `init.templateDir`. It runs `git interpret-trailers` with
 `--if-exists addIfDifferent`, only when `GUILD_RUN_ID` is set, and
-`Guild-Agent` falls back to `unknown`. `shell` and the harness set both
-variables. Clones and `git init` take the hook from the template. A
+`Guild-Agent` falls back to `unknown`. The harness's environment sets
+both variables. Clones and `git init` take the hook from the template. A
 repository that sets its own hooks path skips it.
 
 ### Code

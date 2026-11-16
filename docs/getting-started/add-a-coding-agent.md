@@ -1,13 +1,14 @@
-# Add a coding agent
+# Add an agent that works on code
 
-![Create your own coding agents with Claude Code, Codex, Cursor, or Antigravity](../images/coding-agents.png)
+![Code work with Claude Code, Codex, Cursor, or Antigravity](../images/coding-agents.png)
 
 This page adds an agent that changes code in one of your repositories.
 
-A coding agent hands the code work to a harness. A harness is a coding
-tool: Claude Code, Codex, Cursor, or Antigravity. It runs on the agent's
-machine, on your own subscription. The agent writes the brief, checks
-the result, and reports back.
+The agent is a subscription agent: every turn it runs a harness, a
+coding tool such as Claude Code, Codex, Cursor, or Antigravity, on the
+agent's machine and on your own subscription. The harness reads the
+code, edits it, runs the checks, and commits, in the repositories the
+agent picks.
 
 You need:
 
@@ -18,8 +19,8 @@ You need:
 
 ## 1. Give the machine room to code
 
-A coding agent needs a machine of the **Code** tier: 2 CPUs and 4 GiB.
-Owners and admins of the organisation can change machines.
+A subscription agent needs a machine of the **Code** tier: 2 CPUs and
+4 GiB. Owners and admins of the organisation can change machines.
 
 Open the account menu at the bottom of the sidebar. Click
 **Settings**. Open **Machines**. Click **Edit** on your machine. Pick
@@ -27,41 +28,39 @@ Open the account menu at the bottom of the sidebar. Click
 
 You should see the **Code** tag on the machine's card.
 
-## 2. Create the coding agent
+## 2. Create the agent
 
-In the sidebar, click **Add agent** under the guild. Click **Coding
-agent**. The dialog **Create a coding agent** walks you through five
-steps.
+In the sidebar, click **Add agent** under the guild. The dialog
+**Create an agent** walks you through three steps.
 
 1. **Identity**: type `coder` as the **Name**, and
    `Makes small, tested changes to the code` as the **Focus**. Click
    **Next**.
-2. **Machine**: the step names your machine. Click **Next**.
-3. **Harness**: click **Claude Code**. Leave **Harness model** on
-   **Subscription default** and **Effort** on **Harness default**.
-   Under **Subscription**, click **Log in via CLI**. Click **Next**.
-4. **Lead model**: the lead model is the agent's own model. It plans,
-   talks to you, and reviews the harness's work. Keep the model it
-   offers. Click **Next**.
-5. **Repositories**: a repository belongs to the guild, and each coding
-   agent picks the ones it works on. Each agent gets its own copy of
-   the ones it picks. Fill in the form at the bottom of the step:
-   - **Name**: `demo`
-   - **URL**: the address of your repository, such as
-     `https://github.com/you/demo`
+2. **Model**: set **Model source** to **Subscription**. Click
+   **Claude Code**. Leave **Harness model** on **Subscription default**
+   and **Effort** on its default. Click **Next**.
+3. **Machine**: the step names your machine. Click **Create agent**.
 
-   Set **Credential** to **None: clone anonymously**. Click **Add
-   repository**. You
-   should see `demo` in the list, tagged **anonymous**, and an empty
-   box for `demo` under **This agent works on**. Tick it. Click
-   **Create agent**.
+You should see `coder` under the guild in the sidebar.
 
-You should see `coder` under the guild in the sidebar. Its panel opens
-on the **Prompt** tab. A warning icon shows in its header. Its tooltip
-reads "Coding isn't ready: Claude Code has no credential. Fix it in
-Settings."
+## 3. Pick a repository
 
-## 3. Log in to Claude Code
+A repository belongs to the guild, and each agent picks the ones it
+works on. Each agent gets its own copy of the ones it picks.
+
+Open the agent's **Settings** tab and its **Repositories** section.
+Fill in the add form of the guild's **Repositories**:
+
+- **Name**: `demo`
+- **URL**: the address of your repository, such as
+  `https://github.com/you/demo`
+
+Set **Credential** to **None: clone anonymously**. Click **Add
+repository**. You should see `demo` in the list, tagged
+**anonymous**, and an empty box for `demo` under **This agent works
+on**. Tick it. Click **Save**.
+
+## 4. Log in to Claude Code
 
 Open the agent's **CLI** tab. Click **Start the terminal**. A terminal
 opens on the agent's machine. Type:
@@ -74,20 +73,15 @@ Claude Code starts. Type `/login`. Follow the link it prints, sign in,
 and paste the code back into the terminal. Type `/exit` once it says
 you are logged in.
 
-Click the warning icon in the agent's header. The agent's
-**Settings** tab opens on its **Harness** section. Click **Check
-login**.
+Open the agent's **Settings** tab on its **Harness** section. Click
+**Check login**.
 
-You should see a toast that reads "Logged in as" your account. The
-card under the harness reads **Logged in**, and the warning icon in the
-header is gone.
+You should see a toast that reads "Logged in as" your account, and the
+card under the harness reads **Logged in**.
 
-## 4. Send a first task
+## 5. Send a first task
 
-Open the agent's **Chat** tab. A strip under the tabs sums up the
-coding setup: the Claude Code logo, **Logged in**, and **1 repo**.
-
-Type in the composer:
+Open the agent's **Chat** tab. Type in the composer:
 
 ```text
 Read the README of demo and add a short section on how to run the
@@ -96,21 +90,17 @@ project locally. Check that the file still reads well. Do not push.
 
 Send it.
 
-You should see the run's steps appear one by one. A **Code task** row
-shows the harness's progress lines under it while it works. The
-harness can take a few minutes. Then the agent replies with what it
-changed and what it checked.
+You should see the harness's messages and tool calls appear one by
+one as the run's own. The turn can take a few minutes. Then the agent
+replies with what it changed and what it checked.
 
-## 5. Review the diff
+## 6. Review the diff
 
 Under the reply, a **Changes** panel lists `demo` with its branch and
 the number of lines added and removed. Click **Show diff**.
 
 You should see the change, added lines in one colour and removed lines
 in another.
-
-Click the **Code task** row. Open its **Diff** view. It shows
-the change of that one harness turn.
 
 ## Good to know
 
@@ -120,23 +110,25 @@ the change of that one harness turn.
   connect, or an access token from its git host, kept as a secret.
   [Repositories](../concepts/coding/repositories.md#access-tokens)
   shows which username each host takes.
+- A pull request is opened with the host's connector tool, such as
+  the GitHub connector's `create_pull_request`, once it is switched on
+  for the agent. Without one, the agent's part ends with the pushed
+  branch.
 - A token works instead of a login. Run `claude setup-token` on your
   own computer. In the agent's **Harness** settings, click **Add
-  token**. Paste the token as the **Value** and click **Add secret**.
-  The card under the harness reads **Active token**.
-- Codex runs on a ChatGPT login. Pick **Codex** at the **Harness**
-  step, then type `codex login --device-auth` in the **CLI** tab.
-- Cursor runs on an API key. Pick **Cursor** at the **Harness** step,
-  then click **Paste API key** and paste it.
-- Antigravity runs on a Google login. Pick **Antigravity** at the
-  **Harness** step, then type `agy` in the **CLI** tab and sign in
-  with Google.
+  token**, paste it, and save it as a secret. The card under the
+  harness reads **Active token**.
+- Codex runs on a ChatGPT login. Pick **Codex**, then type
+  `codex login --device-auth` in the **CLI** tab.
+- Cursor runs on an API key, and Antigravity on a Google login (type
+  `agy` in the **CLI** tab and sign in). Both keep their own system
+  prompt, so they run only for an agent that picks a repository.
 - The agent works on its own branch, named after itself and the
-  topic. It pushes and opens pull requests itself, never the harness.
+  topic.
 - A harness marked **Not on machine** is missing from the machine's
   image. The image built by the setup script carries all four.
 
-[Coding agents](../concepts/coding/index.md) explains how the agent,
-the harness, and the repositories fit together.
+[Code work](../concepts/coding/index.md) explains how the agent, the
+harness, and the repositories fit together.
 [Reviewing changes](../concepts/coding/reviewing-changes.md) explains
 the diffs.

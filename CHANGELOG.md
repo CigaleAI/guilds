@@ -8,6 +8,99 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking.** There is no coding agent. Code work is done by a
+subscription agent that picks repositories, in its harness's turn: an
+agent with no `model` and a `harness`, Claude Code, Codex, Cursor, or
+Antigravity. An agent on a model key does no code work in a
+repository. The harness pushes its branch with git and a token that
+pushes alone, and opens a pull request with the provider's connector
+tool, such as the GitHub connector's `create_pull_request`; it never
+holds `GH_TOKEN`. Harness credentials are unchanged: the same secrets,
+vendor API keys such as `CURSOR_API_KEY` included, and the same CLI
+logins. Migration `0032_subscription_agents_only` makes each coding
+agent a subscription agent on its harness: it keeps its harness,
+harness model and effort, and repositories, loses its lead model, and
+its `temperature`, `thinking_level`, `max_tokens`, `max_input_tokens`,
+and `keep_tool_result_generations` take their defaults. A coding agent
+that had no harness keeps its model as an agent on a key, without
+repositories. A Cursor or Antigravity agent without a repository stays
+saved and runs once it picks one; its Settings say so. Old runs keep
+their model and open as they were, their `code_task`, `shell`, and
+`file_read` calls among their messages. Rebuild the orchestrator, the
+runtime image, and the operator app together.
+
+- **API.** `config.coding` is an unknown key: a create or an update
+  that carries it is 422 `unknown keys: coding`, `true` or `false`. A
+  config with a model and a harness is 422 `harness is for a
+  subscription agent, which has no model`; `repositories` on an agent
+  on a key is 422 `repositories are only for subscription agents`. A
+  new agent's limits no longer start at 200 steps and 200 tool calls.
+  The agent list item and the machine list's agents have no `coding`.
+  The tools `code_task`, `shell`, `shell_status`, `file_read`, and
+  `code_search` are gone: no run offers them and seed deletes their
+  bindings. The routes of a `code_task` call's diff and log, and of a
+  run's whole changes, are gone; a turn's diff stays at
+  `GET /api/runs/:id/turns/:call_id/changes/:repository/diff`. A run
+  has no chain: no continuation run, no `run.continued` stream event, and
+  its metadata has no `chain`, `continued_by_run_id`, `repos`, or
+  `harness_task`. A run message's `source` is `system`, `ui`,
+  `schedule`, `group_chat`, or `wake`, and carries no
+  `previous_run_id`. A tool result's metadata keeps `exit_code`,
+  `status`, `final_url`, `steps`, `browser_usage`, and
+  `blocking_issue_id` of the fields a tool reports. A stubbed tool
+  result carries no `path` or `range`, and its hint reads "Tool result
+  omitted to save context. Call the same tool again." `tool.progress`
+  carries a running `browse` call's lines alone. The Builder
+  capabilities payload has `subscription` in place of `coding`. The
+  apply preview's `harnesses` entries have no `subscription`, and its
+  `creates.agents` no `coding`.
+- **Models.** Kimi Code is not a provider: `kimi` leaves the provider
+  ids, a `kimi/…` model is an unknown provider, and the organisation
+  models payload has no provider `kind` and no model `coding_only`.
+  The **Coding APIs** section leaves **Model keys** and the welcome
+  dialog. Migration `0033_kimi_removed` deletes each organisation's
+  Kimi Code key and clears a Kimi default model; an agent left on a
+  `kimi/` model keeps the id and runs once its operator picks a model
+  of a connected provider.
+- **Configuration and environment.** `CODE_RESULT_MAX_BYTES` caps the
+  code helper's result alone. The `log` op of `guilds-harness` and the
+  `shell`, background, `file_read`, and search ops of `guilds-code`
+  are gone; `guilds-code` runs `git_setup`, `checkpoint`, `diff`,
+  `workspace_size`, and `machine_size`, a checkpoint and a diff naming
+  their turn.
+- **Recipes.** `config.coding` on a role is the `config.unknown`
+  error. A subscription role, a harness and no model, is the only role
+  that works in repositories and takes a harness at apply. The
+  findings `harness.coding` and `repositories.coding` are
+  `harness.model` and `repositories.key`; `coding.flag` and
+  `model.coding` are gone; `capacity.subscription` counts subscription
+  roles. The migration rewrites stored recipes: a coding role naming a
+  harness becomes a subscription role without its model and model-loop
+  settings, one naming none keeps its model without repositories, and
+  every role loses `coding`; an open apply's preview loses each
+  agent's `coding` and each harness's `subscription`.
+- **Extension points.** The organisation policy's
+  `maxSubscriptionAgents` counts every agent that holds a harness, a
+  subscription agent, as `countsAsSubscriptionAgent` reads it from
+  `model` alone; `CappedAgentConfig` is `browser` and `model`.
+  `AgentNeeds` is `{ browser, harness }`, and the machine minimum
+  `AGENT_MINIMUMS.coding` is `AGENT_MINIMUMS.harness`. `AgentConfig`
+  has no `coding`; `CODING_MAX_STEPS`, `CODING_MAX_TOOL_CALLS`,
+  `CODING_AGENT_CONFIG_DEFAULTS`, `validateNewAgentConfig`,
+  `assertCodingAgent`, `GitTokenScope`, and `CODING_CAPABILITY` are
+  gone, `SUBSCRIPTION_CAPABILITY` in its place; `GitProvider.mint`
+  takes the repositories alone. `countOrgSubscriptionAgents` lives in
+  `db/orgs.ts`, counting agents whose `model` is null.
+- **Database.** `agents.config` and `runs.config_snapshot` have no
+  `coding`; `run_wakes` has no `root_run_id`, and the index
+  `run_wakes_by_root` is `run_wakes_by_run` on `run_id` and `state`.
+  The migration strips the removed code tools' fields from their
+  results' metadata and turns a `continuation` or `handoff` message
+  into a `system` one.
+
+([SEC-8](docs/architecture/security-register.md#sec-8--content-a-coding-agent-reads-can-steer-its-commands),
+[SEC-66](docs/architecture/security-register.md#sec-66--a-subscription-agents-harness-pushes-to-its-repositories-and-what-it-reads-can-steer-the-push)).
+
 **Rebuild.** A subscription agent runs on Cursor or Antigravity, when
 it has a repository. Neither CLI takes a system prompt in place of its
 own, so the run's composed prompt reaches it as a rules file in the

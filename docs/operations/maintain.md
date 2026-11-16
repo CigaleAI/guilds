@@ -41,7 +41,7 @@ docker build --build-arg BROWSER=chromium --build-arg HARNESSES= --tag agent-run
 run, the update included. After it, build your own image again, or
 give it another tag and name that tag in `SANDBOX_IMAGE`.
 
-A coding run of an agent on a harness the image lacks fails at
+A run of a subscription agent on a harness the image lacks fails at
 start with an error that names the missing harness.
 [Harnesses](../concepts/coding/harnesses.md#harnesses-in-the-image)
 explains which harnesses an image carries.
@@ -58,7 +58,7 @@ and the machines need ownership, permissions, and links under it.
 |---|---|
 | `postgres/` | The PostgreSQL data directory: every table |
 | `opensandbox/` | The sandbox server's SQLite lifecycle store |
-| `workspaces/` | One directory per machine, mounted at `/home` in the machine's container, with one home per agent on it: `workspaces/<machine id>/<agent id>`, `/home/<agent id>` inside. Scripts, the browser profile, and a coding agent's repositories live there |
+| `workspaces/` | One directory per machine, mounted at `/home` in the machine's container, with one home per agent on it: `workspaces/<machine id>/<agent id>`, `/home/<agent id>` inside. Scripts, the browser profile, and a subscription agent's repositories live there |
 | `notes/` | The file tree of the notes store (`NOTES_ROOT`). The server requires it at boot. Notes themselves are rows in PostgreSQL |
 | `attachments/` | Chat images, one file per attachment |
 | `connectors/` | The adapter code of registry connectors installed under the code tier (`CONNECTORS_ROOT`) ([Connector registry](../tools-and-connectors/connector-registry.md#code-tier)) |

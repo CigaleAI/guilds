@@ -88,7 +88,7 @@ flowchart LR
 - `file_delete` deletes a file the agent writes.
 
 The agent then works on a fetched file with a [script](scripts.md),
-or with its code tools when it is a coding agent.
+or with its harness when it is a subscription agent.
 
 ### Where a file is not
 

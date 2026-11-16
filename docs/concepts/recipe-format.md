@@ -58,8 +58,8 @@ flowchart TD
   their tools.
 - **secrets** are the [secrets](secrets.md) each role needs, by name.
 - **external** lists setup the operator does outside the platform.
-- **repositories** are the git repositories coding roles and
-  subscription roles work in, by name and purpose. Each such role lists
+- **repositories** are the git repositories subscription roles work
+  in, by name and purpose. Each such role lists
   the ones it works in. See [Repositories](coding/repositories.md).
 - **design** records the reasoning behind the guild. It does not run.
 
@@ -206,31 +206,30 @@ text looks like a credential (see
 | `browser` | `{ required, instructions, author }`. `required` defaults to `config.browser` and must match it. `instructions` is at most 8 KiB |
 
 A role's `config` holds only [agent configuration keys](agents.md).
-Validation errors with `config.unknown` on any other key.
+Validation errors with `config.unknown` on any other key, `coding`
+among them.
 
-- `config.coding` (boolean) makes a role a coding agent. Any other
-  type is the `coding.flag` error. See
-  [Coding agents](coding/index.md).
-- `config.harness` names a coding role's
-  [harness](coding/harnesses.md): `claude-code`, `codex`, `cursor`, or
-  `antigravity`. It is optional; apply asks for it.
-- A role with a `config.harness`, no `config.model`, and no
-  `config.coding` is a **subscription role**: its agent is a
-  [subscription agent](agents.md#model-source), whose harness is its
-  model source. Its harness is `claude-code` or `codex`. It takes no
-  model at apply, and none of the model loop's settings:
-  `temperature`, `thinking_level`, `max_tokens`, `max_input_tokens`,
-  and `keep_tool_result_generations` other than their defaults are
-  left out. It counts as a coding agent against the organisation's
-  limit.
+- A role with a `config.harness` and no `config.model` is a
+  **subscription role**: its agent is a
+  [subscription agent](agents.md#model-source), whose
+  [harness](coding/harnesses.md) is its model source: `claude-code`,
+  `codex`, `cursor`, or `antigravity`; the operator may pick another at
+  apply. It is the only role that works in repositories
+  ([Code work](coding/index.md)). It takes no model at apply, and none
+  of the model loop's settings: `temperature`, `thinking_level`,
+  `max_tokens`, `max_input_tokens`, and `keep_tool_result_generations`
+  other than their defaults are left out. It counts against the
+  organisation's limit on subscription agents.
+- A role with a `config.model` is a role on a key; a `config.harness`
+  on it is the `harness.model` warning, and apply leaves it out.
 - `config.harness_model` names the model that harness runs, under the
   agent configuration's rule. It is optional; without it the harness
   runs its subscription's default.
 - `config.harness_effort` names the effort that model runs at, under
   the agent configuration's rule. It is optional; without it the model
   runs at its default effort.
-- `config.repositories` lists the repositories a coding role works
-  in, by name, each once. Each name is one the recipe lists in
+- `config.repositories` lists the repositories a subscription role
+  works in, by name, each once. Each name is one the recipe lists in
   `repositories`; another is the `repositories.unknown` error. It is
   optional; a role without it works in none. Apply gives it to the
   role's agent one repository at a time, as each repository's step
@@ -392,11 +391,11 @@ A connection whose server the box lacks is a blocking error:
 
 ### repositories
 
-`repositories` lists the git repositories the guild's coding roles
-work in, by `name` and a one-line `purpose`.
+`repositories` lists the git repositories the guild's subscription
+roles work in, by `name` and a one-line `purpose`.
 
 - `name` matches `^[a-z][a-z0-9_-]{0,62}$`. It is unique. It is the
-  folder under `repos/` in the home of each coding agent whose role
+  folder under `repos/` in the home of each agent whose role
   lists it in `config.repositories`.
 - `purpose` is at most 400 characters.
 - A URL, an owner, or any other key is refused.
@@ -450,20 +449,18 @@ findings `collection.conflict` and `machine.*`
 
 | Code | Severity | When |
 |---|---|---|
-| `capacity.agents`, `capacity.browser`, `capacity.subscription` | error | The roles, the browser roles, or the coding and subscription roles exceed what the organisation may still create under its limits. A limit that is not set never fires. Core sets none |
+| `capacity.agents`, `capacity.browser`, `capacity.subscription` | error | The roles, the browser roles, or the subscription roles exceed what the organisation may still create under its limits. A limit that is not set never fires. Core sets none |
 | `config.unknown` | error | A role's `config` has a key that is not an agent configuration key |
-| `coding.flag` | error | `config.coding` is not a boolean |
 | `repositories.unused` | warning | At `repositories.<name>`: no role lists the repository in `config.repositories` |
 | `repositories.invalid` | error | A role's `config.repositories` is not a list of repository names, each once |
 | `repositories.unknown` | error | A role's `config.repositories` names a repository the recipe does not list |
-| `repositories.coding` | warning | A role that is neither a coding role nor a subscription role lists repositories; apply leaves them out |
+| `repositories.key` | warning | A role on a key lists repositories; apply leaves them out |
 | `model.unknown` | warning | `config.model` is not a known model; apply asks for one |
-| `model.coding` | warning | A coding-API model on a role without `coding`; apply asks for another |
 | `model.not_connected` | warning | The model's provider is not connected for the organisation; apply asks for another |
 | `harness.unknown` | warning | `config.harness` is not one of the four harnesses; apply asks for one |
 | `harness.off` | warning | `config.harness` names a harness the box turns off; apply asks for another |
-| `harness.coding` | warning | A role with a model and without `coding` names a harness; apply leaves it out |
-| `harness.credential` | warning | On every coding role and subscription role: the harness runs on a subscription credential that cannot be known before apply. It names the fix after apply: the secret to grant, or the login to run in the agent's CLI tab |
+| `harness.model` | warning | A role with a model names a harness; apply leaves it out |
+| `harness.credential` | warning | On every subscription role: the harness runs on a subscription credential that cannot be known before apply. It names the fix after apply: the secret to grant, or the login to run in the agent's CLI tab |
 | `subscription.repository` | warning | A subscription role names `cursor` or `antigravity` and lists no repository in `config.repositories`; those keep their own system prompt and run a subscription agent only with a repository, so apply asks for another harness |
 | `subscription.setting` | warning | A subscription role sets a model-loop setting off its default; apply leaves it out |
 | `harness_model.invalid` | warning | `config.harness_model` is not a model name; apply leaves it out |

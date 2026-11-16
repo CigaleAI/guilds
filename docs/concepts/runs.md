@@ -194,8 +194,6 @@ run. The body of the tab is the
   new session opened with the plus stays open while another run is
   generating. While a run is open, sparkles, **Debug in Studio**, opens
   it in Studio ([Prompt Studio](prompt-studio.md#opening-studio)).
-- On a coding agent, a coding strip sits under the tab strip
-  ([Coding agents](coding/index.md)).
 
 The **History** drawer lists every run of the agent, newest first,
 grouped by day, 50 at a time. It filters by kind: **Direct**,
@@ -234,11 +232,11 @@ An ended run shows a banner under the transcript:
 | Rule | Value or behaviour |
 | --- | --- |
 | Generations at a time | one per agent; a second direct message is 409 |
-| Max steps | 30 by default (200 for a new coding agent) |
-| Max tool calls | 50 by default (200 for a new coding agent); counts every tool result in the run |
+| Max steps | 30 by default |
+| Max tool calls | 50 by default; counts every tool result in the run |
 | Wrap-up warning | when 8 tool calls or fewer are left |
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
-| Max wake-ups | 10 by default, for a coding agent too |
+| Max wake-ups | 10 by default |
 | Max turn minutes | 30 by default; a subscription agent's turn of its harness |
 | Full tool results kept | the agent's setting, else its guild's; 2 user turns for a new guild |
 | Results never stubbed | under 2048 bytes |
@@ -297,8 +295,7 @@ At provider-request time the orchestrator hydrates image refs into
 Chat Completions `image_url` parts:
 
 - a 15-minute signed URL;
-- a data URL when the store cannot sign;
-- always a data URL for Kimi, which refuses public image URLs.
+- a data URL when the store cannot sign.
 
 A Messages API provider receives the same parts as image blocks: a
 data URL as a base64 source, a signed URL as a URL source.
@@ -369,14 +366,14 @@ tool-call identity in `file_changes` ([Artifacts](artifacts.md)).
 
 The run stores an immutable snapshot. It holds the agent's config at
 run creation, less `max_scripts`, `max_workspace_mib` and
-`repositories`, which a coding run reads from its agent when it
-starts ([Repositories](coding/repositories.md#where-the-list-comes-from)), with the
+`repositories`, which a subscription agent's turn reads from its agent
+when it starts ([Repositories](coding/repositories.md#where-the-list-comes-from)), with the
 guild's `keep_tool_result_generations` when the agent's is null, and
 with the offered `tools`, `mcp`, `secrets`, and the `scripts`
 ([Scripts](scripts.md#snapshot)). Its `model` states the run's model
 source: a model on a key, or null for a subscription agent's run. A
 subscription agent's run offers the `tools` and `mcp` connections a
-run on a key with the same access would, less the code tools
+run on a key with the same access would
 ([Tools in a run](../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)).
 Its `secrets` reach the harness's environment.
 
@@ -387,8 +384,8 @@ the most wake-ups the run may fire; `wake_after` is refused past it. `max_turn_m
 long a subscription agent's turn runs before its harness is stopped
 ([Harness turns](#harness-turns)).
 
-Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
-`harness` is a coding agent's harness or null, `harness_model` the
+Flags: `browser`, `scripting`, and `memory`. Beside them, `harness` is
+a subscription agent's harness or null, `harness_model` the
 model that harness runs or null for its subscription's default,
 `harness_effort` the effort it runs that model at or null for the
 model's default ([Harnesses](coding/harnesses.md)), and
@@ -408,7 +405,6 @@ The complete tool schemas offered to the model:
 - the browser tools of its mode when `browser` is true: the eight
   step-by-step tools, or `browse` and `browser_eval` while
   `browser_optimized` and the System One platform key are on;
-- the five code tools when `coding` is true;
 - enabled MCP schemas, including curated lists from the CoinGecko,
   Alchemy, X, TwitterAPI.io, Qonto, and DexPaprika adapters, and a
   registry connector's manifest.
@@ -438,8 +434,8 @@ A run whose snapshot has no `model` is a subscription agent's
 harness ([Harness turns](#harness-turns)). Before the machine is
 woken, it fails with `harness.missing` when the snapshot names no
 harness. One whose agent picks repositories, or whose harness is
-Cursor or Antigravity, fails as a coding run does when its agent
-picks none (`coding.repositories_missing`) or one it can no longer use
+Cursor or Antigravity, fails when its agent picks none
+(`coding.repositories_missing`) or one it can no longer use
 (`coding.repositories_gone`).
 
 At start, the loop cancels the machine's idle timer, ensures the
@@ -448,16 +444,14 @@ cap fails the generation with `workspace.full`
 ([Agent home](agent-home.md#the-disk-cap)). After the generation it
 measures and stores both sizes. When the last generation on the
 machine ends, the idle timer starts again
-([Machines](machines.md#idle-timer)). A coding run is checked further
-before the model is called: harness picked, guild repositories,
-harness installed and credentialed, repositories prepared
-([Coding agents](coding/index.md)). A subscription agent's run is
-checked for its harness the same way: not turned off, installed, and
-credentialed, with the same errors
-([Harnesses](coding/harnesses.md#credentials-and-errors)). Its tools
+([Machines](machines.md#idle-timer)). A subscription agent's run is
+checked for its harness before its turn: not turned off, installed,
+and credentialed
+([Harnesses](coding/harnesses.md#credentials-and-errors),
+[Code work](coding/index.md#generation-start-checks)). Its tools
 are narrowed to the agent's live bindings as a model's are; no model
-credential is resolved. One whose agent picks repositories is checked
-for them as a coding run is, then has them prepared before its turn
+credential is resolved. One whose agent picks repositories has them
+prepared before its turn
 ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them)).
 
 It loads every payload in order and repeats the loop up to
@@ -600,8 +594,8 @@ held message as it is.
 
 `metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
-`.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`, under the
-same retention as a code task's. A turn in repositories that changed
+`.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`
+([Agent home](agent-home.md)). A turn in repositories that changed
 one appends an entry to `metadata.turn_changes`
 ([Reviewing changes](coding/reviewing-changes.md#refs)).
 
@@ -679,7 +673,7 @@ floor are stubbed until four remain or the count fits. Policy version
 ### Wake-up rules
 
 `run_wakes` holds a run's wake-ups: `id` (`wk_…`), `run_id`,
-`root_run_id` (the run itself), `agent_id`, `due_at`,
+`agent_id`, `due_at`,
 `message` (the agent's note, or null), `state` (`pending`, `fired`,
 or `cancelled`), `cancel_reason` (`replaced`, `agent`, `operator`, or
 `limit`, set only on a cancelled one), `set_tool_call_id`,
@@ -741,8 +735,7 @@ wake-up as `limit` and records `wake.cancelled` as it ends.
 
 Committed assistant and tool rows, and a fired wake-up's message, are
 published over SSE after the database transaction. Reasoning and token deltas may stream first, and
-a running `code_task` streams its progress lines, and a running
-`browse` call each of its steps, as `tool.progress`.
+a running `browse` call streams each of its steps as `tool.progress`.
 History is the committed row. On reconnect the UI reloads ordered
 history, then consumes new events.
 
