@@ -8,6 +8,18 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** A table's **Records** selects several records at once:
+each row has a box that selects it without opening it, the header's
+box selects every shown record, and a bar shows how many are
+selected, **Clear selection**, and **Edit selected**. **Edit
+selected** sets one column to the same value on each selected record,
+checked as the record dialog checks it, and saves the records one at
+a time. The records the server refuses stay listed in the dialog with
+its reasons, and **Retry failed** sends to them only; the records
+re-read after every edit, refused ones included. A search, a filter,
+a sort or a page that hides a selected record takes it out of the
+selection.
+
 **Rebuild.** A guild's or an agent's **State → Files** selects several
 files at once: each file has a box that selects it without opening
 it, and a bar shows how many are selected, **Clear selection**, and

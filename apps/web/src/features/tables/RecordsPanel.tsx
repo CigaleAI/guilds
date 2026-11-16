@@ -1,4 +1,4 @@
-import { Filter, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Filter, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useClearRecords, useDeleteRecord, useRecords } from "../../api/queries/tables";
 import type {
@@ -11,6 +11,7 @@ import type {
 import { relativeTime } from "../../app/format";
 import {
   Button,
+  Checkbox,
   IconButton,
   SearchField,
   Select,
@@ -26,6 +27,8 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import type { DataTableColumn, DataTableSort } from "@guildsrun/ui";
+import { BulkEditDialog } from "./BulkEditDialog";
+import { recordsInSelection } from "./bulkEdit";
 import { EditableCell } from "./EditableCell";
 import { RecordDialog } from "./RecordDialog";
 import { fits, whereOf, type ColumnFilter } from "./values";
@@ -143,12 +146,23 @@ function FilterInput({ column, filter, onChange }: FilterInputProps) {
   );
 }
 
+/**
+ * The records selected among those shown: their ids in the order shown, the set held, and its
+ * setter. A record the view stops showing leaves the selection, and does not come back with it.
+ */
+function useRecordSelection(shown: readonly CollectionRecord[]) {
+  const [selectionIds, setSelectionIds] = useState<ReadonlySet<number>>(new Set());
+  const selection = recordsInSelection(shown, selectionIds);
+  if (selection.length !== selectionIds.size) setSelectionIds(new Set(selection));
+  return { selection, selectionIds, setSelectionIds };
+}
+
 type RecordsPanelProps = { collection: Collection };
 
 /**
  * A table's records: a ranked search, or filters with sortable, paged rows. A row opens the
- * record to edit, and a cell's pencil edits its value in place; new records and clearing them all
- * start here.
+ * record to edit, and a cell's pencil edits its value in place; the shown records selected take one
+ * column's value at once. New records and clearing them all start here.
  */
 export function RecordsPanel({ collection }: RecordsPanelProps) {
   const [typed, setTyped] = useState("");
@@ -160,6 +174,7 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
   const [open, setOpen] = useState<CollectionRecord | "new" | null>(null);
   const [clearing, setClearing] = useState(false);
   const [removing, setRemoving] = useState<CollectionRecord | null>(null);
+  const [editing, setEditing] = useState<readonly number[] | null>(null);
 
   const where = whereOf(filters, collection.columns);
   const filterCount = Object.keys(where).length;
@@ -171,12 +186,32 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
     offset,
   });
 
+  const shown = records.data?.records ?? [];
+  const { selection, selectionIds, setSelectionIds } = useRecordSelection(shown);
+
   const setFilter = (name: string, filter: ColumnFilter) => {
     setFilters({ ...filters, [name]: filter });
     setOffset(0);
   };
 
   const columns: DataTableColumn<CollectionRecord>[] = [
+    {
+      id: "select",
+      header: (
+        <ShownRecordsBox
+          shownIds={shown.map((row) => row.id)}
+          selectedCount={selection.length}
+          onSelectionChange={setSelectionIds}
+        />
+      ),
+      cell: (row) => (
+        <RecordBox
+          recordId={row.id}
+          selectionIds={selectionIds}
+          onSelectionChange={setSelectionIds}
+        />
+      ),
+    },
     { id: "id", header: "#", sortable: !query, cell: (row) => <IdCell value={row.id} /> },
     ...collection.columns.map((column) => ({
       id: column.name,
@@ -259,6 +294,12 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
         </Button>
       </div>
 
+      <RecordSelectionBar
+        selection={selection}
+        onClear={() => setSelectionIds(new Set())}
+        onEdit={() => setEditing(selection)}
+      />
+
       {filtersOpen ? (
         <RecordFilters
           columns={collection.columns}
@@ -280,7 +321,7 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
           className="min-h-0 flex-1"
           tableClassName="min-w-240"
           columns={columns}
-          rows={records.data?.records ?? []}
+          rows={shown}
           getRowKey={(row) => String(row.id)}
           sort={query ? null : sort}
           onSortChange={(next) => {
@@ -308,6 +349,7 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
       />
 
       <RecordDialog collection={collection} record={open} onClose={() => setOpen(null)} />
+      <BulkEditDialog collection={collection} recordIds={editing} onClose={() => setEditing(null)} />
       <DeleteRecordDialog
         collectionId={collection.id}
         record={removing}
@@ -319,6 +361,72 @@ export function RecordsPanel({ collection }: RecordsPanelProps) {
         onOpenChange={setClearing}
         onCleared={() => setOffset(0)}
       />
+    </div>
+  );
+}
+
+type RecordBoxProps = {
+  recordId: number;
+  selectionIds: ReadonlySet<number>;
+  onSelectionChange: (selectionIds: ReadonlySet<number>) => void;
+};
+
+/** A row's box: checked when its record is selected, and it adds the record or takes it out. */
+function RecordBox({ recordId, selectionIds, onSelectionChange }: RecordBoxProps) {
+  return (
+    <Checkbox
+      aria-label={`Select record #${recordId}`}
+      checked={selectionIds.has(recordId)}
+      onCheckedChange={() => {
+        const next = new Set(selectionIds);
+        if (!next.delete(recordId)) next.add(recordId);
+        onSelectionChange(next);
+      }}
+    />
+  );
+}
+
+type ShownRecordsBoxProps = {
+  /** The ids of the records the view shows. */
+  shownIds: readonly number[];
+  /** How many of them are selected. */
+  selectedCount: number;
+  onSelectionChange: (selectionIds: ReadonlySet<number>) => void;
+};
+
+/** The header's box: checked when every shown record is selected, and it selects them all or none. */
+function ShownRecordsBox({ shownIds, selectedCount, onSelectionChange }: ShownRecordsBoxProps) {
+  const everySelected = shownIds.length > 0 && selectedCount === shownIds.length;
+  return (
+    <Checkbox
+      aria-label="Select every shown record"
+      checked={everySelected ? true : selectedCount > 0 ? "indeterminate" : false}
+      disabled={!shownIds.length}
+      onCheckedChange={() => onSelectionChange(new Set(everySelected ? [] : shownIds))}
+    />
+  );
+}
+
+type RecordSelectionBarProps = {
+  /** The ids of the selected records the view shows, in its order. */
+  selection: readonly number[];
+  onClear: () => void;
+  onEdit: () => void;
+};
+
+/** How many records are selected, with clearing the selection and editing them; nothing when none is. */
+function RecordSelectionBar({ selection, onClear, onEdit }: RecordSelectionBarProps) {
+  if (!selection.length) return null;
+  return (
+    <div className="flex items-center gap-2 px-4 md:px-6">
+      <span className="min-w-0 flex-1 text-sm">{selection.length} selected</span>
+      <Button variant="ghost" size="xs" onClick={onClear}>
+        Clear selection
+      </Button>
+      <Button variant="outline" size="xs" onClick={onEdit}>
+        <Icon icon={Pencil} size={14} />
+        Edit selected
+      </Button>
     </div>
   );
 }

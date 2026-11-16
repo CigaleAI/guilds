@@ -160,6 +160,19 @@ A collection opens at `/tables/<id>` on **Records**.
     one value in place. It opens the dialog's field for the column,
     with **Cancel** and **Save changes**, and checks and sends the value
     as the dialog does. `id` and `updated_at` have no pencil.
+  - The box on a row selects the record without opening it, and the
+    box in the header selects every shown record, or none. A search,
+    a filter, a sort or a page that hides a selected record takes it
+    out of the selection. A bar shows how many are selected,
+    **Clear selection**, and **Edit selected**.
+  - **Edit selected** sets one column to the same value on every
+    selected record. It takes the column, then the dialog's field for
+    it, checked as the dialog checks it; an empty field clears the
+    value. Each record is saved by its own `PATCH`, one at a time, so
+    it keeps its other values and the server applies every rule of a
+    record write to it alone. The records the server refuses stay
+    listed in the dialog with its reasons, and **Retry failed** sends
+    to them only. The dialog does not close while the records save.
   - The delete button on a row removes the record after a confirm.
     Its id is not reused.
   - **Delete all** empties the collection after a confirm that asks

@@ -59,6 +59,18 @@ export type RecordsPage = { total: number; records: CollectionRecord[]; columns:
 /** A record's changed values; null clears one. */
 export type RecordUpdate = { recordId: number; body: RecordChanges };
 
+/** The same changed values for several records, by id; null clears one. */
+export type RecordsUpdate = { recordIds: readonly number[]; body: RecordChanges };
+
+/** A record a bulk edit saved, with the values of it that still do not fit their columns. */
+export type RecordUpdated = { recordId: number; warnings: string[] };
+
+/** A record a bulk edit could not save, and the server's reason. */
+export type RecordUpdateFailure = { recordId: number; reason: string };
+
+/** What a bulk edit did: the records it saved and those it could not, each in the order asked. */
+export type RecordsUpdateOutcome = { updated: RecordUpdated[]; failed: RecordUpdateFailure[] };
+
 /** The bounds a number or time column falls between, each inclusive. */
 export type RecordRange = { gte?: number | string; lte?: number | string };
 
