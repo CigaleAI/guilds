@@ -1,14 +1,13 @@
 import { agentSecrets } from "../access/runtime.js";
 import type { AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { getToolResultMetadata, type RunRow } from "../db/runs.js";
+import type { RunRow } from "../db/runs.js";
 import {
   HARNESSES,
   type Effort,
   type Harness,
   type HarnessLogin,
   type HarnessLogins,
-  type MessageMetadata,
   type RunRepositoryChange,
 } from "../db/schema/index.js";
 import { codingRepositoriesDatabase, loadUsableRepositories } from "../coding/agent-repositories.js";
@@ -23,7 +22,6 @@ import {
   isHarness,
   type HarnessInfo,
 } from "../coding/harnesses.js";
-import type { HarnessLog } from "../toolbox/harness-ops.js";
 import type { HarnessCheck } from "../toolbox/harness-setup.js";
 import type { CodeDiff, CodingRuns } from "./coding.js";
 import { RunRequestError } from "./errors.js";
@@ -32,7 +30,7 @@ import { RunRequestError } from "./errors.js";
 export type RunReviewServices = {
   db: Queryable;
   /** The coding runs whose machines hold the repositories; absent on a box without a generation loop. */
-  coding: Pick<CodingRuns, "runDiff" | "harnessLog" | "checkHarness"> | null;
+  coding: Pick<CodingRuns, "runDiff" | "checkHarness"> | null;
 };
 
 /**
@@ -68,7 +66,7 @@ export type AgentHarness = {
 /** What a run changed: each repository's change, as its end checkpoint reports it. */
 export type RunChanges = { repositories: RunRepositoryChange[] };
 
-/** A run's, one `code_task` call's, or one subscription turn's diff in one repository. */
+/** A run's, or one subscription turn's, diff in one repository. */
 export type RunDiff = { repository: string } & CodeDiff;
 
 function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["coding"]> {
@@ -76,22 +74,6 @@ function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["c
     throw new RunRequestError(503, "generation is unavailable");
   }
   return services.coding;
-}
-
-/** The repository a `code_task` result's diff is in, or null when the result has no end checkpoint. */
-function taskDiffRepository(metadata: MessageMetadata | null): string | null {
-  if (metadata?.tool_name !== "code_task" || !metadata.end_sha) {
-    return null;
-  }
-  return metadata.repository || null;
-}
-
-/** The harness a `code_task` call ran on, when its result names one and the log it kept. */
-function taskLogHarness(metadata: MessageMetadata | null): Harness | null {
-  if (metadata?.tool_name !== "code_task" || !metadata.log_path) {
-    return null;
-  }
-  return metadata.harness ?? null;
 }
 
 /** The repositories a run changed, as its metadata lists them. */
@@ -188,26 +170,4 @@ export async function turnDiff(
     throw new RunRequestError(404, "that turn changed nothing in that repository");
   }
   return { repository, ...(await codingOf(services).runDiff(run.id, repository, callId)) };
-}
-
-/** What one `code_task` call of a run changed. */
-export async function taskDiff(
-  services: RunReviewServices,
-  run: RunRow,
-  callId: string,
-): Promise<RunDiff> {
-  const repository = taskDiffRepository(await getToolResultMetadata(services.db, run.id, callId));
-  if (repository === null) {
-    throw new RunRequestError(404, "that call has no task diff");
-  }
-  return { repository, ...(await codingOf(services).runDiff(run.id, repository, callId)) };
-}
-
-/** The log the harness of one `code_task` call kept. */
-export async function taskLog(services: RunReviewServices, run: RunRow, callId: string): Promise<HarnessLog> {
-  const harness = taskLogHarness(await getToolResultMetadata(services.db, run.id, callId));
-  if (harness === null) {
-    throw new RunRequestError(404, "that call has no harness log");
-  }
-  return codingOf(services).harnessLog(run.id, callId, harness);
 }

@@ -34,7 +34,6 @@ import type { SandboxHandle } from "../sandbox/sdk.js";
 import { redact } from "../secrets/index.js";
 import { callSegment, runCodeHelper } from "../toolbox/code.js";
 import { endLostTurn, type LostTurnEnd } from "../toolbox/harness.js";
-import { readHarnessLog, type HarnessLog } from "../toolbox/harness-ops.js";
 import { interruptedText } from "../toolbox/harness-result.js";
 import { assertHarnessReady, checkHarnessOn, HarnessSetupError, type HarnessCheck } from "../toolbox/harness-setup.js";
 import { createToolHooks, type ToolRun } from "../toolbox/index.js";
@@ -281,7 +280,7 @@ export class CodingRuns {
 
   /**
    * The diff a run made in one repository, between its start and end checkpoints, or with
-   * `task` between one `code_task` call's, from the agent's machine (woken as the CLI tab
+   * `task` between one subscription turn's, from the agent's machine (woken as the CLI tab
    * wakes it), at most 256 KiB and redacted.
    */
   async runDiff(
@@ -300,26 +299,6 @@ export class CodingRuns {
       throw new RunRequestError(404, errorMessage(error));
     }
     return { diff: redact(result.text, await this.secretValues(agent)), truncated: result.meta.truncated === true };
-  }
-
-  /**
-   * The kept event log of one `code_task` call of a run, run on `harness`, from the agent's
-   * machine (woken as the CLI tab wakes it), redacted with the agent's secrets. Throws 404 once
-   * the agent's home no longer keeps it.
-   */
-  async harnessLog(runId: string, callId: string, harness: Harness): Promise<HarnessLog> {
-    const { agent, sandbox } = await this.runAgent(runId);
-    const secrets = await this.secretValues(agent);
-    let log: HarnessLog | null;
-    try {
-      log = await readHarnessLog(maintenanceRun(runId, agent, sandbox), harness, callSegment(callId), secrets);
-    } catch (error) {
-      throw new RunRequestError(503, errorMessage(error));
-    }
-    if (log === null) {
-      throw new RunRequestError(404, "that log is no longer kept: an agent's home keeps its 20 most recent runs");
-    }
-    return log;
   }
 
   /**

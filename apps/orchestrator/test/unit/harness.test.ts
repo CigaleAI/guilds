@@ -24,7 +24,7 @@ import { ToolArgumentError } from "../../src/toolbox/errors.js";
 import { decodeToolArguments } from "../../src/toolbox/types.js";
 import type { JsonValue } from "../../src/lib/json.js";
 import { BRIEF_PREAMBLE, buildBrief } from "../../src/toolbox/harness-brief.js";
-import { HARNESS_LOG_MAX_BYTES, launchHarness, opsRun, readHarnessLog, shownProgressLines } from "../../src/toolbox/harness-ops.js";
+import { launchHarness, opsRun, shownProgressLines } from "../../src/toolbox/harness-ops.js";
 import { codeTaskText, failureDetail, formatDuration, isChangedFile, type CodeTaskOutcome } from "../../src/toolbox/harness-result.js";
 import { assertHarnessReady, checkHarnessOn, HarnessSetupError } from "../../src/toolbox/harness-setup.js";
 import { applySecretAliases } from "../../src/access/runtime.js";
@@ -1210,47 +1210,6 @@ describe("code_task arguments", () => {
     assert.equal(timeoutMinutes({ timeout_minutes: 90 }), 60);
     assert.equal(timeoutMinutes({ timeout_minutes: 0 }), 1);
     assert.equal(timeoutMinutes({ timeout_minutes: 2.7 }), 2);
-  });
-});
-
-describe("a kept harness log", () => {
-  function keptLog(lines: string[]) {
-    const sandbox = new HostCodeSandbox("a_1");
-    const folder = path.join(sandbox.home, ".runs", "r_log");
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(path.join(folder, "call_log.harness.jsonl"), lines.join("\n") + "\n");
-    const ctx = toolFixture({ run_id: "r_log", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
-    return ctx;
-  }
-
-  test("reads as its progress lines and its raw JSONL, both redacted", async () => {
-    const events = [...recorded("claude-code"), JSON.stringify({ type: "note", text: `token ${TOKEN}` }), "not json"];
-    const ctx = keptLog(events);
-    const log = await readHarnessLog(ctx.run, "claude-code", "call_log", { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
-    assert.ok(log);
-    assert.ok(log.lines.includes("Bash: python3 greet.py"), log.lines.join("\n"));
-    assert.equal(log.lines_truncated, false);
-    assert.equal(log.raw_truncated, false);
-    assert.equal(log.events, events.length - 1);
-    assert.equal(log.unparsed, 1);
-    assert.ok(log.raw.includes(SESSION));
-    assert.ok(!log.raw.includes(TOKEN), "the raw log is redacted");
-    assert.ok(log.bytes > 0);
-  });
-
-  test("keeps whole lines from the start of a raw log past its cap", async () => {
-    const line = JSON.stringify({ type: "assistant", text: "x".repeat(1000) });
-    const ctx = keptLog(Array.from({ length: Math.ceil(HARNESS_LOG_MAX_BYTES / line.length) + 10 }, () => line));
-    const log = await readHarnessLog(ctx.run, "claude-code", "call_log", {});
-    assert.ok(log);
-    assert.equal(log.raw_truncated, true);
-    assert.ok(Buffer.byteLength(log.raw) <= HARNESS_LOG_MAX_BYTES);
-    assert.ok(log.raw.endsWith(`${line}\n`), "the cut falls between lines");
-  });
-
-  test("is null once the agent's home no longer keeps it", async () => {
-    const ctx = keptLog([]);
-    assert.equal(await readHarnessLog(ctx.run, "claude-code", "call_gone", {}), null);
   });
 });
 

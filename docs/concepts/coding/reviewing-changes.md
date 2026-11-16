@@ -166,7 +166,6 @@ nothing.
 ```text
 GET /api/runs/:id/changes                     diffstat per repository
 GET /api/runs/:id/changes/:repository/diff    the run's start..end
-GET /api/runs/:id/tasks/:call_id/diff         one code_task's start..end
 GET /api/runs/:id/turns/:call_id/changes/:repository/diff
                                               one subscription turn's start..end
 ```
@@ -178,9 +177,6 @@ GET /api/runs/:id/turns/:call_id/changes/:repository/diff
   redacted with the agent's secret values.
 - A repository the run did not record is 404 ("the run changed nothing
   in that repository").
-- A call that is not a `code_task`, or has no end checkpoint, is 404
-  ("that call has no task diff"). The task diff names the call's
-  repository.
 - A turn the run did not record as changing the repository is 404
   ("that turn changed nothing in that repository").
 - Missing checkpoints in the repository, or a failing `git diff`, is

@@ -62,17 +62,6 @@ export const HarnessCheckMeta = Type.Object({
 });
 export type HarnessCheckMeta = Static<typeof HarnessCheckMeta>;
 
-/** What the `log` op says of a call's kept log: whether it is gone, its progress lines, what was cut, its size, and its events. */
-const HarnessLogMeta = Type.Object({
-  missing: Type.Optional(Type.Boolean()),
-  lines: Type.Optional(Type.Array(Type.String())),
-  lines_truncated: Type.Optional(Type.Boolean()),
-  raw_truncated: Type.Optional(Type.Boolean()),
-  bytes: Type.Optional(Type.Number()),
-  events: Type.Optional(Type.Number()),
-  unparsed: Type.Optional(Type.Number()),
-});
-
 /**
  * A repository's record in a checkpoint's meta: the task's start and end commits, and what changed
  * between them; each file is kept when it reads as a changed file.
@@ -278,53 +267,6 @@ export async function endHarnessTurn(
     return { settled: result === null ? "unreadable" : "exited", stopped: null, result };
   }
   return { settled, ...(await stopHarness(ops, callId, harness)) };
-}
-
-/** The raw event log the app reads of one `code_task` call, at most this much of it. */
-export const HARNESS_LOG_MAX_BYTES = 256 * 1024;
-
-/** One `code_task` call's kept event log: its progress lines, and its raw JSONL from the start. */
-export type HarnessLog = {
-  lines: string[];
-  lines_truncated: boolean;
-  raw: string;
-  raw_truncated: boolean;
-  /** The log's whole size in bytes. */
-  bytes: number;
-  events: number;
-  /** Lines of the log that were not JSON. */
-  unparsed: number;
-};
-
-/**
- * Reads the kept log of call `callId` of `run` with `guilds-harness log`, redacted with
- * `secrets`; null once the agent's home no longer keeps it.
- */
-export async function readHarnessLog(
-  run: ToolRun,
-  harness: Harness,
-  callId: string,
-  secrets: Record<string, string>,
-): Promise<HarnessLog | null> {
-  const result = await runCodeHelper(
-    run,
-    createToolHooks(),
-    { op: "log", call_id: callId, harness },
-    { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS, maxBytes: HARNESS_LOG_MAX_BYTES },
-  );
-  const meta = keepMatching(HarnessLogMeta, result.meta) ?? {};
-  if (meta.missing === true) {
-    return null;
-  }
-  return {
-    lines: shownProgressLines(meta.lines ?? [], secrets),
-    lines_truncated: meta.lines_truncated === true,
-    raw: redact(result.text, secrets),
-    raw_truncated: meta.raw_truncated === true,
-    bytes: meta.bytes ?? 0,
-    events: meta.events ?? 0,
-    unparsed: meta.unparsed ?? 0,
-  };
 }
 
 /** Takes the task's `start` or `end` checkpoint in `repository`; the repository's record, or empty when it fails. */

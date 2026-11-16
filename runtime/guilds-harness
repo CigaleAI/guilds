@@ -25,8 +25,6 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
 - `result`: the final message, the session id, and how the turn ended, read from the log.
 - `stop`: SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the
   supervisor to record the exit.
-- `log`: a call's event log as it is kept in `.runs/`, for the app: every normalised progress
-  line, and the raw JSONL from its start, both within `max_bytes`.
 
 A large request arrives as a file under /run/guilds/requests, which this helper reads and
 deletes. The helper prints one base64 JSON envelope: {"ok": true, "text": ..., "meta":
@@ -69,7 +67,6 @@ STOP_GRACE = 10.0
 EXIT_WAIT = 5.0
 POLL_MAX_BYTES = 256 * 1024
 POLL_MAX_LINES = 60
-LOG_MAX_LINES = 2000
 STDERR_TAIL_BYTES = 2000
 CHILD_ENV = {
     "PAGER": "cat",
@@ -1434,46 +1431,12 @@ def op_stop(spec: dict[str, Any]) -> dict[str, Any]:
     return {"text": f"stopped {call_id}" if exited else f"{call_id} did not stop", "meta": meta}
 
 
-def _head_lines(data: bytes, max_bytes: int) -> tuple[str, bool]:
-    """The whole lines of `data` within `max_bytes`, and whether any were left out."""
-    if len(data) <= max_bytes:
-        return data.decode("utf-8", errors="replace"), False
-    head = data[:max_bytes]
-    cut = head.rfind(b"\n")
-    return head[: cut + 1 if cut >= 0 else max_bytes].decode("utf-8", errors="replace"), True
-
-
-def op_log(spec: dict[str, Any]) -> dict[str, Any]:
-    driver = _driver(spec)
-    run_id = _safe_segment(spec.get("run_id"), "run_id")
-    call_id = _safe_segment(spec.get("call_id"), "call_id")
-    path = RUNS / run_id / f"{call_id}.harness.jsonl"
-    if path.is_symlink() or not path.is_file():
-        return {"text": f"no log for {call_id}", "meta": {"missing": True}}
-    data = path.read_bytes()
-    events, unparsed = _parse_events(data)
-    lines = [" ".join(line.split()) for event in events for line in driver.progress(event) if line.strip()]
-    max_bytes = spec.get("max_bytes")
-    raw, raw_truncated = _head_lines(data, max_bytes if isinstance(max_bytes, int) and max_bytes > 0 else len(data))
-    meta = {
-        "missing": False,
-        "lines": lines[:LOG_MAX_LINES],
-        "lines_truncated": len(lines) > LOG_MAX_LINES,
-        "events": len(events),
-        "unparsed": unparsed,
-        "bytes": len(data),
-        "raw_truncated": raw_truncated,
-    }
-    return {"text": raw, "meta": meta}
-
-
 OPS = {
     "check": op_check,
     "start": op_start,
     "poll": op_poll,
     "result": op_result,
     "stop": op_stop,
-    "log": op_log,
 }
 
 

@@ -211,31 +211,6 @@ retention: `.runs/` keeps the folders of the agent's 20 most recent
 runs, so the log of an older run is gone. Reading it back with
 `file_read` passes through redaction.
 
-### Harness log
-
-```text
-GET /api/runs/:id/tasks/:call_id/log
-```
-
-Returns `{ lines, lines_truncated, raw, raw_truncated, bytes, events,
-unparsed }` from `guilds-harness log`, run on the agent's machine,
-waking it, as the task diff is read:
-
-- `lines` are the log's events as progress lines, at most the first
-  2000, each redacted then cut at 240 characters like live progress.
-- `raw` is the JSONL, whole lines from the start within 256 KiB;
-  `bytes` is the whole log's size.
-- Both are redacted with the agent's secret values. The run's GitHub
-  tokens are minted per run and are not in that set
-  ([SEC-32](../../architecture/security-register.md#sec-32--the-harness-log-the-app-reads-is-redacted-only-with-the-agents-secret-values)).
-- A call that is not a `code_task`, or whose result names no harness
-  and log, is 404 ("that call has no harness log"), and the machine is
-  not woken. A log already pruned from the agent's home is 404 too:
-  "that log is no longer kept: an agent's home keeps its 20 most
-  recent runs".
-- A log that cannot be read from the machine, secrets that cannot be
-  read to redact it, or a box without generation is 503.
-
 ### The preamble
 
 Every brief starts with the text of
@@ -336,10 +311,10 @@ harness owns its session state.
 `apps/orchestrator/src/toolbox/harness.ts` (`code_task`),
 `harness-brief.ts` (the brief), `harness-brief.md` (its preamble),
 `harness-setup.ts` (the harness
-checks), `harness-ops.ts` (the ops, the checkpoints, the harness log),
+checks), `harness-ops.ts` (the ops and the checkpoints),
 `harness-result.ts` (the result),
 `apps/orchestrator/src/generation/coding.ts` (a lost task stopped at
-startup, and the harness log read for the app),
+startup),
 `runtime/guilds-harness` (the ops and the drivers), and in the app
 `apps/web/src/features/agent/chat/FlowView.tsx`,
 `apps/web/src/features/agent/chat/ToolCallDetail.tsx`, and

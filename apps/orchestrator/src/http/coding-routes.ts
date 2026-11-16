@@ -16,8 +16,6 @@ import {
   listRunChanges,
   loadHarnessView,
   repositoryDiff,
-  taskDiff,
-  taskLog,
   turnDiff,
   type RunReviewServices,
 } from "../generation/run-review.js";
@@ -35,9 +33,6 @@ const ConnectionParams = Type.Object({ connection_id: Type.String() });
 
 /** The path of one run. */
 const RunParams = Type.Object({ run_id: Type.String() });
-
-/** The path of one coding task of a run. */
-const TaskParams = Type.Object({ run_id: Type.String(), call_id: Type.String() });
 
 /** The path of one repository a run changed. */
 const RunRepositoryParams = Type.Object({ run_id: Type.String(), repository: Type.String() });
@@ -142,26 +137,6 @@ export async function registerCodingRoutes(app: RouteApp, deps: RouteDeps): Prom
     const user = await currentUser(db, request, deps);
     return listRunChanges(await requireVisibleRun(db, request.params.run_id, user.id));
   });
-
-  app.get(
-    "/api/runs/:run_id/tasks/:call_id/diff",
-    { schema: { params: TaskParams } },
-    async (request) => {
-      const user = await currentUser(db, request, deps);
-      const run = await requireVisibleRun(db, request.params.run_id, user.id);
-      return taskDiff(review, run, request.params.call_id);
-    },
-  );
-
-  app.get(
-    "/api/runs/:run_id/tasks/:call_id/log",
-    { schema: { params: TaskParams } },
-    async (request) => {
-      const user = await currentUser(db, request, deps);
-      const run = await requireVisibleRun(db, request.params.run_id, user.id);
-      return taskLog(review, run, request.params.call_id);
-    },
-  );
 
   app.get(
     "/api/runs/:run_id/turns/:call_id/changes/:repository/diff",

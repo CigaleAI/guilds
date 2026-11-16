@@ -416,21 +416,6 @@ export async function listMessages(pool: Queryable, runId: string): Promise<Mess
   return result.rows;
 }
 
-/** The metadata of a run's result for one tool call, or null when the call has no result. */
-export async function getToolResultMetadata(
-  pool: Queryable,
-  runId: string,
-  toolCallId: string,
-): Promise<MessageMetadata | null> {
-  const result = await pool.query<Pick<MessageRow, "metadata">>(
-    `SELECT metadata FROM messages
-     WHERE run_id = $1 AND payload->>'role' = 'tool' AND metadata->>'tool_call_id' = $2
-     ORDER BY seq LIMIT 1`,
-    [runId, toolCallId],
-  );
-  return result.rows[0]?.metadata ?? null;
-}
-
 export async function listPayloads(pool: Queryable, runId: string): Promise<MessagePayload[]> {
   return (await listMessages(pool, runId)).map((row) => row.payload);
 }

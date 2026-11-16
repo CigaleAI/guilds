@@ -5,7 +5,8 @@ the other chapters, this one keeps history. Each entry says what
 was exposed, how it was fixed or what fixing it takes, and what
 risk remains. Entries are not removed once fixed. Newest first.
 Ids are never reused. A status is **Open**, **Open, accepted** (the
-risk is kept by design), or **Fixed** with its date.
+risk is kept by design), **Fixed** with its date, or **Closed** with
+its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
@@ -44,7 +45,7 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-35](#sec-35--evidence-the-studio-coach-reads-can-steer-a-proposal-to-widen-an-agents-access) | Evidence the Studio coach reads can steer a proposal to widen an agent's access | Open, accepted |
 | [SEC-34](#sec-34--a-studio-session-kept-working-after-its-user-could-no-longer-see-the-guild) | A Studio session kept working after its user could no longer see the guild | Fixed 2026-10-17 |
 | [SEC-33](#sec-33--any-organisation-owner-or-admin-can-find-users-by-name-and-add-them-without-their-consent) | Any organisation owner or admin can find users by name and add them without their consent | Open |
-| [SEC-32](#sec-32--the-harness-log-the-app-reads-is-redacted-only-with-the-agents-secret-values) | The harness log the app reads is redacted only with the agent's secret values | Open |
+| [SEC-32](#sec-32--the-harness-log-the-app-reads-is-redacted-only-with-the-agents-secret-values) | The harness log the app reads is redacted only with the agent's secret values | Closed 2026-11-16 |
 | [SEC-31](#sec-31--cursor-runs-a-repositorys-hooks) | Cursor runs a repository's hooks | Open, accepted |
 | [SEC-30](#sec-30--personal-harness-subscriptions-used-inside-a-shared-organisation-may-fall-outside-the-vendors-terms) | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
 | [SEC-29](#sec-29--a-repository-can-carry-configuration-its-coding-harness-loads) | A repository can carry configuration its coding harness loads | Open |
@@ -1512,7 +1513,7 @@ name lookups to the instance admin.
 
 ## SEC-32 — The harness log the app reads is redacted only with the agent's secret values
 
-**Status:** open.
+**Status:** closed 2026-11-16.
 
 **Found:** 2026-10-16, adding the **Log** view of a `code_task` call.
 
@@ -1541,6 +1542,12 @@ unredacted.
 **Residual risk:** a value that is not one of the agent's secrets
 shows as written. A run's GitHub tokens expire within the hour, so a
 log read later shows an expired token.
+
+**Closed:** 2026-11-16. The route, `harnessLog`, `readHarnessLog`,
+and the `log` op are removed with the **Log** view of a `code_task`
+call. No route serves a harness's event log; the log stays in the
+agent's home, which the members who see the run's guild reach through
+the agent's terminal.
 
 ## SEC-31 — Cursor runs a repository's hooks
 
