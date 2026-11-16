@@ -41,7 +41,7 @@ const RECORDED = path.join(HERE, "../helpers/harness");
 const SESSION = "0f9c2a64-5b1e-4c3d-9a8e-2f1d7c6b5a40";
 const TOKEN = "oauth-subscription-token";
 
-type Recorded = Pick<StubCall, "argv" | "cwd" | "stdin" | "env" | "mcp_config" | "mcp_config_mode" | "env_holding_seek">;
+type Recorded = Pick<StubCall, "argv" | "cwd" | "stdin" | "system_prompt" | "env" | "mcp_config" | "mcp_config_mode" | "env_holding_seek">;
 
 const timing = { ...harnessTiming };
 before(() => {
@@ -773,21 +773,47 @@ describe("a harness started for a run's own turn", () => {
     assert.equal(existsSync(path.join(sandbox.home, ".runs", "r_turn", "call_turn.prompt.md")), false);
   });
 
+  test("a system prompt replaces Codex's own instructions from a private file in the run folder that goes with the call", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => [JSON.stringify({ stub: "hang" })]);
+    const op = turnOps(sandbox, "call_codex_turn");
+    await op("start", { harness: "codex", prompt: "hello", system_prompt: "You are the guild's agent." });
+    const systemFile = path.join(sandbox.home, ".runs", "r_turn", "call_codex_turn.system.md");
+    for (let attempt = 0; attempt < 100 && !calls().length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const [call] = calls();
+    assert.ok(call);
+    const at = call.argv.indexOf(`model_instructions_file=${JSON.stringify(systemFile)}`);
+    assert.equal(call.argv[at - 1], "-c");
+    assert.ok(at > call.argv.indexOf("--ignore-user-config"), "after the overrides that keep the home's configuration out");
+    assert.equal(call.system_prompt, "You are the guild's agent.");
+    assert.equal(statSync(systemFile).mode & 0o777, 0o600);
+    assert.equal(call.stdin, "hello", "the prompt stays on stdin");
+    await op("stop", { harness: "codex" });
+    await op("result", { harness: "codex" });
+    assert.equal(existsSync(systemFile), false, "the system prompt goes with the call's state");
+  });
+
   test("a CLI that takes no system prompt refuses one and never starts", async () => {
-    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
-    const op = turnOps(sandbox, "call_codex");
-    await assert.rejects(op("start", { harness: "codex", prompt: "hello", system_prompt: "x" }), /codex takes no system prompt/);
+    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"));
+    const op = turnOps(sandbox, "call_cursor");
+    await assert.rejects(op("start", { harness: "cursor", prompt: "hello", system_prompt: "x" }), /cursor takes no system prompt/);
     assert.equal(calls().length, 0);
   });
 
   /** A turn's MCP server: the URL the stand-in is given, and a token of the length the orchestrator issues. */
   const MCP = { url: "http://172.17.0.1:8090/mcp/a_1", token: "t".repeat(43) };
 
-  /** Starts Claude Code for call `callId` of run `r_turn` on `sandbox` the way a turn does, given `mcp`. */
-  async function startTurn(sandbox: HostCodeSandbox, callId: string, mcp: { url: string; token: string } | null) {
+  /** Starts `harness` for call `callId` of run `r_turn` on `sandbox` the way a turn does, given `mcp`. */
+  async function startTurn(
+    sandbox: HostCodeSandbox,
+    callId: string,
+    mcp: { url: string; token: string } | null,
+    harness: "claude-code" | "codex" = "claude-code",
+  ) {
     const ctx = toolFixture({ run_id: "r_turn", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
     await launchHarness(opsRun(ctx.run), callId, {
-      harness: "claude-code",
+      harness,
       prompt: "hello",
       repository: null,
       system_prompt: "You are the guild's agent.",
@@ -827,10 +853,41 @@ describe("a harness started for a run's own turn", () => {
     assert.equal(existsSync(configFile), false, "the MCP configuration goes with the call's state");
   });
 
-  test("a CLI that takes no MCP server refuses one and never starts", async () => {
-    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
+  test("an MCP server reaches Codex through overrides for the one call, its token in the CLI's own environment alone", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => [JSON.stringify({ stub: "hang" })], {
+      HARNESS_STUB_SEEK: MCP.token,
+    });
+    await startTurn(sandbox, "call_codex_mcp", MCP, "codex");
+    const configFile = path.join(sandbox.home, ".runs", "r_turn", "call_codex_mcp.mcp.json");
+    for (let attempt = 0; attempt < 100 && !calls().length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const [call] = calls();
+    assert.ok(call);
+    const overrides = call.argv.flatMap((arg, at) => (call.argv[at - 1] === "-c" ? [arg] : []));
+    const cleared = overrides.indexOf("mcp_servers={}");
+    assert.deepEqual(overrides.slice(overrides.indexOf(`mcp_servers.guilds.url="${MCP.url}"`)), [
+      `mcp_servers.guilds.url="${MCP.url}"`,
+      'mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN"',
+      'shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]',
+    ]);
+    assert.ok(cleared >= 0 && cleared < overrides.indexOf(`mcp_servers.guilds.url="${MCP.url}"`), "every other server is dropped first");
+    assert.deepEqual(call.mcp_config, {
+      mcpServers: { guilds: { type: "http", url: MCP.url, headers: { Authorization: `Bearer ${MCP.token}` } } },
+    });
+    assert.ok(!call.argv.some((arg) => arg.includes(MCP.token)), "the token is on no command line");
+    assert.deepEqual(call.env_holding_seek, ["GUILDS_MCP_TOKEN"], "only the variable the server names holds it");
+    assert.equal(statSync(configFile).mode & 0o777, 0o600);
     const op = turnOps(sandbox, "call_codex_mcp");
-    await assert.rejects(op("start", { harness: "codex", prompt: "hello", mcp_url: MCP.url, mcp_token: MCP.token }), /codex takes no MCP server/);
+    await op("stop", { harness: "codex" });
+    await op("result", { harness: "codex" });
+    assert.equal(existsSync(configFile), false, "the file that carried the token goes with the call's state");
+  });
+
+  test("a CLI that takes no MCP server refuses one and never starts", async () => {
+    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"));
+    const op = turnOps(sandbox, "call_cursor_mcp");
+    await assert.rejects(op("start", { harness: "cursor", prompt: "hello", mcp_url: MCP.url, mcp_token: MCP.token }), /cursor takes no MCP server/);
     assert.equal(calls().length, 0);
   });
 

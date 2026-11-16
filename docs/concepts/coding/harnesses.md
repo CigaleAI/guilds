@@ -503,28 +503,39 @@ pinned to the CLI version the image installs.
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
 | Antigravity | `agy --output-format stream-json --dangerously-skip-permissions --disable-slash-commands --add-dir <run folder> -p "Read your task in <prompt file> and follow it."` | `--model <model>`, then `--effort <effort>`, before `--conversation` | `--conversation <conversation id>` | the prompt file, named in `-p`; `--add-dir` lets the CLI's tools reach it outside the repository |
 
-A request with a `system_prompt` starts Claude Code with
-`--system-prompt-file <run folder>/<call id>.system.md`, after
-`--settings` and before the model, so that text replaces Claude Code's
-own system prompt. `start` writes the file with mode 0600 beside the
-prompt file, and `result` removes both with the call's state. Codex,
-Cursor, and Antigravity refuse a system prompt (`<harness> takes no
-system prompt`) before the call starts.
+A request with a `system_prompt` writes it to
+`<run folder>/<call id>.system.md`, with mode 0600 beside the prompt
+file, and `result` removes both with the call's state. Claude Code
+starts with `--system-prompt-file <file>`, after `--settings` and
+before the model; Codex with `-c model_instructions_file="<file>"`,
+after the managed flags and before the model. Either way that text
+replaces the CLI's own system prompt, Codex's base instructions
+included. Cursor and Antigravity refuse a system prompt (`<harness>
+takes no system prompt`) before the call starts.
 
-A request with an `mcp_url` and its `mcp_token` starts Claude Code
-with `--mcp-config <run folder>/<call id>.mcp.json`, after the system
-prompt file. The file names one HTTP server, `guilds`, at that URL,
-with the token as its `Authorization: Bearer` header; with
-`--strict-mcp-config` it is the only MCP server the call uses. `start`
-writes it with mode 0600 beside the prompt files, and `result` removes
-it with them. The URL must be an `http` or `https` URL with no query,
-the token 43 to 128 URL-safe base64 characters, and each comes with
-the other (`mcp_url is invalid`, `mcp_token is invalid`, `mcp_url and
-mcp_token go together` otherwise). Codex, Cursor, and Antigravity
-refuse one (`<harness> takes no MCP server`) before the call starts.
-The orchestrator sends such a request through a request file, never on
-the command line, and the token is in neither the CLI's environment
-nor its command line.
+A request with an `mcp_url` and its `mcp_token` gives the CLI one
+HTTP MCP server, `guilds`, at that URL, with the token as its
+`Authorization: Bearer` header, and no other. `start` writes
+`<run folder>/<call id>.mcp.json` with mode 0600 beside the prompt
+files, and `result` removes it with them:
+
+| Harness | The file holds | Command line, after the system prompt |
+| --- | --- | --- |
+| Claude Code | `mcpServers.guilds`: the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
+| Codex | the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
+
+Claude Code reads the token from the file. Codex reads it from
+`GUILDS_MCP_TOKEN`, which the supervisor sets from the file in the
+CLI's own environment alone, never its own or `guilds-harness`'s, and
+which Codex leaves out of the commands its model runs. Codex's
+configuration in the home holds no server: the overrides last one
+call. The URL must be an `http` or `https` URL with no query, the
+token 43 to 128 URL-safe base64 characters, and each comes with the
+other (`mcp_url is invalid`, `mcp_token is invalid`, `mcp_url and
+mcp_token go together` otherwise). Cursor and Antigravity refuse one
+(`<harness> takes no MCP server`) before the call starts. The
+orchestrator sends such a request through a request file, never on
+the command line, and the token is on no command line.
 
 The orchestrator resolves the agent's model and effort through the
 catalogue before the call: a listed Cursor model becomes its CLI name
