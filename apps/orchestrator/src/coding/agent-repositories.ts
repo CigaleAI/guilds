@@ -16,7 +16,7 @@ import {
   type PickedRepositories,
 } from "./repositories.js";
 
-/** Why a coding run of an agent cannot start on its repositories: it picks none, or picks one it can no longer use. */
+/** Why a subscription turn of an agent cannot start on its repositories: it picks none, or picks one it can no longer use. */
 export class AgentRepositoriesError extends Error {
   constructor(
     readonly code: "coding.repositories_missing" | "coding.repositories_gone",
@@ -82,7 +82,7 @@ export async function loadAgentRepositories(
 }
 
 /**
- * What stops a coding run from starting on the repositories its agent picks: a name it can no
+ * What stops a subscription turn from starting on the repositories its agent picks: a name it can no
  * longer use, named, else no repository at all; null when nothing does.
  */
 export function agentRepositoriesProblem(picked: PickedRepositories): AgentRepositoriesError | null {

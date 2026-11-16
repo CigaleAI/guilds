@@ -95,7 +95,8 @@ RUN set -eu; \
     corepack enable; \
     node --version
 
-# GitHub CLI for pull requests. Release tarball, pinned and checksum-verified.
+# GitHub CLI for the agent's own commands; the box gives it no login, so pull requests open with
+# the repository host's connector tools. Release tarball, pinned and checksum-verified.
 ARG GH_VERSION=2.102.0
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
