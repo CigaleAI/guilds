@@ -6,7 +6,18 @@ import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
 import { formatJsonb } from "./codecs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { agents, guilds, machines, orgs, taskRevisions, type Harness, type HarnessLogin, type ToolInputSchema } from "./schema/index.js";
+import {
+  agents,
+  guilds,
+  machines,
+  mcpConnections,
+  orgs,
+  taskRevisions,
+  type AgentConfig,
+  type Harness,
+  type HarnessLogin,
+  type ToolInputSchema,
+} from "./schema/index.js";
 
 type Agent = InferSelectModel<typeof agents>;
 type Machine = InferSelectModel<typeof machines>;
@@ -51,6 +62,12 @@ export type AgentRow = GuildAgentRow &
 
 /** Where an agent sits: its id, guild, and organisation. */
 export type AgentPlaceRow = Pick<AgentRow, "id" | "guild_id" | "org_id">;
+
+/** Where an agent sits and its config, as a change to the repositories it picks reads them. */
+export type AgentRepositoriesRow = AgentPlaceRow & Pick<Agent, "config">;
+
+/** Whose agents a connection reaches: one agent's, a guild's, an organisation's, or none for the platform's. */
+export type AgentsOwner = Pick<InferSelectModel<typeof mcpConnections>, "owner_scope" | "owner_id">;
 
 export type AgentConfigRow = Pick<
   Agent,
@@ -320,6 +337,46 @@ export async function clearHarnessLogin(
     agentId,
     harness,
   ]);
+}
+
+/**
+ * The agents `owner` reaches whose config picks one of `names`, locked for the rest of the
+ * transaction `db` runs: the agent itself, a guild's agents, or an organisation's; none for the
+ * platform.
+ */
+export async function lockAgentsPickingRepositories(
+  db: Queryable,
+  owner: AgentsOwner,
+  names: string[],
+): Promise<AgentRepositoriesRow[]> {
+  const result = await db.query<AgentRepositoriesRow>(
+    `SELECT id, guild_id, org_id, config
+       FROM agents
+      WHERE config->'repositories' ?| $3::text[]
+        AND CASE $1::text
+              WHEN 'agent' THEN id = $2
+              WHEN 'guild' THEN guild_id = $2
+              WHEN 'org' THEN org_id = $2
+              ELSE false
+            END
+      ORDER BY id
+        FOR UPDATE`,
+    [owner.owner_scope, owner.owner_id, names],
+  );
+  return result.rows;
+}
+
+/** Replaces the repositories the agent's config picks. */
+export async function setAgentRepositories(
+  db: Queryable,
+  agentId: string,
+  repositories: AgentConfig["repositories"],
+  now: Date,
+): Promise<void> {
+  await db.query(
+    `UPDATE agents SET config = jsonb_set(config, '{repositories}', $2::jsonb), updated_at = $3 WHERE id = $1`,
+    [agentId, formatJsonb(repositories), stamp(now)],
+  );
 }
 
 export async function setAgentWorkspaceMib(

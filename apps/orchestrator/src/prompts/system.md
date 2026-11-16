@@ -87,8 +87,8 @@ wakes; run one-off commands with `shell`.</capability>
 </capability>
 <capability name="coding">
 You do code work on your machine through your coding harness. Your home
-is your workspace and survives between runs; the guild's repositories are
-under `repos/<name>` in it. Hand a task to the harness with `code_task`.
+is your workspace and survives between runs; the repositories you work on
+are under `repos/<name>` in it. Hand a task to the harness with `code_task`.
 The harness sees nothing of this conversation, your notes, or Memory except
 what the brief and its notes carry.
 

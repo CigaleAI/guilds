@@ -33,6 +33,7 @@ export const defaultAgentConfig: AgentConfig = {
   harness: null,
   harness_model: null,
   harness_effort: null,
+  repositories: [],
   secret_aliases: {},
   scripting: true,
   memory: true,
@@ -87,6 +88,8 @@ export type ConfigForm = {
   harness_model: string;
   /** The effort the harness runs its model at; empty for the harness's default. */
   harness_effort: HarnessEffort | "";
+  /** The repositories a coding agent works on, by name, in this order. */
+  repositories: string[];
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
   scripting: boolean;
@@ -135,6 +138,7 @@ export function configFormOf(config: AgentConfig, source: ModelSource, machineId
     harness: isHarness(config.harness) ? config.harness : "",
     harness_model: config.harness_model ?? "",
     harness_effort: config.harness_effort ?? "",
+    repositories: [...config.repositories],
     secret_aliases: { ...config.secret_aliases },
     scripting: config.scripting !== false,
     memory: config.memory !== false,
@@ -311,9 +315,9 @@ export function withHarnessModel(
 
 /**
  * The config to send, without the machine; a model that does not reason gets thinking off, only
- * a coding or subscription agent carries a harness and its model, and only an agent with the
- * browser carries the agent-optimized browser and its model. A subscription sends no model and
- * the model loop's settings at their defaults.
+ * a coding or subscription agent carries a harness and its model, only a coding agent its
+ * repositories, and only an agent with the browser carries the agent-optimized browser and its
+ * model. A subscription sends no model and the model loop's settings at their defaults.
  */
 export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
   const subscription = form.model_source === "subscription";
@@ -329,6 +333,7 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     harness: takesHarness(form) && form.harness ? form.harness : null,
     harness_model: harnessModelOf(form),
     harness_effort: harnessEffortOf(form),
+    repositories: form.coding ? form.repositories : [],
     secret_aliases: form.secret_aliases,
     scripting: form.scripting,
     memory: form.memory,
@@ -364,7 +369,7 @@ export function capabilityOn(
 /**
  * A new agent's form with coding switched: limits still at the defaults move to the coding
  * budgets, and back when coding is switched off again. Turning coding on also turns on
- * scripting; turning it off clears the harness, its model, and its effort.
+ * scripting; turning it off clears the harness, its model, its effort, and the repositories.
  */
 export function withCoding(
   form: ConfigForm,
@@ -378,7 +383,7 @@ export function withCoding(
     coding,
     ...(coding
       ? { scripting: true }
-      : { harness: "" as const, harness_model: "", harness_effort: "" as const }),
+      : { harness: "" as const, harness_model: "", harness_effort: "" as const, repositories: [] }),
     ...(!coding && isCodingOnlyModel(form.model, models)
       ? { model: models?.default ?? "", thinking: "none" as const }
       : {}),

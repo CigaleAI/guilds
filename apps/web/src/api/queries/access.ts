@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { ApiError, api } from "../client";
 import type { JsonObject } from "../wire";
+import { refreshAgentRepositories } from "./agents";
 import { fileKeys } from "./files";
 import { noteKeys } from "./notes";
 import type {
@@ -210,6 +211,7 @@ export function useSetGithubRepositories(connectionId: string) {
       void client.invalidateQueries({
         predicate: (query) => query.queryKey[0] === "guild" && query.queryKey[2] === "repositories",
       });
+      refreshAgentRepositories(client);
     },
   });
 }

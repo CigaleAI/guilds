@@ -1336,8 +1336,8 @@ to check its work before pushing it.
 
 **Residual risk:** a steered harness can do anything the sandbox and
 the agent's secrets allow: read and send them out, change the
-working tree, and push to the guild repositories' unprotected
-branches through git (SEC-10). It reaches the other agents on its
+working tree, and push to the unprotected branches of the
+repositories its agent picks through git (SEC-10). It reaches the other agents on its
 machine (SEC-24). Nothing enforces the preamble.
 
 On 2026-10-14 a technical control on `git push` was considered. The
@@ -1942,9 +1942,14 @@ whichever agent started it, so one agent can push to the
 repositories of another agent's guild.
 
 **Control in place:** each token lives one hour. It reaches only
-the guild's repositories that use its connection, with contents
-and pull requests write. It is kept off the workspace disk,
-replaced before it expires, and redacted from tool results.
+the repositories its agent picks that use its connection, with
+contents and pull requests write. Since 2026-11-16 a coding agent
+picks the repositories it works on, and its run gets a token for
+those alone; before, it got one for every repository of its guild.
+An agent of a guild therefore holds no token for a repository of
+that guild it does not pick, though another agent's tokens on the
+same machine stay readable (SEC-24). It is kept off the workspace
+disk, replaced before it expires, and redacted from tool results.
 
 **Fix to make:** a control-plane git proxy that holds the
 credential and checks the branch and the agent. It has priority
@@ -2001,8 +2006,8 @@ contributor guide sets code conventions only. Secrets reach an agent
 only by grant.
 
 **Residual risk:** a steered agent can do anything its sandbox
-and its granted secrets allow, including pushing to its guild's
-repositories' unprotected branches and opening pull requests with
+and its granted secrets allow, including pushing to the unprotected
+branches of the repositories it picks and opening pull requests with
 its installation token (SEC-10). Its own token cannot reach other
 guilds' repositories; the tokens of other agents on its machine
 can (SEC-24).

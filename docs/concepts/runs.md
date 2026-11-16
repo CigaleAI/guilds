@@ -362,7 +362,9 @@ tool-call identity in `file_changes` ([Artifacts](artifacts.md)).
 ### Snapshot
 
 The run stores an immutable snapshot. It holds the agent's config at
-run creation, less `max_scripts` and `max_workspace_mib`, with the
+run creation, less `max_scripts`, `max_workspace_mib` and
+`repositories`, which a coding run reads from its agent when it
+starts ([Repositories](coding/repositories.md#where-the-list-comes-from)), with the
 guild's `keep_tool_result_generations` when the agent's is null, and
 with the offered `tools`, `mcp`, `secrets`, and the `scripts`
 ([Scripts](scripts.md#snapshot)). Its `model` states the run's model

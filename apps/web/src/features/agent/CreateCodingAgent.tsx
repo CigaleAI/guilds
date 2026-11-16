@@ -4,6 +4,7 @@ import { SquareTerminal } from "lucide-react";
 import { useCreateAgent, useOrgMachines } from "../../api/queries/agents";
 import { useCreateSecret, useSecrets } from "../../api/queries/secrets";
 import { useOrgModels } from "../../api/queries/models";
+import { useGuildRepositories } from "../../api/queries/guilds";
 import type { Harness } from "../../api/types/agents";
 import { hasConnectedProvider } from "../../api/types/models";
 import { useIdentity } from "../../app/identity";
@@ -35,7 +36,7 @@ import {
   type TokenDraft,
 } from "./harness";
 import { identityComplete, IdentityFields, useIdentityDraft } from "./IdentityFields";
-import { CodingRepositories, useGuildHasRepositories } from "./CodingRepositories";
+import { CodingRepositories } from "./CodingRepositories";
 import { MachineGroup, ModelStep, StepFooter, useSeededDisk, type StepProps } from "./AgentSteps";
 import {
   configErrors,
@@ -256,8 +257,8 @@ type CodingAgentFormProps = {
 /**
  * A new coding agent, step by step: its identity; the machine with its disk cap, the harness,
  * harness model, and the subscription token the harness runs on; the model that leads it, with
- * its capabilities and run limits; and the guild's repositories. Create sends the agent, then the pasted token as a
- * secret granted to it.
+ * its capabilities and run limits; and the repositories it works on, picked among the guild's.
+ * Create sends the agent, then the pasted token as a secret granted to it.
  */
 export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
   const navigate = useNavigate();
@@ -265,7 +266,7 @@ export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
   const models = useOrgModels(org.id);
   const machines = useOrgMachines(org.id);
   const guildSecrets = useSecrets({ scope: "guild", id: guild.id });
-  const hasRepositories = useGuildHasRepositories(guild.id);
+  const guildRepositories = useGuildRepositories(guild.id);
   const create = useCreateAgent(guild.id);
   const createSecret = useCreateSecret();
   const identity = useIdentityDraft();
@@ -314,7 +315,10 @@ export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
     <CodingRepositories
       key="repositories"
       guild={guild}
-      missingNote="No repository yet. You can create the agent and add one later in the guild's Settings."
+      usable={guildRepositories.data?.usable}
+      picked={form.repositories}
+      onPick={(repositories) => setConfig({ ...form, repositories })}
+      missingNote="No repository picked. You can create the agent and pick one later in its Settings."
     />,
   ];
 
@@ -378,7 +382,7 @@ export function CodingAgentForm({ guild, onClose }: CodingAgentFormProps) {
         count={STEPS.length}
         ready={ready ?? false}
         busy={busy}
-        createLabel={hasRepositories === false ? "Create without a repository" : "Create agent"}
+        createLabel={form.repositories.length ? "Create agent" : "Create without a repository"}
         onStep={setStep}
         onCreate={() => void submit()}
       />

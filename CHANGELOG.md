@@ -8,6 +8,47 @@ commands for each effect are in
 
 ## Unreleased
 
+**Breaking.** A coding agent works on the repositories it picks, not
+on every repository of its guild. Agent config gains `repositories`, a
+list of names in the order a run clones them; a create or a settings
+change may pick only a repository the agent can use (its guild's, or
+one picked on its GitHub login), and only on a coding agent. A coding
+run clones, checkpoints, gets tokens for, and lists in State only
+those. A run whose agent picks none fails at start with
+`coding.repositories_missing`; one whose agent picks a repository it
+can no longer use fails with `coding.repositories_gone`, naming it.
+The migration gives each coding agent every repository it cloned
+before. `GET /api/agents/:id/harness` lists the picks a run clones as
+`repositories` and the ones the agent can use as
+`usable_repositories`. A client that saves an agent's config without
+`repositories` unpicks them all. Rebuild the orchestrator and the
+operator app together.
+
+**Rebuild.** Removing a repository from a guild, or taking it out of
+a GitHub login's pick, unpicks it from each agent that picks it and
+can no longer use it, in the same transaction.
+
+**Rebuild.** A coding agent's **Repositories**, in its Settings and
+in the create dialog, ticks the repositories it works on among those
+it can use, above the guild's own list; a pick it can no longer use
+shows ticked and tagged "no longer in the guild". The create dialog's
+last button reads **Create without a repository** while none is
+ticked. `GET /api/guilds/:id/repositories` gains `usable`, the
+repositories a new coding agent of the guild can use.
+
+**Breaking for recipes.** A recipe's coding role lists the
+repositories its agent works on in `config.repositories`, each a name
+from the recipe's `repositories`; another name is the
+`repositories.unknown` error, a list that is not names each once is
+`repositories.invalid`, and a list on a role without `coding` warns
+`repositories.coding` and is left out. `repositories.unused` warns,
+at `repositories.<name>`, for each repository no role lists. Capture
+writes each role's list. Apply creates the agents with none picked;
+each repository's step, once it passes, gives the repository to the
+agents whose role lists it. A recipe whose coding roles list no
+repositories applies with agents that work on none until their
+repositories are picked in Settings.
+
 **Rebuild.** A recipe that lists repositories no longer asks for a
 GitHub connection: applying it adds no `conn:github` step of its own,
 and its preview names no GitHub App to set up for them. Each

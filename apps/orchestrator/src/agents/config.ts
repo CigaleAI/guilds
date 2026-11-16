@@ -20,6 +20,7 @@ export const CONFIG_KEYS = new Set([
   "harness",
   "harness_model",
   "harness_effort",
+  "repositories",
   "secret_aliases",
   "scripting",
   "memory",
@@ -100,7 +101,7 @@ export type AgentConfigDefaults = Omit<AgentConfig, "model">;
 
 /**
  * The value each setting takes when a payload leaves it out: no browser, the step-by-step browser
- * tools, no coding, no harness, the harness's default model and effort, no secret aliases, the
+ * tools, no coding, no harness, the harness's default model and effort, no repositories, no secret aliases, the
  * guild's tool-result turns, and the default limits. Only `model` has none.
  */
 export const AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
@@ -121,6 +122,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfigDefaults = {
   harness: null,
   harness_model: null,
   harness_effort: null,
+  repositories: [],
   secret_aliases: {},
   scripting: DEFAULT_SCRIPTING,
   memory: DEFAULT_MEMORY,

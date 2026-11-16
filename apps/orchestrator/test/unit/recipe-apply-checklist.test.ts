@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blockingApplySteps, browserLoginAgentIds, checklistFromPlan, deferLaunchSteps, skipApplyChecklistStep } from "../../src/recipes/checklist.js";
+import {
+  addRoleRepository,
+  blockingApplySteps,
+  browserLoginAgentIds,
+  checklistFromPlan,
+  deferLaunchSteps,
+  skipApplyChecklistStep,
+} from "../../src/recipes/checklist.js";
 import { installSubscriptionAgents } from "../../src/coding/harnesses.js";
 import { parseRecipe } from "../../src/recipes/parse.js";
 import {
@@ -159,6 +166,25 @@ test("apply carries the coding flag and turns a missing one off", () => {
   assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, true);
   recipe.roles[0]!.config = {};
   assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, false);
+});
+
+test("apply gives a coding role its repositories, and no other role, nor a list that does not validate, any", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  role.config = { coding: true, repositories: ["web", "api"] };
+  assert.deepEqual(configFromRecipeRole(role).repositories, ["web", "api"]);
+  role.config = { coding: false, repositories: ["web"] };
+  assert.deepEqual(configFromRecipeRole(role).repositories, []);
+  role.config = { coding: true, repositories: ["web", "web"] };
+  assert.deepEqual(configFromRecipeRole(role).repositories, []);
+  role.config = { coding: true };
+  assert.deepEqual(configFromRecipeRole(role).repositories, []);
+});
+
+test("a repository whose step passes joins an agent's picks at its place in the role's list", () => {
+  assert.deepEqual(addRoleRepository([], ["web", "api"], "api"), ["api"]);
+  assert.deepEqual(addRoleRepository(["api"], ["web", "api"], "web"), ["web", "api"]);
+  assert.deepEqual(addRoleRepository(["docs", "api"], ["web", "api"], "web"), ["web", "api", "docs"], "the agent's other picks follow");
 });
 
 test("a subscription role applies with no model, its harness, and none of the model loop's settings", () => {

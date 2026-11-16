@@ -41,7 +41,7 @@ export function configSnapshot(
       direct: kind === "direct",
     }),
   );
-  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = config;
+  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, repositories: _repositories, ...settings } = config;
   const snapshot: RunConfigSnapshot = {
     ...settings,
     projection_policy_version: RUN_PROJECTION_POLICY_VERSION,

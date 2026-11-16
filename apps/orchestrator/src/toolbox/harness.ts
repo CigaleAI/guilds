@@ -58,7 +58,7 @@ const TIMEOUT_MINUTES = { min: 1, max: CODE_TASK_MAX_MINUTES, fallback: CODE_TAS
 function repositoryFor(run: ToolRun, repo: string | undefined): string {
   const names = run.code_repositories;
   if (!names.length) {
-    throw new ToolUnavailableError("this guild has no repositories; the operator adds them in the guild's Repositories");
+    throw new ToolUnavailableError("this agent has no repositories; the operator picks them in the agent's Settings under Repositories");
   }
   const named = repo?.trim() ?? "";
   if (named) {
@@ -67,12 +67,12 @@ function repositoryFor(run: ToolRun, repo: string | undefined): string {
   if (names.length === 1) {
     return names[0]!;
   }
-  throw new ToolArgumentError(`repo is required: the guild's repositories are ${names.join(", ")}`);
+  throw new ToolArgumentError(`repo is required: your repositories are ${names.join(", ")}`);
 }
 
 function knownRepository(names: string[], named: string): string {
   if (!names.includes(named)) {
-    throw new ToolArgumentError(`unknown repository ${named}; the guild's repositories are ${names.join(", ")}`);
+    throw new ToolArgumentError(`unknown repository ${named}; your repositories are ${names.join(", ")}`);
   }
   return named;
 }
@@ -443,13 +443,13 @@ async function finishHarnessTurn(call: ToolInvocation, turn: HarnessTurn, ending
 export const codeTask = nativeTool({
   name: "code_task",
   description:
-    "Delegate code work to your coding harness, which runs in your sandbox against one of the " +
-    "guild's repositories and returns its final message, its session id, and the files it " +
+    "Delegate code work to your coding harness, which runs in your sandbox against one of " +
+    "your repositories and returns its final message, its session id, and the files it " +
     "changed. The harness sees nothing of this conversation, your notes, or Memory: brief is " +
     "the whole task, self-contained. notes lists display paths of notes or records whose " +
     "content is appended to the brief. Pass session_id to resume an earlier session (to answer " +
     "its question or follow up) in the repository it started in. repo is a name under repos/, " +
-    "optional when the guild has one. timeout_minutes defaults to 30, at most 60. The harness " +
+    "optional when you have one. timeout_minutes defaults to 30, at most 60. The harness " +
     "may commit but never pushes; check its work, then push and open the pull or merge request yourself.",
   summary: "Delegate code work to your coding harness and return its result.",
   parameters: CodeTaskParameters,

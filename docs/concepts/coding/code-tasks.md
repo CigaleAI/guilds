@@ -118,10 +118,11 @@ other [code tools](code-tools.md).
    `harness.missing`. A harness the box turns off fails it with
    `harness.off` ([Turning a harness off](harnesses.md#turning-a-harness-off)).
    A blank `brief` fails it with `brief is required`.
-2. **Repository.** `repo`, else the guild's only repository. A guild
-   without repositories is an error that says the operator adds them
-   in the guild's Repositories. An unknown name, or a missing `repo`
-   with several repositories, is an error naming the guild's
+2. **Repository.** `repo`, else the run's only repository: the run's
+   repositories are the ones the agent picks. A run without
+   repositories is an error that says the operator picks them in the
+   agent's Settings under Repositories. An unknown name, or a missing
+   `repo` with several repositories, is an error naming the run's
    repositories. `notes` that is not a list of strings is an error.
    With `session_id`, the agent passes the repository the session
    started in; the orchestrator does not check the pair

@@ -169,6 +169,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     assert.deepEqual((await app.inject({ method: "GET", url: base, headers: OWNER })).json(), {
       repositories: [],
       github_connections: [],
+      usable: [],
     });
     const plain = await app.inject({
       method: "POST",
@@ -312,6 +313,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       afterConnect.json().github_connections.map((row: { id: string; account_hint: string }) => [row.id, row.account_hint]),
       [[remoteId, "acme"]],
     );
+    assert.deepEqual([...afterConnect.json().usable].sort(), ["docs", "shop"], "a new coding agent can use every repository of the guild");
 
     // GitHub refusing the installation while the picker lists it disconnects the login.
     installationGone = true;
@@ -581,9 +583,13 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       method: "POST",
       url: `/api/guilds/${backendId}/agents`,
       headers: JSON_HEADERS,
-      payload: { name: "coder", config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code" } },
+      payload: {
+        name: "coder",
+        config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code", repositories: ["site"] },
+      },
     });
     assert.equal(agent.statusCode, 201, agent.body);
+    const coderId = String(agent.json().id);
     const agentConnect = await app.inject({
       method: "POST",
       url: "/api/mcp/connections",
@@ -607,6 +613,27 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     });
     assert.equal(agentPicked.statusCode, 200, agentPicked.body);
     assert.equal(agentPicked.json().repositories[0]?.default_branch, "trunk");
+
+    // The coder picks the shop its own login reaches beside the site its guild's login picks.
+    const repicked = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_HEADERS,
+      payload: {
+        config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code", repositories: ["site", "shop"] },
+      },
+    });
+    assert.equal(repicked.statusCode, 200, repicked.body);
+    // Unselecting the site on the guild's login unpicks it from the coder, which keeps the shop.
+    const unselected = await app.inject({
+      method: "PUT",
+      url: `/api/mcp/connections/${retryId}/github/selected`,
+      headers: JSON_HEADERS,
+      payload: { repositories: [] },
+    });
+    assert.equal(unselected.statusCode, 200, unselected.body);
+    const coder = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: OWNER });
+    assert.deepEqual(coder.json().config.repositories, ["shop"]);
   } finally {
     globalThis.fetch = realFetch;
     setInstanceKeys({});

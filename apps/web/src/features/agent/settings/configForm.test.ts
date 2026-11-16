@@ -403,6 +403,17 @@ test("secret aliases reach the form and back, and turning coding off keeps them"
   );
 });
 
+test("a coding agent's repositories reach the form and back; only a coding agent sends them, and turning coding off clears them", () => {
+  const stored = { ...defaultAgentConfig, coding: true, harness: "codex" as const, repositories: ["site", "shop"] };
+  const form = configFormOf(stored, "key");
+  assert.deepEqual(form.repositories, ["site", "shop"]);
+  assert.notEqual(form.repositories, stored.repositories, "the form holds its own copy");
+  assert.deepEqual(configOf(form, undefined).repositories, ["site", "shop"]);
+  assert.deepEqual(configOf({ ...form, coding: false }, undefined).repositories, []);
+  assert.deepEqual(withCoding(form, false).repositories, []);
+  assert.deepEqual(configFormOf(defaultAgentConfig, "key").repositories, []);
+});
+
 const SUBSCRIPTION_CATALOG: HarnessCatalog[] = [
   { harness: "codex", label: "Codex", enabled: true, subscription: true, models: [], unlisted_efforts: [] },
   { harness: "cursor", label: "Cursor", enabled: true, subscription: false, models: [], unlisted_efforts: [] },

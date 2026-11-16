@@ -17,6 +17,7 @@ import {
 import {
   AgentValidationError,
   assertCodingAgent,
+  assertUsableRepositories,
   assertSubscriptionAgent,
   isValidSecretAliases,
   validateAgentConfig,
@@ -252,7 +253,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 22);
+  assert.equal(CONFIG_KEYS.size, 23);
   assert.throws(() => validateAgentConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateAgentConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateAgentConfig({ model }), false);
@@ -289,6 +290,7 @@ test("a config that leaves out every setting but its model takes every default",
     harness: null,
     harness_model: null,
     harness_effort: null,
+    repositories: [],
     secret_aliases: {},
     scripting: true,
     memory: true,
@@ -470,6 +472,36 @@ test("secret aliases are valid exactly when a config takes them", () => {
   assert.equal(isValidSecretAliases([]), false);
   assert.equal(isValidSecretAliases(null), false);
   assert.equal(isValidSecretAliases(undefined), false);
+});
+
+test("a coding agent's repositories are a list of repository names, each once", () => {
+  const coding = { model: VALID_CONFIG.model, coding: true, harness: "codex" };
+  assert.deepEqual(validateAgentConfig({ ...coding, repositories: ["shop", "docs"] }).repositories, ["shop", "docs"]);
+  assert.deepEqual(validateAgentConfig(coding).repositories, [], "a config that leaves them out picks none");
+  assert.throws(() => validateAgentConfig({ ...coding, repositories: "shop" }), /repositories must be a list of repository names/);
+  assert.throws(() => validateAgentConfig({ ...coding, repositories: ["Shop"] }), /repositories: Shop is not a repository name/);
+  assert.throws(() => validateAgentConfig({ ...coding, repositories: [7] }), /repositories: 7 is not a repository name/);
+  assert.throws(() => validateAgentConfig({ ...coding, repositories: ["shop", "shop"] }), /repositories: shop is listed twice/);
+});
+
+test("only a coding agent picks repositories", () => {
+  const model = VALID_CONFIG.model;
+  assert.throws(() => validateAgentConfig({ model, repositories: ["shop"] }), /repositories are only for coding agents/);
+  assert.deepEqual(validateAgentConfig({ model, repositories: [] }).repositories, []);
+});
+
+test("a config picks only repositories the agent can use, and keeps one it already picked", () => {
+  const model = VALID_CONFIG.model;
+  const config = validateAgentConfig({ model, coding: true, harness: "codex", repositories: ["shop", "billing", "wiki"] });
+  assert.throws(
+    () => assertUsableRepositories(config, ["shop"]),
+    (error: unknown) =>
+      error instanceof AgentValidationError && /the agent cannot use billing, wiki: add it to the guild's Repositories first/.test(error.message),
+  );
+  assert.doesNotThrow(() => assertUsableRepositories(config, ["shop", "billing", "wiki"]));
+  const previous = validateAgentConfig({ model, coding: true, harness: "codex", repositories: ["billing"] });
+  assert.throws(() => assertUsableRepositories(config, ["shop"], previous), /cannot use wiki:/);
+  assert.doesNotThrow(() => assertUsableRepositories({ ...config, repositories: ["billing"] }, [], previous));
 });
 
 test("a coding agent needs a harness to save; a stored one without it still validates", () => {

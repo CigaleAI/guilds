@@ -3,7 +3,8 @@
 ![Create your own coding agents with Claude Code, Codex, Cursor, or Antigravity](../../images/coding-agents.png)
 
 A coding agent is an [agent](../agents.md) with the coding capability
-on. It leads code work in the [guild's repositories](repositories.md).
+on. It leads code work in the [guild's repositories](repositories.md)
+it picks.
 It does not write the code itself. It writes a brief and hands it to a
 [harness](harnesses.md): Claude Code, Codex, Cursor, or Antigravity, a
 coding CLI that runs headless in the agent's sandbox on the operator's
@@ -132,8 +133,9 @@ that reviews, one that fixes what the tests find. You split the work
 when the roles differ: different focus, different harness, different
 model, or a reviewer that should not have written the code it reviews.
 
-The agents share the guild's repositories but never a working tree:
-each clones its own copy into its home. Work moves between them the way
+The agents pick among the guild's repositories, each the ones its role
+needs, and never share a working tree: each clones its own copy of the
+ones it picks into its home. Work moves between them the way
 it moves between people, as branches and pull requests on the remote.
 Each agent's branches carry its name, `agent/<its name>/<topic>`, and
 the pull request is the unit of hand-off. A commit also names the agent
@@ -210,12 +212,12 @@ before **Next**.
    **Agent capabilities** with Browser, Scripting, and Memory, and
    **Run limits**, starting at 200 steps and 200 tool calls, with
    scripting on.
-5. **Repositories**: the guild's GitHub login and repositories
-   ([Repositories, In the app](repositories.md#in-the-app)). While the
-   guild has none, an ochre line reads "No repository yet. You can
-   create the agent and add one later in the guild's Settings." and the
-   last button reads **Create without a repository** instead of
-   **Create agent**.
+5. **Repositories**: a checkbox per repository the new agent can use,
+   then the guild's GitHub login and repositories
+   ([Repositories, In the app](repositories.md#in-the-app)). While none
+   is ticked, an ochre line reads "No repository picked. You can create
+   the agent and pick one later in its Settings." and the last button
+   reads **Create without a repository** instead of **Create agent**.
 
 Create sends the agent. A pasted token is then saved as a secret
 granted to the new agent alone. When it cannot be saved, a toast says
@@ -232,7 +234,7 @@ Settings." It names each problem:
 - "this machine's image doesn't carry `<Harness>`"
 - "`<Harness>` has no credential": neither a granted secret nor a login a
   check found
-- "the guild has no repositories"
+- "no repository is picked": none that the agent picks and can use
 
 With no harness picked, the image and the credential are not checked.
 The icon opens Settings on the section where the first problem is
@@ -273,7 +275,7 @@ on hover and links to the Settings section that sets it:
 | --- | --- | --- | --- |
 | Harness | the harness's logo; "`<Harness>` is not in this machine's image" when the image lacks it | "`<Harness>` codes with `<harness model>`", or "its default model" without one, then "at `<effort>` effort" once an effort is set | **Harness** |
 | Credential | a dot, then "Token `<secret>`" when the secret the harness reads reaches the agent; else "Logged in" when a check found a login; else "Not logged in" | who added the secret, or whose the login is and when a check last saw it | **Harness** |
-| Repositories | "1 repo" or "`<n>` repos"; "No repos" with none | the repositories' names | **Repositories** |
+| Repositories | "1 repo" or "`<n>` repos", counting the ones a coding run clones; "No repos" with none, whose hover reads "A coding run of an agent without a repository picked fails at start." | the repositories' names | **Repositories** |
 
 With no harness picked, one part, "No harness picked", stands for the
 harness and the credential. A part that names a problem is bold, its
@@ -295,7 +297,7 @@ under the transcript ([Reviewing changes](reviewing-changes.md#in-the-app)).
 | Kimi Code models | Only for agents with coding on |
 | Browser | Independent of coding: an agent that debugs a web front end has both |
 | Coding agents per organisation | `maxCodingAgents` in the organisation's policy; core sets no bound |
-| Repositories | Shared by every coding agent of the guild; a run fails at start without one |
+| Repositories | The guild's, each agent picking the ones it works on; a run fails at start without one, or with a pick the agent can no longer use |
 | Working trees | One per agent, never shared |
 | Branch name | `agent/<agent name>/<topic>`, from the system prompt |
 | Pushes and pull requests | By the agent with `shell`; the harness never pushes |
@@ -335,10 +337,12 @@ order:
 1. Before the machine is woken: no `harness` in the snapshot fails the
    generation with `harness.missing`, "no harness is picked: choose
    `<the harnesses that are on>` in the agent's Settings".
-2. Before the machine is woken: no repository fails it with
-   `coding.repositories_missing`, "this guild has no repositories: add
-   one in the guild's Repositories, then send again". The list is the
-   one the clone uses ([Where the list comes from](repositories.md#where-the-list-comes-from)).
+2. Before the machine is woken: a repository the agent picks but can
+   no longer use fails it with `coding.repositories_gone`, naming it,
+   and no repository picked fails it with `coding.repositories_missing`
+   ([An agent's picks](repositories.md#an-agents-picks)). The list is
+   the one the clone uses
+   ([Where the list comes from](repositories.md#where-the-list-comes-from)).
 3. Once the machine is up: a snapshot's harness the box turns off
    fails it with `harness.off`
    ([Turning a harness off](harnesses.md#turning-a-harness-off)).
@@ -371,7 +375,7 @@ capabilities payload reports `max_coding_agents` and the remaining
 
 | Path | Holds |
 | --- | --- |
-| `apps/orchestrator/src/coding/` | Harnesses (`harnesses.ts`), the model catalogue (`harness-models.ts`), repositories (`repositories.ts`), a guild's repositories and their GitHub logins (`guild-repositories.ts`), GitHub tokens and clone errors (`git.ts`) |
+| `apps/orchestrator/src/coding/` | Harnesses (`harnesses.ts`), the model catalogue (`harness-models.ts`), repositories (`repositories.ts`), the repositories an agent can use and picks (`agent-repositories.ts`), a guild's repositories and their GitHub logins (`guild-repositories.ts`), GitHub tokens and clone errors (`git.ts`) |
 | `apps/orchestrator/src/generation/generate.ts` | The first two generation-start checks: a harness and a repository |
 | `apps/orchestrator/src/generation/coding.ts` | What a coding run does around its tool calls: the harness check, the repositories' tokens and clone, and the checkpoints; and the diff, harness log, and harness check an operator asks for |
 | `apps/orchestrator/src/generation/run-review.ts` | A coding agent's harness view and a run's changes |

@@ -1,10 +1,11 @@
 # Repositories
 
 A guild's repositories are the git repositories its
-[coding agents](index.md) work in. Every coding agent of the guild
-clones each one into its own [home](../agent-home.md), and the
-[harness](harnesses.md) runs there. A guild needs at least one before
-its coding agents can run.
+[coding agents](index.md) can work in. Each coding agent picks the
+ones it works on, in its config's `repositories`. It clones each one
+it picks into its own [home](../agent-home.md), and the
+[harness](harnesses.md) runs there. A coding agent needs at least one
+before it can run.
 
 A repository comes from one of two places. It is picked on a
 [GitHub](../../tools-and-connectors/github.md) login, under **Tools**,
@@ -23,17 +24,18 @@ the GitHub connector's.
 
 ## Why it exists
 
-The repositories belong to the guild, not to one agent, so every
-coding agent of the guild works on the same code. Each still has its
-own clone, so agents never edit each other's files. Work moves between
-them as branches on the remote
+The repositories belong to the guild, so its coding agents can work
+on the same code, and each agent picks the ones its work needs. An
+agent that reviews the site does not clone the shop, and its runs get
+no token for it. Each agent has its own clone, so agents never edit
+each other's files. Work moves between them as branches on the remote
 ([Several coding agents in one guild](index.md#several-coding-agents-in-one-guild)).
 
 ## How it works
 
 ### Where the list comes from
 
-The list a coding run clones is:
+The repositories an agent can use are:
 
 1. the repositories picked on the agent's effective GitHub login: the
    agent's own login, else its guild's, else its organisation's, the
@@ -46,10 +48,20 @@ A narrower scope inherits the wider login's repositories until it
 connects its own login and picks a different set
 ([GitHub](../../tools-and-connectors/github.md)).
 
+A coding run clones the ones the agent's config picks, in the
+config's order. A create or a settings change may pick only
+repositories the agent can use. A repository the agent already picks
+stays picked when it can no longer use it, as after its login
+disconnects; its coding runs then fail at start, naming it, until it
+comes back or is unpicked.
+
 ### What a coding run does with them
 
-At each generation of a coding agent, after the sandbox is up and the
-workspace and harness checks pass:
+At each generation of a coding agent, the run first checks the
+agent's picks. One it can no longer use fails the run with
+`coding.repositories_gone`, naming it; none picked fails it with
+`coding.repositories_missing`. Then, after the sandbox is up and the
+workspace and harness checks pass, for each repository it picks:
 
 1. **Tokens.** Each repository with a git provider gets its token
    from that provider. For each GitHub login the repositories use, the
@@ -62,7 +74,7 @@ workspace and harness checks pass:
    its home, and each repository missing from `repos/` is cloned. A
    clone already there whose `origin` names another URL on the same
    host, as after a rename, is pointed at the current URL.
-3. **Start checkpoint** of every working tree
+3. **Start checkpoint** of each one's working tree
    ([Reviewing changes](reviewing-changes.md)).
 
 After that the agent fetches, branches, commits, and pushes itself.
@@ -105,11 +117,15 @@ applies.
 Only a member who manages the secret may add a repository with it:
 an organisation owner or admin, or a member for a secret granted only
 in guilds they see ([Secrets](../secrets.md)). The token reaches every
-coding agent of the guild through git, so the rule is the one that
-guards changing the secret.
+coding agent of the guild that picks the repository through git, so
+the rule is the one that guards changing the secret.
 
 ### Removing a repository
 
+Removing a repository from the guild, or taking it out of a GitHub
+login's pick, unpicks it from each agent that picks it and can no
+longer use it, in the same transaction. An agent that still reaches
+it, through another login or another of the guild's rows, keeps it.
 Removing a repository leaves the working trees already cloned in the
 agents' homes. Deleting a guild deletes its repositories. Deleting a
 GitHub connection deletes the repositories added through it, and
@@ -126,9 +142,10 @@ The guild's **Settings** tab has two parts for coding:
   commits. Its hint reads "A verified email on the GitHub account that
   owns the Vercel project (Hobby: the account owner). Empty uses each
   agent's platform address." It is saved with **Save**.
-- **Repositories**: the extra git URLs each coding agent of the guild
-  clones into `repos/<name>` in its home, at its next run, under the
-  line "Other git repositories, added by URL." Each row
+- **Repositories**: the extra git URLs the guild's coding agents can
+  pick. Each agent that picks one clones it into `repos/<name>` in its
+  home, at its next run. They sit under the line "Other git
+  repositories, added by URL." Each row
   shows the name, URL, and default branch, a tag, "anonymous",
   "GitHub · `<account>`", "`<account>` disconnected", or
   "Token · `<secret>`", and a remove button. With none, "No extra
@@ -150,11 +167,29 @@ are not part of the Settings **Save**.
 ### The coding agent's Repositories
 
 The create dialog's **Repositories** step and the **Repositories**
-section of a coding agent's Settings show the guild's repositories.
-Changes there are the guild's, saved as they are made.
+section of a coding agent's Settings pick the repositories the agent
+works on, then show the guild's repositories it picks from.
 
-A line reads "Code tasks run in these repositories, shared by every
-coding agent of `<guild>`." Then the guild's GitHub login:
+A line reads "Code tasks run in the repositories this agent picks. The
+repositories of `<guild>` below are shared by its coding agents; each
+picks the ones it works on." Under **This agent works on**, a checkbox
+per repository the agent can use, ticked when the agent picks it. A
+repository the agent picks and can no longer use follows, ticked and
+tagged "no longer in the guild", so it can be unticked. A repository
+ticked joins the end of the agent's picks. With none to pick, "The
+guild has no repository yet. Add one below." The ticks are part of
+the agent's config: Settings saves them with **Save**, and the create
+dialog sends them with the agent. In the create dialog the boxes list
+what a new agent of the guild can use; in Settings, what this agent
+can use, which its own GitHub login may change.
+
+While the agent picks no repository it can use, an ochre line says so:
+in the create dialog, "No repository picked. You can create the agent
+and pick one later in its Settings."; in Settings, "No repository
+picked, so this agent's coding runs fail at start."
+
+Then the guild's GitHub login, whose changes are the guild's, saved as
+they are made:
 
 - When the GitHub App is not set up on the box: "GitHub is not set up
   on this box.", then **Set up**, which opens the GitHub App under
@@ -171,13 +206,11 @@ coding agent of `<guild>`." Then the guild's GitHub login:
   organisation's login)", its repositories listed read-only, and
   **Connect GitHub**, which connects a login of the guild's own.
 
-Then the guild's **Repositories**, as on the guild's Settings. While
-the guild has none, picked or added, an ochre line says so: in the
-create dialog, "No repository yet. You can create the agent and add
-one later in the guild's Settings."; in Settings, "No repository yet,
-so this agent's coding runs fail at start."
+Then the guild's **Repositories**, as on the guild's Settings, also
+saved as they are made. A repository added there joins the boxes
+above, unticked.
 
-The coding strip counts the repositories
+The coding strip counts the repositories a coding run clones
 ([Coding agents](index.md#coding-strip)).
 
 ## Rules and limits
@@ -185,6 +218,7 @@ The coding strip counts the repositories
 | Rule | Value or behaviour |
 | --- | --- |
 | Name | `^[a-z][a-z0-9_-]{0,62}$`, unique in the guild; also the folder under `repos/` |
+| An agent's picks | Only on a coding agent; each a repository it can use, once; a pick it can no longer use stays until it is unpicked |
 | URL | `https` on any host, without credentials, query, or fragment; SSH is refused |
 | Credential | One at most: a GitHub login, or an access token's secret and username |
 | With a GitHub login | `https://github.com/<owner>/<repository>`, reachable by that login's installation |
@@ -196,11 +230,15 @@ The coding strip counts the repositories
 | Clone timeout | 600 seconds per repository |
 | Token refresh | Replaced within 10 minutes of expiry |
 | Commit author email | Empty, or one email address of at most 254 characters, not on a `.invalid` domain |
-| Removing | Leaves existing clones in place |
+| Removing | Unpicks it from each agent that can no longer use it; leaves existing clones in place |
 
 ## Reference
 
 ### Storage
+
+`agents.config.repositories` holds the names a coding agent picks, in
+order; it is empty on any other agent
+([Agents](../agents.md#reference)).
 
 `guild_repositories`:
 
@@ -236,10 +274,14 @@ POST   /api/guilds/:id/repositories
 DELETE /api/guilds/:id/repositories/:repository_id
 ```
 
-`GET` returns `{ repositories, github_connections }`. `repositories`
-are this guild's git URLs. `github_connections` are the GitHub logins
-the caller can see in the organisation: `id`, `owner_scope`,
-`owner_id`, `account_hint`, `status`.
+`GET` returns `{ repositories, github_connections, usable }`.
+`repositories` are this guild's git URLs. `github_connections` are the
+GitHub logins the caller can see in the organisation: `id`,
+`owner_scope`, `owner_id`, `account_hint`, `status`. `usable` names
+the repositories a new coding agent of the guild can use: those picked
+on the guild's GitHub login, else the organisation's, while connected,
+and the guild's other repositories
+([Where the list comes from](#where-the-list-comes-from)).
 
 A repository payload carries `id`, `guild_id`, `name`, `url`,
 `default_branch`, `provider` (`github`, `access_token`, or null),
@@ -284,6 +326,8 @@ and returns 201 with the repository.
 
 `DELETE` returns 204, or 404 for an unknown repository. A repository
 added with this guild's own login also leaves the login's selection.
+In the same transaction, each agent of the guild that picks the name
+and can no longer use it unpicks it.
 
 `PUT /api/guilds/:id` accepts `git_author_email`. Omitted leaves the
 stored value. An empty string or null clears it. Otherwise it is
@@ -364,11 +408,42 @@ The generation-start error `repository.token` covers:
 - one whose value holds a line break: "`<name>`: the secret `<secret>`
   holds a line break, which git cannot send as a token".
 
+### An agent's picks
+
+`config.repositories` is a list of repository names, each once
+([Agents](../agents.md#reference)). A create or a reconfigure is 422:
+
+- with a list on an agent without `coding`: "repositories are only for
+  coding agents";
+- with a value that is not a list: "repositories must be a list of
+  repository names"; with an item that is not a repository name:
+  "repositories: `<item>` is not a repository name"; with a name twice:
+  "repositories: `<name>` is listed twice";
+- with a name the agent cannot use that its stored config does not
+  already pick: "repositories: the agent cannot use `<names>`: add it to
+  the guild's Repositories first".
+
+A coding generation fails at start, before the machine wakes:
+
+- with `coding.repositories_gone` while the agent picks a repository
+  it can no longer use: "this agent picks `<names>`, which it can no
+  longer use: add it back in the guild's Repositories, or unpick it in
+  the agent's Settings under Repositories, then send again";
+- with `coding.repositories_missing` while it picks none: "this agent
+  has no repository: pick one in its Settings under Repositories, then
+  send again".
+
+`GET /api/agents/:id/harness` lists `repositories`, the names a coding
+run clones (those the agent picks and can use, in its order), and
+`usable_repositories`, the names it can use
+([Harnesses](harnesses.md#reference)).
+
 ### Identity and clone
 
 `guilds-code git_setup` writes `user.name` (the agent's name) and
 `user.email` into the `.gitconfig` in the agent's home, then runs
-`git clone` for each repository missing from `repos/`, waiting up to
+`git clone` for each repository the agent picks that is missing from
+`repos/`, waiting up to
 600 seconds for each. A failed clone is removed, and the generation
 fails with `repository.clone`, "clone failed: `<name>`: `<error>`". When
 git wanted credentials, the error says which case it is:
@@ -383,14 +458,18 @@ git wanted credentials, the error says which case it is:
 
 ### State
 
-A coding agent's State carries `repositories`:
-`[{ name, path, default_branch }]`, where `path` is
-`/home/<agent id>/repos/<name>`. Live git state is not in State.
+A coding agent's State carries `repositories`, the ones it picks and
+can use, in its config's order: `[{ name, path, default_branch }]`,
+where `path` is `/home/<agent id>/repos/<name>`. Live git state is not
+in State.
 
 ### Code
 
-`apps/orchestrator/src/coding/repositories.ts` (validation, the clone
-list), `apps/orchestrator/src/coding/git.ts` (the git provider, the
+`apps/orchestrator/src/coding/repositories.ts` (validation, the
+repositories an agent can use and the ones it picks),
+`apps/orchestrator/src/coding/agent-repositories.ts` (loading them for
+an agent, and the run errors of its picks),
+`apps/orchestrator/src/coding/git.ts` (the git provider, the
 agent's tokens, identity, clone errors),
 `apps/orchestrator/src/coding/github-provider.ts` (GitHub's tokens),
 `apps/orchestrator/src/coding/access-token-provider.ts` (an access
@@ -411,8 +490,9 @@ email), `apps/orchestrator/src/http/coding-routes.ts` (routes), and in
 the app `apps/web/src/features/agent/GuildRepositories.tsx` (the
 guild's repositories and the add form),
 `apps/web/src/features/agent/repositories.ts` (the login a URL is
-added with), `apps/web/src/features/agent/CodingRepositories.tsx` (the
-coding agent's Repositories),
+added with, and the agent's repository checklist),
+`apps/web/src/features/agent/CodingRepositories.tsx` (the coding
+agent's Repositories),
 `apps/web/src/features/access/GithubRepositories.tsx` (a login's
 repository picker), and
 `apps/web/src/features/guild/pages/GuildSettings.tsx` (the **Git**

@@ -132,6 +132,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     browser: false,
     coding: true,
     harness: "claude-code",
+    repositories: ["shop"],
     thinking_level: "none",
   };
   await codeDefaultMachine(app, headers);
@@ -299,7 +300,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     await updateAgentConfig(
       db,
       agentId,
-      { config: agentConfig({ ...config, coding: false, harness: null }) },
+      { config: agentConfig({ ...config, coding: false, harness: null, repositories: [] }) },
       new Date(),
     );
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));

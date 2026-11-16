@@ -1,6 +1,7 @@
 import { writeBinding } from "../access/bindings.js";
 import { loadAccessView } from "../access/view.js";
 import { getMcpServerBySlug } from "../connectors/servers.js";
+import { getAgent, setAgentRepositories } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listGuildRepositories } from "../db/guilds.js";
 import { listMcpTools } from "../db/mcp.js";
@@ -23,7 +24,7 @@ import { newId } from "../lib/ids.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
-import { prepareRecipeForApply, roleBrowses } from "./prepare.js";
+import { prepareRecipeForApply, roleBrowses, roleRepositories } from "./prepare.js";
 
 // An apply's checklist: the steps its skeleton leaves open, the server's checks of the steps it
 // verifies, and the operator's confirmations and skips of the rest.
@@ -337,12 +338,37 @@ async function checkConnection(apply: RecipeApply, row: RecipeApplyRow, step: Ap
   return PASSED;
 }
 
+/**
+ * An agent's picks with `name` added at its place in its role's list `listed`: the role's names it
+ * picks, in the role's order, then its other picks.
+ */
+export function addRoleRepository(picked: readonly string[], listed: readonly string[], name: string): string[] {
+  const role = listed.filter((item) => item === name || picked.includes(item));
+  return [...role, ...picked.filter((item) => !listed.includes(item))];
+}
+
+/** Gives the guild's repository `name` to each agent of the apply whose role lists it. */
+async function pickRoleRepository(apply: RecipeApply, row: RecipeApplyRow, name: string): Promise<void> {
+  const recipe = await appliedRecipe(apply, row.recipe_id);
+  for (const role of recipe.roles) {
+    const listed = roleRepositories(role);
+    const agentId = row.plan.names.find((item) => item.role === role.role)?.agent_id;
+    const agent = agentId && listed.includes(name) ? await getAgent(apply.db, agentId) : null;
+    if (agent !== null && !agent.config.repositories.includes(name)) {
+      await setAgentRepositories(apply.db, agent.id, addRoleRepository(agent.config.repositories, listed, name), new Date());
+    }
+  }
+}
+
+/** A repository step passes once the guild has the repository; each agent whose role lists it then picks it. */
 async function checkRepository(apply: RecipeApply, row: RecipeApplyRow, step: ApplyStep): Promise<StepCheck> {
   const name = step.id.slice("repo:".length);
   const listed = await listGuildRepositories(apply.db, applyGuild(row));
-  return listed.some((item) => item.name === name)
-    ? PASSED
-    : { ok: false, reason: `The guild has no repository named ${name} yet. Add it in the guild's Settings, then check it.` };
+  if (!listed.some((item) => item.name === name)) {
+    return { ok: false, reason: `The guild has no repository named ${name} yet. Add it in the guild's Settings, then check it.` };
+  }
+  await pickRoleRepository(apply, row, name);
+  return PASSED;
 }
 
 /** Planned roles (the secret's roles, or every role) whose agent does not get the secret. */

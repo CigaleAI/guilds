@@ -124,7 +124,7 @@ export type ToolRun = {
   harness_model: string | null;
   /** The effort the run's harness runs its model at, from its snapshot; null for the harness's default. */
   harness_effort: Effort | null;
-  /** The guild repositories a coding run works on, by their folder under `repos/`. */
+  /** The repositories a coding run works on, the ones its agent picks, by their folder under `repos/`. */
   code_repositories: string[];
   /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
   code_default_cwd: string;

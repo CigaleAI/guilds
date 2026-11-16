@@ -152,8 +152,8 @@ export function harnessProblems(status: AgentHarness): CodingProblem[] {
 }
 
 /**
- * What stands between a coding agent and its first code task: what its harness lacks, or a guild
- * without repositories. Empty when nothing does.
+ * What stands between a coding agent and its first code task: what its harness lacks, or no
+ * repository picked that the agent can use. Empty when nothing does.
  */
 export function codingProblems(status: AgentHarness): CodingProblem[] {
   const harness = harnessProblems(status);
@@ -169,7 +169,7 @@ function problemText(problem: CodingProblem): string {
     case "credential":
       return `${problem.label} has no credential`;
     default:
-      return "the guild has no repositories";
+      return "no repository is picked";
   }
 }
 
@@ -350,7 +350,7 @@ function repositoriesPart(names: readonly string[]): CodingStripState["repositor
       }
     : {
         text: "No repos",
-        detail: "A coding run of a guild without repositories fails at start.",
+        detail: "A coding run of an agent without a repository picked fails at start.",
         problem: true,
         names,
       };
