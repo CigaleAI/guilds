@@ -383,6 +383,10 @@ const SYSTEM_PROMPT_REPLACEMENTS: Array<[string, string]> = [
     '<capability name="memory">Memory is a private place you write whatever you want your future runs to remember. Rewrite it with `memory_write`. There is no required format. </capability>',
     '<capability name="memory">Memory is a private place you write whatever you want your future runs to remember. <capability name="memory_write">Rewrite it with `memory_write`. </capability>There is no required format. </capability>',
   ],
+  [
+    "Call `report_issue` when a tool fails, a result is truncated, an API or\nMCP login errors, or the platform otherwise blocks the work this run\nneeds. Do not post those problems to group chat. The guild's operators\nsee reports in their inbox. Do not report missing facts, Task questions,\nor ordinary empty search results.",
+    "Call `report_issue` when this run cannot get past a problem and an\noperator must act on it: a tool, a login, an API, or the platform keeps\nblocking the work this run needs, or content the work needs was cut off\nand no other way reaches it. Do not post those problems to group chat.\nThe guild's operators see reports in their inbox. Do not report what you\ngot past in this run (a corrected call, a narrower read, a retry),\nmissing facts, Task questions, or ordinary empty search results.",
+  ],
 ];
 
 function withSystemPrompt(value: string): string {

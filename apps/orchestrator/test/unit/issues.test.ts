@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { GuildIssueRow, IssueKey, IssueStatusChange, NewIssue } from "../../src/db/issues.js";
 import { Issues, IssueError, ISSUE_OPEN_CAP, issueItem } from "../../src/issues/index.js";
 import { invokeTool } from "../../src/toolbox/index.js";
+import { reportIssue } from "../../src/toolbox/report.js";
 import { validateCatalog, BindingError } from "../../src/access/index.js";
 import { toolFixture } from "../helpers/toolbox.js";
 
@@ -313,6 +314,13 @@ test("issueItem snapshots the reporting agent", () => {
     avatar_shape: "blob",
     avatar_color: "#ff00aa",
   });
+});
+
+test("report_issue is described for a problem the run cannot get past, not for one it got past", () => {
+  const description = reportIssue.schema.function.description;
+  assert.match(description, /Use when this run cannot get past it and the operator must act/);
+  assert.match(description, /Do not use for what this run got past \(a corrected call, a narrower read, a retry\)/);
+  assert.doesNotMatch(description, /a result is truncated/);
 });
 
 test("group_post is a binding", () => {

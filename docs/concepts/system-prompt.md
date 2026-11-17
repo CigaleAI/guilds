@@ -144,8 +144,9 @@ The Guidelines teach a few habits every agent shares:
   talk with an operator. Work products stay in their canonical
   artifact. Each post is short. The agent checks each request against
   its Task.
-- **Report a broken tool.** `report_issue` files a tooling problem
-  for the operator; it does not go to group chat.
+- **Report what blocks the run.** `report_issue` files a problem the
+  run cannot get past for the operator, never one it got past; it
+  does not go to group chat.
 
 ## In the app
 
@@ -357,8 +358,10 @@ this order:
    vendor's system prompt stays in force beside these rules; with
    repositories, where they are, its branch, commits and push, and how
    its pull request is opened.
-7. `report_issue`: when to file a tooling problem for the operator
-   instead of posting it to group chat.
+7. `report_issue`: file a problem the run cannot get past, a tool, a
+   login, an API, or the platform that keeps blocking the work, or
+   content cut off that no other way reaches, for the operator instead
+   of posting it to group chat; never one the run got past.
 
 How to call a native tool stays on that tool. The generated Memory
 section owns the `memory_write` guidance. `system.md` names

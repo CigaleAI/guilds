@@ -142,7 +142,7 @@ export function GuildIssues() {
                 ? "No open issues"
                 : "No issues"
           }
-          description="Agents report an issue when a tool fails, a result is cut short, or a login errors."
+          description="Agents report an issue when a tool, a login or the platform blocks their work, or content they need is cut off."
         />
       ) : (
         <div className="flex flex-col gap-3">

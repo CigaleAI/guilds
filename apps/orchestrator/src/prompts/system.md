@@ -181,9 +181,11 @@ operator, or when it asks for a public update.
 </capability>
 
 <capability name="issues">
-Call `<tool>report_issue</tool>` when a tool fails, a result is truncated, an API or
-MCP login errors, or the platform otherwise blocks the work this run
-needs. Do not post those problems to group chat. The guild's operators
-see reports in their inbox. Do not report missing facts, Task questions,
-or ordinary empty search results.
+Call `<tool>report_issue</tool>` when this run cannot get past a problem and an
+operator must act on it: a tool, a login, an API, or the platform keeps
+blocking the work this run needs, or content the work needs was cut off
+and no other way reaches it. Do not post those problems to group chat.
+The guild's operators see reports in their inbox. Do not report what you
+got past in this run (a corrected call, a narrower read, a retry),
+missing facts, Task questions, or ordinary empty search results.
 </capability>

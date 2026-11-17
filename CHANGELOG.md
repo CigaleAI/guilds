@@ -8,6 +8,14 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Changed.** An agent is told to call `report_issue` only when its run
+cannot get past a problem and an operator must act on it: a tool, a
+login, an API, or the platform that keeps blocking the work, or content
+the work needs that was cut off and that no other way reaches. A
+failure or a cut-off result the run gets past, by a corrected call, a
+narrower read, or a retry, is not reported. The system prompt, the
+tool's description, and the guild Issues tab's empty state say so.
+
 **Changed.** The system prompt of a subscription agent with scripting
 on no longer says a script is the only way to run code. It says to run
 commands and one-off code with the harness's own tools, to keep a
