@@ -188,21 +188,49 @@ that tool does. The run's error banner names a turn that did not end
 cleanly, such as `harness.failed` or `harness.timed_out`.
 
 A call of the harness's own tool reads as what it did, coloured by its
-kind:
+kind. Each harness's tools are its own: a name reads this way only on
+a row its harness marked, so a Guilds tool never reads as a harness's
+tool that shares its name, and a harness's tool never as a Guilds
+tool.
 
-| Tool | Reads | Kind |
-| --- | --- | --- |
-| Codex's `command_execution` | **Run** and the command's first line | execute |
-| Codex's `file_change` | **Change** and the file, or the number of files | write |
-| Codex's `web_search` | **Search web** and the query | read |
-| `Bash` | **Run** and the command's first line | execute |
-| `Read` | **Read** and the file | read |
-| `Write`, `Edit`, `MultiEdit` | **Write** or **Edit** and the file | write |
-| `Grep`, `Glob` | **Search lines** or **Search files** and the pattern | read |
-| `LS` | **List** and the path | read |
-| `WebFetch`, `WebSearch` | **Fetch** and the address, or **Search web** and the query | read |
-| `Task` | **Delegate** and its description | execute |
-| `TodoWrite` | **Update todos** | write |
+| Harness | Tool | Reads | Kind |
+| --- | --- | --- | --- |
+| Claude Code | `Bash` | **Run** and the command's first line | execute |
+| Claude Code | `Read` | **Read** and the file | read |
+| Claude Code | `Write`, `Edit`, `MultiEdit` | **Write** or **Edit** and the file | write |
+| Claude Code | `NotebookEdit` | its name | write |
+| Claude Code | `Grep`, `Glob` | **Search lines** or **Search files** and the pattern | read |
+| Claude Code | `LS` | **List** and the path | read |
+| Claude Code | `WebFetch`, `WebSearch` | **Fetch** and the address, or **Search web** and the query | read |
+| Claude Code | `Task` | **Delegate** and its description | execute |
+| Claude Code | `TodoWrite` | **Update todos** | write |
+| Codex | `command_execution` | **Run** and the command's first line | execute |
+| Codex | `file_change` | **Change** and the file, or the number of files | write |
+| Codex | `web_search` | **Search web** and the query | read |
+| Cursor | `shell` | **Run** and the command's first line | execute |
+| Cursor | `await` | **Wait** | execute |
+| Cursor | `read` | **Read** and the path | read |
+| Cursor | `write`, `edit`, `delete` | **Write**, **Edit**, or **Delete** and the path | write |
+| Cursor | `grep`, `glob` | **Search lines** or **Search files** and the pattern | read |
+| Cursor | `ls` | **List** and the path | read |
+| Cursor | `todo` | **Update todos** | write |
+| Cursor | `getMcpTools` | **List MCP tools** | read |
+| Antigravity | `run_command` | **Run** and the command's first line | execute |
+| Antigravity | `send_command_input`, `command_status` | **Send command input**, **Check command** | execute, read |
+| Antigravity | `view_file` | **Read** and the file | read |
+| Antigravity | `list_dir` | **List** and the directory | read |
+| Antigravity | `find_by_name`, `grep_search` | **Search files** or **Search lines** and the pattern | read |
+| Antigravity | `write_to_file` | **Write** and the file | write |
+| Antigravity | `replace_file_content`, `multi_replace_file_content` | **Edit** and the file | write |
+| Antigravity | `search_web`, `read_url_content` | **Search web** and the query, or **Fetch** and the address | read |
+| Antigravity | `call_mcp_tool` | **Call** and the tool, with its server | connected |
+
+A harness's call of a tool of an MCP server other than the Guilds
+one, which the harness loaded itself, reads as connected. Claude Code
+and Codex name such a tool `mcp__<server>__<tool>` and Antigravity
+`mcp_<server>_<tool>`; the card names the server where the name
+carries it. Cursor's rows name such a call by the tool's own name, so
+it reads as its name.
 
 Any other tool reads as its name. A write in the agent's home is not
 tracked state, so it carries no **wrote** tag. Opening the call shows
@@ -278,9 +306,11 @@ reloads the ordered history, then consumes new events.
 - `apps/web/src/features/agent/runs/runFlowModel.ts`: how rows and
   run errors group into flows, steps, and calls
 - `apps/web/src/features/agent/runs/toolKinds.ts`: each tool's kind,
-  level, and whether it writes tracked state
+  level, and whether it writes tracked state, each harness's own tools
+  apart from the Guilds tools
 - `apps/web/src/features/agent/runs/toolFormat.ts`: a call's short
-  line, its arguments, and its outcome
+  line, its arguments, and its outcome, each harness's own tools apart
+  from the Guilds tools
 - `apps/web/src/features/agent/chat/ChangesPanel.tsx`: the
   **Changes** panel
 - `apps/web/src/features/agent/chat/SecretRequestCard.tsx`: the

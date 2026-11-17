@@ -37,6 +37,7 @@ import {
   type FlowStep,
 } from "../runs/runFlowModel";
 import {
+  callSummary,
   formatDuration,
   formatTokens,
   friendlyToolCall,
@@ -311,7 +312,9 @@ function generationStats(stats: FlowStats, failedCalls: number): GenerationStat[
 
 /** What a call's card says beside its name: that its harness is generating, what it did, and how it came out. */
 export function callHint(call: FlowCall): string {
-  return [friendlyToolCall(call.call), toolOutcome(call.result?.metadata)].filter(Boolean).join(" · ");
+  return [friendlyToolCall(call.call, call.info.harness), toolOutcome(call.result?.metadata)]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** The connected server a call's card names; none when the tool's own name already carries it. */
@@ -514,7 +517,7 @@ export function FlowView({
       >
         <FlowStepBlock
           label={step.index === null ? "Tool result" : `Step ${step.index}`}
-          title={summarizeCalls(step.calls.map((call) => call.call))}
+          title={summarizeCalls(step.calls.map((call) => callSummary(call.call, call.info.harness)))}
           {...(note ? { note } : {})}
           {...stepCues([step], generating)}
           {...(stop ? { stop } : {})}

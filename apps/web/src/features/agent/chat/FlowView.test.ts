@@ -32,7 +32,7 @@ function flowCall(id: string, patch: Partial<FlowCall> = {}): FlowCall {
     call: codeTaskCall('{"brief":"Fix it","repo":"guilds/api"}'),
     result: null,
     position: 1,
-    info: { name: "code_task", kind: "execute", level: null, server: null },
+    info: { name: "code_task", kind: "execute", level: null, server: null, harness: null },
     error: null,
     ...patch,
   };
@@ -85,7 +85,7 @@ test("an old code_task call's hint has no summary of its own", () => {
 });
 
 test("a card names its connected server unless the tool's name carries it", () => {
-  const info = { name: "search", kind: "connected" as const, level: null, server: "github" };
+  const info = { name: "search", kind: "connected" as const, level: null, server: "github", harness: null };
   assert.equal(cardServer(flowCall("c1", { info })), "github");
   assert.equal(cardServer(flowCall("c1", { info: { ...info, name: "github_search" } })), null);
   assert.equal(cardServer(flowCall("c1")), null);
