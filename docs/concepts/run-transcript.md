@@ -130,6 +130,10 @@ on, starts open.
 - **Writes** and **Errors** open the blocks that hold calls that
   changed tracked state, or failed calls, and dim everything else.
   Each carries its count, as does **All**, which keeps every call.
+- In a generation a subscription agent's harness ran, the harness's
+  name and **Guild** do the same for the calls the harness made and
+  the calls of the Guilds tools ([Harness turns](#harness-turns)). A
+  generation a model ran has neither.
 - **Expand all** opens every block and unfolds every reasoning line.
   **Collapse all** folds them back and returns to **All**.
 - **Hide thinking** drops the reasoning from open steps.

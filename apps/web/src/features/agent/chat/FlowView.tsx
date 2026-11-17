@@ -17,6 +17,7 @@ import {
 import type {
   FlowCallTone,
   FlowStepCues,
+  GenerationOriginCounts,
   GenerationStat,
   GenerationStatus,
   GenerationFilter,
@@ -25,6 +26,7 @@ import type {
   ToolCallStatus,
 } from "@guildsrun/ui";
 import {
+  flowHarness,
   flowStats,
   stepCostUsd,
   turnReasoning,
@@ -326,6 +328,39 @@ export function cardServer(call: FlowCall): string | null {
   return server && !name.startsWith(`${server}_`) ? server : null;
 }
 
+/** Whether a filter dims a call: it keeps writes, failures, the harness's calls, or the guild's, and the call is not one. */
+export function dimsCall(
+  filter: GenerationFilter | null,
+  call: FlowCall,
+  generating: boolean,
+): boolean {
+  switch (filter) {
+    case null:
+      return false;
+    case "mutations":
+      return !isMutation(call.info);
+    case "errors":
+      return callError(call, generating) === null;
+    case "harness":
+      return call.info.harness === null;
+    case "guild":
+      return call.info.harness !== null;
+  }
+}
+
+/**
+ * A flow's calls by who made them, for the toolbar's harness and guild filters: the harness that
+ * ran its generation and how many calls it made, and how many were of the guild's tools; null for
+ * a generation a model ran.
+ */
+export function originCounts(flow: FlowSegment): GenerationOriginCounts | null {
+  const harness = flowHarness(flow);
+  if (harness === null) return null;
+  const calls = flow.steps.flatMap((step) => step.calls);
+  const harnessCalls = calls.filter((call) => call.info.harness !== null).length;
+  return { harness: harnessLabel(harness), harnessCalls, guildCalls: calls.length - harnessCalls };
+}
+
 /** The harness that made a card's call, and what the card says of it on hover and to screen readers. */
 export type CardHarness = { harness: Harness; title: string };
 
@@ -413,9 +448,8 @@ export function FlowView({
     if (last) centerInScroller(last);
   };
 
-  const dimCall = (call: FlowCall) =>
-    (filter === "mutations" && !isMutation(call.info)) ||
-    (filter === "errors" && !callError(call, generating));
+  const dimCall = (call: FlowCall) => dimsCall(filter, call, generating);
+  const origin = originCounts(flow);
 
   /** Expanding opens every block and thought; collapsing also drops the filter, so all fold. */
   const expandAll = (next: boolean) => {
@@ -625,7 +659,12 @@ export function FlowView({
         }
         stats={statLabels}
         status={status}
-        counts={{ all: calls.length, mutations, errors: failedCalls }}
+        counts={{
+          all: calls.length,
+          mutations,
+          errors: failedCalls,
+          ...(origin ? { origin } : {}),
+        }}
         filter={filter}
         onFilterChange={setFilter}
         thinkingHidden={thinkingHidden}

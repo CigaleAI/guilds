@@ -92,6 +92,18 @@ export function callHarness(
   return request?.metadata.from_harness ?? result?.metadata.from_harness ?? null;
 }
 
+/**
+ * The coding harness that ran a flow's generation: the one its steps or calls are marked as; null
+ * for a generation a model ran, or one whose steps all called the guild's tools.
+ */
+export function flowHarness(flow: FlowSegment): Harness | null {
+  const marks = flow.steps.flatMap((step) => [
+    step.turn?.metadata.from_harness,
+    ...step.calls.map((item) => item.info.harness),
+  ]);
+  return marks.find((mark): mark is Harness => mark !== undefined && mark !== null) ?? null;
+}
+
 /** A requested call with its result, its position in its batch, and how it reads. */
 function makeCall<M extends StepMessage>(
   call: ToolCall,

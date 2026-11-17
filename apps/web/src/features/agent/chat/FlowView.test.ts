@@ -6,7 +6,9 @@ import {
   callHint,
   cardHarness,
   cardServer,
+  dimsCall,
   generationStatus,
+  originCounts,
   revealedCall,
   writtenNotePath,
 } from "./FlowView";
@@ -108,6 +110,51 @@ test("a harness's call's hint reads by that harness's tools", () => {
   const call: ToolCall = { id: "c1", type: "function", function: { name: "shell", arguments: '{"command":"ls -a"}' } };
   assert.equal(callHint(flowCall("c1", { call, info })), "Run ls -a");
   assert.equal(callHint(flowCall("c1", { call })), "command: ls -a", "a call of no harness");
+});
+
+const cursorShell = {
+  name: "shell",
+  kind: "execute" as const,
+  level: "local" as const,
+  server: null,
+  harness: "cursor" as const,
+};
+
+test("the harness filter dims the guild's calls, and the guild filter the harness's", () => {
+  const harnessCall = flowCall("c1", { info: cursorShell, result: message(2) });
+  const guildCall = flowCall("c2", { result: message(3) });
+  assert.equal(dimsCall("harness", harnessCall, false), false);
+  assert.equal(dimsCall("harness", guildCall, false), true);
+  assert.equal(dimsCall("guild", harnessCall, false), true);
+  assert.equal(dimsCall("guild", guildCall, false), false);
+  assert.equal(dimsCall(null, guildCall, false), false);
+});
+
+test("the writes and errors filters dim the calls that wrote nothing or did not fail", () => {
+  const ok = flowCall("c1", { result: message(2) });
+  assert.equal(dimsCall("mutations", ok, false), true);
+  assert.equal(dimsCall("errors", ok, false), true);
+  assert.equal(dimsCall("errors", flowCall("c2", { error: "boom" }), false), false);
+  assert.equal(dimsCall("errors", flowCall("c3"), false), false, "a call left unanswered failed");
+  assert.equal(dimsCall("errors", flowCall("c3"), true), true, "a call still running");
+});
+
+test("a generation a harness ran counts its calls by who made them; a model's none", () => {
+  const flow = (calls: FlowCall[], metadata: MessageMetadata = {}): FlowSegment => ({
+    type: "flow",
+    generation: 1,
+    key: "f",
+    steps: [{ index: 1, turn: message(1, metadata), calls }],
+    errors: [],
+  });
+  const mixed = flow([flowCall("c1", { info: cursorShell }), flowCall("c2"), flowCall("c3")]);
+  assert.deepEqual(originCounts(mixed), { harness: "Cursor", harnessCalls: 1, guildCalls: 2 });
+  assert.equal(originCounts(flow([flowCall("c1")])), null);
+  assert.deepEqual(originCounts(flow([], { from_harness: "antigravity" })), {
+    harness: "Antigravity",
+    harnessCalls: 0,
+    guildCalls: 0,
+  });
 });
 
 test("a note_write's chip names the note its result's first line names, and none for another path", () => {
