@@ -32,6 +32,9 @@ const ResultUsage = Type.Object({
   cache_read_tokens: Type.Optional(Type.Number()),
 });
 
+/** The state of a step that failed. */
+const FAILED_STATE = "ERROR";
+
 /** The tool through which Antigravity's model calls a tool of an MCP server it names. */
 const CALL_MCP_TOOL = "call_mcp_tool";
 
@@ -47,8 +50,11 @@ export type AntigravityText = { type: "text"; step: number; text: string; done: 
 /** A call of one of Antigravity's tools at step `step` as it starts. */
 export type AntigravityToolStarted = { type: "tool_started"; step: number; tool: AntigravityToolUse };
 
-/** A call of one of Antigravity's tools at step `step` once it ended: its output or its error, null when it reports neither. */
-export type AntigravityToolEnded = { type: "tool_ended"; step: number; tool: AntigravityToolUse; output: string | null };
+/**
+ * A call of one of Antigravity's tools at step `step` once it ended: its output or its error's
+ * message, null when it reports neither, and whether it failed, its step in `ERROR` or carrying an error.
+ */
+export type AntigravityToolEnded = { type: "tool_ended"; step: number; tool: AntigravityToolUse; output: string | null; failed: boolean };
 
 /** The end of an invocation: the tokens the conversation spent so far, over every turn of it. */
 export type AntigravitySessionUsage = { type: "session_usage"; usage: TokenUsage };
@@ -73,7 +79,13 @@ function toolEvent(step: Static<typeof StepUpdate>): AntigravityToolStarted | An
   if (step.state === "ACTIVE") {
     return { type: "tool_started", step: step.step_index, tool };
   }
-  return { type: "tool_ended", step: step.step_index, tool, output: info.output ?? info.error?.message ?? null };
+  return {
+    type: "tool_ended",
+    step: step.step_index,
+    tool,
+    output: info.output ?? info.error?.message ?? null,
+    failed: step.state === FAILED_STATE || info.error !== undefined,
+  };
 }
 
 /** The event a `step_update` holds; null for a step of another kind or shape. */

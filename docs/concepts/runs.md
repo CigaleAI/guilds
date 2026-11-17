@@ -545,13 +545,20 @@ under the call id `turn_<generation>_<run id>`
 
    | CLI | Message | Call of its own tool | Result |
    | --- | --- | --- | --- |
-   | Claude Code | each `assistant` event's text | each `tool_use` block, under its id and tool name | each `tool_result` block of a `user` event |
-   | Codex | each completed `agent_message` item | each `command_execution` (its `command`), `file_change` (its `changes`) or `web_search` (its `query`) item as it starts, or as it completes when it did not announce its start, under `<call id>.<item id>` and the item's type | the completed item: a command's output, a line per changed file, nothing for a search |
-   | Cursor | each `assistant` event's text | each `tool_call` event as it starts, or as it completes when it did not announce its start, under `<call id>.<Cursor's call id>` and the tool's kind without `ToolCall` (`shell`, `read`, `write`), with its `args` | the completed event's `result`: a command's output, a file's content, an error's text, else the result as JSON |
-   | Antigravity | each `agent_response` step's text, its pieces joined once the step is `DONE` | each `tool` step as it is `ACTIVE`, or as it ends when it did not announce its start, under `<call id>.step_<step index>` and the tool's name, with its parameters | the step that ended: its output, or its error's message |
+   | Claude Code | each `assistant` event's text | each `tool_use` block, under its id and tool name | each `tool_result` block of a `user` event; failed when its `is_error` is true |
+   | Codex | each completed `agent_message` item | each `command_execution` (its `command`), `file_change` (its `changes`) or `web_search` (its `query`) item as it starts, or as it completes when it did not announce its start, under `<call id>.<item id>` and the item's type | the completed item: a command's output and `exit_code`, a line per changed file, nothing for a search; failed when its `status` is `failed` or `declined`, a command's exit code is not 0, or an MCP call has an `error` |
+   | Cursor | each `assistant` event's text | each `tool_call` event as it starts, or as it completes when it did not announce its start, under `<call id>.<Cursor's call id>` and the tool's kind without `ToolCall` (`shell`, `read`, `write`), with its `args` | the completed event's `result`: under `success`, a command's output and `exitCode`, a file's content, an edit's diff, for a read whose content the event leaves out the lines read, the file, and its size, or for a background command waited for how long it ran; under `failure`, a command that exited otherwise than 0, its output and `exitCode`; under `error`, its message (`error` or `errorMessage`); else the result as JSON. Both `failure` and `error` are failed |
+   | Antigravity | each `agent_response` step's text, its pieces joined once the step is `DONE` | each `tool` step as it is `ACTIVE`, or as it ends when it did not announce its start, under `<call id>.step_<step index>` and the tool's name, with its parameters | the step that ended: its output, or its error's message; failed when its state is `ERROR` or it carries an `error` |
 
    Codex's other items (its reasoning, its plan, an error notice) make
-   no row.
+   no row. A command's output is its interleaved output when the CLI
+   keeps one, else its stdout and stderr.
+
+   A result the CLI says failed records the failure as a failed tool's
+   row does: `metadata.error` is `exited with code <n>` for a command
+   that exited otherwise than 0, else the first line of what the call
+   returned, else `the call failed`, redacted. A result whose event
+   names its command's exit code records it as `metadata.exit_code`.
 3. **End.** A CLI that exits 0 without an error result ends the
    generation as a model's final reply does: the run completes or
    waits by the same rules. Any other ending records its error:

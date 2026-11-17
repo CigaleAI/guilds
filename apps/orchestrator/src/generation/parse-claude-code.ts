@@ -19,6 +19,7 @@ const ToolResultBlock = Type.Object({
   type: Type.Literal("tool_result"),
   tool_use_id: Type.String(),
   content: Type.Optional(Type.Unknown()),
+  is_error: Type.Optional(Type.Boolean()),
 });
 
 /** The tokens a `result` event reports, which Anthropic counts apart from the cache's. */
@@ -35,8 +36,11 @@ export type ClaudeCodeText = Static<typeof TextBlock>;
 /** A call Claude Code made of one of its own tools: its id, the tool, and its input. */
 export type ClaudeCodeToolUse = Static<typeof ToolUseBlock>;
 
-/** What one of Claude Code's tools returned for the call `tool_use_id` names; `output` is null when it is not text. */
-export type ClaudeCodeToolResult = { tool_use_id: string; output: string | null };
+/**
+ * What one of Claude Code's tools returned for the call `tool_use_id` names, and whether Claude
+ * Code reports it failed; `output` is null when it is not text.
+ */
+export type ClaudeCodeToolResult = { tool_use_id: string; output: string | null; is_error: boolean };
 
 /** A message Claude Code wrote: its text and its calls of its own tools, in order. */
 export type ClaudeCodeMessage = {
@@ -75,6 +79,7 @@ function toolResult(block: unknown): ClaudeCodeToolResult | null {
   return {
     tool_use_id: result.tool_use_id,
     output: typeof result.content === "string" ? result.content : null,
+    is_error: result.is_error === true,
   };
 }
 

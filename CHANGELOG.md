@@ -8,6 +8,15 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Fixed.** A call a subscription agent's harness makes of its own tools
+and that its CLI says failed, such as a command that exited otherwise
+than 0 or a read of a file that is not there, reads as a failed call:
+the run view colours it and opens it on the reason it failed, every
+count of tool errors includes it, and a command's exit code is in its
+Metadata. Cursor's failed commands, failed reads, reads of large files,
+and waited-for background commands show what they returned rather than
+raw JSON.
+
 **Added.** Every agent's Settings has **Repositories**, on a key as on a
 subscription, and **Create an agent** ends on it as an optional fourth
 step. Each ticked repository has a **Read-only** switch. While the guild

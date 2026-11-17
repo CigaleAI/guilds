@@ -207,7 +207,12 @@ kind:
 Any other tool reads as its name. A write in the agent's home is not
 tracked state, so it carries no **wrote** tag. Opening the call shows
 its input and its output, which the platform redacted and capped as
-any tool's, and its Metadata names the harness under **Called by**.
+any tool's, and its Metadata names the harness under **Called by** and
+a command's exit code. A call the harness says failed, such as a
+command that exited otherwise than 0 or a read of a file that is not
+there, reads as a failed call of any tool does: it is coloured as
+failed, counts among the flow's failed calls, and opens on its result
+under the reason it failed ([Runs](runs.md#harness-turns)).
 
 ### Errors outside a flow
 

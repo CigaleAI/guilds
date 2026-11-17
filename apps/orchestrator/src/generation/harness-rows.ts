@@ -31,8 +31,21 @@ export const NOT_TEXT_OUTPUT = "(the tool returned no text)";
 /** A call of a harness's own tool's result, as the run keeps it: the message, and the call's metadata marked as the harness's. */
 export type HarnessToolRecord = [ToolMessage, ToolResultMetadata & HarnessMessageMetadata];
 
-/** What one of a harness's own tools returned for the call `tool_use_id` names; `output` is null when it is not text. */
-export type HarnessToolResult = { harness: Harness; tool_use_id: string; output: string | null };
+/**
+ * What one of a harness's own tools returned for the call `tool_use_id` names: its output, null when
+ * it is not text; whether the harness's events say the call failed; and the exit code of the
+ * command it ran, null when the events name none.
+ */
+export type HarnessToolResult = {
+  harness: Harness;
+  tool_use_id: string;
+  output: string | null;
+  failed: boolean;
+  exit_code: number | null;
+};
+
+/** Why a call that failed with no other reason failed. */
+export const FAILED_CALL_REASON = "the call failed";
 
 /** The result of a call of a harness's own tool, with the call itself when the log did not announce it before its result. */
 export type HarnessResultStep = { kind: "result"; result: HarnessToolResult; call: ToolCall | null };
@@ -93,7 +106,11 @@ export function claudeCodeAssistantMessage(
 export function claudeCodeTurnSteps(raw: string, secrets: Record<string, string>): HarnessTurnStep[] {
   return parseClaudeCodeEvents(raw).flatMap((event): HarnessTurnStep[] => {
     if (event.type === "user") {
-      return event.results.map((result) => ({ kind: "result", result: { harness: "claude-code", ...result }, call: null }));
+      return event.results.map(({ tool_use_id, output, is_error }) => ({
+        kind: "result",
+        result: { harness: "claude-code", tool_use_id, output, failed: is_error, exit_code: null },
+        call: null,
+      }));
     }
     if (event.type === "result") {
       return [{ kind: "turn_usage", usage: event.usage }];
@@ -138,6 +155,27 @@ function codexToolOutput(item: CodexToolItem): string | null {
   }
 }
 
+/** The statuses of an item Codex did not carry out: one that failed, or a command it declined to run. */
+const CODEX_FAILED_STATUSES = new Set(["failed", "declined"]);
+
+/**
+ * Whether a call of one of Codex's tools failed, as its completed item reports it: a command that
+ * exited otherwise than 0, or an item whose status says it failed or was declined, or an MCP
+ * server's tool that returned an error.
+ */
+function codexToolFailed(item: CodexToolItem): boolean {
+  switch (item.type) {
+    case "command_execution":
+      return CODEX_FAILED_STATUSES.has(item.status ?? "") || (item.exit_code ?? 0) !== 0;
+    case "file_change":
+      return CODEX_FAILED_STATUSES.has(item.status ?? "");
+    case "web_search":
+      return false;
+    case "mcp_tool_call":
+      return item.error !== undefined && item.error !== null;
+  }
+}
+
 /**
  * The steps Codex's `--json` lines in `raw` make, in order, redacted with `secrets`: each message
  * with text, each call of one of its own tools, when it starts and with its result when it
@@ -160,7 +198,14 @@ export function codexTurnSteps(raw: string, secrets: Record<string, string>, tur
     if (event.type === "tool_started") {
       return [{ kind: "message", payload: { role: "assistant", content: "", tool_calls: [call] } }];
     }
-    return [{ kind: "result", result: { harness: "codex", tool_use_id: call.id, output: codexToolOutput(event.item) }, call }];
+    const result: HarnessToolResult = {
+      harness: "codex",
+      tool_use_id: call.id,
+      output: codexToolOutput(event.item),
+      failed: codexToolFailed(event.item),
+      exit_code: event.item.type === "command_execution" ? (event.item.exit_code ?? null) : null,
+    };
+    return [{ kind: "result", result, call }];
   });
 }
 
@@ -185,7 +230,8 @@ export function cursorTurnSteps(raw: string, secrets: Record<string, string>, tu
     if (event.type === "tool_started") {
       return [{ kind: "message", payload: { role: "assistant", content: "", tool_calls: [call] } }];
     }
-    return [{ kind: "result", result: { harness: "cursor", tool_use_id: call.id, output: event.tool.output }, call }];
+    const returned = event.tool.result ?? { output: null, failed: false, exit_code: null };
+    return [{ kind: "result", result: { harness: "cursor", tool_use_id: call.id, ...returned }, call }];
   });
 }
 
@@ -235,7 +281,8 @@ export function antigravityTurnSteps(
     if (event.type === "tool_started") {
       return [{ kind: "message", payload: { role: "assistant", content: "", tool_calls: [call] } }];
     }
-    return [{ kind: "result", result: { harness: "antigravity", tool_use_id: call.id, output: event.output }, call }];
+    const result: HarnessToolResult = { harness: "antigravity", tool_use_id: call.id, output: event.output, failed: event.failed, exit_code: null };
+    return [{ kind: "result", result, call }];
   });
 }
 
@@ -303,8 +350,21 @@ export function subscriptionUsageRecord(usage: TokenUsage): Pick<CompletionMetad
 }
 
 /**
+ * Why a call its harness says failed failed, as a failed tool's row names it: the exit code of the
+ * command it ran, else the first line of what it returned, else that it failed.
+ */
+function harnessToolFailure(result: HarnessToolResult): string {
+  if (result.exit_code !== null && result.exit_code !== 0) {
+    return `exited with code ${result.exit_code}`;
+  }
+  const line = (result.output ?? "").trim().split("\n")[0]?.trim() ?? "";
+  return line || FAILED_CALL_REASON;
+}
+
+/**
  * The row of `result`, the result of `call`, a call of one of its harness's own tools that took
- * `durationMs`: its output redacted with `secrets` and capped as a tool's output is.
+ * `durationMs`: its output redacted with `secrets` and capped as a tool's output is, the call's
+ * failure, redacted too, as a failed tool's row records it, and its command's exit code.
  */
 export function harnessToolRecord(
   result: HarnessToolResult,
@@ -318,6 +378,7 @@ export function harnessToolRecord(
     secrets,
     toolResultMaxBytes(),
   );
+  const failure = result.failed ? redact(harnessToolFailure(result), secrets) : null;
   return [
     { role: "tool", tool_call_id: call.id, content },
     {
@@ -326,6 +387,8 @@ export function harnessToolRecord(
       duration_ms: durationMs,
       output_filter: "identity",
       ...output,
+      error: output.error ?? failure,
+      ...(result.exit_code === null ? {} : { exit_code: result.exit_code }),
       from_harness: result.harness,
     },
   ];
