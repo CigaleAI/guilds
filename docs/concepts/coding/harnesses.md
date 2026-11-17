@@ -58,6 +58,13 @@ A subscription is often personal. In an organisation, everyone who
 can start the agent's runs uses it. Whether that complies with the
 vendor's terms is the operator's call
 ([SEC-30](../../architecture/security-register.md#sec-30--personal-harness-subscriptions-used-inside-a-shared-organisation-may-fall-outside-the-vendors-terms)).
+Cursor loads the plugins of the account it runs on into every turn,
+fetched from Cursor's servers when the CLI starts, with the MCP
+servers, rules, skills, and hooks they carry: tools and instructions
+outside the agent's bindings. The CLI has no switch to keep them out,
+so a Cursor agent runs on an account with no plugin installed or
+turned on, outside any team that distributes plugins as Required
+([SEC-76](../../architecture/security-register.md#sec-76--a-cursor-turn-loads-the-plugins-of-the-account-it-runs-on)).
 Whether Google's terms for an Antigravity sign-in allow it to run
 every turn of a subscription agent is an open question the operator
 answers before picking it.
@@ -595,15 +602,16 @@ it:
 | --- | --- |
 | Claude Code | `~/.claude/` `settings.json`, `settings.local.json`, `CLAUDE.md`, `CLAUDE.local.md`, `rules/`, `hooks/`, `plugins/`, `skills/`, `commands/`, `agents/`, `output-styles/`, and each project's `memory/` under `projects/` |
 | Codex | `~/.codex/` `AGENTS.md`, `AGENTS.override.md`, `skills/`, `prompts/`, `rules/`, `memories/` and its `memories_*.sqlite` databases, `hooks.json` |
-| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`, and each workspace's stored MCP approvals and disabled servers, `projects/*/mcp-approvals.json` and `projects/*/mcp-disabled.json`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
+| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`, and each workspace's stored MCP approvals, disabled servers, and MCP sign-ins, `projects/*/mcp-approvals.json`, `projects/*/mcp-disabled.json`, and `projects/*/mcp-auth.json`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
 | Antigravity | `~/.gemini/` `GEMINI.md`, `AGENTS.md`, and under `config/`: `GEMINI.md`, `AGENTS.md`, `rules/`, `hooks.json`, `mcp_config.json`, `skills/`, `skills.json`, `plugins/`, `plugins.json`, `workflows/`, `workflows.json`, `global_workflows/`, `sidecars/` |
 
 A path whose link resolves outside the home is left alone. The logins
 and account state (`~/.claude.json`, `~/.claude/.credentials.json`,
 `~/.codex/auth.json`, `~/.config/cursor/auth.json`, the Antigravity
 sign-in) are never touched, nor the session transcripts and thread
-records that `session_id` resumes. Memory is off as well as removed:
-Claude Code's auto-memory (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
+records that `session_id` resumes. A sign-in to an MCP server other
+than the platform's is not the harness's login, and goes. Memory is
+off as well as removed: Claude Code's auto-memory (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
 `autoMemoryEnabled: false`) and Codex's memories feature.
 
 After the removal, `start` writes Antigravity's

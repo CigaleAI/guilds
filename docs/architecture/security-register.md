@@ -10,6 +10,7 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-76](#sec-76--a-cursor-turn-loads-the-plugins-of-the-account-it-runs-on) | A Cursor turn loads the plugins of the account it runs on | Open |
 | [SEC-75](#sec-75--cursor-loaded-a-repositorys-mcp-server-on-an-approval-stored-in-the-agents-home) | Cursor loaded a repository's MCP server on an approval stored in the agent's home | Fixed 2026-11-17 |
 | [SEC-74](#sec-74--an-agent-on-a-key-holds-a-git-token-and-a-clone-on-its-machine-and-what-it-reads-can-steer-what-it-does-with-them) | An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them | Open |
 | [SEC-73](#sec-73--a-repository-an-agent-only-reads-on-a-host-other-than-github-is-read-only-by-its-clones-push-url-alone) | A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone | Open, accepted |
@@ -85,6 +86,50 @@ its date (the code that held the issue is removed).
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-76 — A Cursor turn loads the plugins of the account it runs on
+
+**Status:** open.
+
+**Found:** 2026-11-17, reading the tool catalog of a headless Cursor
+session on a `CURSOR_API_KEY`: it listed an MCP server of a plugin of
+that account's, awaiting its sign-in.
+
+**Where:** the Cursor driver in `runtime/guilds-harness`, pinned to
+the Cursor CLI `2026.11.13-eacade1`, and the Cursor account the agent's
+`CURSOR_API_KEY` or login in its home belongs to.
+
+**Exposure:** when it starts, the Cursor CLI fetches from Cursor's
+servers the plugins in effect for the account it runs on, its own and
+those a team distributes, installs them in the home, and loads them
+into the turn. A plugin carries MCP servers, and can carry rules,
+skills, and hooks. Their MCP servers load without the approval a
+workspace's server needs. A turn then has tools outside the agent's
+bindings, which the run's offer gate and `max_tool_calls` never see,
+and instructions beside the guild's rule (SEC-67). A plugin's server
+that needs no sign-in, or that Cursor signs in with the account's own
+token, acts as that account wherever the model decides to call it, with
+what the turn reads steering it (SEC-28). That plugins carry rules,
+skills, and hooks, and that the CLI signs some servers in with the
+account's token, is read from the CLI's code; a live session showed
+only a plugin's MCP server.
+
+**Control in place:** none keeps the plugins out. The CLI has no flag,
+variable, or setting that does: not in its `--help`, its
+`cli-config.json`, or the variables it reads; it turns account plugins
+off only in its local modes, which run off the Cursor subscription;
+and `--approve-mcps`, which the driver never passes, does not gate
+them. Before every call the driver removes `~/.cursor/plugins/`, which
+the CLI fills again, and each workspace's MCP sign-ins,
+`~/.cursor/projects/*/mcp-auth.json`, so a sign-in made in the home to
+a plugin's server, from the CLI tab or by an earlier turn, does not
+reach the next call. A Cursor agent's credential is one its operator
+grants or logs in with.
+
+**Fix to make:** none in the driver while the CLI has no switch. An
+operator runs a Cursor agent on an account with no plugin installed or
+turned on, outside any team that distributes plugins as Required, or
+picks Claude Code or Codex, which load no plugin (SEC-29).
 
 ## SEC-75 — Cursor loaded a repository's MCP server on an approval stored in the agent's home
 

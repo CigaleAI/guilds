@@ -179,8 +179,8 @@ class Driver:
     added_env: dict[str, str] = {}
     prompt_on_stdin = True
     # The harness's own configuration and memory in the agent's home, as globs: removed before
-    # every call, so the brief is the only state the agent hands it. Logins, account state, and
-    # session transcripts (which a resume needs) are never in it.
+    # every call, so the brief is the only state the agent hands it. The harness's own login,
+    # account state, and session transcripts (which a resume needs) are never in it.
     local_state: tuple[str, ...] = ()
 
     def reset(self) -> list[str]:
@@ -600,6 +600,9 @@ class Cursor(Driver):
     # from the one it runs in up to the root: the home's and `repos/`'s too. It loads a workspace's
     # MCP server once an approval stored for that workspace names it, and skips one a workspace's
     # disabled list names: both go, so the only approval a call has is the one the driver gives.
+    # It also loads the plugins of the account it runs on, fetched from Cursor's servers on every
+    # start and kept out by no switch; a sign-in made in the home to one of their MCP servers goes,
+    # so it does not reach the next call.
     local_state = (
         ".cursor/hooks.json",
         ".cursor/hooks",
@@ -611,6 +614,7 @@ class Cursor(Driver):
         ".cursor/plugins",
         ".cursor/projects/*/mcp-approvals.json",
         ".cursor/projects/*/mcp-disabled.json",
+        ".cursor/projects/*/mcp-auth.json",
         "AGENTS.md",
         "CLAUDE.md",
         "CLAUDE.local.md",

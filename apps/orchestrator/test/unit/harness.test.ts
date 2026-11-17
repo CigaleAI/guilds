@@ -557,6 +557,7 @@ test("each turn first removes the harness's local configuration and memory, neve
         ".cursor/rules/r.mdc",
         ".cursor/projects/home-a_1-repos-app/mcp-approvals.json",
         ".cursor/projects/home-a_1/mcp-disabled.json",
+        ".cursor/projects/home-a_1/mcp-auth.json",
         "AGENTS.md",
         "repos/AGENTS.md",
         "repos/.cursor/rules/r.mdc",
