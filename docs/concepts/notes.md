@@ -141,23 +141,37 @@ cannot reach it ([Prompt Studio](prompt-studio.md#state)).
 ## In the app
 
 The agent's **State › Notes** and the guild's **State › Notes** are
-one notes browser over the organisation's one set of notes. It lists
-them in two sections:
+one notes browser over the organisation's one set of notes. It lists:
 
-- **Guild notes**: the notes homed in the page's guild, whatever their
-  rows. On an agent's page, the page's guild is the agent's.
-- **Shared with this guild**: the notes homed in another guild or in
-  the organisation whose access list has a row for the guild, one of
-  its agents, or the organisation. Each one names its home under its
-  name: the guild's name, or **Organisation**.
+- the notes homed in the page's guild, whatever their rows. On an
+  agent's page, the page's guild is the agent's.
+- the notes homed in another guild or in the organisation whose access
+  list has a row for the guild, one of its agents, or the
+  organisation. Each one names its home under its name: the guild's
+  name, or **Organisation**.
 
-A note is in one section at most. A note hidden from the operator is
-in neither.
+A note hidden from the operator is not listed.
 
-Each section has a label with its count and folds open and closed.
-It lists its notes by name, with no folders, and says what it holds
-when it holds nothing. The search box filters both sections by name
-and title.
+The list groups the listed notes by who their access lists reach,
+each note under every group it matches:
+
+- **Organisation**, for an organisation row of read or write.
+- **Guild · <name>**, one group per guild a read or write row names,
+  keyed by the guild's id and in name order.
+- **Individual agents**, for an agent row of read or write.
+- **Access not fully known**, for a list that is empty or holds only
+  agent **None** rows. The list leaves out the rows of private guilds
+  the operator does not operate, so it cannot show that no one reaches
+  the note; those rows are neither named nor counted.
+- **Reading access** while a note's list is being read, and
+  **Couldn't read access**, with **Retry**, when the read failed.
+
+Each group has a label with its count and folds open and closed. It
+lists its notes by name, with no folders. Every occurrence of a note
+opens the same note, with its unsaved text, and the open note is
+marked in each group. A saved access change regroups the list at
+once. The search box filters the groups by name and title, and says
+**No notes match.** when none does.
 
 Each note carries a tag that says how the page reaches it:
 

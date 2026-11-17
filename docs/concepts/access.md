@@ -322,8 +322,9 @@ in these places:
   ([Collections](collections.md#the-tables-page)).
 - the **Access** button in the header of an open note, in the notes
   browser, and a click on a greyed note, one no row reaches for the
-  page. Both open a dialog titled **Access to `<path>`**
-  ([Notes](notes.md#in-the-app)).
+  page. Both open a dialog titled **Access to `<path>`**. The notes
+  list beside it is grouped by the subjects their rows give read or
+  write ([Notes](notes.md#in-the-app)).
 - the **Access** button in the header of an open file, and a click on
   a greyed file, in the files browser, with the same dialog
   ([Files](files.md#in-the-app)).
