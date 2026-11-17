@@ -191,10 +191,6 @@ address (`/guilds/<id>/issues?severity=high`). A resolved card shows **Resolved*
 offers **Reopen**. **Mark all as resolved** resolves every open
 issue.
 
-While the guild holds as many open issues as it may, a warning above
-the filters says so, with the limit, and that its agents' new
-reports, blocking ones included, are refused until some are resolved.
-
 ## Rules and limits
 
 | Rule | Value or behaviour |
@@ -202,7 +198,7 @@ reports, blocking ones included, are refused until some are resolved.
 | Inbox issues | The 200 newest open issues, and every issue that disables an agent |
 | Disabled agents shown | Every one in the guilds the operator operates; no limit |
 | Inbox tags | The 100 newest |
-| Open issues per guild | At most 100; with 100 open, every `report_issue` is refused, a blocking one too, and the guild's Issues tab says so |
+| Open issues per guild | No limit |
 | Summary | Required, at most 200 characters |
 | Detail | Required, at most 4000 characters |
 | Tool name | Optional, at most 120 characters |
@@ -240,8 +236,6 @@ admitting a generation refuses it. A user's alert severity is
 `severity`, and an optional `tool_name`
 ([Native tools](../tools-and-connectors/native.md)). A value too long,
 or a missing summary or detail, is refused with the rule it breaks.
-With 100 open issues in the guild, the tool answers `this guild
-already has 100 open issues; wait for the operator to resolve some`.
 
 For a `blocking` issue the tool's answer ends with `This agent is
 disabled until the operator resolves the issue. The run ends now.`,
@@ -292,11 +286,7 @@ Code: `apps/orchestrator/src/notifications/index.ts`.
 A guild the caller cannot see is 404.
 
 - `GET /api/guilds/:id/issues`, with an optional `status` filter
-  (`open`, `resolved`, or `all`), returns
-  `{ issues, open_cap, at_open_cap }`: the issues of that status, open
-  first, then newest; the most open issues the guild may hold; and
-  whether it holds that many, whatever the filter, so that
-  `report_issue` refuses every new report. 422 for another status.
+  (`open`, `resolved`, or `all`). 422 for another value.
 - `POST /api/guilds/:id/issues/resolve` resolves every open issue and
   returns `{ resolved }`.
 - `PATCH /api/guilds/:id/issues/:issue_id` with `status`. 422 without

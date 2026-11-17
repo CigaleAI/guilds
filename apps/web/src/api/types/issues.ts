@@ -34,12 +34,6 @@ export type Issue = {
   agent: AgentBrief | null;
 };
 
-/**
- * A guild's issues as its Issues tab lists them, with the most open issues the guild may hold and
- * whether it holds that many, while every new report is refused.
- */
-export type GuildIssueList = { issues: Issue[]; open_cap: number; at_open_cap: boolean };
-
 /** An issue as the inbox lists it: with the name of its guild. */
 export type InboxIssue = Issue & { guild_name: string };
 

@@ -41,7 +41,6 @@ function announcing(open: number): { deps: IssueWriteDeps; published: Array<[str
     getGuild: async () => unused(),
     insertIssue: async () => unused(),
     listIssuesForGuild: async () => unused(),
-    countOpenIssues: async () => unused(),
     getIssue: async (_guildId, issueId) => (issueId === ISSUE.id ? ISSUE : null),
     setIssueStatus: async (_issue, change) => ({ ...ISSUE, status: change.status }),
     resolveOpenIssues: async () => open,

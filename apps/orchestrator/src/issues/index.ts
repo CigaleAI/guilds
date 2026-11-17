@@ -6,7 +6,6 @@ import { iso, isoOrNull } from "../db/views.js";
 import { newId } from "../lib/ids.js";
 import { getGuild } from "../db/guilds.js";
 import {
-  countOpenIssues,
   getIssue,
   insertIssue,
   listIssuesForGuild,
@@ -22,12 +21,7 @@ export const ISSUE_STATUSES = ["open", "resolved"] as const satisfies readonly I
 export const ISSUE_SUMMARY_MAX = 200;
 export const ISSUE_DETAIL_MAX = 4000;
 export const ISSUE_TOOL_NAME_MAX = 120;
-export const ISSUE_OPEN_CAP = 100;
 
-/** Whether a guild with `open` open issues holds as many as it may, so that every new report is refused. */
-function isAtOpenIssueCap(open: number): boolean {
-  return open >= ISSUE_OPEN_CAP;
-}
 
 /** A refused issue request, with the HTTP status it answers with: 404 for one that does not exist, else 422. */
 export class IssueError extends Error {
@@ -49,7 +43,6 @@ function issuesDatabase(db: Queryable) {
     getIssue: bindQuery(db, getIssue),
     setIssueStatus: bindQuery(db, setIssueStatus),
     resolveOpenIssues: bindQuery(db, resolveOpenIssues),
-    countOpenIssues: bindQuery(db, countOpenIssues),
   };
 }
 
@@ -131,12 +124,6 @@ export type IssueItem = Pick<
   agent: { id: string; name: string; avatar_shape: string; avatar_color: string } | null;
 };
 
-/**
- * A guild's issues as its Issues tab lists them, with the most open issues the guild may hold and
- * whether it holds that many, while every new report is refused.
- */
-export type GuildIssueList = { issues: IssueItem[]; open_cap: number; at_open_cap: boolean };
-
 export function issueItem(row: GuildIssueRow): IssueItem {
   return {
     id: row.id,
@@ -182,11 +169,6 @@ export class Issues {
     if (guild === null) {
       throw new IssueError("guild not found", 404);
     }
-    if (isAtOpenIssueCap(await this.db.countOpenIssues(args.guildId))) {
-      throw new IssueError(
-        `this guild already has ${ISSUE_OPEN_CAP} open issues; wait for the operator to resolve some`,
-      );
-    }
     const now = new Date();
     return this.db.insertIssue(
       {
@@ -206,20 +188,13 @@ export class Issues {
     );
   }
 
-  async listForGuild(guildId: string, status?: string): Promise<GuildIssueList> {
+  async listForGuild(guildId: string, status?: string): Promise<IssueItem[]> {
     let filter: IssueRow["status"] | null = null;
     if (status !== undefined && status !== "" && status !== "all") {
       filter = oneOf(status, ISSUE_STATUSES, "status");
     }
-    const [rows, open] = await Promise.all([
-      this.db.listIssuesForGuild(guildId, filter),
-      this.db.countOpenIssues(guildId),
-    ]);
-    return {
-      issues: rows.map((row) => issueItem(row)),
-      open_cap: ISSUE_OPEN_CAP,
-      at_open_cap: isAtOpenIssueCap(open),
-    };
+    const rows = await this.db.listIssuesForGuild(guildId, filter);
+    return rows.map((row) => issueItem(row));
   }
 
   async setStatus(

@@ -6,12 +6,7 @@ import {
 import { api } from "../client";
 import { guildPath } from "./guilds";
 import { chatKeys } from "./chat";
-import type {
-  GuildIssueList,
-  Issue,
-  IssueStatusChange,
-  GuildIssueStatusChange,
-} from "../types/issues";
+import type { Issue, IssueStatusChange, GuildIssueStatusChange } from "../types/issues";
 
 /** Query keys of issues. Identity is fixed for the page's life, so keys carry no user or org. */
 export const issueKeys = {
@@ -23,7 +18,7 @@ export const issueKeys = {
 export function useOpenIssues(guildId: string) {
   return useQuery({
     queryKey: issueKeys.openIssues(guildId),
-    queryFn: () => api<GuildIssueList>(`${guildPath(guildId)}/issues?status=open`),
+    queryFn: () => api<Issue[]>(`${guildPath(guildId)}/issues?status=open`),
   });
 }
 
@@ -31,7 +26,7 @@ export function useOpenIssues(guildId: string) {
 export function useGuildIssues(guildId: string) {
   return useQuery({
     queryKey: issueKeys.allIssues(guildId),
-    queryFn: () => api<GuildIssueList>(`${guildPath(guildId)}/issues`),
+    queryFn: () => api<Issue[]>(`${guildPath(guildId)}/issues`),
   });
 }
 

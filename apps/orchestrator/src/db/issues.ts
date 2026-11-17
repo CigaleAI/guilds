@@ -270,11 +270,3 @@ export async function markInboxMentionsRead(
   }
   return guildIds;
 }
-
-export async function countOpenIssues(pool: Queryable, guildId: string): Promise<number> {
-  const result = await pool.query<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM guild_issues WHERE guild_id = $1 AND status = 'open'`,
-    [guildId],
-  );
-  return result.rows[0]?.n ?? 0;
-}

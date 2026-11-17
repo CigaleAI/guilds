@@ -8,6 +8,9 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Changed.** A guild holds any number of open issues: `report_issue`
+no longer refuses a report in a guild that holds 100 of them.
+
 **Fixed.** A turn of a subscription agent that moves a repository's
 head or branch without changing a file, such as one that amends,
 squashes, splits, or rebases commits to the same files and
@@ -33,15 +36,6 @@ count of tool errors includes it, and a command's exit code is in its
 Metadata. Cursor's failed commands, failed reads, reads of large files,
 and waited-for background commands show what they returned rather than
 raw JSON.
-
-**Breaking for API clients.** `GET /api/guilds/:id/issues` returns
-`{ issues, open_cap, at_open_cap }` in place of the array of issues:
-`issues` is that array, `open_cap` the most open issues a guild may
-hold, and `at_open_cap` whether it holds that many, whatever the
-`status` filter, while `report_issue` refuses every new report. A
-client that reads the array reads `issues`. While `at_open_cap` is
-true, the guild's **Issues** tab warns that its agents' new reports,
-blocking ones included, are refused until some are resolved.
 
 **Changed.** An agent is told to call `report_issue` only when its run
 cannot get past a problem and an operator must act on it: a tool, a

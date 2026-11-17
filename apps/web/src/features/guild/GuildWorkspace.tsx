@@ -279,7 +279,7 @@ type GuildTabsProps = {
 /** The guild's pages, the issues tab counting the open issues. */
 function GuildTabs({ guildId, inspecting }: GuildTabsProps) {
   const openIssues = useOpenIssues(guildId);
-  const issueCount = openIssues.data?.issues.length ?? 0;
+  const issueCount = openIssues.data?.length ?? 0;
   return (
     <TabsNav aria-label="Guild pages">
       <Link

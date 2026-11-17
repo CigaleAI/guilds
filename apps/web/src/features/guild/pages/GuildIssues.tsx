@@ -25,7 +25,6 @@ import {
 } from "@guildsrun/ui";
 import { useInvestigateIssue } from "../../studio/investigate";
 import { GuildPage } from "./GuildPage";
-import { OpenIssueCapBanner } from "./OpenIssueCapBanner";
 
 type Filter = "open" | "resolved" | "all";
 
@@ -50,7 +49,7 @@ export function GuildIssues() {
   const [filter, setFilter] = useState<Filter>("open");
   const severity: SeverityFilter = useSearch({ from: "/guilds/$guildId/issues" }).severity ?? "all";
 
-  const all = issues.data?.issues ?? [];
+  const all = issues.data ?? [];
   const open = all.filter((issue) => issue.status === "open").length;
   const ofStatus = filter === "all" ? all : all.filter((issue) => issue.status === filter);
   const listed = issuesOfSeverity(ofStatus, severity);
@@ -107,7 +106,6 @@ export function GuildIssues() {
           ]}
         />
       </div>
-      <OpenIssueCapBanner list={issues.data} />
       <IssueSeverityFilter
         issues={ofStatus}
         value={severity}
