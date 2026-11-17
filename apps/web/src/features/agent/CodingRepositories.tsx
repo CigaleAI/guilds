@@ -3,11 +3,17 @@ import { useAccess } from "../../api/queries/access";
 import type { McpServerAccess } from "../../api/types/access";
 import { DocsLink } from "../../app/docs";
 import { useIdentity } from "../../app/identity";
-import { Button, Checkbox, SkeletonRows, Tag } from "@guildsrun/ui";
+import { Button, Checkbox, SkeletonRows, Tag, Toggle } from "@guildsrun/ui";
 import { GithubSettings } from "../access/GithubRepositories";
 import { useServerConnect } from "../access/ConnectDialogs";
 import { GuildRepositories } from "./GuildRepositories";
-import { picksUsableRepository, repositoryChoices, togglePickedRepository } from "./repositories";
+import {
+  picksUsableRepository,
+  repositoryChoices,
+  togglePickedRepository,
+  toggleReadOnlyRepository,
+  type RepositoryPicks,
+} from "./repositories";
 import { setupSearch } from "../instance/instance";
 
 /** GitHub without its app on this box: a link to set it up for a platform admin, a note for anyone else. */
@@ -75,37 +81,55 @@ function GithubBlock({ guildId }: GithubBlockProps) {
 }
 
 type RepositoryPickerProps = {
-  /** The repositories the agent can use; undefined while they load. */
-  usable: readonly string[] | undefined;
-  picked: readonly string[];
-  onPick: (next: string[]) => void;
+  /** The repositories the agent can use, at least one. */
+  usable: readonly string[];
+  picks: RepositoryPicks;
+  onPick: (next: RepositoryPicks) => void;
 };
 
-/** A box for each repository the agent can use, and for each it picks and can no longer use, tagged so. */
-function RepositoryPicker({ usable, picked, onPick }: RepositoryPickerProps) {
-  if (!usable) return <SkeletonRows rows={2} label="Loading repositories" />;
-  const choices = repositoryChoices(usable, picked);
+/**
+ * A box for each repository the agent can use, and for each it picks and can no longer use,
+ * tagged so; each one picked has a read-only switch beside it.
+ */
+function RepositoryPicker({ usable, picks, onPick }: RepositoryPickerProps) {
   return (
     <section aria-label="Repositories this agent works on" className="flex flex-col gap-1">
       <h3 className="type-label text-muted">This agent works on</h3>
-      {choices.length ? (
-        choices.map((choice) => (
-          <div key={choice.name} className="flex flex-wrap items-center gap-2">
-            <Checkbox
-              label={<span className="font-mono">{choice.name}</span>}
-              checked={choice.picked}
-              onCheckedChange={() => onPick(togglePickedRepository(picked, choice.name))}
+      {repositoryChoices(usable, picks).map((choice) => (
+        <div key={choice.name} className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
+          <Checkbox
+            label={<span className="font-mono">{choice.name}</span>}
+            checked={choice.picked}
+            onCheckedChange={() => onPick(togglePickedRepository(picks, choice.name))}
+          />
+          {choice.usable ? null : (
+            <Tag tone="ochre" font="sans">
+              no longer in the guild
+            </Tag>
+          )}
+          {choice.picked ? (
+            <Toggle
+              label="Read-only"
+              checked={choice.readOnly}
+              onCheckedChange={() => onPick(toggleReadOnlyRepository(picks, choice.name))}
             />
-            {choice.usable ? null : (
-              <Tag tone="ochre" font="sans">
-                no longer in the guild
-              </Tag>
-            )}
-          </div>
-        ))
-      ) : (
-        <p className="text-sm text-muted">The guild has no repository yet. Add one below.</p>
-      )}
+          ) : null}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** How to give the guild a repository to pick: through a repository host's login, or by URL. */
+function RepositorySetup() {
+  return (
+    <section aria-label="Set up a repository" className="flex flex-col gap-1">
+      <h3 className="type-label text-muted">No repository to pick yet</h3>
+      <p className="text-sm text-fg-2">
+        Give the guild a repository first. Connect GitHub below and pick repositories on its login,
+        or add a repository by its HTTPS URL, on any git host, under Repositories. Each one then
+        shows here to pick.
+      </p>
     </section>
   );
 }
@@ -114,26 +138,33 @@ type CodingRepositoriesProps = {
   guild: { id: string; name: string };
   /** The repositories the agent can use; undefined while they load. */
   usable: readonly string[] | undefined;
-  /** The repositories the agent works on, as the form holds them. */
-  picked: readonly string[];
-  onPick: (next: string[]) => void;
-  missingNote: string;
+  /** The repositories the agent works on, and those of them it only reads, as the form holds them. */
+  picks: RepositoryPicks;
+  onPick: (next: RepositoryPicks) => void;
+  /** What picking none means for this agent, said while it picks none it can use; null when it means nothing. */
+  missingNote: string | null;
 };
 
 /**
- * The repositories a subscription agent works on, picked among those it can use, then the guild's
- * repositories it picks from: its GitHub login and the repositories picked on it, then those added
- * by URL. While the agent picks none it can use, `missingNote` says what that means where it shows.
+ * The repositories an agent works on, on a key or a subscription, picked among those it can use,
+ * each writable or read-only, then the guild's repositories it picks from: its GitHub login and
+ * the repositories picked on it, then those added by URL. While the guild has none to pick, the
+ * section says how to set one up with those. While the agent picks none it can use, `missingNote`
+ * says what that means where it shows.
  */
-export function CodingRepositories({ guild, usable, picked, onPick, missingNote }: CodingRepositoriesProps) {
+export function CodingRepositories({ guild, usable, picks, onPick, missingNote }: CodingRepositoriesProps) {
+  const pickable = usable !== undefined && repositoryChoices(usable, picks).length > 0;
   return (
     <>
       <p className="text-sm text-fg-2">
-        This agent works in the repositories it picks. The repositories of {guild.name} below are
-        shared by its agents; each picks the ones it works on.
+        This agent works in the repositories it picks, if any: each is cloned into its home before
+        each of its turns. A read-only one is fetched and never pushed to. The repositories of{" "}
+        {guild.name} below are shared by its agents; each picks the ones it works on.
       </p>
-      <RepositoryPicker usable={usable} picked={picked} onPick={onPick} />
-      {usable && !picksUsableRepository(usable, picked) ? (
+      {usable === undefined ? <SkeletonRows rows={2} label="Loading repositories" /> : null}
+      {usable !== undefined && pickable ? <RepositoryPicker usable={usable} picks={picks} onPick={onPick} /> : null}
+      {usable !== undefined && !pickable ? <RepositorySetup /> : null}
+      {usable && missingNote !== null && !picksUsableRepository(usable, picks.repositories) ? (
         <p className="text-sm text-t-ochre-fg">{missingNote}</p>
       ) : null}
       <GithubBlock guildId={guild.id} />

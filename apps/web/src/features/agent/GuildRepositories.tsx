@@ -67,8 +67,8 @@ function credentialLabel(repository: GuildRepository): ReactNode {
 type GuildRepositoriesProps = { guild: Pick<Guild, "id"> };
 
 /**
- * Extra git URLs this guild's subscription agents can pick, on any HTTPS host, besides the repositories
- * picked on a GitHub login (Tools → GitHub).
+ * Extra git URLs this guild's agents can pick, on any HTTPS host, besides the repositories picked
+ * on a GitHub login (Tools → GitHub).
  */
 export function GuildRepositories({ guild }: GuildRepositoriesProps) {
   return (

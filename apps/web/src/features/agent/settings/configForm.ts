@@ -33,6 +33,7 @@ export const defaultAgentConfig: AgentConfig = {
   harness_model: null,
   harness_effort: null,
   repositories: [],
+  read_only_repositories: [],
   secret_aliases: {},
   scripting: true,
   memory: true,
@@ -107,8 +108,10 @@ export type ConfigForm = {
   harness_model: string;
   /** The effort the harness runs its model at; empty for the harness's default. */
   harness_effort: HarnessEffort | "";
-  /** The repositories a subscription agent works on, by name, in this order. */
+  /** The repositories the agent works on, by name, in this order. */
   repositories: string[];
+  /** The ones of `repositories` the agent only reads. */
+  read_only_repositories: string[];
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
   scripting: boolean;
@@ -159,6 +162,7 @@ export function configFormOf(config: AgentConfig, source: ModelSource, machineId
     harness_model: config.harness_model ?? "",
     harness_effort: config.harness_effort ?? "",
     repositories: [...config.repositories],
+    read_only_repositories: [...config.read_only_repositories],
     secret_aliases: { ...config.secret_aliases },
     scripting: config.scripting !== false,
     memory: config.memory !== false,
@@ -338,8 +342,9 @@ export function withHarnessModel(
 
 /**
  * The config to send, without the machine; a model that does not reason gets thinking off, only
- * a subscription agent carries a harness, its model, and its repositories, and only an
- * agent with the browser carries the agent-optimized browser and its model. A subscription sends no model and the model loop's settings at their defaults.
+ * a subscription agent carries a harness and its model, every agent its repositories with those
+ * of them it only reads, and only an agent with the browser carries the agent-optimized browser
+ * and its model. A subscription sends no model and the model loop's settings at their defaults.
  */
 export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
   const subscription = form.model_source === "subscription";
@@ -354,7 +359,8 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     harness: takesHarness(form) && form.harness ? form.harness : null,
     harness_model: harnessModelOf(form),
     harness_effort: harnessEffortOf(form),
-    repositories: takesHarness(form) ? form.repositories : [],
+    repositories: form.repositories,
+    read_only_repositories: form.read_only_repositories.filter((name) => form.repositories.includes(name)),
     secret_aliases: form.secret_aliases,
     scripting: form.scripting,
     memory: form.memory,

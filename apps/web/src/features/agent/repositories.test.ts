@@ -14,6 +14,7 @@ import {
   repositoryChoices,
   repositoryCredential,
   togglePickedRepository,
+  toggleReadOnlyRepository,
 } from "./repositories";
 
 const logins: Pick<GithubLogin, "id" | "status">[] = [
@@ -103,18 +104,28 @@ test("only the secrets an operator manages can hold a repository's access token"
   );
 });
 
-test("an agent's checklist offers each repository it can use, then each it picks and can no longer use", () => {
-  assert.deepEqual(repositoryChoices(["docs", "shop"], ["shop", "billing"]), [
-    { name: "docs", picked: false, usable: true },
-    { name: "shop", picked: true, usable: true },
-    { name: "billing", picked: true, usable: false },
+/** An agent's picks of `repositories`, of which it only reads `readOnly`. */
+function picks(repositories: string[], readOnly: string[] = []) {
+  return { repositories, read_only_repositories: readOnly };
+}
+
+test("an agent's checklist offers each repository it can use, then each it picks and can no longer use, each read-only or not", () => {
+  assert.deepEqual(repositoryChoices(["docs", "shop"], picks(["shop", "billing"], ["billing"])), [
+    { name: "docs", picked: false, usable: true, readOnly: false },
+    { name: "shop", picked: true, usable: true, readOnly: false },
+    { name: "billing", picked: true, usable: false, readOnly: true },
   ]);
-  assert.deepEqual(repositoryChoices([], []), []);
+  assert.deepEqual(repositoryChoices([], picks([])), []);
 });
 
-test("ticking a repository adds it after the agent's picks, and unticking takes it out", () => {
-  assert.deepEqual(togglePickedRepository(["shop"], "docs"), ["shop", "docs"]);
-  assert.deepEqual(togglePickedRepository(["shop", "docs"], "shop"), ["docs"]);
+test("ticking a repository adds it writable after the agent's picks, and unticking takes it out, read-only too", () => {
+  assert.deepEqual(togglePickedRepository(picks(["shop"]), "docs"), picks(["shop", "docs"]));
+  assert.deepEqual(togglePickedRepository(picks(["shop", "docs"], ["shop"]), "shop"), picks(["docs"]));
+});
+
+test("a picked repository's switch makes it read-only, and writable again", () => {
+  assert.deepEqual(toggleReadOnlyRepository(picks(["shop", "docs"]), "docs"), picks(["shop", "docs"], ["docs"]));
+  assert.deepEqual(toggleReadOnlyRepository(picks(["shop", "docs"], ["docs"]), "docs"), picks(["shop", "docs"]));
 });
 
 test("a turn in repositories needs a pick the agent can use", () => {

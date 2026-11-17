@@ -45,7 +45,7 @@ and a copy button.
 | Collapsed rail (⌘B / Ctrl+B): the same entries, guild tag and issue badges, and **Settings** | every page | [Guilds](../concepts/guilds.md) |
 | Account menu: **Organisation** switch, **Theme**, **Message chime**, **Chime sound**, **Desktop notifications** (when the browser supports them), **Settings**, **Admin**, **Sign out** | every page | [Organisations](../concepts/organisations.md), [Users](../concepts/users.md), [Inbox and issues](../concepts/inbox.md) |
 | **Create a guild** dialog | from the sidebar or the empty Home | [Guilds](../concepts/guilds.md) |
-| **Create an agent** (Identity, Model, Machine), with **Model source** on a key or a subscription | from **Add agent** or the guild's **New agent** | [Agents](../concepts/agents.md), [Harnesses](../concepts/coding/harnesses.md), [Machines](../concepts/machines.md), [Agent home](../concepts/agent-home.md) for **Disk** |
+| **Create an agent** (Identity, Model, Machine, Repositories), with **Model source** on a key or a subscription | from **Add agent** or the guild's **New agent** | [Agents](../concepts/agents.md), [Harnesses](../concepts/coding/harnesses.md), [Machines](../concepts/machines.md), [Agent home](../concepts/agent-home.md) for **Disk** |
 | Guild header and **Guild options** menu: **Open in Studio**, **New agent**, **Save as recipe**, **Guild settings**, **Clear group chat** | `/guilds/<id>` | [Guilds](../concepts/guilds.md), [Group chat](../concepts/group-chat.md) |
 | Guild message-budget button | `/guilds/<id>` | [Group chat](../concepts/group-chat.md) |
 | Open recipe apply strip | `/guilds/<id>` | [Applying recipes](../concepts/applying-recipes.md) |

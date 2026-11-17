@@ -245,26 +245,41 @@ are not part of the Settings **Save**.
 
 ### The agent's Repositories
 
-The **Repositories** section of a subscription agent's Settings picks
-the repositories the agent works on, then shows the guild's
-repositories it picks from.
+The **Repositories** section of every agent's Settings, on a key or on
+a subscription, picks the repositories the agent works on, then shows
+the guild's repositories it picks from. It is the last step of
+**Create an agent** too, where picking is optional and the boxes list
+what a new agent of the guild can use.
 
-A line reads "This agent works in the repositories it picks. The
-repositories of `<guild>` below are shared by its agents; each picks
-the ones it works on." Under **This agent works on**, a checkbox
-per repository the agent can use, ticked when the agent picks it. A
-repository the agent picks and can no longer use follows, ticked and
-tagged "no longer in the guild", so it can be unticked. A repository
-ticked joins the end of the agent's picks. With none to pick, "The
-guild has no repository yet. Add one below." The ticks are part of
-the agent's config: Settings saves them with **Save**. The boxes list
-what this agent can use, which its own GitHub login may change.
+A line reads "This agent works in the repositories it picks, if any:
+each is cloned into its home before each of its turns. A read-only one
+is fetched and never pushed to. The repositories of `<guild>` below are
+shared by its agents; each picks the ones it works on." Under **This
+agent works on**, a checkbox per repository the agent can use, ticked
+when the agent picks it. A repository the agent picks and can no
+longer use follows, ticked and tagged "no longer in the guild", so it
+can be unticked. A repository ticked joins the end of the agent's
+picks, writable. Each ticked repository has a **Read-only** switch
+beside it; switched on, the agent only reads it
+([Read-only repositories](#read-only-repositories)). Unticking a
+repository also takes it out of the read-only ones. The ticks and the
+switches are part of the agent's config: Settings saves them with
+**Save**. The boxes list what this agent can use, which its own GitHub
+login may change.
 
-While the agent picks no repository it can use, an ochre line says so:
-"No repository picked, so this agent's turns run in its home.", or on
-Cursor or Antigravity "No repository picked.
+While the guild has no repository the agent could pick, the boxes give
+way to **No repository to pick yet** and the line "Give the guild a
+repository first. Connect GitHub below and pick repositories on its
+login, or add a repository by its HTTPS URL, on any git host, under
+Repositories. Each one then shows here to pick." The controls it names
+follow it.
+
+While a subscription agent picks no repository it can use, an ochre
+line says so: "No repository picked, so this agent's turns run in its
+home.", or on Cursor or Antigravity "No repository picked.
 `<Harness>` keeps its own system prompt, so it runs a subscription
-agent only with a repository."
+agent only with a repository." An agent on a key needs none, and gets
+no such line.
 
 Then the guild's GitHub login, whose changes are the guild's, saved as
 they are made:

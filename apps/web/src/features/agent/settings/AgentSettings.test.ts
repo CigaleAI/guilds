@@ -67,7 +67,7 @@ test("a saved subscription agent's readiness is its harness's; an agent on a key
   assert.deepEqual(readinessProblems("subscription", undefined), []);
 });
 
-test("the Repositories section says what picking none does: home turns, or a harness that cannot run", () => {
+test("the Repositories section says what picking none does: home turns, or a harness that cannot run, and nothing on a key", () => {
   const catalog: HarnessCatalog[] = [
     { harness: "antigravity", label: "Antigravity", enabled: true, needs_repository: true, models: [], unlisted_efforts: [] },
   ];
@@ -78,4 +78,5 @@ test("the Repositories section says what picking none does: home turns, or a har
     missingRepositoriesNote(onAntigravity, catalog),
     "No repository picked. Antigravity keeps its own system prompt, so it runs a subscription agent only with a repository.",
   );
+  assert.equal(missingRepositoriesNote(configFormOf(defaultAgentConfig, "key"), catalog), null, "picking is optional on a key");
 });

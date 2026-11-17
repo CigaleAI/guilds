@@ -177,10 +177,18 @@ test("max turn minutes starts at 30, round-trips, takes a whole number of 1 or m
   assert.ok(limitFieldsFor("key").some((field) => field.key === "max_input_tokens"));
 });
 
-test("a subscription agent's repositories are sent; an agent on a key sends none", () => {
-  const picked = { ...defaultAgentConfig, repositories: ["shop", "site"] };
-  assert.deepEqual(configOf(configFormOf(picked, "subscription"), undefined).repositories, ["shop", "site"]);
-  assert.deepEqual(configOf(configFormOf(picked, "key"), undefined).repositories, []);
+test("an agent's repositories and those it only reads are sent, on a key as on a subscription", () => {
+  const picked = { ...defaultAgentConfig, repositories: ["shop", "site"], read_only_repositories: ["site"] };
+  for (const source of ["subscription", "key"] as const) {
+    const config = configOf(configFormOf(picked, source), undefined);
+    assert.deepEqual(config.repositories, ["shop", "site"], source);
+    assert.deepEqual(config.read_only_repositories, ["site"], source);
+  }
+});
+
+test("a read-only repository the form no longer picks is not sent", () => {
+  const form = { ...configFormOf(defaultAgentConfig, "key"), repositories: ["shop"], read_only_repositories: ["shop", "site"] };
+  assert.deepEqual(configOf(form, undefined).read_only_repositories, ["shop"]);
 });
 
 function machine(id: string, box: Machine["box"]): Machine {
@@ -354,13 +362,23 @@ test("secret aliases reach the form and back", () => {
   });
 });
 
-test("a subscription agent's repositories reach the form and back; only a subscription agent sends them", () => {
-  const stored = { ...defaultAgentConfig, model: null, harness: "codex" as const, repositories: ["site", "shop"] };
+test("an agent's repositories reach the form and back, and stay across a switch of model source", () => {
+  const stored = {
+    ...defaultAgentConfig,
+    model: null,
+    harness: "codex" as const,
+    repositories: ["site", "shop"],
+    read_only_repositories: ["shop"],
+  };
   const form = configFormOf(stored, "subscription");
   assert.deepEqual(form.repositories, ["site", "shop"]);
+  assert.deepEqual(form.read_only_repositories, ["shop"]);
   assert.notEqual(form.repositories, stored.repositories, "the form holds its own copy");
+  assert.notEqual(form.read_only_repositories, stored.read_only_repositories);
   assert.deepEqual(configOf(form, undefined).repositories, ["site", "shop"]);
-  assert.deepEqual(configOf({ ...form, model_source: "key" }, undefined).repositories, []);
+  const onKey = withModelSource(form, "key", undefined);
+  assert.deepEqual(configOf(onKey, undefined).repositories, ["site", "shop"]);
+  assert.deepEqual(configOf(onKey, undefined).read_only_repositories, ["shop"]);
   assert.deepEqual(configFormOf(defaultAgentConfig, "key").repositories, []);
 });
 

@@ -175,7 +175,7 @@ An agent whose data must stay apart goes on a machine of its own.
 ### Create one
 
 In the sidebar, **Add agent** under a guild opens **Create an agent**:
-three steps, **Identity**, **Model**, and **Machine**
+four steps, **Identity**, **Model**, **Machine**, and **Repositories**
 ([Agents](../agents.md)). On **Model**, **Model source** set to
 **Subscription** reads "The harness runs every turn on your own
 subscription, with its own tools and the guild's tools this agent is
@@ -183,9 +183,8 @@ given." and offers the harness, its model and effort, and how the
 harness gets its credential
 ([Harnesses, In the app](harnesses.md#in-the-app)). **Machine** picks
 the machine, which needs the harness minimum and an image that carries
-the harness ([Machines](../machines.md)).
-
-The new agent picks its repositories in its Settings
+the harness ([Machines](../machines.md)). **Repositories** picks the
+guild's repositories the agent works on, each writable or read-only
 ([The agent's Repositories](repositories.md#the-agents-repositories)).
 
 ### Settings
@@ -198,8 +197,8 @@ agent's capabilities, and its run limits. While the saved harness would
 fail at start, a **The subscription isn't ready** banner over the
 stepper names each problem ([Harnesses](harnesses.md#in-the-app)).
 
-While the agent picks no repository it can use, **Repositories** says
-so: "No repository picked, so this agent's turns run in its home.", or
+While a subscription agent picks no repository it can use,
+**Repositories** says so: "No repository picked, so this agent's turns run in its home.", or
 on Cursor or Antigravity "No repository picked. `<Harness>` keeps its
 own system prompt, so it runs a subscription agent only with a
 repository." Such a Cursor or Antigravity agent stays saved; its runs

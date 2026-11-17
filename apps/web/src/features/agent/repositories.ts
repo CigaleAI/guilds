@@ -1,3 +1,4 @@
+import type { AgentConfig } from "../../api/types/agents";
 import type { GithubLogin, RepositoryInput } from "../../api/types/guilds";
 import type { Secret } from "../../api/types/secrets";
 
@@ -64,25 +65,47 @@ export function accessTokenSecrets(secrets: readonly Secret[]): Secret[] {
   return secrets.filter((secret) => secret.can_manage);
 }
 
-/** A repository a subscription agent's checklist offers: one it can use, or one it picks and can no longer use. */
-export type RepositoryChoice = { name: string; picked: boolean; usable: boolean };
+/** The repositories an agent picks, in its order, and those of them it only reads. */
+export type RepositoryPicks = Pick<AgentConfig, "repositories" | "read_only_repositories">;
 
-/** The checklist of a subscription agent's repositories: each one it can use, then each it picks and can no longer use. */
-export function repositoryChoices(
-  usable: readonly string[],
-  picked: readonly string[],
-): RepositoryChoice[] {
+/**
+ * A repository an agent's checklist offers: one it can use, or one it picks and can no longer
+ * use, and whether it picks it read-only.
+ */
+export type RepositoryChoice = { name: string; picked: boolean; usable: boolean; readOnly: boolean };
+
+/** The checklist of an agent's repositories: each one it can use, then each it picks and can no longer use. */
+export function repositoryChoices(usable: readonly string[], picks: RepositoryPicks): RepositoryChoice[] {
+  const { repositories: picked, read_only_repositories: readOnly } = picks;
   return [
-    ...usable.map((name) => ({ name, picked: picked.includes(name), usable: true })),
+    ...usable.map((name) => ({ name, picked: picked.includes(name), usable: true, readOnly: readOnly.includes(name) })),
     ...picked
       .filter((name) => !usable.includes(name))
-      .map((name) => ({ name, picked: true, usable: false })),
+      .map((name) => ({ name, picked: true, usable: false, readOnly: readOnly.includes(name) })),
   ];
 }
 
-/** The picks with `name` taken out when they hold it, else added after the others. */
-export function togglePickedRepository(picked: readonly string[], name: string): string[] {
-  return picked.includes(name) ? picked.filter((item) => item !== name) : [...picked, name];
+/**
+ * The picks with `name` taken out when they hold it, out of the read-only ones too, else added
+ * after the others, writable.
+ */
+export function togglePickedRepository(picks: RepositoryPicks, name: string): RepositoryPicks {
+  if (!picks.repositories.includes(name)) {
+    return { ...picks, repositories: [...picks.repositories, name] };
+  }
+  return {
+    repositories: picks.repositories.filter((item) => item !== name),
+    read_only_repositories: picks.read_only_repositories.filter((item) => item !== name),
+  };
+}
+
+/** The picks with the picked repository `name` read-only when it was writable, else writable. */
+export function toggleReadOnlyRepository(picks: RepositoryPicks, name: string): RepositoryPicks {
+  const readOnly = picks.read_only_repositories;
+  return {
+    ...picks,
+    read_only_repositories: readOnly.includes(name) ? readOnly.filter((item) => item !== name) : [...readOnly, name],
+  };
 }
 
 /** Whether the agent picks a repository it can use, which a turn in repositories needs to start. */

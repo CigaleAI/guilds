@@ -8,6 +8,12 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Added.** Every agent's Settings has **Repositories**, on a key as on a
+subscription, and **Create an agent** ends on it as an optional fourth
+step. Each ticked repository has a **Read-only** switch. While the guild
+has no repository to pick, the section says how to give it one, with
+the GitHub login and the add form below it.
+
 **Added.** An agent on a model key picks repositories as a subscription
 agent does, in `config.repositories`, some of them read-only. Before
 each of its generations the platform clones or fetches them into its

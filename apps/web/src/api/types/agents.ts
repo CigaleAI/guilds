@@ -151,8 +151,10 @@ export type AgentConfig = {
   harness_model: string | null;
   /** The effort the harness runs its model at; null leaves it to the harness. */
   harness_effort: HarnessEffort | null;
-  /** The repositories a subscription agent works on, by name, in this order; empty on an agent on a key. */
+  /** The repositories the agent works on, by name, in this order. */
   repositories: string[];
+  /** The ones of `repositories` the agent only reads: cloned and fetched, never pushed to. */
+  read_only_repositories: string[];
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
   scripting: boolean;
@@ -191,8 +193,8 @@ export type AgentHarness = {
   /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
   machine_harnesses: Harness[] | null;
   /**
-   * The repositories a subscription turn clones, by name: those the agent picks and can use, in
-   * its order. A turn fails at start while the agent picks one it cannot use.
+   * The repositories the agent's generations clone, by name: those it picks and can use, in its
+   * order. A generation fails at start while the agent picks one it cannot use.
    */
   repositories: string[];
   /** The repositories the agent can use, by name: its guild's, and those picked on its GitHub login. */

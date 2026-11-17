@@ -25,7 +25,10 @@ export type OfferedTool = {
   function?: { name?: string; description?: string; parameters?: JsonSchema };
 };
 
-export type RunConfigSnapshot = Omit<AgentConfig, "keep_tool_result_generations" | "repositories"> & {
+export type RunConfigSnapshot = Omit<
+  AgentConfig,
+  "keep_tool_result_generations" | "repositories" | "read_only_repositories"
+> & {
   /** The agent's own, or its guild's when it sets none, as the run started with it. */
   keep_tool_result_generations: number;
   projection_policy_version?: number;

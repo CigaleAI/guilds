@@ -132,7 +132,7 @@ One directory per area. The screens are in the
 | `shell/` | Sidebar and rail, guild tag and issue counts, the band over disabled agents, account menu, and the chime and desktop notifications for new messages and reported issues |
 | `home/` | `/`, the empty state, and the not-found page |
 | `guild/` | Guild workspace and its menu, group chat with its message queue and budget, the State tab, and the guild pages (`pages/`) |
-| `agent/` | The create-agent dialog, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's subscription agents clone (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
+| `agent/` | The create-agent dialog, the agent inspector with a folder for most of its tabs (`chat/`, `prompt/`, `memory/`, `routine/`, `scripts/`, `browser/`, `cli/`, `history/`, `settings/`), and the repositories a guild's agents clone, each writable or read-only (`GuildRepositories.tsx`, `CodingRepositories.tsx`) |
 | `agent/runs/` | How a run's rows read: grouped into generations, steps, and tool calls (`runFlowModel.ts`), each call's kind (`toolKinds.ts`), and its arguments and result as text (`toolFormat.ts`) |
 | `notes/` | The notes browser, the provenance strip (`LatestChange.tsx`, `changeActor.ts`), and the notes and tables a Task or a note embeds (`embeds.ts`, `InsertPicker.tsx`, `EmbedPreview.tsx`) |
 | `files/` | The files browser: its two sections, upload, download, access, and delete of shared files |

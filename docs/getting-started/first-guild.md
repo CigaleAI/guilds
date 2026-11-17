@@ -39,13 +39,14 @@ only.
 
 In the sidebar, click **Add agent** under the guild. The dialog
 **Create an agent** opens. It offers two kinds of agent. Click
-**Agent**. The dialog walks you through three steps.
+**Agent**. The dialog walks you through four steps.
 
 1. **Identity**: type `researcher` as the **Name**. Type
    `Answers the guild's questions and remembers what it was asked`
    as the **Focus**. Click **Next**.
 2. **Model**: the step offers your default model. Click **Next**.
-3. **Machine**: the step names your machine. Click **Create agent**.
+3. **Machine**: the step names your machine. Click **Next**.
+4. **Repositories**: this agent works in none. Click **Create agent**.
 
 You should see the agent under the guild in the sidebar. A panel
 opens over the chat, on the agent's **Prompt** tab. This panel is the

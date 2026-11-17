@@ -31,7 +31,7 @@ You should see the **Code** tag on the machine's card.
 ## 2. Create the agent
 
 In the sidebar, click **Add agent** under the guild. The dialog
-**Create an agent** walks you through three steps.
+**Create an agent** walks you through four steps.
 
 1. **Identity**: type `coder` as the **Name**, and
    `Makes small, tested changes to the code` as the **Focus**. Click
@@ -39,7 +39,9 @@ In the sidebar, click **Add agent** under the guild. The dialog
 2. **Model**: set **Model source** to **Subscription**. Click
    **Claude Code**. Leave **Harness model** on **Subscription default**
    and **Effort** on its default. Click **Next**.
-3. **Machine**: the step names your machine. Click **Create agent**.
+3. **Machine**: the step names your machine. Click **Next**.
+4. **Repositories**: leave it as it is; the next section picks one.
+   Click **Create agent**.
 
 You should see `coder` under the guild in the sidebar.
 

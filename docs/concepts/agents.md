@@ -199,8 +199,8 @@ is disabled once the guild is full. Each agent row shows:
 
 ### Create an agent
 
-**Add agent** opens **Create an agent**: three steps on a stepper. The header reads
-"Step n of 3 · `<step>`". **Back** and **Next** move between steps, and
+**Add agent** opens **Create an agent**: four steps on a stepper. The header reads
+"Step n of 4 · `<step>`". **Back** and **Next** move between steps, and
 **Cancel** is always there. Each step must be complete before
 **Next**.
 
@@ -228,9 +228,10 @@ is disabled once the guild is full. Each agent row shows:
 3. **Machine**: which machine the agent goes on, and **Disk** under
    it. With one machine the step names it in place of the picker. See
    [Machines](machines.md) and [Agent home](agent-home.md).
-
-A subscription agent picks its repositories in its Settings, once it
-exists ([Repositories](coding/repositories.md#the-agents-repositories)).
+4. **Repositories**, optional: the guild's repositories the agent
+   works on, each with a **Read-only** switch, over the guild's GitHub
+   login and its repositories added by URL
+   ([The agent's Repositories](coding/repositories.md#the-agents-repositories)).
 
 **Create agent** creates the agent. It opens on its **Prompt** tab.
 
@@ -286,12 +287,11 @@ They open in any order. Clicking a step opens its section, and the URL
 keeps it as `?section=` (`identity`, `model`, `machine`, `harness`,
 or `repositories`), so a link can open Settings on one section.
 Without one, Settings opens on Identity. A section the agent's kind
-lacks opens where its content lives: `harness` or `repositories`
-opens Model on an agent on a key, and `model` opens Harness on a
-subscription agent.
+lacks opens where its content lives: `harness` opens Model on an
+agent on a key, and `model` opens Harness on a subscription agent.
 
-An agent on a key has **Identity**, **Model**, and **Machine**. A
-subscription agent has **Identity**, **Harness**,
+An agent on a key has **Identity**, **Model**, **Machine**, and
+**Repositories**. A subscription agent has **Identity**, **Harness**,
 **Machine**, and **Repositories** ([Harnesses](coding/harnesses.md#harness-section-of-settings)).
 The sections follow the form's **Model source**, so picking another
 source changes them before the save. **Model source** shows at the top of an agent's Model, and
@@ -315,10 +315,12 @@ saves.
   model** while that is on ([Browser](browser.md#in-the-app)).
 - **Machine**: the machine picker and **Disk**
   ([Machines](machines.md), [Agent home](agent-home.md)).
-- **Harness** and **Repositories**, on a subscription agent:
-  [Harnesses](coding/harnesses.md) and
-  [Repositories](coding/repositories.md). **Repositories** ticks the
-  repositories the agent works on, saved with the rest of Settings.
+- **Harness**, on a subscription agent:
+  [Harnesses](coding/harnesses.md).
+- **Repositories**, on every agent:
+  [Repositories](coding/repositories.md#the-agents-repositories). It
+  ticks the repositories the agent works on, each writable or
+  read-only, saved with the rest of Settings.
 
 ## Rules and limits
 

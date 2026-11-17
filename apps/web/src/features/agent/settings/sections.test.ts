@@ -12,7 +12,7 @@ import {
 } from "./sections";
 
 test("an agent's sections follow the create dialog's steps for its kind", () => {
-  assert.deepEqual(settingsSections("key"), ["identity", "model", "machine"]);
+  assert.deepEqual(settingsSections("key"), ["identity", "model", "machine", "repositories"]);
   assert.deepEqual(settingsSections("subscription"), [
     "identity",
     "harness",
@@ -31,7 +31,7 @@ test("a section link opens where its content lives for the agent's kind", () => 
   assert.equal(openSection(undefined, "key"), "identity");
   assert.equal(openSection("machine", "key"), "machine");
   assert.equal(openSection("harness", "key"), "model");
-  assert.equal(openSection("repositories", "key"), "model");
+  assert.equal(openSection("repositories", "key"), "repositories", "an agent on a key has Repositories too");
   assert.equal(openSection("unknown", "subscription"), "identity");
   assert.equal(openSection("harness", "subscription"), "harness");
   assert.equal(openSection("model", "subscription"), "harness");

@@ -173,13 +173,14 @@ export function readinessProblems(
 }
 
 /**
- * What the Repositories section says while the agent picks none: its turns run in its home,
- * unless its harness needs a repository.
+ * What the Repositories section says while the agent picks none: a subscription agent's turns run
+ * in its home, unless its harness needs a repository; an agent on a key needs none, so nothing.
  */
 export function missingRepositoriesNote(
   form: ConfigForm,
   catalog: readonly HarnessCatalog[] | undefined,
-): string {
+): string | null {
+  if (form.model_source === "key") return null;
   if (form.harness && missesRepository(form, catalog)) {
     return `No repository picked. ${missingRepositoryText([form.harness])}`;
   }
@@ -223,13 +224,14 @@ function SettingsFooter({ dirty, invalid, saving, onDiscard, onSave }: SettingsF
 
 /**
  * How the agent looks and runs, in the create dialog's steps as sections opened in any order by
- * `?section=`: an agent's Identity, Model, and Machine; a subscription agent's Identity, Harness,
- * Machine, and Repositories. Identity holds the name, focus, mascot, and wake triggers. Model
+ * `?section=`: an agent's Identity, Model, Machine, and Repositories; a subscription agent's
+ * Identity, Harness, Machine, and Repositories. Identity holds the name, focus, mascot, and wake triggers. Model
  * holds the model source, the model and reasoning, the capabilities (Browser greyed out on a
  * machine below its minimum), and the run limits. Machine holds the machine (a new one moves the
  * agent there) and the disk cap against what the machine's other agents reserve. Harness holds the
  * harness with its credentials and model, the capabilities and the run limits. Repositories holds
- * the ones the agent works on, picked among those it can use, over the guild's. The sections
+ * the ones the agent works on, picked among those it can use, each writable or read-only, over the
+ * guild's. The sections
  * follow the form's model source, and one with an error or a readiness problem is flagged. A
  * subscription agent whose saved harness is not ready opens on a banner that lists what is
  * missing. Save sends every section at once.
@@ -357,8 +359,8 @@ export function AgentSettings() {
       <CodingRepositories
         guild={{ id: guildId, name: guild.data?.name ?? "this guild" }}
         usable={harness.data?.usable_repositories}
-        picked={form.repositories}
-        onPick={(repositories) => set({ repositories })}
+        picks={form}
+        onPick={(picks) => set(picks)}
         missingNote={missingRepositoriesNote(form, catalog.data)}
       />
     ),
