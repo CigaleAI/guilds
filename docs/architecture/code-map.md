@@ -176,7 +176,7 @@ helper that acts for one agent takes its id, or reads its home from
 | `guilds-code` | Home and machine sizes, and git setup, clones, checkpoints, and diffs; reads the agent's tokens from `/run/guilds/<agent id>/git-tokens.json` |
 | `guilds-harness` | The coding harnesses behind a subscription agent's turns: `check`, `start`, `poll`, `result`, and `stop`; one driver per harness (Claude Code, Codex, Cursor, Antigravity); call state under `/run/guilds/<agent id>/harness/` ([Harnesses](../concepts/coding/harnesses.md)) |
 | `agy` | The Antigravity CLI at the pinned version, installed as `/usr/local/bin/agy` |
-| `claude-code-managed-settings.json` | Claude Code's managed settings at `/etc/claude-code/managed-settings.json`: hooks off, no project MCP servers |
+| `claude-code-managed-settings.json` | Claude Code's managed settings at `/etc/claude-code/managed-settings.json`: hooks off, no project MCP servers, no self-update |
 | `guilds-git-credential` | The git credential helper for every HTTPS host: the token and username of the guild repository git talks to, for its host and path only |
 | `git-template/` | The git template whose `prepare-commit-msg` hook adds the `Guild-Run` and `Guild-Agent` trailers |
 | `guilds-script-run` | Runs a named Python script with `GUILDS_SCRIPT_ARGS` on stdin |

@@ -460,9 +460,10 @@ the wrapper marks the CLI's update check as just done, in
 stays in place for the agent's turns and the CLI tab alike.
 
 Claude Code also reads `/etc/claude-code/managed-settings.json`, baked
-into the image. It sets `disableAllHooks` and
-`enableAllProjectMcpServers: false`. No user or project file overrides
-it.
+into the image. It sets `disableAllHooks`,
+`enableAllProjectMcpServers: false`, and `DISABLE_AUTOUPDATER=1`, so
+the pinned CLI stays in place for the agent's turns and the CLI tab
+alike. No user or project file overrides it.
 
 ### Drivers
 

@@ -1,4 +1,7 @@
 {
   "disableAllHooks": true,
-  "enableAllProjectMcpServers": false
+  "enableAllProjectMcpServers": false,
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  }
 }
