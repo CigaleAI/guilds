@@ -22,7 +22,7 @@ import {
   toolSchemaName,
   type ToolBindingScope,
 } from "./offered-tools.js";
-import { executedToolCalls, type GenerationTools, type ToolCalls } from "./tool-calls.js";
+import { guildsToolCalls, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 
 // The orchestrator's MCP server, which serves a subscription agent's harness the Guilds tools its
 // run offers, over MCP's Streamable HTTP transport answered with plain JSON. Each generation's
@@ -285,7 +285,7 @@ export class HarnessMcpServer {
     if (!tools.run.offered_tools?.has(name) && !(name in tools.run.dynamic_tools)) {
       return null;
     }
-    if (executedToolCalls(await this.services.db.listMessages(grant.gen.runId)) >= tools.maxToolCalls) {
+    if (guildsToolCalls(await this.services.db.listMessages(grant.gen.runId)) >= tools.maxToolCalls) {
       grant.stop = { kind: "max_tool_calls" };
       return refusedCall(TOOL_CALL_LIMIT_MESSAGE);
     }

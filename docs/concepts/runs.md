@@ -233,7 +233,7 @@ An ended run shows a banner under the transcript:
 | --- | --- |
 | Generations at a time | one per agent; a second direct message is 409 |
 | Max steps | 30 by default |
-| Max tool calls | 50 by default; counts every tool result in the run |
+| Max tool calls | 50 by default; counts the results of the run's calls of the guild's tools |
 | Wrap-up warning | when 8 tool calls or fewer are left |
 | Max input tokens | 100000 by default; counted with `js-tiktoken` |
 | Max wake-ups | 10 by default |
@@ -460,8 +460,10 @@ output pipeline before it appends one tool message. If the last
 allowed step still has tool calls, those tools run, then the loop
 records `generation.max_steps`. The run stays active.
 
-`max_tool_calls` counts every tool result on the run. After the output
-pipeline, each stored tool result ends with `remaining_tool_calls: N`,
+`max_tool_calls` counts the results of the run's calls of the guild's
+tools; a result marked `from_harness`, of a call of a harness's own
+tools, is not counted ([Harness turns](#harness-turns)). After the output
+pipeline, each counted result ends with `remaining_tool_calls: N`,
 the count left after that result. When N is 8 or fewer, a wrap-up line
 sits above that trailer: write durable findings and finish with text;
 a batch costs one call each. When the count reaches the cap, the
@@ -564,7 +566,7 @@ under the call id `turn_<generation>_<run id>`
 | `harness.unresponsive` | three polls in a row failed; the harness got `stop` |
 | `harness.timed_out` | the turn ran its snapshot's `max_turn_minutes`: "`<Harness>` was stopped after `<minutes>` minutes."; the harness got `stop` |
 | `generation.max_steps` | Claude Code ended its turn at its `max_steps` model calls: "max_steps reached". The run stays open, as a model's run does at the limit |
-| `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls; the harness got `stop`, and the run completes |
+| `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls of the guild's tools; the harness got `stop`, and the run completes |
 | `generation.blocked` | a call of the MCP server filed a blocking issue; the harness got `stop` |
 
 A harness that does not stop adds "It did not stop and may still be

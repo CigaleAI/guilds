@@ -98,8 +98,9 @@ is `mcp_<id>`. A generation's calls run one at a time, in the order
 they arrive. A call of a tool the run does not offer when it comes, or with no
 tool name, answers JSON-RPC error -32602 and runs nothing.
 
-`max_tool_calls` counts every tool result of the run, the harness's
-own tools' included. A call once the run has made that many is
+`max_tool_calls` counts these calls as it counts a model's; the calls
+of the harness's own tools are not counted. A call once the run has
+made that many is
 refused with the result "Tool call limit reached. Start a new run to
 continue.", runs nothing, and ends the generation: the harness is
 stopped, and the run records `generation.max_tool_calls` and

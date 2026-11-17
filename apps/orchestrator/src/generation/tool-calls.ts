@@ -26,7 +26,7 @@ import type { AgentMachines } from "./machines.js";
 import type { ConnectionTarget } from "./offered-tools.js";
 import type { ConnectorPool } from "./prepare.js";
 
-/** The tool calls of a run's history: which are pending, how many ran, and the record of an interrupted one. */
+/** The tool calls of a run's history: which are pending, how many of its Guilds tools ran, and the record of an interrupted one. */
 
 export const INTERRUPTED_CONTENT = "ERROR: execution interrupted";
 
@@ -34,14 +34,13 @@ export function toolCallsOf(payload: AssistantMessage): ToolCall[] {
   return payload.tool_calls ?? [];
 }
 
-export function executedToolCalls(rows: Array<Pick<MessageRow, "payload">>): number {
-  let total = 0;
-  for (const row of rows) {
-    if (row.payload.role === "tool") {
-      total += 1;
-    }
-  }
-  return total;
+/**
+ * How many calls of the run's Guilds tools its history holds a result of, the calls its
+ * `max_tool_calls` budgets. A result marked `from_harness`, an interrupted one included, is of a
+ * call of a harness's own tools, which the budget does not cover.
+ */
+export function guildsToolCalls(rows: Array<Pick<MessageRow, "payload" | "metadata">>): number {
+  return rows.filter((row) => row.payload.role === "tool" && row.metadata.from_harness === undefined).length;
 }
 
 function rememberPendingAssistantCalls(
@@ -228,7 +227,7 @@ export class ToolCalls {
     const { db } = this.services;
     const history = await db.listMessages(runId);
     return {
-      executed: executedToolCalls(history),
+      executed: guildsToolCalls(history),
       owner: await db.getAgent(tools.run.agent_id),
     };
   }
@@ -252,7 +251,7 @@ export class ToolCalls {
   /** Keeps the interrupted result of `call`, with the budget it leaves. */
   private async keepInterrupted(turn: RunGeneration, tools: GenerationTools, call: ToolCall): Promise<void> {
     const { db, events } = this.services;
-    const executed = executedToolCalls(await db.listMessages(turn.runId)) + 1;
+    const executed = guildsToolCalls(await db.listMessages(turn.runId)) + 1;
     const [payload, metadata] = stampToolResult(
       ...interruptionRecord(call, turn.generation),
       remainingAfter(tools.maxToolCalls, executed),
@@ -270,7 +269,7 @@ export class ToolCalls {
     const pending = pendingToolCalls(rows);
     const run = await db.getRun(runId);
     const maxToolCalls = run?.config_snapshot.max_tool_calls ?? DEFAULT_MAX_TOOL_CALLS;
-    let executed = executedToolCalls(rows);
+    let executed = guildsToolCalls(rows);
     for (const [call, callGeneration] of pending) {
       executed += 1;
       const [payload, metadata] = stampToolResult(

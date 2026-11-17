@@ -53,7 +53,7 @@ import {
 } from "./offered-tools.js";
 import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
 import type { GenerationStarter } from "./runs.js";
-import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
+import { guildsToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 import type { RunWakes } from "./wakes.js";
 import type { WorkspaceLimits } from "./workspace.js";
 
@@ -582,7 +582,7 @@ export class RunGenerator {
   /** Whether the run has made its last tool call; a run that has completes with `generation.max_tool_calls`. */
   private async reachedToolLimit(gen: KeyGeneration, tools: GenerationTools): Promise<boolean> {
     const { db, events } = this.services;
-    if (executedToolCalls(await db.listMessages(gen.runId)) < tools.maxToolCalls) {
+    if (guildsToolCalls(await db.listMessages(gen.runId)) < tools.maxToolCalls) {
       return false;
     }
     await events.recordError(

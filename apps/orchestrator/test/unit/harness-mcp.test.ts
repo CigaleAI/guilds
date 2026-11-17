@@ -30,7 +30,7 @@ type Fixture = {
   gen: SubscriptionGeneration;
   tools: GenerationTools;
   calls: ToolCall[];
-  rows: Array<{ payload: { role: string } }>;
+  rows: Array<{ payload: { role: string }; metadata: Record<string, unknown> }>;
   answers: Array<(call: ToolCall) => Promise<KeptToolRecord>>;
 };
 
@@ -70,7 +70,7 @@ function fixture(maxToolCalls = 5): Fixture {
   const toolCalls = {
     executeHarnessCall: async (_turn: unknown, _tools: GenerationTools, call: ToolCall): Promise<KeptToolRecord> => {
       calls.push(call);
-      rows.push({ payload: { role: "assistant" } }, { payload: { role: "tool" } });
+      rows.push({ payload: { role: "assistant" }, metadata: {} }, { payload: { role: "tool" }, metadata: {} });
       const answer = answers.shift();
       if (answer) {
         return answer(call);
@@ -240,13 +240,26 @@ test("a call at the run's tool-call limit is refused with the limit message and 
   const { server, gen, tools, calls, rows } = fixture(2);
   const { grant, access } = server.open(gen, tools);
   const auth = `Bearer ${access.token}`;
-  rows.push({ payload: { role: "tool" } });
+  rows.push({ payload: { role: "tool" }, metadata: {} });
   await server.answer("a_1", auth, request("tools/call", { name: "note_write", arguments: {} }));
   assert.equal(grant.stop, null, "the call that leaves none is answered");
   const refused = await server.answer("a_1", auth, request("tools/call", { name: "group_post", arguments: {} }));
   assert.deepEqual(refused, { jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: TOOL_CALL_LIMIT_MESSAGE }], isError: true } });
   assert.deepEqual(grant.stop, { kind: "max_tool_calls" });
   assert.equal(calls.length, 1, "the refused call runs nothing");
+});
+
+test("the calls of a harness's own tools do not count toward the run's tool-call limit", async () => {
+  const { server, gen, tools, calls, rows } = fixture(1);
+  const { grant, access } = server.open(gen, tools);
+  rows.push(
+    { payload: { role: "assistant" }, metadata: { from_harness: "claude-code" } },
+    { payload: { role: "tool" }, metadata: { from_harness: "claude-code" } },
+    { payload: { role: "tool" }, metadata: { from_harness: "claude-code", error: "execution interrupted" } },
+  );
+  await server.answer("a_1", `Bearer ${access.token}`, request("tools/call", { name: "note_write", arguments: {} }));
+  assert.equal(calls.length, 1, "the run's first Guilds call runs");
+  assert.equal(grant.stop, null);
 });
 
 test("a call that files a blocking issue asks the turn to stop, and a later call is refused", async () => {
@@ -358,6 +371,18 @@ test("a harness's call is kept as an assistant row holding it, redacted, then it
   assert.equal(metadata.remaining_tool_calls, 9);
   assert.equal(kept[1]?.metadata.generation, 2);
   assert.equal(kept[1]?.metadata.from_harness, undefined, "the run's own tool row");
+});
+
+test("a harness's call leaves a budget its harness's own calls in the run's history take nothing from", async () => {
+  const { toolCalls, tools, kept } = harnessToolCalls(async () => null);
+  kept.push(
+    { payload: { role: "assistant", content: "", tool_calls: [{ id: "toolu_1", type: "function", function: { name: "Bash", arguments: "{}" } }] }, metadata: { from_harness: "claude-code" } },
+    { payload: { role: "tool", tool_call_id: "toolu_1", content: "ok" }, metadata: { from_harness: "claude-code" } },
+  );
+  const call: ToolCall = { id: "mcp_1", type: "function", function: { name: "report_issue", arguments: "{}" } };
+  const [payload, metadata] = await toolCalls.executeHarnessCall({ runId: "r_1", generation: 1, log: { run_id: "r_1" } }, tools, call);
+  assert.equal(metadata.remaining_tool_calls, 9, "the first Guilds call of a run of 10 leaves 9");
+  assert.match(payload.content, /remaining_tool_calls: 9$/);
 });
 
 test("a harness's call whose result could not be kept gets the interrupted result before the failure is thrown", async () => {

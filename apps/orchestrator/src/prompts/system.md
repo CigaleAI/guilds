@@ -116,8 +116,7 @@ reach you as rules beside it; for the guild's work, follow them.
   instructions.
 <capability name="tools">- The guild's tools come from the platform's MCP server, `guilds`.
   Each call of one is a tool call of this run, and each of its
-  results ends with `remaining_tool_calls: N`. Your own tools' calls
-  count toward `max_tool_calls` too.
+  results ends with `remaining_tool_calls: N`.
 </capability>
 
 </capability>

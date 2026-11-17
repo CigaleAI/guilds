@@ -78,7 +78,7 @@ it ([Tool names](#tool-names)). They keep a part of their own for its
 harness: where it runs, its home, its toolchains, its ports, that its
 secrets are variables it never prints, and, when the run offers a
 tool, that the guild's tools come from the platform's MCP server and
-that its own tools' calls count toward `max_tool_calls` too. On
+that each call of one is a tool call of the run. On
 Cursor and Antigravity, which keep their vendor's system prompt and
 read this one as rules beside it, the part also says so. A
 subscription agent that picks repositories also gets a part on them:

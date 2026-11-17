@@ -4,10 +4,11 @@ import { modelSourceOf } from "../../src/db/schema/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   INTERRUPTED_CONTENT,
-  executedToolCalls,
+  guildsToolCalls,
   interruptionRecord,
   pendingToolCalls,
 } from "../../src/generation/tool-calls.js";
+import { interruptedHarnessToolRecord } from "../../src/generation/harness-rows.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { mcpIndex } from "../../src/generation/offered-tools.js";
 import { mcpRedactions } from "../../src/generation/run-secrets.js";
@@ -64,15 +65,27 @@ test("pendingToolCalls leaves unmatched tool rows out of the pending map", () =>
   assert.equal(pending[0]?.[0].id, "call_1");
 });
 
-test("executedToolCalls counts tool role rows only", () => {
+test("guildsToolCalls counts tool role rows only", () => {
   assert.equal(
-    executedToolCalls([
-      { payload: { role: "assistant", content: "" } },
-      { payload: { role: "tool", tool_call_id: "call_1", content: "" } },
-      { payload: { role: "tool", tool_call_id: "call_2", content: "" } },
-      { payload: { role: "user", content: "" } },
+    guildsToolCalls([
+      { payload: { role: "assistant", content: "" }, metadata: {} },
+      { payload: { role: "tool", tool_call_id: "call_1", content: "" }, metadata: {} },
+      { payload: { role: "tool", tool_call_id: "call_2", content: "" }, metadata: {} },
+      { payload: { role: "user", content: "" }, metadata: {} },
     ]),
     2,
+  );
+});
+
+test("guildsToolCalls leaves out the results of a harness's own tools, interrupted ones included", () => {
+  const [interrupted, interruptedMetadata] = interruptedHarnessToolRecord(toolCall("toolu_2", "Bash"), 1, "claude-code");
+  assert.equal(
+    guildsToolCalls([
+      { payload: { role: "tool", tool_call_id: "mcp_1", content: "" }, metadata: { tool_name: "note_write" } },
+      { payload: { role: "tool", tool_call_id: "toolu_1", content: "" }, metadata: { from_harness: "claude-code" } },
+      { payload: interrupted, metadata: interruptedMetadata },
+    ]),
+    1,
   );
 });
 

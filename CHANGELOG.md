@@ -97,6 +97,13 @@ the agent's turns and **Check login**.
 `node scripts/update-harnesses.mjs` moves them to each vendor's latest
 release. A box runs them once its runtime image is rebuilt.
 
+**Changed.** A subscription agent's `max_tool_calls` counts only the
+calls of the guild's tools, the ones its harness makes on the
+orchestrator's MCP server; the calls of the harness's own tools, its
+shell, file reads, and edits, do not count. Each result's
+`remaining_tool_calls` is what the guild's tools have left, and the
+system prompt no longer says the harness's own calls count.
+
 ## 0.2.0
 
 **Breaking.** An agent can run on the operator's own Claude Code,
