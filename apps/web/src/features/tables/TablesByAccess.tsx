@@ -3,7 +3,7 @@ import { useTablesAccess } from "../../api/queries/access";
 import type { Collection } from "../../api/types/tables";
 import { relativeTime } from "../../app/format";
 import { Button, DatabaseItem, Icon, ListGroupLabel } from "@guildsrun/ui";
-import { tablesByAccess, type TableAccessRead } from "./accessGroups";
+import { tablesByAccess, type TableAccessRead } from "../access/accessGroups";
 
 type TablesByAccessProps = {
   tables: readonly Collection[];
