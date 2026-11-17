@@ -96,8 +96,8 @@ function harnessView(
 }
 
 /**
- * A subscription agent's harness, model and effort, the repositories it works in and those it can
- * use, and each harness's secret and login.
+ * An agent's harness, model and effort, none on an agent on a key, the repositories it works in
+ * and those it can use, and each harness's secret and login.
  */
 export async function loadHarnessView(services: RunReviewServices, agent: AgentRow): Promise<AgentHarness> {
   const config = agent.config;

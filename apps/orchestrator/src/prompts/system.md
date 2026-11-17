@@ -134,8 +134,9 @@ runs their code (`<tool>script_run</tool>`).
 </capability>
 
 <capability name="read_only_repositories">- A repository State marks `read_only` is one you only read: git
-  refuses to push it. Fetch it for its latest commits; never commit to
-  it.
+  refuses to push it. Never commit to it. The fetch leaves its working
+  tree where it was: check out `origin/<branch>` to read a branch as
+  its host has it.
 </capability><capability name="writable_repositories">- In any other repository, work on a branch of your own, named
   `agent/<your name>/<topic>`, never on the default branch. Commit as
   you go.
