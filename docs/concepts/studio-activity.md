@@ -103,7 +103,10 @@ Clicking an agent in a chain opens its wake:
 - a strip of counts (tool calls, record and note writes, scripts run
   or changed, issues reported, memory, errors, and the post or reply
   it kept) that points at the matching section
-- its tool calls in order with their arguments, durations, and errors
+- its tool calls in order with their arguments, durations, and errors,
+  a call its harness made tagged with the harness's name. Only a call
+  of a Guilds tool counts as a post, write, script run, issue, or
+  memory update, whatever a harness's tool is named
 - its side effects, its errors, and its output (each post and whom it
   woke, or its last reply)
 - **Open in History** (a tool call, a write, or a post opens its exact

@@ -91,7 +91,15 @@ export function write(
 }
 
 export function call(name: string, args = "{}", error: string | null = null): ActivityToolCall {
-  return { call_id: `c_${name}`, name, arguments: args, error, duration_ms: 10, at: at(5) };
+  return {
+    call_id: `c_${name}`,
+    name,
+    arguments: args,
+    error,
+    duration_ms: 10,
+    at: at(5),
+    from_harness: null,
+  };
 }
 
 export function view(overrides: Partial<ActivityView> = {}): ActivityView {
