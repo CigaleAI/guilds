@@ -535,7 +535,9 @@ under the call id `turn_<generation>_<run id>`
    results are redacted with the run's secret values, and each result
    is capped as a tool's output is. Every row carries
    `from_harness`, the harness, and the generation number; the run
-   view marks each call so marked with the harness's logo. A call of
+   view marks each call so marked with the harness's logo, and
+   Studio's activity and focus pins name the harness
+   ([Studio activity](studio-activity.md#ledger)). A call of
    a tool of the orchestrator's MCP server and its result make no row
    from these events: the server keeps the call as the run's own, an
    assistant row holding it and its tool row, as a model's call is

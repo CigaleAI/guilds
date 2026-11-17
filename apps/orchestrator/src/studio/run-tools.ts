@@ -102,7 +102,7 @@ type GetRunArguments = Static<typeof GetRunArguments>;
 export const studioGetRun: StudioTool = studioTool({
   name: "studio_get_run",
   description:
-    "Read exact historical evidence for a source-guild run. seq_start and seq_end bound the message window. tool_name keeps only the assistant turns that requested that tool and their tool results, for example memory_write or note_write.",
+    "Read exact historical evidence for a source-guild run. seq_start and seq_end bound the message window. tool_name keeps only the assistant turns that requested that tool and their tool results, for example memory_write or note_write. A message whose metadata carries from_harness was written by the agent's coding harness: its calls are of the harness's own tools (its shell, file reads and edits) or of an MCP server it loaded, not of the guild's tools; a call of a guild tool carries no from_harness.",
   parameters: GetRunArguments,
   async run(deps, call, input: GetRunArguments) {
     const runId = input.run_id;

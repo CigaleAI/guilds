@@ -519,7 +519,8 @@ generation:
 The block is `<evidence source="studio.focus.<kind>">`. It carries:
 
 - the item's coordinates
-- a capped excerpt: the focused message or tool call, the section diff
+- a capped excerpt: the focused message or tool call, naming the
+  agent's harness when the harness wrote it, the section diff
   of a memory version, the routine instruction, the file's first bytes
   and latest change, the issue's kind, severity, failing tool,
   summary, and detail, or a tool's calls and failures per agent over
@@ -628,7 +629,7 @@ guilds and their agents
 | `studio_get_agent_context` | Sections `task`, `memory`, `state`, `config`, `effective_prompt` (the composed opening system message with embeds inlined, an embed hidden from the session's user as the marker), `effective_prompt_headers`. `state` and the effective prompt's state list only the tables the session's user can see; the effective prompt's `task_hash` is the one the agent's next run records |
 | `studio_list_runs` | Filters by `kind`, `status`, `task_prompt_hash`, `error_only`, and `schedule_id` |
 | `studio_list_routines` | Each routine's run count and latest run |
-| `studio_get_run` | Takes `seq_start`, `seq_end`, and `tool_name`; `tool_name` keeps only the turns that requested that tool and their results |
+| `studio_get_run` | Takes `seq_start`, `seq_end`, and `tool_name`; `tool_name` keeps only the turns that requested that tool and their results. Each message keeps its metadata, `from_harness` on the rows of a subscription agent's harness; the tool's description tells the coach those calls are the harness's, not of the guild's tools |
 | `studio_list_memory_revisions` | Memory timeline headers: version index, revision id, actor, time, sections changed, line counts |
 | `studio_get_memory_version` | One version's text and its diff from the previous one, by `revision_id` or `version_index` (the live version when both are omitted) |
 | `studio_list_file_changes` | A file's recorded changes with the run and tool call that made each one, and the coach message a change applied from a card came from |

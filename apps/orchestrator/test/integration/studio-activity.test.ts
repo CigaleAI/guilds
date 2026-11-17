@@ -244,6 +244,25 @@ test("studio activity lists each wake with what started it and what it produced"
     },
     now,
   );
+  // Scout's harness runs a command of its own in the chat.
+  await insertMessage(db,
+    {
+      runId: "r_chat",
+      seq: 10,
+      payload: { role: "assistant", content: "", tool_calls: [{ id: "turn_1.tool_1", type: "function", function: { name: "shell", arguments: '{"command":"ls"}' } }] },
+      metadata: { generation: 1, from_harness: "cursor" },
+    },
+    now,
+  );
+  await insertMessage(db,
+    {
+      runId: "r_chat",
+      seq: 11,
+      payload: { role: "tool", tool_call_id: "turn_1.tool_1", content: "leads.md" },
+      metadata: { generation: 1, tool_name: "shell", tool_call_id: "turn_1.tool_1", duration_ms: 3, output_filter: "identity", from_harness: "cursor" },
+    },
+    now,
+  );
 
   try {
     const created = await app.inject({
@@ -279,7 +298,7 @@ test("studio activity lists each wake with what started it and what it produced"
     });
     assert.equal(scout?.outcome, "posted");
     assert.deepEqual(scout?.posts.map((post) => [post.seq, post.call_id]), [[secondSeq, "call_post"]]);
-    assert.deepEqual(scout?.tool_calls.map((call) => [call.call_id, call.name, call.error, call.duration_ms]), [["call_post", "group_post", null, 12]]);
+    assert.deepEqual(scout?.tool_calls.map((call) => [call.call_id, call.name, call.error, call.duration_ms, call.from_harness]), [["call_post", "group_post", null, 12, null]]);
     assert.equal(scout?.tool_call_count, 1);
     assert.equal(scout?.opening, null);
     assert.equal(scout?.failed, false);
@@ -297,6 +316,7 @@ test("studio activity lists each wake with what started it and what it produced"
     const chat = byRun.get("r_chat");
     assert.deepEqual(chat?.trigger, { type: "direct", user_id: "user_operator" });
     assert.equal(chat?.opening, "how are the leads?");
+    assert.deepEqual(chat?.tool_calls.map((call) => [call.call_id, call.name, call.duration_ms, call.from_harness]), [["turn_1.tool_1", "shell", 3, "cursor"]]);
 
     const tick = byRun.get("r_tick");
     assert.deepEqual(tick?.trigger, { type: "routine", schedule_id: scheduleId });

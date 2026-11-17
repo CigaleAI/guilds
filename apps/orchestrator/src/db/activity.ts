@@ -1,6 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { type Queryable, stamp } from "./pg.js";
-import { fileChanges, messages, runs, type ToolCall } from "./schema/index.js";
+import { fileChanges, messages, runs, type HarnessMessageMetadata, type ToolCall } from "./schema/index.js";
 
 type Run = InferSelectModel<typeof runs>;
 type Message = InferSelectModel<typeof messages>;
@@ -45,6 +45,8 @@ export type RunActivityStepRow = Pick<Message, "run_id" | "seq" | "created_at"> 
   tool_call_id: string | null;
   error: string | null;
   duration_ms: number | null;
+  /** The harness the step is marked as, a subscription agent's harness's message or result; null for any other. */
+  from_harness: HarnessMessageMetadata["from_harness"] | null;
 };
 
 export type RunOpeningRow = Pick<Message, "run_id"> & {
@@ -204,7 +206,8 @@ export async function listRunActivitySteps(
             CASE WHEN payload->>'role' = 'assistant' THEN ${STEP_TEXT} END AS text,
             metadata->>'tool_call_id' AS tool_call_id,
             metadata->>'error' AS error,
-            ${TOOL_DURATION} AS duration_ms
+            ${TOOL_DURATION} AS duration_ms,
+            metadata->>'from_harness' AS from_harness
      FROM messages m
      WHERE run_id = ANY($1::text[])
        AND created_at >= $2
