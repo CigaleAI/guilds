@@ -1,22 +1,13 @@
-import type { AccessList } from "../../api/types/access";
+import type { AccessEntry, AccessList } from "../../api/types/access";
 import type { Collection } from "../../api/types/tables";
 
 /** A table's access list as the Tables list has read it so far. */
 export type TableAccessRead =
-  | { status: "pending" }
-  | { status: "error" }
-  | { status: "success"; list: AccessList };
+  { status: "pending" } | { status: "error" } | { status: "success"; list: AccessList };
 
 /** Why tables are listed together: a subject a row gives read or write, or what is known instead. */
 export type TableAccessGroupKind =
-  | "org"
-  | "guild"
-  | "agents"
-  | "unassigned"
-  | "no_grant"
-  | "unknown"
-  | "pending"
-  | "error";
+  "org" | "guild" | "agents" | "unassigned" | "no_grant" | "unknown" | "pending" | "error";
 
 export type TableAccessGroup = {
   /** Unique among the groups: the kind, and a guild's id for a guild's group. */
@@ -39,13 +30,23 @@ const kindLabels: Record<Exclude<TableAccessGroupKind, "guild">, string> = {
 /** The kinds after the guilds' groups, in the order the list shows them. */
 const trailingKinds = ["agents", "unassigned", "no_grant", "unknown", "pending", "error"] as const;
 
+type Named = { id: string; name: string };
+
 /** One group a table belongs in: a guild's, by its id and name, or one of the other kinds. */
 type GroupMembership =
-  | { kind: "guild"; guild: { id: string; name: string } }
+  | { kind: "guild"; guild: Named }
   | { kind: Exclude<TableAccessGroupKind, "guild">; guild?: undefined };
 
-const byName = (a: { name: string; id: string }, b: { name: string; id: string }) =>
-  a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+const byName = (a: Named, b: Named) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+
+/** Where a list with no read or write row goes: named only when the list is known to be whole. */
+function ungrantedKind(
+  subjects: readonly AccessEntry[],
+  complete: boolean,
+): "unassigned" | "no_grant" | "unknown" {
+  if (!complete) return "unknown";
+  return subjects.length ? "no_grant" : "unassigned";
+}
 
 /**
  * The groups a table's access read puts it in: one per subject a row gives read or write, the
@@ -57,17 +58,16 @@ function groupMemberships(read: TableAccessRead): GroupMembership[] {
   if (read.status !== "success") return [{ kind: read.status }];
   const { subjects, complete } = read.list;
   const granting = subjects.filter((entry) => entry.mode !== "none");
-  if (!granting.length) {
-    if (!complete) return [{ kind: "unknown" }];
-    return [{ kind: subjects.length ? "no_grant" : "unassigned" }];
-  }
-  const memberships: GroupMembership[] = [];
-  if (granting.some((entry) => entry.type === "org")) memberships.push({ kind: "org" });
-  for (const entry of granting) {
-    if (entry.type === "guild") memberships.push({ kind: "guild", guild: { id: entry.id, name: entry.name } });
-  }
-  if (granting.some((entry) => entry.type === "agent")) memberships.push({ kind: "agents" });
-  return memberships;
+  if (!granting.length) return [{ kind: ungrantedKind(subjects, complete) }];
+  const grants = (type: AccessEntry["type"]) => granting.filter((entry) => entry.type === type);
+  return [
+    ...(grants("org").length ? [{ kind: "org" as const }] : []),
+    ...grants("guild").map((entry) => ({
+      kind: "guild" as const,
+      guild: { id: entry.id, name: entry.name },
+    })),
+    ...(grants("agent").length ? [{ kind: "agents" as const }] : []),
+  ];
 }
 
 /**
@@ -82,7 +82,9 @@ export function tablesByAccess(
 ): TableAccessGroup[] {
   const org: Collection[] = [];
   const guilds = new Map<string, { name: string; tables: Collection[] }>();
-  const trailing = new Map<TableAccessGroupKind, Collection[]>(trailingKinds.map((kind) => [kind, []]));
+  const trailing = new Map<TableAccessGroupKind, Collection[]>(
+    trailingKinds.map((kind) => [kind, []]),
+  );
   for (const table of [...tables].sort(byName)) {
     for (const { kind, guild } of groupMemberships(readOf(table.id))) {
       if (kind === "org") org.push(table);

@@ -21,11 +21,39 @@ function table(id: string, name: string): Collection {
   };
 }
 
-const org: AccessEntry = { type: "org", id: "o1", name: "acme", mode: "read", guild_id: null, guild_name: null };
-const ops: AccessEntry = { type: "guild", id: "g_ops", name: "ops", mode: "write", guild_id: "g_ops", guild_name: "ops" };
-const scout: AccessEntry = { type: "agent", id: "a1", name: "scout", mode: "none", guild_id: "g_ops", guild_name: "ops" };
+const org: AccessEntry = {
+  type: "org",
+  id: "o1",
+  name: "acme",
+  mode: "read",
+  guild_id: null,
+  guild_name: null,
+};
+const ops: AccessEntry = {
+  type: "guild",
+  id: "g_ops",
+  name: "ops",
+  mode: "write",
+  guild_id: "g_ops",
+  guild_name: "ops",
+};
+const scout: AccessEntry = {
+  type: "agent",
+  id: "a1",
+  name: "scout",
+  mode: "none",
+  guild_id: "g_ops",
+  guild_name: "ops",
+};
 
-const tables = [table("t1", "leads"), table("t2", "orders"), table("t3", "drafts"), table("t4", "slow"), table("t5", "vault"), table("t6", "sealed")];
+const tables = [
+  table("t1", "leads"),
+  table("t2", "orders"),
+  table("t3", "drafts"),
+  table("t4", "slow"),
+  table("t5", "vault"),
+  table("t6", "sealed"),
+];
 
 test("the Tables list by access shows each table under the grants it reads, an unknown list apart from an empty one, keeps a slow or failed read apart with a retry, opens any occurrence, and regroups after an access edit", async () => {
   const window = new Window({ url: "http://localhost/" });
@@ -73,10 +101,13 @@ test("the Tables list by access shows each table under the grants it reads, an u
       if (!id || !(id in lists)) return Response.json({ detail: "Not found" }, { status: 404 });
       if (init?.method === "PUT") {
         const { subjects } = JSON.parse(String(init.body)) as { subjects: AccessRow[] };
-        lists[id] = subjects.map((row) => [org, ops, scout].find((entry) => entry.id === row.id) ?? org);
+        lists[id] = subjects.map(
+          (row) => [org, ops, scout].find((entry) => entry.id === row.id) ?? org,
+        );
       } else {
         reads.push(id);
-        if (id === failing) return Response.json({ detail: "Database unavailable" }, { status: 503 });
+        if (id === failing)
+          return Response.json({ detail: "Database unavailable" }, { status: 503 });
         if (id === "t4") await slow;
       }
       const list: AccessList = { subjects: lists[id] ?? [], complete: id !== filtered };
@@ -97,13 +128,27 @@ test("the Tables list by access shows each table under the grants it reads, an u
       return createElement(
         "div",
         null,
-        createElement("button", { type: "button", onClick: () => share.mutate([{ type: "guild", id: "g_ops", mode: "read" }]) }, "Share orders"),
-        createElement(TablesByAccess, { tables, selectedId: "t1", onOpen: (id: string) => opened.push(id) }),
+        createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => share.mutate([{ type: "guild", id: "g_ops", mode: "read" }]),
+          },
+          "Share orders",
+        ),
+        createElement(TablesByAccess, {
+          tables,
+          selectedId: "t1",
+          onOpen: (id: string) => opened.push(id),
+        }),
       );
     };
 
     const client = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { gcTime: Infinity } },
+      defaultOptions: {
+        queries: { retry: false, gcTime: Infinity },
+        mutations: { gcTime: Infinity },
+      },
     });
     queries = client;
     const container = document.body.appendChild(document.createElement("div"));
@@ -119,7 +164,9 @@ test("the Tables list by access shows each table under the grants it reads, an u
       assert.ok(shown(), what);
     };
     // The table buttons of one group, or of the whole list, and the name each shows.
-    const items = (within: Element = container) => [...within.querySelectorAll<HTMLButtonElement>("button.group\\/db")];
+    const items = (within: Element = container) => [
+      ...within.querySelectorAll<HTMLButtonElement>("button.group\\/db"),
+    ];
     const nameOf = (item: Element) => item.querySelector(".font-semibold")?.textContent;
     // Each group's label and the table names under it, as the list shows them.
     const groups = () =>
@@ -141,7 +188,10 @@ test("the Tables list by access shows each table under the grants it reads, an u
     await settle(() =>
       mounted.render(createElement(QueryClientProvider, { client }, createElement(View))),
     );
-    await until(() => groups().some(([label]) => label === "Couldn't read access"), "the failed read");
+    await until(
+      () => groups().some(([label]) => label === "Couldn't read access"),
+      "the failed read",
+    );
 
     // The slow read is still running and listed apart; the failed one has a retry.
     assert.deepEqual(groups(), [
@@ -153,14 +203,22 @@ test("the Tables list by access shows each table under the grants it reads, an u
       ["Reading access", ["slow"]],
       ["Couldn't read access", ["vault"]],
     ]);
-    assert.deepEqual([...reads].sort(), ["t1", "t2", "t3", "t4", "t5", "t6"], "each table is read once");
+    assert.deepEqual(
+      [...reads].sort(),
+      ["t1", "t2", "t3", "t4", "t5", "t6"],
+      "each table is read once",
+    );
 
     // Every occurrence of the selected table is marked, and any occurrence opens it.
     const marked = items().filter((item) => item.getAttribute("aria-current") === "true");
     assert.deepEqual(marked.map(nameOf), ["leads", "leads"]);
     await settle(() => marked[1]?.click());
     // A failed read stops no table from opening.
-    await settle(() => items().find((item) => nameOf(item) === "vault")?.click());
+    await settle(() =>
+      items()
+        .find((item) => nameOf(item) === "vault")
+        ?.click(),
+    );
     assert.deepEqual(opened, ["t1", "t5"]);
 
     // The slow read lands, and a retry reads only the failed table again.
@@ -168,7 +226,10 @@ test("the Tables list by access shows each table under the grants it reads, an u
     await until(() => !groups().some(([label]) => label === "Reading access"), "the slow read");
     failing = null;
     await press("Retry");
-    await until(() => groups().some(([label]) => label === "Individual agents"), "the retried read");
+    await until(
+      () => groups().some(([label]) => label === "Individual agents"),
+      "the retried read",
+    );
     assert.deepEqual(groups(), [
       ["Organisation", ["leads", "slow"]],
       ["Guild · ops", ["leads"]],

@@ -19,7 +19,12 @@ function table(id: string, name: string, guild: Collection["guild"] = null): Col
   };
 }
 
-function row(type: AccessSubjectType, id: string, name: string, mode: AgentAccessMode): AccessEntry {
+function row(
+  type: AccessSubjectType,
+  id: string,
+  name: string,
+  mode: AgentAccessMode,
+): AccessEntry {
   return { type, id, name, mode, guild_id: type === "org" ? null : "g1", guild_name: null };
 }
 
@@ -105,9 +110,10 @@ test("an empty list and a list of only None rows are named only when the list is
 });
 
 test("a list with hidden rows left out still shows the grants the viewer sees", () => {
-  assert.deepEqual(grouped([table("t1", "ledger")], { t1: read([row("org", "o1", "acme", "read")], false) }), [
-    ["Organisation", ["ledger"]],
-  ]);
+  assert.deepEqual(
+    grouped([table("t1", "ledger")], { t1: read([row("org", "o1", "acme", "read")], false) }),
+    [["Organisation", ["ledger"]]],
+  );
 });
 
 test("a read still running or failed is its own group, never an empty list", () => {
