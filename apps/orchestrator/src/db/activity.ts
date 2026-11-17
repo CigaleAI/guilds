@@ -241,7 +241,8 @@ export async function listRunOpenings(
 
 // Per tool and agent, the guild's agent tool calls in a window: how many,
 // how many failed, the median duration, and the last one. A row with a null
-// agent_id holds the tool's totals over every agent.
+// agent_id holds the tool's totals over every agent. A call a subscription
+// agent's harness made, marked from_harness, is of no guild tool.
 export async function listGuildToolCallStats(
   pool: Queryable,
   guildId: string,
@@ -259,6 +260,7 @@ export async function listGuildToolCallStats(
      JOIN agents a ON a.id = r.agent_id
      WHERE a.guild_id = $1 AND m.created_at >= $2 AND m.created_at <= $3
        AND m.payload->>'role' = 'tool' AND COALESCE(m.metadata->>'tool_name', '') <> ''
+       AND m.metadata->>'from_harness' IS NULL
      GROUP BY GROUPING SETS ((m.metadata->>'tool_name', r.agent_id), (m.metadata->>'tool_name'))`,
     [guildId, stamp(since), stamp(until)],
   );
@@ -266,8 +268,8 @@ export async function listGuildToolCallStats(
 }
 
 // One tool's calls by the guild's agents in a window, newest first, with the
-// arguments from the assistant step that made each call. `before` pages on
-// (created_at, id).
+// arguments from the assistant step that made each call; a call a harness made
+// is of no guild tool. `before` pages on (created_at, id).
 export async function listGuildToolCalls(
   pool: Queryable,
   guildId: string,
@@ -290,6 +292,7 @@ export async function listGuildToolCalls(
      JOIN agents a ON a.id = r.agent_id
      WHERE a.guild_id = $1 AND m.created_at >= $2 AND m.created_at <= $3
        AND m.payload->>'role' = 'tool' AND m.metadata->>'tool_name' = $4
+       AND m.metadata->>'from_harness' IS NULL
        AND (NOT $5 OR COALESCE(m.metadata->>'error', '') <> '')
        AND ($6::timestamptz IS NULL OR (m.created_at, m.id) < ($6::timestamptz, $7::bigint))
      ORDER BY m.created_at DESC, m.id DESC

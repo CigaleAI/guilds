@@ -331,7 +331,11 @@ go into it.
 every tool they called in the window (24 h, 3 d, or 7 d). A tool comes
 from the native toolbox, from a script with parameters, or from a
 connection. Calls the coach makes are not counted: only the agents'
-runs.
+runs. A call a subscription agent's harness made, of its own tools or
+of an MCP server it loaded, is of no guild tool, so it is not counted
+whatever its name, here or in a tool's focus pin; a wake's tool calls
+in the activity chains list it with its harness
+([Studio activity](studio-activity.md)).
 
 Each row shows the tool and its group, the agents offered it, its
 calls, its errors, the median call duration, the agent that calls it
