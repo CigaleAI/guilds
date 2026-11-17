@@ -4,6 +4,7 @@ import type { MessageMetadata, RunMessage, ToolCall } from "../../../api/types/r
 import type { FlowCall, FlowSegment, FlowStats } from "../runs/runFlowModel";
 import {
   callHint,
+  cardHarness,
   cardServer,
   generationStatus,
   revealedCall,
@@ -89,6 +90,24 @@ test("a card names its connected server unless the tool's name carries it", () =
   assert.equal(cardServer(flowCall("c1", { info })), "github");
   assert.equal(cardServer(flowCall("c1", { info: { ...info, name: "github_search" } })), null);
   assert.equal(cardServer(flowCall("c1")), null);
+});
+
+test("a card marks the harness that made its call, and nothing on a call of a guild tool", () => {
+  const shell = { name: "shell", kind: "execute" as const, level: "local" as const, server: null, harness: "cursor" as const };
+  assert.deepEqual(cardHarness(flowCall("c1", { info: shell })), { harness: "cursor", title: "Called by Cursor" });
+  const mcp = { name: "mcp__notion__search", kind: "connected" as const, level: null, server: "notion", harness: "codex" as const };
+  assert.deepEqual(cardHarness(flowCall("c1", { info: mcp })), {
+    harness: "codex",
+    title: "Called by Codex, on an MCP server it loaded",
+  });
+  assert.equal(cardHarness(flowCall("c1")), null);
+});
+
+test("a harness's call's hint reads by that harness's tools", () => {
+  const info = { name: "shell", kind: "execute" as const, level: "local" as const, server: null, harness: "cursor" as const };
+  const call: ToolCall = { id: "c1", type: "function", function: { name: "shell", arguments: '{"command":"ls -a"}' } };
+  assert.equal(callHint(flowCall("c1", { call, info })), "Run ls -a");
+  assert.equal(callHint(flowCall("c1", { call })), "command: ls -a", "a call of no harness");
 });
 
 test("a note_write's chip names the note its result's first line names, and none for another path", () => {

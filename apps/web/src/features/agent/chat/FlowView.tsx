@@ -48,9 +48,12 @@ import {
 } from "../runs/toolFormat";
 import { TOOL_KINDS, isMutation, isScriptRun } from "../runs/toolKinds";
 import type { ToolProgress } from "../../../api/toolProgress";
+import type { Harness } from "../../../api/types/agents";
 import type { StepMetadata } from "../../../api/types/runs";
 import { isNamedToolArguments } from "../../../api/wire";
 import { formatCost } from "../../../app/format";
+import { harnessLabel } from "../harness";
+import { HarnessLogo } from "../HarnessLogo";
 import { callMetadata } from "./callDetail";
 import { ProgressLines, ToolCallDetail } from "./ToolCallDetail";
 
@@ -323,6 +326,29 @@ export function cardServer(call: FlowCall): string | null {
   return server && !name.startsWith(`${server}_`) ? server : null;
 }
 
+/** The harness that made a card's call, and what the card says of it on hover and to screen readers. */
+export type CardHarness = { harness: Harness; title: string };
+
+/**
+ * The harness a card marks as having made its call, of its own tools or on an MCP server it loaded;
+ * null for a call of a tool the guild offers.
+ */
+export function cardHarness(call: FlowCall): CardHarness | null {
+  const { harness, kind } = call.info;
+  if (harness === null) return null;
+  const by = `Called by ${harnessLabel(harness)}`;
+  return { harness, title: kind === "connected" ? `${by}, on an MCP server it loaded` : by };
+}
+
+/** The logo of the harness that made a call, before the call's name. */
+function CallHarnessMark({ harness, title }: CardHarness) {
+  return (
+    <span role="img" aria-label={title} title={title} className="inline-flex shrink-0">
+      <HarnessLogo harness={harness} size={24} />
+    </span>
+  );
+}
+
 type StepReasoningProps = { text: string; defaultOpen: boolean };
 
 /** A step's reasoning, folded to its opening line; nothing when the step recorded none. */
@@ -417,10 +443,12 @@ export function FlowView({
     const expanded = openCall === callKey(call);
     const status = callStatus(call, generating);
     const reported = runningProgress(call);
+    const mark = cardHarness(call);
     const card = (
       <ToolCall
         key={callKey(call)}
         {...(isRevealed(call) ? { "data-revealed": "", className: "ring-2 ring-signal" } : {})}
+        {...(mark ? { icon: <CallHarnessMark {...mark} /> } : {})}
         name={call.info.name}
         kind={call.info.kind}
         effect={callEffect(call)}
