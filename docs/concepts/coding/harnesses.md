@@ -642,12 +642,34 @@ seconds.
 | `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives one, the system prompt file, forks a supervisor in its own session, and returns |
 | `poll` | The raw events after a byte offset into the log as whole lines, their progress lines, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
 | `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
-| `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |
+| `stop` | SIGTERM to every process of the turn, SIGKILL ten seconds later to each one left until none is, then waits for the supervisor to record the exit. It answers that the call stopped only once no process of the turn is left |
 
 The supervisor starts the CLI in its own process group in
 `repos/<repo>`, or in the agent's home when the request names no
-repository, appends the CLI's raw events to the log, waits for it, and
-records its exit code.
+repository, appends the CLI's raw events to the log, and waits for it.
+Once the CLI exits, by itself or stopped, the supervisor ends every
+process of the turn still running, as `stop` does, and then records
+the CLI's exit code. So `poll` and `result` see the CLI exit only once
+nothing the turn started runs.
+
+A turn's processes are every process its CLI started, and every one
+those started in turn, whatever session or process group each moved
+to. The supervisor is the turn's child subreaper (Linux's
+`PR_SET_CHILD_SUBREAPER`): a process whose parent exits is handed to
+the supervisor rather than to the container's init, so it stays below
+the supervisor. `stop` and the supervisor find the turn's processes by
+walking `/proc` down from the supervisor, and add the CLI's process
+group. `stop` walks from a pid only while `/proc/<pid>/cmdline` shows
+it supervising that call, so a pid the system gave to another process
+is never taken for the supervisor. The CLI tab, the browser, and other
+agents' turns, which the orchestrator starts apart from the turn, are
+not below the supervisor and are never signalled.
+
+Two kinds of process are not below the supervisor, and keep running
+until the container stops: one that a command of the turn has another
+running service start, and every process of a turn whose supervisor
+was killed. Outside Linux, as in the orchestrator's tests on macOS, a
+turn's processes are its CLI's process group.
 
 A call's state is under `/run/guilds/<agent id>/harness/` (mode 0700),
 which goes with the container: `<call id>.json` (what was started),

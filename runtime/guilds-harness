@@ -8,10 +8,12 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
 - `check`: whether the harness's CLI is installed, its version, and the credential it would
   run on.
 - `start`: removes the harness's local configuration and memory from the agent's home, then
-  forks a supervisor in its own session and returns at once. The supervisor starts
-  the CLI in its own process group in the repository directory, or in the home when the
-  request names no repository, writes the CLI's raw events to the log, waits for it, and
-  records its exit code. A request with a `system_prompt` starts the CLI with that system
+  forks a supervisor in its own session and returns at once. The supervisor becomes the reaper
+  of every orphan among its descendants, starts the CLI in its own process group in the
+  repository directory, or in the home when the request names no repository, writes the CLI's
+  raw events to the log, and waits for it. Once the CLI exits, it ends every process the turn
+  left running, whatever session or process group it moved to, then records the CLI's exit
+  code. A request with a `system_prompt` starts the CLI with that system
   prompt: Claude Code and Codex in place of their own, Cursor and Antigravity as a rules file in
   the home that they read beside their own. A request with an `mcp_url` and its `mcp_token`
   starts the CLI with that one MCP server, the token sent as its bearer. The token reaches the
@@ -23,8 +25,10 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
   the new offset, the session id once the harness has reported one, and whether the CLI has
   exited.
 - `result`: the final message, the session id, and how the turn ended, read from the log.
-- `stop`: SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the
-  supervisor to record the exit.
+- `stop`: SIGTERM to every process of the turn (the CLI's process group and every descendant
+  of the supervisor), SIGKILL ten seconds later to every one left until none is, then waits for
+  the supervisor to record the exit. It says the call stopped only once no process of the turn
+  is left.
 
 A large request arrives as a file under /run/guilds/requests, which this helper reads and
 deletes. The helper prints one base64 JSON envelope: {"ok": true, "text": ..., "meta":
@@ -43,6 +47,7 @@ every call's reset removes whatever is left there.
 from __future__ import annotations
 
 import base64
+import ctypes
 import json
 import os
 import re
@@ -64,7 +69,12 @@ KEEP_RUNS = 20
 VERSION_TIMEOUT = 20
 START_WAIT = 5.0
 STOP_GRACE = 10.0
+# How long SIGKILL is sent again to what is left of a turn: a process may fork between the walk
+# that finds it and the signal.
+KILL_WAIT = 2.0
 EXIT_WAIT = 5.0
+# prctl(2)'s option that makes a process the reaper of the orphans among its descendants.
+PR_SET_CHILD_SUBREAPER = 36
 POLL_MAX_BYTES = 256 * 1024
 POLL_MAX_LINES = 60
 STDERR_TAIL_BYTES = 2000
@@ -960,6 +970,58 @@ def _pid_running(pid: int) -> bool:
         return True
 
 
+def _live_parents() -> dict[int, int]:
+    """The parent of every live process on the machine, by pid; empty where there is no /proc.
+    Zombies are left out: they have ended."""
+    parents: dict[int, int] = {}
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return parents
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            fields = Path(f"/proc/{entry}/stat").read_text().rsplit(")", 1)[1].split()
+        except (OSError, IndexError):
+            continue
+        if fields[0] not in ("Z", "X"):
+            parents[int(entry)] = int(fields[1])
+    return parents
+
+
+def _descendants(root: int | None) -> list[int]:
+    """The live descendants of `root`; none for no root, or where there is no /proc."""
+    if root is None:
+        return []
+    children: dict[int, list[int]] = {}
+    for pid, parent in _live_parents().items():
+        children.setdefault(parent, []).append(pid)
+    found: list[int] = []
+    pending = [root]
+    while pending:
+        below = children.get(pending.pop(), [])
+        found += below
+        pending += below
+    return found
+
+
+def _supervising(pid: int, call_id: str) -> bool:
+    """Whether `pid` is the supervisor of call `call_id`, not a process that took its pid since."""
+    try:
+        argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    return argv[-3:-1] == [b"--supervise", call_id.encode("utf-8")]
+
+
+def _supervisor(call_id: str, state: dict[str, Any]) -> int | None:
+    """The pid of the call's supervisor while it runs; None once it is gone, or where there is no
+    /proc to tell it from a process that took its pid."""
+    pid = state.get("supervisor_pid")
+    return pid if isinstance(pid, int) and _supervising(pid, call_id) else None
+
+
 def _exit_code(call_id: str, state: dict[str, Any]) -> tuple[bool, int | None]:
     """Whether the CLI has exited, and its exit code when the supervisor recorded one."""
     paths = _paths(call_id)
@@ -1197,6 +1259,27 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     return {"text": text, "meta": meta}
 
 
+def _adopt_orphans() -> None:
+    """Makes this process the reaper of every orphan among its descendants (Linux's child
+    subreaper), so a process the turn starts stays its descendant whatever session or process
+    group it moves to and after its parent exits. Elsewhere there is none, and a turn's processes
+    are its CLI's process group."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    if not hasattr(libc, "prctl"):
+        return
+    if libc.prctl(PR_SET_CHILD_SUBREAPER, ctypes.c_ulong(1)) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_CHILD_SUBREAPER) failed")
+
+
+def _wait_reaping(pid: int) -> int:
+    """Waits for the child `pid` to exit, reaping every other child meanwhile, the orphans this
+    process adopted among them; its exit code, negative for the signal that ended it."""
+    while True:
+        reaped, status = os.waitpid(-1, 0)
+        if reaped == pid:
+            return os.waitstatus_to_exitcode(status)
+
+
 def _run_cli(state: dict[str, Any], out: Any, err: Any) -> int:
     """Starts the CLI in its own process group with its output in the log; returns its exit code."""
     stdin_path = state.get("stdin")
@@ -1222,11 +1305,12 @@ def _run_cli(state: dict[str, Any], out: Any, err: Any) -> int:
         if stdin is not subprocess.DEVNULL:
             stdin.close()
     _write(_paths(state["call_id"])["pid"], str(child.pid))
-    return child.wait()
+    return _wait_reaping(child.pid)
 
 
 def supervise(call_id: str) -> None:
-    """The supervisor: runs the CLI and records how it exits."""
+    """The supervisor: runs the CLI, ends what the turn left running once it exits, and records
+    how it exited."""
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     paths = _paths(call_id)
     state = _load_state(call_id)
@@ -1234,9 +1318,13 @@ def supervise(call_id: str) -> None:
         return
     code = 127
     try:
+        _adopt_orphans()
         with Path(state["log_path"]).open("ab") as out, paths["stderr"].open("wb") as err:
             code = _run_cli(state, out, err)
     finally:
+        # The turn is over once its CLI exits: what it left running would act past the turn's end,
+        # after the orchestrator revoked what the turn could reach.
+        _end_turn(os.getpid(), _int_file(paths["pid"]))
         _write(paths["exit"], str(code))
 
 
@@ -1385,22 +1473,62 @@ def op_result(spec: dict[str, Any]) -> dict[str, Any]:
     return {"text": meta["message"], "meta": meta}
 
 
-def _signal_group(pgid: int, sig: int, wait: float) -> bool:
-    """Sends `sig` to the process group and waits up to `wait` seconds; whether the group is gone."""
+def _signal_turn(supervisor: int | None, pgid: int | None, sig: int) -> None:
+    """Sends `sig` to the CLI's process group `pgid` and to every descendant of `supervisor`."""
+    if pgid is not None:
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+    for pid in _descendants(supervisor):
+        try:
+            os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            continue
+
+
+def _turn_alive(supervisor: int | None, pgid: int | None) -> bool:
+    """Whether a process of the turn is left: one in the CLI's process group, or below the supervisor."""
+    return (pgid is not None and _group_alive(pgid)) or bool(_descendants(supervisor))
+
+
+def _reap_children() -> None:
+    """Reaps every child of this process that has exited, so none is counted as left running."""
     try:
-        os.killpg(pgid, sig)
-    except (ProcessLookupError, PermissionError):
-        return True
+        while os.waitpid(-1, os.WNOHANG)[0] > 0:
+            pass
+    except ChildProcessError:
+        return
+
+
+def _wait_turn_ended(supervisor: int | None, pgid: int | None, wait: float) -> bool:
+    """Waits up to `wait` seconds for the turn's processes to end; whether none is left."""
     deadline = time.monotonic() + wait
-    while time.monotonic() < deadline and _group_alive(pgid):
+    while True:
+        _reap_children()
+        if not _turn_alive(supervisor, pgid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(0.1)
-    return not _group_alive(pgid)
 
 
-def _end_group(pgid: int | None) -> None:
-    """SIGTERM to the CLI's process group, then SIGKILL once the grace period is over."""
-    if pgid is not None and not _signal_group(pgid, signal.SIGTERM, STOP_GRACE):
-        _signal_group(pgid, signal.SIGKILL, 1.0)
+def _end_turn(supervisor: int | None, pgid: int | None) -> bool:
+    """Ends every process of the turn: SIGTERM to each, then SIGKILL to each one left once the
+    grace period is over, until none is; whether none is left.
+
+    The turn's processes are the CLI's process group and, on Linux, every descendant of its
+    supervisor. The supervisor reaps the orphans below it, so a process that moved to a session
+    or process group of its own is still its descendant after its parent exits."""
+    _signal_turn(supervisor, pgid, signal.SIGTERM)
+    if _wait_turn_ended(supervisor, pgid, STOP_GRACE):
+        return True
+    deadline = time.monotonic() + KILL_WAIT
+    while time.monotonic() < deadline:
+        _signal_turn(supervisor, pgid, signal.SIGKILL)
+        if _wait_turn_ended(supervisor, pgid, 0.1):
+            return True
+    return False
 
 
 def _wait_for_exit(call_id: str, state: dict[str, Any]) -> tuple[bool, int | None]:
@@ -1419,8 +1547,10 @@ def op_stop(spec: dict[str, Any]) -> dict[str, Any]:
     paths = _paths(call_id)
     exited, code = _exit_code(call_id, state)
     if not exited:
-        _end_group(_int_file(paths["pid"]))
+        ended = _end_turn(_supervisor(call_id, state), _int_file(paths["pid"]))
         exited, code = _wait_for_exit(call_id, state)
+        # A process of the turn still running can still act on what the turn could reach.
+        exited = exited and ended
     meta = {
         "missing": False,
         "exited": exited,
