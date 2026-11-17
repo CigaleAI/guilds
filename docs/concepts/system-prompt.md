@@ -75,7 +75,8 @@ A [subscription agent](agents.md#model-source)'s run offers its tools
 through the orchestrator's MCP server, so its Guidelines keep the
 parts of the tools it is offered, each tool named as its harness calls
 it ([Tool names](#tool-names)). They keep a part of their own for its
-harness: where it runs, its home, its toolchains, its ports, that its
+harness: where it runs, its home, its toolchains, its ports, that
+every process its turn starts ends with the turn, that its
 secrets are variables it never prints, and, when the run offers a
 tool, that the guild's tools come from the platform's MCP server and
 that each call of one is a tool call of the run. On

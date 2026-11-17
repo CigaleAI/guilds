@@ -8,6 +8,10 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Changed.** A subscription agent is told that every process its turn
+starts ends with the turn, so it waits for a background command it
+needs and does not hand over a server that is no longer running.
+
 **Changed.** A guild holds any number of open issues: `report_issue`
 no longer refuses a report in a guild that holds 100 of them.
 

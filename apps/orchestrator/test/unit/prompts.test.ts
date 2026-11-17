@@ -417,6 +417,7 @@ test("a subscription agent's harness reads where it runs, its home, and its port
   assert.ok(harness.includes("Your home (`$HOME`) stays between runs"));
   assert.ok(harness.includes("Your turn\n  starts in it."), "without repositories the turn starts in the home");
   assert.ok(harness.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
+  assert.ok(harness.includes("Every process your turn starts ends with the turn"));
   assert.ok(harness.includes("Never print their values"));
   assert.ok(!harness.includes("code_task"));
   assert.ok(!harness.includes("State `repositories` lists"), "the repositories part is for an agent that has some");
