@@ -80,3 +80,29 @@ test("a record id is the numeric last part of a display path", () => {
   assert.equal(recordIdFromPath(""), null);
   assert.equal(recordIdFromPath(null), null);
 });
+
+test("a call a harness made is a plain tool call, whatever guild tool its name matches", () => {
+  const byHarness = (name: string, args = "{}") => ({
+    ...call(name, args),
+    from_harness: "cursor" as const,
+  });
+  const effects = wakeEffects(
+    wake("w_1", "a_coder", [0, 1], {
+      tool_calls: [
+        byHarness("shell", '{"command":"ls"}'),
+        byHarness("script_run", '{"name":"deploy"}'),
+        byHarness("report_issue", '{"detail":"x"}'),
+      ],
+    }),
+  );
+  assert.deepEqual(
+    effects.calls.map((item) => [item.name, item.from_harness]),
+    [
+      ["shell", "cursor"],
+      ["script_run", "cursor"],
+      ["report_issue", "cursor"],
+    ],
+  );
+  assert.deepEqual(effects.scriptRuns, []);
+  assert.deepEqual(effects.issues, []);
+});

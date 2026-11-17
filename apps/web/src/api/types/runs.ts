@@ -162,6 +162,23 @@ export type HarnessToolArguments = {
   description?: string;
 };
 
+/**
+ * A call of one of Antigravity's own tools' arguments, as far as a summary reads them: the command,
+ * the file written or read, the directory listed, the pattern or query searched, the address
+ * fetched, and the MCP server and tool a `call_mcp_tool` call names.
+ */
+export type AntigravityToolArguments = {
+  CommandLine?: string;
+  TargetFile?: string;
+  AbsolutePath?: string;
+  DirectoryPath?: string;
+  Pattern?: string;
+  Query?: string;
+  Url?: string;
+  ServerName?: string;
+  ToolName?: string;
+};
+
 /** A Codex patch's arguments, as its item reports them: the files it changed, each with how. */
 export type FileChangeArguments = { changes: Array<{ path: string; kind?: string }> };
 

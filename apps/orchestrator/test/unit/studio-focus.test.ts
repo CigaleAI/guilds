@@ -107,6 +107,31 @@ test("a run pin on a tool call quotes the call and its result", async () => {
   assert.match(resolved.content, /around seq 2/);
 });
 
+test("a run pin on a harness's call names the harness that made it, and the result it got", async () => {
+  const harness = { generation: 1, from_harness: "cursor" as const };
+  const harnessMessages = [
+    message(1, { role: "assistant", content: "", tool_calls: [{ id: "t.1", type: "function", function: { name: "shell", arguments: '{"command":"ls"}' } }] }, harness),
+    message(2, { role: "tool", tool_call_id: "t.1", content: "a.py" }, { ...harness, tool_name: "shell" }),
+  ];
+  const resolved = await resolveFocus(focusTables({ runs: [run()], messages: harnessMessages }), {
+    kind: "run",
+    run_id: "r_1",
+    call_id: "t.1",
+  });
+  assert.match(resolved.content, /Requested at seq 1 by Cursor, the agent's harness, outside the guild's tools: shell with arguments/);
+  assert.match(resolved.content, /Tool result at seq 2 by Cursor, the agent's harness, outside the guild's tools:/);
+  assert.match(resolved.content, /from_harness="cursor"/);
+});
+
+test("a run pin on a guild tool's call names no harness", async () => {
+  const resolved = await resolveFocus(focusTables({ runs: [run()], messages: callMessages }), {
+    kind: "run",
+    run_id: "r_1",
+    call_id: "call_1",
+  });
+  assert.doesNotMatch(resolved.content, /harness/);
+});
+
 test("a run pin on a step quotes the message at that step", async () => {
   const resolved = await resolveFocus(
     focusTables({ runs: [run({ kind: "group" })], messages: callMessages }),

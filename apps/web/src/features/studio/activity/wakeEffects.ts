@@ -18,6 +18,16 @@ const EFFECT_TOOLS = new Set([
   "report_issue",
 ]);
 
+/** Whether a call is of the guild's tool `name`: a call a harness made never is, whatever its name. */
+function isGuildCall(call: ActivityToolCall, name: string): boolean {
+  return call.from_harness === null && call.name === name;
+}
+
+/** Whether a step shows a call as a side effect: a call of one of the guild's effect tools. */
+function isEffectCall(call: ActivityToolCall): boolean {
+  return call.from_harness === null && EFFECT_TOOLS.has(call.name);
+}
+
 /** Writes to one target: how many, by operation, the record ids touched, and the first write. */
 export type WriteGroup = {
   kind: ActivityWriteKind;
@@ -100,14 +110,14 @@ export type WakeEffects = {
 export function wakeEffects(wake: ActivityWake): WakeEffects {
   const writes = groupWrites(wake.writes);
   return {
-    calls: wake.tool_calls.filter((call) => !EFFECT_TOOLS.has(call.name)),
+    calls: wake.tool_calls.filter((call) => !isEffectCall(call)),
     scriptRuns: tally(
       wake.tool_calls
-        .filter((call) => call.name === "script_run")
+        .filter((call) => isGuildCall(call, "script_run"))
         .map((call) => argument(call.arguments, "name") ?? "a script"),
     ),
     issues: wake.tool_calls
-      .filter((call) => call.name === "report_issue")
+      .filter((call) => isGuildCall(call, "report_issue"))
       .map((call) => argument(call.arguments, "detail") ?? call.arguments),
     failedCalls: wake.tool_calls.filter((call) => call.error !== null),
     records: writes.filter((group) => group.kind === "record"),

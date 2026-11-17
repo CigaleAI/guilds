@@ -1,3 +1,4 @@
+import type { Harness } from "../../../api/types/agents";
 import type {
   StepMessage,
   StepMetadata,
@@ -5,6 +6,7 @@ import type {
   ToolCall,
 } from "../../../api/types/runs";
 import {
+  isAntigravityToolArguments,
   isBrowseArguments,
   isBrowserToolArguments,
   isBuilderToolArguments,
@@ -307,52 +309,132 @@ const CALL_SUMMARIES: Readonly<Record<string, CallSummary>> = Object.freeze({
     args.id ? `X quotes ${args.id}` : "X quotes",
   ),
   twitterapiio_trends: () => "X trends",
-  Bash: summaryOf(isHarnessToolArguments, (args) => {
-    const command = firstCommandLine(args.command ?? "");
-    return command ? `Run ${command}` : "Run command";
-  }),
-  Read: summaryOf(isHarnessToolArguments, (args) =>
-    args.file_path ? `Read ${args.file_path}` : "Read file",
-  ),
-  Write: summaryOf(isHarnessToolArguments, (args) =>
-    args.file_path ? `Write ${args.file_path}` : "Write file",
-  ),
-  Edit: summaryOf(isHarnessToolArguments, (args) =>
-    args.file_path ? `Edit ${args.file_path}` : "Edit file",
-  ),
-  MultiEdit: summaryOf(isHarnessToolArguments, (args) =>
-    args.file_path ? `Edit ${args.file_path}` : "Edit file",
-  ),
-  Glob: summaryOf(isHarnessToolArguments, (args) =>
-    args.pattern ? `Search files "${args.pattern}"` : "Search files",
-  ),
-  Grep: summaryOf(isHarnessToolArguments, (args) =>
-    args.pattern ? `Search lines "${args.pattern}"` : "Search lines",
-  ),
-  LS: summaryOf(isHarnessToolArguments, (args) => (args.path ? `List ${args.path}` : "List files")),
-  WebFetch: summaryOf(isHarnessToolArguments, (args) =>
-    args.url ? `Fetch ${args.url}` : "Fetch page",
-  ),
-  WebSearch: summaryOf(isHarnessToolArguments, (args) =>
-    args.query ? `Search web "${args.query}"` : "Search web",
-  ),
-  Task: summaryOf(isHarnessToolArguments, (args) =>
-    args.description ? `Delegate ${args.description}` : "Delegate task",
-  ),
-  TodoWrite: () => "Update todos",
-  command_execution: summaryOf(isHarnessToolArguments, (args) => {
-    const command = firstCommandLine(args.command ?? "");
-    return command ? `Run ${command}` : "Run command";
-  }),
-  file_change: summaryOf(isFileChangeArguments, (args) => {
-    const [only, ...more] = args.changes;
-    if (only === undefined) return "Change files";
-    return more.length ? `Change ${args.changes.length} files` : `Change ${only.path}`;
-  }),
-  web_search: summaryOf(isHarnessToolArguments, (args) =>
-    args.query ? `Search web "${args.query}"` : "Search web",
-  ),
 });
+
+/** A command's first line as a call's summary: **Run** and it, or **Run command** when there is none. */
+function runSummary(command: string | undefined): string {
+  const line = firstCommandLine(command ?? "");
+  return line ? `Run ${line}` : "Run command";
+}
+
+/** A summary of a verb and what the call names, or the fallback when it names nothing. */
+function verbSummary(verb: string, object: string | undefined, fallback: string): string {
+  return object ? `${verb} ${object}` : fallback;
+}
+
+/** A summary of a search: the verb and the pattern quoted, or the verb alone. */
+function searchSummary(verb: string, pattern: string | undefined): string {
+  return pattern ? `${verb} "${pattern}"` : verb;
+}
+
+// How each harness's own tools read, by the name its rows give them. A table applies only to the
+// rows of its harness, so a tool the guild offers never reads as a harness's that shares its name.
+const HARNESS_CALL_SUMMARIES: Readonly<Record<Harness, Readonly<Record<string, CallSummary>>>> =
+  Object.freeze({
+    "claude-code": Object.freeze<Record<string, CallSummary>>({
+      Bash: summaryOf(isHarnessToolArguments, (args) => runSummary(args.command)),
+      Read: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Read", args.file_path, "Read file"),
+      ),
+      Write: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Write", args.file_path, "Write file"),
+      ),
+      Edit: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Edit", args.file_path, "Edit file"),
+      ),
+      MultiEdit: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Edit", args.file_path, "Edit file"),
+      ),
+      Glob: summaryOf(isHarnessToolArguments, (args) =>
+        searchSummary("Search files", args.pattern),
+      ),
+      Grep: summaryOf(isHarnessToolArguments, (args) =>
+        searchSummary("Search lines", args.pattern),
+      ),
+      LS: summaryOf(isHarnessToolArguments, (args) => verbSummary("List", args.path, "List files")),
+      WebFetch: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Fetch", args.url, "Fetch page"),
+      ),
+      WebSearch: summaryOf(isHarnessToolArguments, (args) =>
+        searchSummary("Search web", args.query),
+      ),
+      Task: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Delegate", args.description, "Delegate task"),
+      ),
+      TodoWrite: () => "Update todos",
+    }),
+    codex: Object.freeze<Record<string, CallSummary>>({
+      command_execution: summaryOf(isHarnessToolArguments, (args) => runSummary(args.command)),
+      file_change: summaryOf(isFileChangeArguments, (args) => {
+        const [only, ...more] = args.changes;
+        if (only === undefined) return "Change files";
+        return more.length ? `Change ${args.changes.length} files` : `Change ${only.path}`;
+      }),
+      web_search: summaryOf(isHarnessToolArguments, (args) =>
+        searchSummary("Search web", args.query),
+      ),
+    }),
+    cursor: Object.freeze<Record<string, CallSummary>>({
+      shell: summaryOf(isHarnessToolArguments, (args) => runSummary(args.command)),
+      await: () => "Wait",
+      read: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Read", args.path, "Read file"),
+      ),
+      write: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Write", args.path, "Write file"),
+      ),
+      edit: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Edit", args.path, "Edit file"),
+      ),
+      delete: summaryOf(isHarnessToolArguments, (args) =>
+        verbSummary("Delete", args.path, "Delete file"),
+      ),
+      grep: summaryOf(isHarnessToolArguments, (args) =>
+        searchSummary("Search lines", args.pattern),
+      ),
+      glob: summaryOf(isHarnessToolArguments, (args) =>
+        searchSummary("Search files", args.pattern),
+      ),
+      ls: summaryOf(isHarnessToolArguments, (args) => verbSummary("List", args.path, "List files")),
+      todo: () => "Update todos",
+      getMcpTools: () => "List MCP tools",
+    }),
+    antigravity: Object.freeze<Record<string, CallSummary>>({
+      run_command: summaryOf(isAntigravityToolArguments, (args) => runSummary(args.CommandLine)),
+      send_command_input: () => "Send command input",
+      command_status: () => "Check command",
+      view_file: summaryOf(isAntigravityToolArguments, (args) =>
+        verbSummary("Read", args.AbsolutePath, "Read file"),
+      ),
+      list_dir: summaryOf(isAntigravityToolArguments, (args) =>
+        verbSummary("List", args.DirectoryPath, "List files"),
+      ),
+      find_by_name: summaryOf(isAntigravityToolArguments, (args) =>
+        searchSummary("Search files", args.Pattern),
+      ),
+      grep_search: summaryOf(isAntigravityToolArguments, (args) =>
+        searchSummary("Search lines", args.Query),
+      ),
+      write_to_file: summaryOf(isAntigravityToolArguments, (args) =>
+        verbSummary("Write", args.TargetFile, "Write file"),
+      ),
+      replace_file_content: summaryOf(isAntigravityToolArguments, (args) =>
+        verbSummary("Edit", args.TargetFile, "Edit file"),
+      ),
+      multi_replace_file_content: summaryOf(isAntigravityToolArguments, (args) =>
+        verbSummary("Edit", args.TargetFile, "Edit file"),
+      ),
+      search_web: summaryOf(isHarnessToolArguments, (args) =>
+        searchSummary("Search web", args.query),
+      ),
+      read_url_content: summaryOf(isAntigravityToolArguments, (args) =>
+        verbSummary("Fetch", args.Url, "Fetch page"),
+      ),
+      call_mcp_tool: summaryOf(isAntigravityToolArguments, (args) =>
+        verbSummary("Call", args.ToolName, "Call MCP tool"),
+      ),
+    }),
+  });
 
 /** A call with one short text argument, as `key: value`; empty for any other call. */
 function onlyArgumentSummary(args: JsonObject): string {
@@ -365,12 +447,21 @@ function onlyArgumentSummary(args: JsonObject): string {
   return "";
 }
 
-/** A short human summary of a tool call, such as "Find notes thesis"; empty when nothing useful fits. */
-export function friendlyToolCall(call: ToolCall): string {
+/**
+ * A short human summary of a tool call, such as "Find notes thesis": a call `harness` made by that
+ * harness's tools, a call with no harness by the guild's; empty when nothing useful fits.
+ */
+export function friendlyToolCall(call: ToolCall, harness: Harness | null): string {
   const name = call.function.name || "tool";
   const args = parseToolArgs(call.function.arguments);
-  const summary = Object.hasOwn(CALL_SUMMARIES, name) ? CALL_SUMMARIES[name] : undefined;
+  const table = harness === null ? CALL_SUMMARIES : HARNESS_CALL_SUMMARIES[harness];
+  const summary = Object.hasOwn(table, name) ? table[name] : undefined;
   return summary ? summary(args) : onlyArgumentSummary(args);
+}
+
+/** What a call did as a step's header names it: its summary, else its tool's name. */
+export function callSummary(call: ToolCall, harness: Harness | null): string {
+  return friendlyToolCall(call, harness) || call.function.name || "tool";
 }
 
 function firstCommandLine(command: string): string {
@@ -393,11 +484,11 @@ function groupSummary(groups: CallGroup[], summary: string): void {
   if (object && !last.objects.includes(object)) last.objects.push(object);
 }
 
-/** What a batch of calls did, in one line, such as "Read a.md, b.md · Run ls"; a call with no friendly summary reads as its tool name. */
-export function summarizeCalls(calls: readonly ToolCall[]): string {
+/** What a batch of calls did, in one line from each call's summary, such as "Read a.md, b.md · Run ls". */
+export function summarizeCalls(summaries: readonly string[]): string {
   const groups: CallGroup[] = [];
-  for (const call of calls) {
-    groupSummary(groups, friendlyToolCall(call) || call.function.name || "tool");
+  for (const summary of summaries) {
+    groupSummary(groups, summary);
   }
   return groups
     .map(({ verb, objects }) => [verb, objects.join(", ")].filter(Boolean).join(" "))

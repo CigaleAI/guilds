@@ -36,7 +36,7 @@ function flowCall(
     call: toolCall(name, '{"path":"a.py"}'),
     result: metadata ? result("", metadata) : null,
     position: 0,
-    info: { name, kind: "execute", level: null, server: null },
+    info: { name, kind: "execute", level: null, server: null, harness: null },
     error: null,
     ...patch,
   };

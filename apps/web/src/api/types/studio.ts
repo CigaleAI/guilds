@@ -1,3 +1,4 @@
+import type { Harness } from "./agents";
 import type { CompletionMetadata, MessagePayload, RunError, RunKind } from "./runs";
 import type { Schedule } from "./schedules";
 import type { BindingScope, McpConnectionStatus } from "./access";
@@ -587,7 +588,8 @@ export type ActivityError = { operation: string | null; message: string | null; 
 
 /**
  * A tool call a wake made inside the window, with its result's error and duration. `arguments`
- * holds the first 160 characters.
+ * holds the first 160 characters. `from_harness` is the subscription agent's harness that made the
+ * call, of its own tools or of an MCP server it loaded; null for a call of a tool the guild offers.
  */
 export type ActivityToolCall = {
   call_id: string | null;
@@ -596,6 +598,7 @@ export type ActivityToolCall = {
   error: string | null;
   duration_ms: number | null;
   at: string;
+  from_harness: Harness | null;
 };
 
 /** A public row a wake posted inside the window. */

@@ -1,9 +1,9 @@
-import { ArrowDown, CircleX, List, PenLine } from "lucide-react";
+import { ArrowDown, CircleX, List, PenLine, Terminal, Wrench } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../../cn";
 import { Icon } from "../../primitives/Icon";
 import { Button } from "../actions/Button";
-import { Segmented } from "../controls/Segmented";
+import { Segmented, type SegmentedOption } from "../controls/Segmented";
 import type { GenerationFilter } from "./GenerationFilters";
 
 /** Where a generation stands: its error count, still running, or completed cleanly. */
@@ -19,15 +19,29 @@ export type GenerationStat = {
   tone?: "failed";
 };
 
-/** How many calls each filter keeps. */
-export type GenerationCounts = { all: number; mutations: number; errors: number };
+/**
+ * A generation a coding harness ran, by who made its calls: the harness's name, how many calls the
+ * harness made, and how many were of the guild's tools.
+ */
+export type GenerationOriginCounts = { harness: string; harnessCalls: number; guildCalls: number };
+
+/** How many calls each filter keeps; `origin` only for a generation a coding harness ran. */
+export type GenerationCounts = {
+  all: number;
+  mutations: number;
+  errors: number;
+  origin?: GenerationOriginCounts;
+};
 
 export type GenerationHeaderProps = Omit<ComponentProps<"header">, "title"> & {
   /** "Generation 1", or "Tool trace" for calls outside any generation. */
   title: ReactNode;
   stats: GenerationStat[];
   status: GenerationStatus;
-  /** With `onFilterChange`, the toolbar offers All, Writes and Errors with these counts. */
+  /**
+   * With `onFilterChange`, the toolbar offers All, Writes and Errors with these counts, and with
+   * `counts.origin` the harness's calls and the guild's.
+   */
   counts?: GenerationCounts;
   /** The calls kept in focus; null keeps every call. */
   filter?: GenerationFilter | null;
@@ -72,6 +86,35 @@ function StatusPill({ status }: { status: GenerationStatus }) {
 }
 
 type FilterValue = "all" | GenerationFilter;
+
+/** The toolbar's choices of the calls a generation a coding harness ran keeps by who made them. */
+function originOptions(origin: GenerationOriginCounts | undefined): SegmentedOption<FilterValue>[] {
+  if (!origin) return [];
+  return [
+    {
+      value: "harness",
+      label: (
+        <>
+          <Icon icon={Terminal} size={14} />
+          {origin.harness}
+        </>
+      ),
+      count: origin.harnessCalls,
+      disabled: origin.harnessCalls === 0,
+    },
+    {
+      value: "guild",
+      label: (
+        <>
+          <Icon icon={Wrench} size={14} />
+          Guild
+        </>
+      ),
+      count: origin.guildCalls,
+      disabled: origin.guildCalls === 0,
+    },
+  ];
+}
 
 /** The header over one generation of a run: what it is, how it ended, its totals, and how to read it. */
 export function GenerationHeader({
@@ -167,6 +210,7 @@ export function GenerationHeader({
                   count: counts.errors,
                   disabled: counts.errors === 0,
                 },
+                ...originOptions(counts.origin),
               ]}
             />
           ) : null}

@@ -21,7 +21,7 @@ import {
   type RunGroupPostRow,
   type RunOpeningRow,
 } from "../db/activity.js";
-import type { RunError, RunMetadata, ToolCall } from "../db/schema/index.js";
+import type { Harness, RunError, RunMetadata, ToolCall } from "../db/schema/index.js";
 import { listSchedulesForGuild } from "../db/schedules.js";
 import type { MessageMetadata } from "../db/schema/index.js";
 import { listGroupMessagesForActivity, type ActivityGroupMessageRow } from "../db/group-chat.js";
@@ -119,6 +119,8 @@ export type ActivityWrite = {
 export type ActivityError = { operation: string | null; message: string | null; at: string | null };
 
 // One tool call a wake made inside the window, with its result's error and duration.
+// `from_harness` is the subscription agent's harness that made the call, of its own tools or of an
+// MCP server it loaded itself; null for a call of a tool the guild offers.
 export type ActivityToolCall = {
   call_id: string | null;
   name: string;
@@ -126,6 +128,7 @@ export type ActivityToolCall = {
   error: string | null;
   duration_ms: number | null;
   at: string;
+  from_harness: Harness | null;
 };
 
 export type ActivityWake = {
@@ -362,15 +365,19 @@ export function resultsByCall(rows: RunActivityStepRow[]): Map<string, RunActivi
   return results;
 }
 
-/** A tool call made at `at`, with its arguments cut to a preview and its result's error and duration. */
-export function toolCallOf(call: ToolCall, result: RunActivityStepRow | undefined, at: string): ActivityToolCall {
+/**
+ * A tool call the step `request` made, at the step's time: its arguments cut to a preview, its
+ * result's error and duration, and the harness its request, else its result, is marked as.
+ */
+export function toolCallOf(call: ToolCall, request: RunActivityStepRow, result: RunActivityStepRow | undefined): ActivityToolCall {
   return {
     call_id: call.id || null,
     name: call.function.name,
     arguments: previewText(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
     error: result?.error || null,
     duration_ms: result?.duration_ms ?? null,
-    at,
+    at: iso(request.created_at),
+    from_harness: request.from_harness ?? result?.from_harness ?? null,
   };
 }
 
@@ -385,8 +392,7 @@ function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
     const steps = byRun.get(row.run_id) ?? { calls: [], count: 0, reply: null };
     const calls = row.tool_calls ?? [];
     const listed = calls.slice(0, Math.max(0, ACTIVITY_TOOL_CALLS_MAX - steps.calls.length));
-    const at = iso(row.created_at);
-    steps.calls.push(...listed.map((call) => toolCallOf(call, results.get(resultKey(row.run_id, call.id)), at)));
+    steps.calls.push(...listed.map((call) => toolCallOf(call, row, results.get(resultKey(row.run_id, call.id)))));
     steps.count += calls.length;
     const said = row.text?.trim() ?? "";
     if (said) {

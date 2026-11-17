@@ -78,6 +78,40 @@ export const Done: Story = {
   ),
 };
 
+function HarnessReading() {
+  const [filter, setFilter] = useState<GenerationFilter | null>(null);
+  return (
+    <GenerationHeader
+      title="Generation 1"
+      stats={[
+        { label: "1m 02s" },
+        { label: "6 steps" },
+        { label: "9 tool calls" },
+        { label: "88k tok · on the subscription" },
+      ]}
+      status={{ kind: "completed" }}
+      counts={{
+        all: 9,
+        mutations: 1,
+        errors: 0,
+        origin: { harness: "Cursor", harnessCalls: 7, guildCalls: 2 },
+      }}
+      filter={filter}
+      onFilterChange={setFilter}
+      className="border-b border-line"
+    />
+  );
+}
+
+/** A generation a coding harness ran adds its calls, under the harness's name, and the guild's tools' calls. */
+export const HarnessToolbar: Story = {
+  render: () => (
+    <div className="max-w-3xl rounded-xl bg-surface">
+      <HarnessReading />
+    </div>
+  ),
+};
+
 /** `sm` for the Studio coach's narrow column. */
 export const RunningInCoach: Story = {
   render: () => (
