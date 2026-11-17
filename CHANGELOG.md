@@ -92,6 +92,13 @@ of its own beside the tool, and each such event was dropped.
 agent's CLI tab, so the CLI the runtime image pins stays in place for
 the agent's turns and **Check login**.
 
+**Fixed.** A commit a subscription agent's turn makes carries the
+`Guild-Run` and `Guild-Agent` trailers in a repository that sets its
+own `core.hooksPath` too, and that repository's own hooks still run. A
+turn's git runs the image's hooks at `/usr/local/share/guilds/git-hooks`,
+which run the repository's hook of each name; the image no longer sets
+`init.templateDir`. A box takes it once its runtime image is rebuilt.
+
 **Changed.** The runtime image carries Codex 0.169.0, Claude Code
 2.1.326, the Cursor CLI 2026.11.13, and the Antigravity CLI 1.5.10.
 `node scripts/update-harnesses.mjs` moves them to each vendor's latest
