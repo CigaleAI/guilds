@@ -39,7 +39,7 @@ import {
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { HarnessLoop, SubscriptionGeneration } from "./harness-loop.js";
-import { completeIfActive, runStanding, runWasResumed } from "./lifecycle.js";
+import { completeIfActive, completesAfter, runStanding } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
   liveOfferedNames,
@@ -70,18 +70,6 @@ type RunSandboxes = { machine: SandboxHandle; agent: SandboxHandle };
 
 /** What a generation offers the model: the tool names, the scripts its snapshot pins, and its connection tools. */
 type ToolOffer = { names: Set<string>; scripts: RunScriptSnapshot[]; connections: Map<string, ConnectionTarget> };
-
-/**
- * Whether the run completes when its generation `generation` ends: a run a wake-up reopened for
- * that generation does, and a schedule run does. A resumed run stays open, and a group run is
- * completed by its delivery.
- */
-function completesAfter(run: RunRow, generation: number): boolean {
-  if (run.metadata.wake_reopened_generation === generation) {
-    return true;
-  }
-  return !runWasResumed(run) && run.kind === "schedule";
-}
 
 /** The instruction the run's schedule wake-up message carries; empty when it carries none. */
 function scheduleInstructionOf(rows: MessageRow[]): string {

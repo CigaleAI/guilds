@@ -15,6 +15,18 @@ export function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
 }
 
 /**
+ * Whether the run completes when its generation `generation` ends: a run a wake-up reopened for
+ * that generation does, and a schedule run does. A resumed run stays open, and a group run is
+ * completed by its delivery.
+ */
+export function completesAfter(run: Pick<RunRow, "kind" | "metadata">, generation: number): boolean {
+  if (run.metadata.wake_reopened_generation === generation) {
+    return true;
+  }
+  return !runWasResumed(run) && run.kind === "schedule";
+}
+
+/**
  * Where the run stands, from its row and whether a generation of it is under way. An active run
  * takes messages when it is direct or resumed; an ended run is capped when it ended on a terminal
  * cap, and completed otherwise.
