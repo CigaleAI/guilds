@@ -958,7 +958,9 @@ the snapshot's `max_steps` as `--max-turns`
 (`HARNESS_TAKES_MAX_TURNS`), records `generation.max_steps` when it
 stops there, and ends with `harness.start`, `harness.failed`,
 `harness.lost`, `harness.unresponsive`, or `harness.timed_out` when it
-does not exit cleanly. The server runs the harness's calls through
+does not exit cleanly. A turn offered a tool whose harness never
+listed or called one on its grant (`harnessNeverConnected`) records
+`harness.mcp_unconnected` first, however it ends but a cancel. The server runs the harness's calls through
 `ToolCalls.executeHarnessCall`, one at a time per grant; a call past
 `max_tool_calls` or one that files a blocking issue asks the turn to
 stop, and the loop stops the harness and records

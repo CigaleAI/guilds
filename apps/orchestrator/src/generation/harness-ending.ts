@@ -5,8 +5,9 @@ import { HarnessTurnError } from "./errors.js";
 import type { SubscriptionGeneration } from "./harness-loop.js";
 import { staysOpenAfter } from "./lifecycle.js";
 
-// How a subscription agent's turn on its harness ended, and the run error a turn that did not end
-// cleanly fails its generation with.
+// How a subscription agent's turn on its harness ended, the run error a turn that did not end
+// cleanly fails its generation with, and the one a turn whose harness never connected to the
+// guild's tools records.
 
 /** How a subscription agent's turn ended: as a harness's turn does, or stopped at its run's tool calls' asking. */
 export type HarnessTurnEnding = Omit<TurnEnding, "settled"> & { settled: TurnEnding["settled"] | "stopped" };
@@ -75,5 +76,19 @@ export function harnessTurnFailure(
   return new HarnessTurnError(
     SETTLED_CODE[ending.settled],
     SETTLED_MESSAGE[ending.settled](label, gen.snapshot.max_turn_minutes) + sessionNote(gen, ending.settled) + unstopped,
+  );
+}
+
+/**
+ * The run error of a turn of `gen` whose harness never connected to the guild's tools it was
+ * offered, and so ran without them; its log, at `logPath`, holds what the harness did instead.
+ */
+export function unconnectedTurnFailure(gen: SubscriptionGeneration, logPath: string): HarnessTurnError {
+  const label = HARNESS_INFO[gen.snapshot.harness].label;
+  return new HarnessTurnError(
+    "harness.mcp_unconnected",
+    `${label} never connected to the guild's tools on the platform's MCP server, so its turn ran without them. ` +
+      `Its log is ${logPath}: look there for the MCP server \`guilds\` left out of its configuration, an approval it waited for, ` +
+      "or no route from its machine to the orchestrator.",
   );
 }

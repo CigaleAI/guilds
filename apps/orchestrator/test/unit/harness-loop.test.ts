@@ -15,19 +15,31 @@ import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/genera
 import { toolFixture } from "../helpers/toolbox.js";
 import { createToolHooks } from "../../src/toolbox/index.js";
 import { HARNESS_HELPER, runCodeHelper } from "../../src/toolbox/code.js";
-import { HANG, RECORDED_SESSION, recordedEvents, stubCliSandbox, stubsRunning } from "../helpers/harness-cli.js";
+import type { FastifyInstance } from "fastify";
+import {
+  freePort,
+  HANG,
+  mcpLine,
+  RECORDED_SESSION,
+  recordedEvents,
+  serveHarnessMcp,
+  stubCliSandbox,
+  stubsRunning,
+} from "../helpers/harness-cli.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
 const timing = { ...harnessTurnTiming };
 const SUBSCRIBER: ResolvedAgentConfig = { ...AGENT_CONFIG, model: null, harness: "claude-code" };
 const HARNESS_READY = { installed: true, version: "9.9.9 (stub)", credential: "secret" };
+const listeners: FastifyInstance[] = [];
 
 before(() => {
   harnessTurnTiming.pollMs = 50;
 });
-after(() => {
+after(async () => {
   Object.assign(harnessTurnTiming, timing);
+  await Promise.all(listeners.map((listener) => listener.close()));
 });
 
 type Row = { seq: number; payload: Record<string, unknown>; metadata: Record<string, unknown> };
@@ -35,9 +47,10 @@ type Row = { seq: number; payload: Record<string, unknown>; metadata: Record<str
 /**
  * A generation loop whose run `r_1` is a direct run of a Claude Code subscription agent, on a
  * machine whose sandbox runs `guilds-harness` on this host with the stand-in CLI replaying
- * `lines`; its harness check finds Claude Code ready unless `check` says otherwise.
+ * `lines`, and whose MCP server listens on this host; its harness check finds Claude Code ready
+ * unless `check` says otherwise.
  */
-function subscriptionLoop(lines: string[], check: Record<string, unknown> = HARNESS_READY) {
+async function subscriptionLoop(lines: string[], check: Record<string, unknown> = HARNESS_READY) {
   const stub = stubCliSandbox("claude", lines);
   answerOps(stub.sandbox, { check });
   const db = new FakeDB(configSnapshot(SUBSCRIBER, { tools: [], secrets: [], mcp: [] }, "direct"));
@@ -49,7 +62,9 @@ function subscriptionLoop(lines: string[], check: Record<string, unknown> = HARN
     sandboxes.running.add(machine.id);
     return stub.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
-  const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
+  const port = await freePort();
+  const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { harnessMcpUrl: `http://127.0.0.1:${port}` });
+  listeners.push(await serveHarnessMcp(loop, port));
   const published: string[] = [];
   const publish = loop.events.publish.bind(loop.events);
   loop.events.publish = async (runId, ...event) => {
@@ -97,7 +112,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("a direct message gets the CLI's messages and tool calls as rows, on the run's system prompt", async () => {
-    const { loop, db, calls, rows, errors, published } = subscriptionLoop(recordedEvents("claude-code"));
+    const { loop, db, calls, rows, errors, published } = await subscriptionLoop(recordedEvents("claude-code"));
     await loop.generator.generate("r_1", 1);
 
     assert.deepEqual(errors(), []);
@@ -147,7 +162,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("a message's image on a box that keeps no images fails the turn at start, and the CLI never runs", async () => {
-    const { loop, db, calls, errors } = subscriptionLoop(recordedEvents("claude-code"));
+    const { loop, db, calls, errors } = await subscriptionLoop(recordedEvents("claude-code"));
     const opening = (db.messages as Row[])[1];
     assert.ok(opening);
     opening.metadata = { ...opening.metadata, attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }] };
@@ -162,7 +177,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   test("a Claude Code turn that stops at its max_steps ends the generation with generation.max_steps", async () => {
     const recorded = recordedEvents("claude-code");
     const stopped = JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, num_turns: 30, session_id: RECORDED_SESSION, usage: { input_tokens: 40, output_tokens: 9 } });
-    const { loop, rows, errors, sandbox } = subscriptionLoop([...recorded.slice(0, 3), stopped]);
+    const { loop, rows, errors, sandbox } = await subscriptionLoop([...recorded.slice(0, 3), stopped]);
     sandbox.env.HARNESS_STUB_EXIT = "1";
     await loop.generator.generate("r_1", 1);
     assert.deepEqual(errors().map((error) => [error.operation, error.message]), [["generation.max_steps", "max_steps reached"]]);
@@ -182,7 +197,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
       ...session,
     });
     const [init, ...rest] = recordedEvents("claude-code");
-    const { loop, rows, errors } = subscriptionLoop([init!, mcpCall, mcpResult, ...rest]);
+    const { loop, rows, errors } = await subscriptionLoop([init!, mcpCall, mcpResult, ...rest]);
     await loop.generator.generate("r_1", 1);
     assert.deepEqual(errors(), []);
     const kept = rows();
@@ -191,7 +206,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("the run's next generation resumes the session with the messages added since its reply", async () => {
-    const { loop, db, calls } = subscriptionLoop(recordedEvents("claude-code"));
+    const { loop, db, calls } = await subscriptionLoop(recordedEvents("claude-code"));
     await loop.generator.generate("r_1", 1);
     const seq = Math.max(...db.messages.map((row) => Number(row.seq))) + 1;
     db.messages.push({ id: seq + 1, seq, payload: { role: "user", content: "Yes, name the agent too." }, metadata: { generation: 2, source: "ui" }, created_at: new Date() });
@@ -207,7 +222,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   test("a turn whose usage follows a call, or whose reply has no usage after it, keeps both its rows", async () => {
     const recorded = recordedEvents("claude-code");
     const usage = recorded.at(-1)!;
-    const { loop, rows } = subscriptionLoop([...recorded.slice(0, 3), usage]);
+    const { loop, rows } = await subscriptionLoop([...recorded.slice(0, 3), usage]);
     await loop.generator.generate("r_1", 1);
     assert.deepEqual(rows().map((row) => [row.payload.role, row.payload.content, row.metadata.cost_source]), [
       ["assistant", "I'll look at the greeting first.", undefined],
@@ -215,7 +230,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
       ["assistant", "", "subscription"],
     ], "with no reply held, an empty reply records the usage");
 
-    const unfinished = subscriptionLoop(recorded.slice(0, -1));
+    const unfinished = await subscriptionLoop(recorded.slice(0, -1));
     await unfinished.loop.generator.generate("r_1", 1);
     const reply = unfinished.rows().at(-1);
     assert.match(String(reply?.payload.content), /Should the greeting also name the agent\?$/, "the held reply is kept when the turn ends");
@@ -223,7 +238,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("a cancel stops the CLI mid-tool, and the call it was in gets the interrupted result", async () => {
-    const { loop, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+    const { loop, rows, errors, bin } = await subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
     await loop.beginGeneration("r_1", "a_1");
     loop.generateInBackground("r_1", 1);
     await until(() => rows().length > 0);
@@ -236,8 +251,50 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     assert.equal(errors().at(-1)?.operation, "generation.cancelled");
   });
 
+  test("a turn offered the guild's tools whose harness never connected to them records harness.mcp_unconnected", async () => {
+    const { loop, db, sandbox, rows, errors } = await subscriptionLoop(recordedEvents("claude-code"));
+    sandbox.env.HARNESS_STUB_MCP_CONNECT = "0";
+    await loop.generator.generate("r_1", 1);
+    assert.deepEqual(errors().map((error) => [error.operation, error.message]), [[
+      "harness.mcp_unconnected",
+      "Claude Code never connected to the guild's tools on the platform's MCP server, so its turn ran without them. " +
+        "Its log is .runs/r_1/turn_1_r_1.harness.jsonl: look there for the MCP server `guilds` left out of its configuration, " +
+        "an approval it waited for, or no route from its machine to the orchestrator.",
+    ]]);
+    assert.equal(rows().length, 7, "what the turn did is kept");
+    assert.equal(db.run.status, "active", "a direct run stays open, and its next turn connects anew");
+  });
+
+  test("a turn that listed the guild's tools, or was offered none, records nothing of its connection", async () => {
+    const listed = await subscriptionLoop([mcpLine("tools/list"), ...recordedEvents("claude-code")]);
+    listed.sandbox.env.HARNESS_STUB_MCP_CONNECT = "0";
+    await listed.loop.generator.generate("r_1", 1);
+    assert.deepEqual(listed.errors(), []);
+
+    const offeredNone = await subscriptionLoop(recordedEvents("claude-code"));
+    offeredNone.sandbox.env.HARNESS_STUB_MCP_CONNECT = "0";
+    offeredNone.db.run.config_snapshot = { ...(offeredNone.db.run.config_snapshot as Record<string, unknown>), tools: [] };
+    await offeredNone.loop.generator.generate("r_1", 1);
+    assert.deepEqual(offeredNone.errors(), []);
+  });
+
+  test("an unconnected turn that also ended badly records both, how it ended last; a cancelled one records the cancel alone", async () => {
+    const failed = await subscriptionLoop(recordedEvents("claude-code"));
+    Object.assign(failed.sandbox.env, { HARNESS_STUB_MCP_CONNECT: "0", HARNESS_STUB_EXIT: "1" });
+    await failed.loop.generator.generate("r_1", 1);
+    assert.deepEqual(failed.errors().map((error) => error.operation), ["harness.mcp_unconnected", "harness.failed"]);
+
+    const cancelled = await subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+    cancelled.sandbox.env.HARNESS_STUB_MCP_CONNECT = "0";
+    await cancelled.loop.beginGeneration("r_1", "a_1");
+    cancelled.loop.generateInBackground("r_1", 1);
+    await until(() => cancelled.rows().length > 0);
+    await cancelled.loop.cancel("r_1");
+    assert.deepEqual(cancelled.errors().map((error) => error.operation), ["generation.cancelled"]);
+  });
+
   test("a CLI that fails ends the generation with harness.failed, keeping what it wrote", async () => {
-    const stub = subscriptionLoop(recordedEvents("claude-code"));
+    const stub = await subscriptionLoop(recordedEvents("claude-code"));
     stub.sandbox.env.HARNESS_STUB_EXIT = "1";
     await stub.loop.generator.generate("r_1", 1);
     assert.equal(stub.errors().at(-1)?.operation, "harness.failed");
@@ -248,7 +305,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   test("a turn past its agent's max_turn_minutes is stopped and ends the generation with harness.timed_out", async () => {
     harnessTurnTiming.minuteMs = 20;
     try {
-      const { loop, db, rows, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+      const { loop, db, rows, errors, bin } = await subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
       db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), max_turn_minutes: 50 };
       const started = Date.now();
       await loop.generator.generate("r_1", 1);
@@ -265,7 +322,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   test("a schedule run's turn past its max_turn_minutes ends the run, and its error names no next turn", async () => {
     harnessTurnTiming.minuteMs = 20;
     try {
-      const { loop, db, errors } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+      const { loop, db, errors } = await subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
       db.run.kind = "schedule";
       await loop.generator.generate("r_1", 1);
       assert.equal(errors().at(-1)?.operation, "harness.timed_out");
@@ -277,7 +334,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("a sandbox that stops answering polls stops the CLI and ends the generation with harness.unresponsive", async () => {
-    const { loop, sandbox, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+    const { loop, sandbox, errors, bin } = await subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
     failOp(sandbox, "poll", "the sandbox is not answering");
     await loop.generator.generate("r_1", 1);
     assert.equal(errors().at(-1)?.operation, "harness.unresponsive");
@@ -286,7 +343,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("a turn whose state is gone ends the generation with harness.lost", async () => {
-    const { loop, sandbox, errors } = subscriptionLoop(recordedEvents("claude-code"));
+    const { loop, sandbox, errors } = await subscriptionLoop(recordedEvents("claude-code"));
     answerOps(sandbox, { poll: { missing: true } });
     await loop.generator.generate("r_1", 1);
     assert.equal(errors().at(-1)?.operation, "harness.lost");
@@ -294,7 +351,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("a CLI that does not start ends the generation with harness.start", async () => {
-    const { loop, sandbox, errors, calls, rows } = subscriptionLoop(recordedEvents("claude-code"));
+    const { loop, sandbox, errors, calls, rows } = await subscriptionLoop(recordedEvents("claude-code"));
     failOp(sandbox, "start", "claude is not installed in this image");
     await loop.generator.generate("r_1", 1);
     assert.equal(errors().at(-1)?.operation, "harness.start");
@@ -304,14 +361,14 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
   });
 
   test("a harness without a credential fails at start, as a coding agent's does", async () => {
-    const { loop, errors, calls } = subscriptionLoop(recordedEvents("claude-code"), { installed: true, version: "9.9.9", credential: null });
+    const { loop, errors, calls } = await subscriptionLoop(recordedEvents("claude-code"), { installed: true, version: "9.9.9", credential: null });
     await loop.generator.generate("r_1", 1);
     assert.equal(errors().at(-1)?.operation, "harness.credential");
     assert.equal(calls().length, 0);
   });
 
   test("a subscription agent on a harness that needs a repository, whose agent picks none, fails at start, before its machine wakes", async () => {
-    const { loop, db, errors, machines } = subscriptionLoop(recordedEvents("claude-code"));
+    const { loop, db, errors, machines } = await subscriptionLoop(recordedEvents("claude-code"));
     db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), harness: "cursor" };
     await loop.generator.generate("r_1", 1);
     assert.equal(errors().at(-1)?.operation, "coding.repositories_missing");
@@ -322,7 +379,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
 
 describe("a turn lost with the orchestrator", () => {
   test("is ended at boot: its harness stopped, its open call interrupted, its session kept for the next turn", async () => {
-    const { loop, db, sandbox, sandboxes, rows, bin, calls } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+    const { loop, db, sandbox, sandboxes, rows, bin, calls } = await subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
     // What the process that died left: a started turn on the machine, its first row, and its record.
     const ctx = toolFixture({ run_id: "r_1", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
     await runCodeHelper(ctx.run, createToolHooks(), { op: "start", call_id: "turn_1_r_1", harness: "claude-code", prompt: "use bash twice" }, { helper: HARNESS_HELPER });
@@ -344,7 +401,7 @@ describe("a turn lost with the orchestrator", () => {
   });
 
   test("is left alone when its machine is not running, its open call still interrupted", async () => {
-    const { loop, db, rows } = subscriptionLoop(recordedEvents("claude-code"));
+    const { loop, db, rows } = await subscriptionLoop(recordedEvents("claude-code"));
     const call = { id: "toolu_01", type: "function", function: { name: "Read", arguments: "{}" } };
     db.messages.push({ id: 3, seq: 2, payload: { role: "assistant", content: "", tool_calls: [call] }, metadata: { generation: 1, from_harness: "claude-code" }, created_at: new Date() });
     db.run.metadata = { harness_turn: { call_id: "turn_1_r_1", harness: "claude-code", session_id: "s_1", log_path: ".runs/r_1/turn_1_r_1.harness.jsonl" } };

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { HarnessMcpRefused, TOOL_CALL_LIMIT_MESSAGE } from "../../src/generation/errors.js";
 import {
   bearerToken,
+  harnessNeverConnected,
   HarnessMcpServer,
   narrowedTools,
   servedProtocolVersion,
@@ -187,6 +188,28 @@ test("tools/list lists the run's tools by their own names, descriptions and inpu
     description: noteWrite!.function.description,
     inputSchema: noteWrite!.function.parameters,
   });
+});
+
+test("a grant's harness has connected once it lists the grant's tools or calls one, not by initialize or ping alone", async () => {
+  const listing = fixture();
+  const listed = listing.server.open(listing.gen, listing.tools);
+  const auth = `Bearer ${listed.access.token}`;
+  await listing.server.answer("a_1", auth, request("initialize", { protocolVersion: "2025-06-18" }));
+  await listing.server.answer("a_1", auth, request("ping"));
+  assert.equal(harnessNeverConnected(listed.grant), true);
+  await listing.server.answer("a_1", auth, request("tools/list"));
+  assert.equal(harnessNeverConnected(listed.grant), false);
+
+  const calling = fixture();
+  const called = calling.server.open(calling.gen, calling.tools);
+  await calling.server.answer("a_1", `Bearer ${called.access.token}`, request("tools/call", { name: "note_write", arguments: {} }));
+  assert.equal(harnessNeverConnected(called.grant), false);
+});
+
+test("a grant whose turn was offered no tool never misses them", () => {
+  const { server, gen, tools } = fixture();
+  const { grant } = server.open(gen, { ...tools, schemas: [] });
+  assert.equal(harnessNeverConnected(grant), false);
 });
 
 test("the live narrowing drops a tool the generation offered once the agent's bindings no longer grant it", () => {

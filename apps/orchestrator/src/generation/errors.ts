@@ -44,11 +44,18 @@ export class GenerationBlocked extends Error {
 
 /**
  * How a subscription agent's turn on its harness failed: the CLI did not start, it failed, its
- * state was lost, it stopped answering, or it ran past its time.
+ * state was lost, it stopped answering, it ran past its time, or it never connected to the
+ * guild's tools it was offered.
  */
 export class HarnessTurnError extends Error {
   constructor(
-    readonly code: "harness.start" | "harness.failed" | "harness.lost" | "harness.unresponsive" | "harness.timed_out",
+    readonly code:
+      | "harness.start"
+      | "harness.failed"
+      | "harness.lost"
+      | "harness.unresponsive"
+      | "harness.timed_out"
+      | "harness.mcp_unconnected",
     message: string,
     options?: ErrorOptions,
   ) {

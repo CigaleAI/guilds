@@ -109,6 +109,14 @@ stopped answering, or ran past `max_turn_minutes` says the run's next
 turn resumes its session only on a run that stays open for a next
 turn; a group or schedule run's error no longer promises one.
 
+**Added.** A subscription agent's turn that was offered the guild's
+tools, and whose harness never listed or called them on the
+orchestrator's MCP server, records the run error
+`harness.mcp_unconnected`: the harness never connected to the guild's
+tools, so its turn ran without them, and its log is where to look. It
+comes before the error of how the turn ended, if any. Such a run no
+longer ends as completed with no error.
+
 ## 0.2.0
 
 **Breaking.** An agent can run on the operator's own Claude Code,

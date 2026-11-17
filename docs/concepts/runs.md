@@ -568,6 +568,13 @@ under the call id `turn_<generation>_<run id>`
 | `generation.max_steps` | Claude Code ended its turn at its `max_steps` model calls: "max_steps reached". The run stays open, as a model's run does at the limit |
 | `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls of the guild's tools; the harness got `stop`, and the run completes |
 | `generation.blocked` | a call of the MCP server filed a blocking issue; the harness got `stop` |
+| `harness.mcp_unconnected` | the turn was offered at least one of the guild's tools, and its harness never listed them nor called one on the MCP server, so it ran without them: "`<Harness>` never connected to the guild's tools on the platform's MCP server, so its turn ran without them. Its log is `<path>`: …", naming what to look for there |
+
+`harness.mcp_unconnected` is recorded however the started turn ends,
+but a cancel, before the error of how it ended, which stays the run's
+last: a turn that also failed or ran out of time records both. It is
+no cap: a direct run stays open, its next turn connecting anew, and an
+ended run can be resumed.
 
 A turn cut short by its lost state, its failed polls, or its time adds
 "The run's next turn resumes its session." when the run stays open for

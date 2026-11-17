@@ -88,6 +88,11 @@ token, at another agent's path, or after the generation ended answers
 | `ping` | An empty result |
 | any other request | JSON-RPC error -32601 |
 
+A generation's harness has connected once it lists the tools or calls
+one under its token; `initialize` or `ping` alone does not. A turn
+offered a tool whose harness never connected records
+`harness.mcp_unconnected` ([Harness turns](../concepts/runs.md#harness-turns)).
+
 A `tools/call` runs as a model's call does
 ([How a tool call runs](#how-a-tool-call-runs)), connection tools
 through their login: the offer gate, the decode, redaction, the byte
