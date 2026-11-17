@@ -53,11 +53,15 @@ import type { AgentMachines } from "./machines.js";
 import {
   HARNESS_TURN_STEPS,
   harnessToolRecord,
+  harnessTurnTokens,
   interruptedHarnessToolRecord,
   sessionTurnUsage,
   subscriptionUsageRecord,
+  unreportedUsageRecord,
   type HarnessResultStep,
   type HarnessTurnReader,
+  type HarnessTurnStep,
+  type HarnessUsageRecord,
   type HarnessUsageStep,
 } from "./harness-rows.js";
 import { harnessTurnFailure, unconnectedTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
@@ -97,6 +101,8 @@ type HarnessRunTurn = {
   grant: HarnessGrant;
   /** The id that names the turn's state and log on the machine. */
   call_id: string;
+  /** The generation the turn runs. */
+  generation: number;
   /** The repository the CLI starts in: the agent's one repository, or null for its home when it has none or several. */
   repository: string | null;
   log_path: string;
@@ -112,7 +118,17 @@ type HarnessRunTurn = {
    * says whether it is the turn's reply, which records the turn's usage.
    */
   held: AssistantMessage | null;
+  /** The tokens of each model call the harness reported while the turn ran, by its id of the call. */
+  model_calls: Map<string, TokenUsage>;
+  /**
+   * Where the turn's tokens stand: its CLI not started, so there are none; started, and not yet
+   * reported for the whole turn; or recorded on its reply.
+   */
+  tokens: "not_started" | "unreported" | "recorded";
 };
+
+/** What stopping a lost turn's harness found: the session its result names, and the steps of its log, each null when unread. */
+type LostHarness = { session: string | null; log: HarnessTurnStep[] | null };
 
 /** How a subscription agent's turn's poll loop ends: as a harness's does, or stopped because the run's tool calls asked. */
 type TurnSettled = Settled | "stopped";
@@ -166,8 +182,8 @@ export class HarnessLoop {
    * error; a turn whose tool calls reached the run's limit or filed a blocking issue is stopped,
    * and ends it as the model loop does; a cancel stops the harness and throws
    * `GenerationCancelled`. However it ends, the generation's token is revoked once its last call
-   * is kept, and each call of the harness's own tools left without a result gets the interrupted
-   * one.
+   * is kept, each call of the harness's own tools left without a result gets the interrupted
+   * one, and then the turn's reply is kept.
    */
   async runTurn(gen: SubscriptionGeneration, tools: GenerationTools): Promise<void> {
     if (tools.run.cancel_event?.aborted) {
@@ -186,9 +202,9 @@ export class HarnessLoop {
       }
       await this.recordEnding(gen, turn, ending);
     } finally {
-      await this.releaseHeld(gen, turn, null);
       await this.services.mcp.close(grant);
       await this.resolveHarnessCalls(gen.runId, turn.harness);
+      await this.releaseReply(gen, turn);
     }
   }
 
@@ -230,16 +246,18 @@ export class HarnessLoop {
 
   /**
    * Ends the turn a subscription agent's run lost when the orchestrator restarted: its harness is
-   * stopped on the agent's machine while that runs, the session its result names is kept for the
-   * run's next turn, and each call of the harness's own tools left without a result gets the
-   * interrupted one. A run of no subscription agent, or with no turn, is left as it is.
+   * stopped on the agent's machine while that runs, once its log is read, the session its result
+   * names is kept for the run's next turn, each call of the harness's own tools left without a
+   * result gets the interrupted one, and a reply records the tokens the log reported, unless the
+   * turn's reply recorded them before the restart. A run of no subscription agent, or with no
+   * turn, is left as it is.
    */
   async endLostTurn(run: ActiveRunRow): Promise<void> {
     const turn = run.metadata.harness_turn;
     if (turn === undefined || modelSourceOf(run.config_snapshot).kind !== "subscription") {
       return;
     }
-    const session = await this.stopLostHarness(run, turn);
+    const { session, log } = await this.stopLostHarness(run, turn);
     if (session !== null && session !== turn.session_id) {
       await this.services.db.mergeRunMetadata(
         run.id,
@@ -248,26 +266,29 @@ export class HarnessLoop {
       );
     }
     await this.resolveHarnessCalls(run.id, turn.harness);
+    if (log !== null) {
+      await this.recordLostTurnUsage(run.id, turn, log);
+    }
   }
 
   /**
-   * Stops a lost turn's harness on its agent's machine; the session its result names, or null
-   * when it names none, the machine is not running, or the stop did not go through, which is logged.
+   * Stops a lost turn's harness on its agent's machine once its whole log is read: the session
+   * its result names, null when it names none; and the steps of the log, null when the turn's call
+   * has no state left there. Both are null when the machine is not running, or the read or the
+   * stop did not go through, which is logged.
    */
-  private async stopLostHarness(run: ActiveRunRow, turn: RunHarnessTurn): Promise<string | null> {
+  private async stopLostHarness(run: ActiveRunRow, turn: RunHarnessTurn): Promise<LostHarness> {
     const { db, machines } = this.services;
     try {
       const agent = await db.getAgent(run.agent_id);
       const sandbox = agent ? await machines.sandboxes.connectRunning(agent.machine_id) : null;
       if (agent === null || sandbox === null) {
-        return null;
+        return { session: null, log: null };
       }
-      const { result } = await stopHarness(
-        maintenanceRun(run.id, agent, sandbox),
-        turn.call_id,
-        turn.harness,
-      );
-      return stringOrNull(result?.session_id);
+      const ops = maintenanceRun(run.id, agent, sandbox);
+      const log = await readTurnLog(ops, turn);
+      const { result } = await stopHarness(ops, turn.call_id, turn.harness);
+      return { session: stringOrNull(result?.session_id), log };
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: run.id,
@@ -275,8 +296,30 @@ export class HarnessLoop {
         operation: "harness.stop",
         error_type: errorName(error),
       });
-      return null;
+      return { session: null, log: null };
     }
+  }
+
+  /**
+   * Records on an empty reply of the lost turn the tokens its log, `log`, reported: the harness's
+   * report of the whole turn, else those of the model calls it reported, else that it reported
+   * none; nothing when a reply of the turn's generation recorded them before the restart.
+   */
+  private async recordLostTurnUsage(runId: string, turn: RunHarnessTurn, log: HarnessTurnStep[]): Promise<void> {
+    const rows = await this.services.db.listMessages(runId);
+    if (rows.some((row) => row.metadata.generation === turn.generation && row.metadata.usage_extent !== undefined)) {
+      return;
+    }
+    const { reported, model_calls } = harnessTurnTokens(log);
+    const usage =
+      reported === null
+        ? unreportedUsageRecord(model_calls)
+        : subscriptionUsageRecord(await this.reportedTurnUsage(runId, turn.harness, reported));
+    await this.services.events.commitMessage(runId, { role: "assistant", content: "" }, {
+      generation: turn.generation,
+      from_harness: turn.harness,
+      ...usage,
+    });
   }
 
   /**
@@ -304,6 +347,7 @@ export class HarnessLoop {
       ops: opsRun(tools.run),
       grant,
       call_id: callId,
+      generation: gen.generation,
       repository: placed.length === 1 ? (placed[0] ?? null) : null,
       log_path: harnessLogPath(gen.runId, callId),
       read: HARNESS_TURN_STEPS[gen.snapshot.harness](callId),
@@ -313,6 +357,8 @@ export class HarnessLoop {
       failures: 0,
       pending: new Map(),
       held: null,
+      model_calls: new Map(),
+      tokens: "not_started",
     };
   }
 
@@ -337,6 +383,7 @@ export class HarnessLoop {
         effort: gen.snapshot.harness_effort,
         max_turns: HARNESS_TAKES_MAX_TURNS[turn.harness] ? gen.snapshot.max_steps : null,
       });
+      turn.tokens = "unreported";
       return true;
     } catch (error) {
       const label = HARNESS_INFO[turn.harness].label;
@@ -445,6 +492,8 @@ export class HarnessLoop {
       } else if (step.kind === "result") {
         await this.releaseHeld(gen, turn, null);
         await this.keepResult(gen, secrets, turn, step);
+      } else if (step.kind === "model_call_usage") {
+        turn.model_calls.set(step.call, step.usage);
       } else {
         await this.keepUsage(gen, turn, step);
       }
@@ -502,21 +551,26 @@ export class HarnessLoop {
    * it holds none; a session's total counts only what the run's earlier turns did not.
    */
   private async keepUsage(gen: SubscriptionGeneration, turn: HarnessRunTurn, step: HarnessUsageStep): Promise<void> {
+    turn.tokens = "recorded";
+    await this.releaseHeld(gen, turn, subscriptionUsageRecord(await this.reportedTurnUsage(gen.runId, turn.harness, step)));
+  }
+
+  /** The turn's tokens its harness reported at its end: the turn's own, or what its session's total holds past the run's earlier replies of `harness`. */
+  private async reportedTurnUsage(runId: string, harness: Harness, step: HarnessUsageStep): Promise<TokenUsage> {
     if (step.kind === "turn_usage") {
-      await this.releaseHeld(gen, turn, step.usage);
-      return;
+      return step.usage;
     }
-    const kept = (await this.services.db.listMessages(gen.runId)).flatMap((row) =>
-      row.metadata.from_harness === turn.harness && row.metadata.usage !== undefined ? [row.metadata.usage] : [],
+    const kept = (await this.services.db.listMessages(runId)).flatMap((row) =>
+      row.metadata.from_harness === harness && row.metadata.usage !== undefined ? [row.metadata.usage] : [],
     );
-    await this.releaseHeld(gen, turn, sessionTurnUsage(step.usage, kept));
+    return sessionTurnUsage(step.usage, kept);
   }
 
   /**
    * Keeps the message the turn holds as an assistant row, recording `usage`, the turn's tokens,
    * when they came after it; with `usage` and no message held, an empty reply records them.
    */
-  private async releaseHeld(gen: SubscriptionGeneration, turn: HarnessRunTurn, usage: TokenUsage | null): Promise<void> {
+  private async releaseHeld(gen: SubscriptionGeneration, turn: HarnessRunTurn, usage: HarnessUsageRecord | null): Promise<void> {
     const held = turn.held;
     turn.held = null;
     if (held === null && usage === null) {
@@ -525,8 +579,19 @@ export class HarnessLoop {
     await this.services.events.commitMessage(gen.runId, held ?? { role: "assistant", content: "" }, {
       generation: gen.generation,
       from_harness: turn.harness,
-      ...(usage === null ? {} : subscriptionUsageRecord(usage)),
+      ...usage,
     });
+  }
+
+  /**
+   * Keeps the message the turn still holds once it ended; a turn that started and ended without
+   * its harness's report of the whole turn records on its reply the tokens of the model calls the
+   * harness reported, or that it reported none.
+   */
+  private async releaseReply(gen: SubscriptionGeneration, turn: HarnessRunTurn): Promise<void> {
+    const unreported = turn.tokens === "unreported";
+    turn.tokens = "recorded";
+    await this.releaseHeld(gen, turn, unreported ? unreportedUsageRecord([...turn.model_calls.values()]) : null);
   }
 
   /** Keeps the session the harness reported, so the run's next turn resumes it. */
@@ -545,11 +610,35 @@ export class HarnessLoop {
   private async rememberTurn(runId: string, turn: HarnessRunTurn): Promise<void> {
     const record: RunHarnessTurn = {
       call_id: turn.call_id,
+      generation: turn.generation,
       harness: turn.harness,
       session_id: turn.session,
       log_path: turn.log_path,
     };
     await this.services.db.mergeRunMetadata(runId, { harness_turn: record }, new Date());
+  }
+}
+
+/**
+ * The steps of the whole log of the turn `turn` names, read from its start, as many polls as it
+ * takes, without its text redacted, since only its tokens are kept; null when the turn's call has
+ * no state left on the machine.
+ */
+async function readTurnLog(ops: ToolRun, turn: RunHarnessTurn): Promise<HarnessTurnStep[] | null> {
+  const read = HARNESS_TURN_STEPS[turn.harness](turn.call_id);
+  const steps: HarnessTurnStep[] = [];
+  let offset = 0;
+  for (;;) {
+    const { poll, events } = await pollHarness(ops, turn.call_id, turn.harness, offset);
+    if (poll.missing === true) {
+      return offset === 0 ? null : steps;
+    }
+    steps.push(...read(events, {}));
+    const reached = poll.offset ?? offset;
+    if (reached <= offset) {
+      return steps;
+    }
+    offset = reached;
   }
 }
 

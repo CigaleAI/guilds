@@ -11,11 +11,16 @@ import { isJsonObject, JsonObjectSchema } from "../lib/json.js";
 
 const AgentMessageItem = Type.Object({ id: Type.String(), type: Type.Literal("agent_message"), text: Type.String() });
 
+/** How Codex says an item it ran ended: `completed`, `failed`, or, for a command it did not run, `declined`. */
+const ItemStatus = Type.Optional(Type.String());
+
 const CommandItem = Type.Object({
   id: Type.String(),
   type: Type.Literal("command_execution"),
   command: Type.String(),
   aggregated_output: Type.Optional(Type.String()),
+  exit_code: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  status: ItemStatus,
 });
 
 const FileChange = Type.Object({ path: Type.String(), kind: Type.Optional(Type.String()) });
@@ -24,6 +29,7 @@ const FileChangeItem = Type.Object({
   id: Type.String(),
   type: Type.Literal("file_change"),
   changes: Type.Array(FileChange),
+  status: ItemStatus,
 });
 
 const WebSearchItem = Type.Object({ id: Type.String(), type: Type.Literal("web_search"), query: Type.String() });
@@ -48,10 +54,10 @@ const TurnUsage = Type.Object({
   cache_write_input_tokens: Type.Optional(Type.Number()),
 });
 
-/** A shell command Codex ran, with what it printed once it completed. */
+/** A shell command Codex ran, with what it printed, its exit code, and how it ended once it completed. */
 export type CodexCommandItem = Static<typeof CommandItem>;
 
-/** The files a patch of Codex's changed, each with how. */
+/** The files a patch of Codex's changed, each with how, and whether the patch applied once it completed. */
 export type CodexFileChangeItem = Static<typeof FileChangeItem>;
 
 /** A web search Codex made. */

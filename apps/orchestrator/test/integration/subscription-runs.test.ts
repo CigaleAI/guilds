@@ -157,9 +157,11 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     assert.equal(cancelled.statusCode, 202, cancelled.body);
     assert.equal(stubsRunning(stub.bin), false);
     const after = await messages(runId);
-    assert.equal(after.at(-1)?.payload.role, "tool");
-    assert.equal(after.at(-1)?.payload.content, "ERROR: execution interrupted");
-    assert.equal(after.at(-1)?.metadata.from_harness, "claude-code");
+    const [interrupted, reply] = after.slice(-2);
+    assert.equal(interrupted?.payload.role, "tool");
+    assert.equal(interrupted?.payload.content, "ERROR: execution interrupted");
+    assert.equal(interrupted?.metadata.from_harness, "claude-code");
+    assert.deepEqual([reply?.payload.role, reply?.metadata.usage_extent], ["assistant", "none"], "the reply says the CLI reported no tokens before the cancel");
     assert.equal(cancelled.json().errors.at(-1)?.operation, "generation.cancelled");
   } finally {
     await app.close();

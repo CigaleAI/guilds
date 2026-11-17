@@ -150,10 +150,18 @@ export type RunInputMetadata = {
 };
 
 /**
- * What a message a harness's CLI wrote records: the harness. A subscription agent's run keeps its
- * harness's messages, and the calls of the harness's own tools with their results, under it.
+ * How much of a harness turn's tokens its reply records: `complete`, those the CLI reported for the
+ * whole turn at its end; `partial`, those of the model calls it reported before the turn ended
+ * without that report; `none`, when it reported neither.
  */
-export type HarnessMessageMetadata = { from_harness: Harness };
+export type HarnessUsageExtent = "complete" | "partial" | "none";
+
+/**
+ * What a message a harness's CLI wrote records: the harness, and on the turn's reply how much of
+ * the turn's tokens it records. A subscription agent's run keeps its harness's messages, and the
+ * calls of the harness's own tools with their results, under it.
+ */
+export type HarnessMessageMetadata = { from_harness: Harness; usage_extent?: HarnessUsageExtent };
 
 /**
  * The metadata of a run's message. Which fields it carries depends on the message: an

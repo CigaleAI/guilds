@@ -37,10 +37,15 @@ A [subscription agent](agents.md#model-source)'s turn runs on the
 operator's own subscription, which charges no price per token. Its
 harness reports the tokens the turn spent over every model call it
 made, and the turn's reply records them, a cost of 0, marked
-`subscription` ([Harness turns](runs.md#harness-turns)). A turn whose
-CLI reports no tokens, as Cursor's may not, records none. The reply
-counts in the totals as one call. No price is computed and the usage
-callback is not called.
+`subscription` ([Harness turns](runs.md#harness-turns)). A turn that
+ends before its CLI reports the whole turn, such as one cancelled,
+timed out, or lost at a restart, records instead the tokens of the
+model calls the CLI reported while it ran, marked as partial: a floor
+of what the turn spent. A turn whose CLI reported neither, as Codex
+and Cursor report nothing before their turn's end, records no tokens
+and says so. The reply counts in the totals as one call when it
+records tokens. No price is computed and the usage callback is not
+called.
 
 ### Running totals
 
@@ -103,7 +108,9 @@ logged and never fails the run
   agents**: what the organisation's total holds beyond the rows
   listed.
 - The **run flow** in a run's transcript shows the tokens and cost of
-  each step and of the whole generation, and a reply its own
+  each step and of the whole generation, and a reply its own. A harness
+  turn's partial tokens read **at least**, and a turn with none
+  **tokens not reported**
   ([Run transcript](run-transcript.md#run-flows)).
 
 ## Rules and limits
@@ -134,6 +141,10 @@ Each assistant row with usage stores:
 - `metadata.cost_usd`;
 - `metadata.cost_source`: `provider`, `catalog`, `unavailable`, or
   `subscription` for a harness turn;
+- on a harness turn's reply, `metadata.usage_extent`: `complete` for
+  the CLI's report of the whole turn, `partial` for the tokens of the
+  model calls it reported before the turn ended without that report,
+  or `none`, with no `metadata.usage`, when it reported neither;
 - `metadata.pricing_version`, the catalog's date, whenever the
   provider reported no cost;
 - `messages.cost_usd`, a column for accounting queries.

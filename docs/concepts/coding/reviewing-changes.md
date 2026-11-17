@@ -34,8 +34,13 @@ stay as they are.
 - **Turn checkpoints.** Each turn of a subscription agent that picks
   repositories takes its own `start` in each of them before its CLI
   starts and its own `end` after the turn, under the turn's call id.
-  The run records, for a turn that changed a repository, each
-  repository it changed with its branch, its head commit, and the
+  A turn changed a repository when a file differs between its two
+  checkpoints, or when the repository's head commit or branch at the
+  end is not the one at the start: a turn that commits work it found
+  uncommitted, amends, squashes, splits, or rebases commits to the
+  same files, or switches branches changed it too. The run records,
+  for a turn that changed a repository, each repository it changed
+  with its branch and head commit at the start and at the end, and the
   diffstat; a turn that changed nothing records nothing.
 
 Checkpoints are local to the agent's clone. They are never pushed and
@@ -70,7 +75,10 @@ panel once a turn has changed a repository. Each turn that did is under
 **Turn `<n>`**, with a row per repository it changed: its name, its
 branch, and its diffstat, such as "3 files · +40 −2". **Show diff**
 fetches that turn's diff from the agent's machine, and **Hide diff**
-folds it.
+folds it. A turn that moved the repository's history without changing
+a file, such as one that rewrote commits to the same files, reads "no
+file changes" with the branch and head commit it moved, such as
+"main → topic" and "1a2b3c4 → 5d6e7f8", and has no diff to show.
 
 ### Reading a diff
 
@@ -92,7 +100,7 @@ shows "Couldn't load the diff" with the reason.
 
 | Rule | Value or behaviour |
 | --- | --- |
-| Turn checkpoints | `start` and `end` around each turn of a subscription agent that picks repositories; recorded only for a turn that changed one |
+| Turn checkpoints | `start` and `end` around each turn of a subscription agent that picks repositories; recorded only for a turn that changed one's files, head commit, or branch |
 | What is captured | Committed, uncommitted, and untracked files; not ignored ones |
 | Where | Local refs in the agent's clone, never pushed, never deleted |
 | Diff size | At most 256 KiB, then cut |
@@ -112,14 +120,24 @@ shows "Couldn't load the diff" with the reason.
 temporary one, runs `git add --all` against it, writes the tree, and
 records a commit with `git commit-tree`, parented on `HEAD` when there
 is one, as `guilds checkpoint <checkpoint@guilds.invalid>`, with the
-message `guild run <run id> task <call id> start`.
+message `guild run <run id> task <call id> start` (or `end`). The
+`start` message ends with a `Branch: <branch>` trailer when `HEAD` is
+on a branch, so the end checkpoint reports the branch and head commit
+the turn started on: the trailer's branch and the start commit's
+parent.
 
 A subscription agent's run stores `metadata.turn_changes`, one entry
 per turn that changed a repository, in order:
 `[{ call_id, generation, repos }]`, where `repos` holds each repository
 the turn changed,
-`{ name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions }`,
-between the turn's own checkpoints. The run payload carries it as `turn_changes`.
+`{ name, branch, head_sha, start_branch, start_head_sha, start_sha, end_sha, files_changed, insertions, deletions }`,
+between the turn's own checkpoints: `branch` and `head_sha` at the
+turn's end, `start_branch` and `start_head_sha` at its start (null on
+no branch or no commit), and the checkpoints and their diffstat. A
+repository is in `repos` when `files_changed` is above 0, or when the
+turn has a start checkpoint there and `start_head_sha` or
+`start_branch` differs from `head_sha` or `branch`. The run payload
+carries it as `turn_changes`.
 A turn the restart cut short takes no end checkpoint and records
 nothing.
 

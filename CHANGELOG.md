@@ -8,6 +8,32 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Fixed.** A turn of a subscription agent that moves a repository's
+head or branch without changing a file, such as one that amends,
+squashes, splits, or rebases commits to the same files and
+force-pushes, or switches branches, is listed in the **Changes** panel,
+as "no file changes" with the branch and head commit it moved. The
+start head and branch come from the agent image's `guilds-code`, which
+`./setup.sh` rebuilds: a machine whose container started before the
+update records no change for its turns until its container is
+recreated.
+
+**Fixed.** A subscription agent's turn that is cancelled, timed out,
+stopped at its tool calls' asking, or cut by an orchestrator restart
+records on its reply the tokens its CLI reported for its model calls
+while it ran (Claude Code and Antigravity report them), read **at
+least** in the run view, or says **tokens not reported** when its CLI
+reported none (Codex and Cursor report tokens only at a turn's end).
+
+**Fixed.** A call a subscription agent's harness makes of its own tools
+and that its CLI says failed, such as a command that exited otherwise
+than 0 or a read of a file that is not there, reads as a failed call:
+the run view colours it and opens it on the reason it failed, every
+count of tool errors includes it, and a command's exit code is in its
+Metadata. Cursor's failed commands, failed reads, reads of large files,
+and waited-for background commands show what they returned rather than
+raw JSON.
+
 **Breaking for API clients.** `GET /api/guilds/:id/issues` returns
 `{ issues, open_cap, at_open_cap }` in place of the array of issues:
 `issues` is that array, `open_cap` the most open issues a guild may

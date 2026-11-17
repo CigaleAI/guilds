@@ -60,7 +60,10 @@ in the Task show as their inlined bodies, the nested hop included.
   cost, such as **120 tok · $0.0020**, with input, output, and the
   cache's reads and writes on hover. A subscription agent's reply
   records its whole turn's tokens and reads **on the subscription** in
-  place of a cost.
+  place of a cost. A turn that ended before its CLI reported its total
+  reads **at least** before the tokens of the model calls the CLI
+  reported, and one whose CLI reported none reads **tokens not
+  reported** ([Usage](usage.md#cost-of-a-harness-turn)).
 - While the agent generates and nothing has streamed yet, the
   transcript shows the agent's avatar, three pulsing dots, and
   **`<name>` is thinking…**. Once text streams, three pulsing dots sit
@@ -182,8 +185,9 @@ result lands.
 
 A run whose turns changed a repository ends with a **Changes** panel:
 each turn's repositories with their branch and diffstat, and **Show
-diff**, which fetches that turn's diff from the agent's machine
-([Reviewing changes](coding/reviewing-changes.md)).
+diff**, which fetches that turn's diff from the agent's machine; a turn
+that changed no file shows the branch and head commit it moved in
+place of a diff ([Reviewing changes](coding/reviewing-changes.md)).
 
 ### Harness turns
 
@@ -246,7 +250,12 @@ it reads as its name.
 Any other tool reads as its name. A write in the agent's home is not
 tracked state, so it carries no **wrote** tag. Opening the call shows
 its input and its output, which the platform redacted and capped as
-any tool's, and its Metadata names the harness under **Called by**.
+any tool's, and its Metadata names the harness under **Called by** and
+a command's exit code. A call the harness says failed, such as a
+command that exited otherwise than 0 or a read of a file that is not
+there, reads as a failed call of any tool does: it is coloured as
+failed, counts among the flow's failed calls, and opens on its result
+under the reason it failed ([Runs](runs.md#harness-turns)).
 
 ### Errors outside a flow
 

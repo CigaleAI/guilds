@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTurnDiff } from "../../../api/queries/runs";
 import type { Run, RunDiff, RunRepositoryChange } from "../../../api/types/runs";
 import { Button, CopyButton, Banner, cn, Icon } from "@guildsrun/ui";
-import { diffLineTone, diffstat } from "./changes";
+import { diffLineTone, diffstat, headChange } from "./changes";
 
 const toneClass = {
   added: "text-tide-t",
@@ -69,8 +69,12 @@ type ChangeRowProps = {
   onToggle: () => void;
 };
 
-/** A repository's change: its name, branch, and diffstat, and its diff once opened. */
+/**
+ * A repository's change: its name, branch, and diffstat, and its diff once opened; a change of no
+ * file, such as a rewrite of history, has no diff to open, so it shows how it moved the head instead.
+ */
 function ChangeRow({ change, diff, open, onToggle }: ChangeRowProps) {
+  const moved = change.files_changed === 0 ? headChange(change) : null;
   return (
     <div className="flex flex-col gap-2 border-b border-line px-3.5 py-2.5 last:border-b-0">
       <div className="flex flex-wrap items-center gap-3">
@@ -82,6 +86,11 @@ function ChangeRow({ change, diff, open, onToggle }: ChangeRowProps) {
           </span>
         ) : null}
         <span className="text-xs text-fg-2">{diffstat(change)}</span>
+        {moved ? (
+          <span className="font-mono text-xs text-muted" title="The branch and head commit at the turn's start and end">
+            {moved}
+          </span>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"

@@ -266,16 +266,30 @@ export function usageTitle(usage: Partial<TokenUsage>): string {
 
 /**
  * What a reply's call, or a harness's whole turn, spent, as the reply notes it: its tokens, then
- * its price, or that it ran on the subscription; null for a reply that records no usage.
+ * its price, or that it ran on the subscription, and for a harness turn whose CLI did not report
+ * the whole turn, that the tokens are its reported model calls' only, or that it reported none;
+ * null for a reply that records no usage.
  */
 export function replyUsage(msg: StepMessage): StepFact | null {
   const usage = msg.metadata.usage;
-  if (!usage) return null;
+  const extent = msg.metadata.usage_extent;
+  if (!usage) {
+    return extent === "none"
+      ? { label: "tokens not reported", title: "The CLI reported none of this turn's tokens." }
+      : null;
+  }
   const usd = msg.cost_usd ?? null;
   const price = usd === null ? "" : formatCost(usd);
   const cost = isPriced(msg) ? price : "on the subscription";
   const tokens = `${formatTokens(usage.input_tokens + usage.output_tokens)} tok`;
-  return { label: [tokens, cost].filter(Boolean).join(" · "), title: usageTitle(usage) };
+  const title = usageTitle(usage);
+  if (extent === "partial") {
+    return {
+      label: [`at least ${tokens}`, cost].filter(Boolean).join(" · "),
+      title: `${title}. The turn ended before its CLI reported its total: these are the model calls it reported.`,
+    };
+  }
+  return { label: [tokens, cost].filter(Boolean).join(" · "), title };
 }
 
 /** How long the model took to write an assistant message, in ms; 0 when it is not recorded. */

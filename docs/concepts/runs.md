@@ -550,13 +550,20 @@ under the call id `turn_<generation>_<run id>`
 
    | CLI | Message | Call of its own tool | Result |
    | --- | --- | --- | --- |
-   | Claude Code | each `assistant` event's text | each `tool_use` block, under its id and tool name | each `tool_result` block of a `user` event |
-   | Codex | each completed `agent_message` item | each `command_execution` (its `command`), `file_change` (its `changes`) or `web_search` (its `query`) item as it starts, or as it completes when it did not announce its start, under `<call id>.<item id>` and the item's type | the completed item: a command's output, a line per changed file, nothing for a search |
-   | Cursor | each `assistant` event's text | each `tool_call` event as it starts, or as it completes when it did not announce its start, under `<call id>.<Cursor's call id>` and the tool's kind without `ToolCall` (`shell`, `read`, `write`), with its `args` | the completed event's `result`: a command's output, a file's content, an error's text, else the result as JSON |
-   | Antigravity | each `agent_response` step's text, its pieces joined once the step is `DONE` | each `tool` step as it is `ACTIVE`, or as it ends when it did not announce its start, under `<call id>.step_<step index>` and the tool's name, with its parameters | the step that ended: its output, or its error's message |
+   | Claude Code | each `assistant` event's text | each `tool_use` block, under its id and tool name | each `tool_result` block of a `user` event; failed when its `is_error` is true |
+   | Codex | each completed `agent_message` item | each `command_execution` (its `command`), `file_change` (its `changes`) or `web_search` (its `query`) item as it starts, or as it completes when it did not announce its start, under `<call id>.<item id>` and the item's type | the completed item: a command's output and `exit_code`, a line per changed file, nothing for a search; failed when its `status` is `failed` or `declined`, a command's exit code is not 0, or an MCP call has an `error` |
+   | Cursor | each `assistant` event's text | each `tool_call` event as it starts, or as it completes when it did not announce its start, under `<call id>.<Cursor's call id>` and the tool's kind without `ToolCall` (`shell`, `read`, `write`), with its `args` | the completed event's `result`: under `success`, a command's output and `exitCode`, a file's content, an edit's diff, for a read whose content the event leaves out the lines read, the file, and its size, or for a background command waited for how long it ran; under `failure`, a command that exited otherwise than 0, its output and `exitCode`; under `error`, its message (`error` or `errorMessage`); else the result as JSON. Both `failure` and `error` are failed |
+   | Antigravity | each `agent_response` step's text, its pieces joined once the step is `DONE` | each `tool` step as it is `ACTIVE`, or as it ends when it did not announce its start, under `<call id>.step_<step index>` and the tool's name, with its parameters | the step that ended: its output, or its error's message; failed when its state is `ERROR` or it carries an `error` |
 
    Codex's other items (its reasoning, its plan, an error notice) make
-   no row.
+   no row. A command's output is its interleaved output when the CLI
+   keeps one, else its stdout and stderr.
+
+   A result the CLI says failed records the failure as a failed tool's
+   row does: `metadata.error` is `exited with code <n>` for a command
+   that exited otherwise than 0, else the first line of what the call
+   returned, else `the call failed`, redacted. A result whose event
+   names its command's exit code records it as `metadata.exit_code`.
 3. **End.** A CLI that exits 0 without an error result ends the
    generation as a model's final reply does: the run completes or
    waits by the same rules. Any other ending records its error:
@@ -594,25 +601,35 @@ turn started runs once it has ended
 ([Process](coding/harnesses.md#process)). However the turn ends, the generation's token is revoked once
 the server has kept the call it is running, and a call of the
 harness's own tools still without a result gets the interrupted
-result, marked `from_harness`.
+result, marked `from_harness`, and then the turn's reply is kept.
 
 The turn's reply records the tokens the turn spent, over every model
 call of the CLI, as a model reply records its call's
 ([Usage](usage.md#cost-of-a-harness-turn)): `metadata.usage`,
-`cost_usd` 0, and `cost_source: "subscription"`. A message of the CLI
-with no call of its own tools is held until the CLI's next event, so
-the reply is the one the usage follows; when none is held, an empty
-reply records it, and a turn that ends without its usage keeps the
-held message as it is.
+`cost_usd` 0, `cost_source: "subscription"`, and
+`metadata.usage_extent: "complete"`. A message of the CLI with no
+call of its own tools is held until the CLI's next event, so the
+reply is the one the usage follows; when none is held, an empty reply
+records it.
 
-| CLI | Usage read from | The turn's tokens |
-| --- | --- | --- |
-| Claude Code | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the invocation's; input counts the cache's reads and writes |
-| Codex | `turn.completed`'s `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` | the thread's total less what the run's earlier Codex replies recorded; a total below that is a new thread's, all of it the turn's |
-| Cursor | the `result` event's `usage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` | the invocation's; input counts the cache's reads and writes. A `result` without `usage` records none |
-| Antigravity | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_tokens` | the conversation's total less what the run's earlier Antigravity replies recorded, as Codex's; input counts the cache's reads |
+A turn that ends without the CLI's report of the whole turn, because
+it was cancelled, timed out, stopped at its tool calls' asking, lost,
+or the CLI exited without one, records on its reply, or on an empty
+reply when none is held, what the CLI reported of its model calls
+while the turn ran: their tokens summed, `cost_usd` 0,
+`cost_source: "subscription"`, and `usage_extent: "partial"`, a floor
+of what the turn spent, since a model call still running when the turn
+ended reported nothing. A CLI that reported no model call's tokens
+leaves the reply with no `usage` and `usage_extent: "none"`.
 
-`metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
+| CLI | The whole turn's usage, read from | The turn's tokens | Each model call's usage, read from |
+| --- | --- | --- | --- |
+| Claude Code | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the invocation's; input counts the cache's reads and writes | each `assistant` event's `message.usage`, in the same fields, under `message.id`; the events of one model call's blocks repeat it, and the last counts |
+| Codex | `turn.completed`'s `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` | the thread's total less what the run's earlier Codex replies recorded; a total below that is a new thread's, all of it the turn's | none: its events carry no usage before `turn.completed` |
+| Cursor | the `result` event's `usage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` | the invocation's; input counts the cache's reads and writes | none: its events carry no usage before `result` |
+| Antigravity | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_tokens` | the conversation's total less what the run's earlier Antigravity replies recorded, as Codex's; input counts the cache's reads | each `agent_response` step's `usage` once the step is done, in the same fields |
+
+`metadata.harness_turn` holds `call_id`, `generation`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
 `.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`
 ([Agent home](agent-home.md)). A turn in repositories that changed
@@ -772,12 +789,18 @@ every unresolved call, so the next model request is valid.
 On orchestrator startup, unresolved tool calls in active runs get
 those interruption results. Startup does not replay a model call. A
 subscription agent's run with
-a `metadata.harness_turn` has its harness turn ended first: the turn's
-CLI gets `stop` on the agent's machine when the machine runs, the
-session its result names replaces the one kept, so the run's next
-generation resumes it, and each call of the harness's own tools
-without a result gets the interrupted result, marked `from_harness`
-([Harness turns](#harness-turns)).
+a `metadata.harness_turn` has its harness turn ended first: when the
+agent's machine runs, the turn's whole log is read and its CLI gets
+`stop`, the session its result names replaces the one kept, so the
+run's next generation resumes it, and each call of the harness's own
+tools without a result gets the interrupted result, marked
+`from_harness`. When the turn's call still had its state on the
+machine and no reply of its generation recorded its tokens, an empty
+reply of that generation records the tokens the log reported: the
+CLI's report of the whole turn when the CLI finished it, else its
+model calls' as `partial`, else `usage_extent: "none"`
+([Harness turns](#harness-turns)). A turn whose machine is not running
+has no log read and records no reply.
 
 An interrupted group or schedule run that the operator has not
 resumed records `generation.interrupted` (`orchestrator restarted`)

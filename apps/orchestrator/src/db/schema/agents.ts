@@ -171,12 +171,15 @@ const NullableString = Type.Union([Type.String(), Type.Null()]);
 
 /**
  * One repository's change over one turn of a subscription agent's run, as the turn's end
- * checkpoint reports it: its checkpoints and their diffstat.
+ * checkpoint reports it: the branch and head commit at the turn's end and at its start, its
+ * checkpoints, and their diffstat.
  */
 export const RunRepositoryChangeSchema = Type.Object({
   name: Type.String(),
   branch: NullableString,
   head_sha: NullableString,
+  start_branch: NullableString,
+  start_head_sha: NullableString,
   start_sha: NullableString,
   end_sha: Type.String(),
   files_changed: Type.Integer(),
@@ -193,10 +196,12 @@ export type RunTurnChange = { call_id: string; generation: number; repos: RunRep
 
 /**
  * A subscription agent's run's latest turn on its harness: the call id its state and log are
- * kept under, the harness, the session the run's next turn resumes, and the log.
+ * kept under, the generation it runs, the harness, the session the run's next turn resumes, and
+ * the log.
  */
 export type RunHarnessTurn = {
   call_id: string;
+  generation: number;
   harness: Harness;
   session_id: string | null;
   log_path: string;
