@@ -217,7 +217,7 @@ export class HarnessLoop {
       await events.recordError(gen, "generation.max_steps", new RunLimitError("generation.max_steps", STEP_LIMIT_MESSAGE));
       return;
     }
-    const failure = harnessTurnFailure(turn.harness, ending, turn.log_path, gen.snapshot.max_turn_minutes);
+    const failure = harnessTurnFailure(gen, ending, turn.log_path);
     if (failure !== null) {
       await events.recordError(gen, failure.code, failure);
     }

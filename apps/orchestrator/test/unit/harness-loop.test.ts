@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, before, describe, test } from "node:test";
 import { generationLive } from "../../src/generation/completion.js";
 import { harnessTurnFailure } from "../../src/generation/harness-ending.js";
-import { harnessTurnTiming } from "../../src/generation/harness-loop.js";
+import { harnessTurnTiming, type SubscriptionGeneration } from "../../src/generation/harness-loop.js";
 import { attachmentHomePath, harnessTurnPrompt, openingAttachments } from "../../src/generation/harness-prompt.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { INTERRUPTED_CONTENT } from "../../src/generation/tool-calls.js";
@@ -262,6 +262,20 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     }
   });
 
+  test("a schedule run's turn past its max_turn_minutes ends the run, and its error names no next turn", async () => {
+    harnessTurnTiming.minuteMs = 20;
+    try {
+      const { loop, db, errors } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+      db.run.kind = "schedule";
+      await loop.generator.generate("r_1", 1);
+      assert.equal(errors().at(-1)?.operation, "harness.timed_out");
+      assert.equal(errors().at(-1)?.message, `Claude Code was stopped after ${SUBSCRIBER.max_turn_minutes} minutes.`);
+      assert.equal(db.run.status, "completed");
+    } finally {
+      harnessTurnTiming.minuteMs = timing.minuteMs;
+    }
+  });
+
   test("a sandbox that stops answering polls stops the CLI and ends the generation with harness.unresponsive", async () => {
     const { loop, sandbox, errors, bin } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
     failOp(sandbox, "poll", "the sandbox is not answering");
@@ -376,8 +390,12 @@ describe("a harness turn's prompt and outcome", () => {
     assert.equal(attachmentHomePath("r_1", image("att_1", "shot.png") as AttachmentRef), ".runs/r_1/attachments/att_1/shot.png");
   });
 
+  /** A generation `generation` of a Claude Code run of `kind` with `metadata`, whose turn could run 30 minutes. */
+  const generationOf = (kind: string, metadata: Record<string, unknown> = {}, generation = 1) =>
+    ({ runId: "r", generation, run: { kind, metadata }, snapshot: { harness: "claude-code", max_turn_minutes: 30 } }) as unknown as SubscriptionGeneration;
+
   test("each way a turn ends names its run error, and a clean exit none", () => {
-    const failure = (ending: Parameters<typeof harnessTurnFailure>[1]) => harnessTurnFailure("claude-code", ending, ".runs/r/t.harness.jsonl", 30);
+    const failure = (ending: Parameters<typeof harnessTurnFailure>[1]) => harnessTurnFailure(generationOf("direct"), ending, ".runs/r/t.harness.jsonl");
     assert.equal(failure({ settled: "exited", stopped: null, result: { exit_code: 0, is_error: false } }), null);
     assert.equal(failure({ settled: "exited", stopped: null, result: { exit_code: 0, is_error: true, events: 3, error: "Not logged in" } })?.code, "harness.failed");
     assert.equal(failure({ settled: "missing", stopped: null, result: null })?.code, "harness.lost");
@@ -387,5 +405,18 @@ describe("a harness turn's prompt and outcome", () => {
     const unstopped = failure({ settled: "timed_out", stopped: false, result: null });
     assert.equal(unstopped?.code, "harness.timed_out");
     assert.match(String(unstopped?.message), /It did not stop and may still be running; its log is \.runs\/r\/t\.harness\.jsonl\.$/);
+  });
+
+  test("a turn cut short says the run's next turn resumes its session only in a run that stays open for one", () => {
+    const timedOut = { settled: "timed_out", stopped: true, result: null } as const;
+    const message = (gen: SubscriptionGeneration) => harnessTurnFailure(gen, timedOut, ".runs/r/t.harness.jsonl")?.message;
+    const resumes = "Claude Code was stopped after 30 minutes. The run's next turn resumes its session.";
+    const ends = "Claude Code was stopped after 30 minutes.";
+    assert.equal(message(generationOf("direct")), resumes);
+    assert.equal(message(generationOf("schedule", { resumed_at: "2026-01-01T00:00:00.000Z" })), resumes, "a resumed run stays open");
+    assert.equal(message(generationOf("group")), ends);
+    assert.equal(message(generationOf("schedule")), ends);
+    assert.equal(message(generationOf("direct", { wake_reopened_generation: 2 }, 2)), ends, "a run a wake-up reopened completes again");
+    assert.equal(harnessTurnFailure(generationOf("direct"), { settled: "unreadable", stopped: null, result: null }, "")?.message, "Claude Code exited, and its result could not be read.");
   });
 });

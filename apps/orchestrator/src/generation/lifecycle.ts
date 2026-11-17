@@ -32,6 +32,14 @@ export function completesAfter(run: Pick<RunRow, "kind" | "metadata">, generatio
 }
 
 /**
+ * Whether the run stays open for a next generation once its generation `generation` ends: it
+ * takes an operator's messages, and does not complete then.
+ */
+export function staysOpenAfter(run: Pick<RunRow, "kind" | "metadata">, generation: number): boolean {
+  return runTakesMessages(run) && !completesAfter(run, generation);
+}
+
+/**
  * Where the run stands, from its row and whether a generation of it is under way. An active run
  * takes messages when it is direct or resumed; an ended run is capped when it ended on a terminal
  * cap, and completed otherwise.

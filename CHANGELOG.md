@@ -104,6 +104,11 @@ shell, file reads, and edits, do not count. Each result's
 `remaining_tool_calls` is what the guild's tools have left, and the
 system prompt no longer says the harness's own calls count.
 
+**Fixed.** The run error of a subscription agent's turn that was lost,
+stopped answering, or ran past `max_turn_minutes` says the run's next
+turn resumes its session only on a run that stays open for a next
+turn; a group or schedule run's error no longer promises one.
+
 ## 0.2.0
 
 **Breaking.** An agent can run on the operator's own Claude Code,

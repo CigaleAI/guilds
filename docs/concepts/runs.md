@@ -569,8 +569,12 @@ under the call id `turn_<generation>_<run id>`
 | `generation.max_tool_calls` | a call of the MCP server came once the run had made `max_tool_calls` calls of the guild's tools; the harness got `stop`, and the run completes |
 | `generation.blocked` | a call of the MCP server filed a blocking issue; the harness got `stop` |
 
-A harness that does not stop adds "It did not stop and may still be
-running; its log is `<path>`." Once `start` has gone, every way out
+A turn cut short by its lost state, its failed polls, or its time adds
+"The run's next turn resumes its session." when the run stays open for
+a next generation: a direct or resumed run, unless a wake-up reopened
+it for this generation. A group or schedule run completes and says
+nothing of a next turn. A harness that does not stop adds "It did not
+stop and may still be running; its log is `<path>`." Once `start` has gone, every way out
 but a clean exit or lost state sends `stop`: a cancel, the time limit,
 three failed polls, a stop the MCP server's calls asked for, or an
 error. However the turn ends, the generation's token is revoked once
