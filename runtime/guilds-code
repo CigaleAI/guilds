@@ -3,8 +3,8 @@
 
 Usage: guilds-code <base64 JSON request> | guilds-code @<request file>
 
-The orchestrator runs this once per op: `git_setup` (the agent's git identity and its
-repositories' clones), `checkpoint` and `diff` (a harness turn's checkpoints of the working
+The orchestrator runs this once per op: `git_setup` (the agent's git identity, and its
+repositories cloned or fetched, pushing turned off in each it only reads), `checkpoint` and `diff` (a harness turn's checkpoints of the working
 trees, and the change between them), `workspace_size` and `machine_size`. A request names an
 `op` plus its arguments; a large request arrives as a file under /run/guilds/requests, which
 this helper reads and deletes. The helper prints one base64 JSON envelope:
@@ -32,6 +32,9 @@ GIT_TIMEOUT = 60
 CHECKPOINT_TIMEOUT = 120
 CHECKPOINT_FILES = 30
 CLONE_TIMEOUT = 600
+# The push URL of a clone the agent only reads: a host that cannot exist (RFC 2606), so git refuses
+# every push to `origin` and says why in the URL it names.
+NO_PUSH_URL = "https://push-disabled.invalid/this-repository-is-read-only"
 
 
 class ToolError(Exception):
@@ -147,11 +150,57 @@ def _url_key(url: str) -> str:
     return (url[:-4] if url.endswith(".git") else url).lower()
 
 
+def _last_error(done: subprocess.CompletedProcess[str], fallback: str) -> str:
+    return "" if done.returncode == 0 else (done.stderr.strip().splitlines() or [fallback])[-1]
+
+
+def _clone(url: str, target: Path, timeout: int) -> str:
+    """Clones `url` into `target`; git's last error line when it failed, else empty."""
+    try:
+        done = subprocess.run(
+            ["git", "clone", "--quiet", url, str(target)],
+            env=_git_env(),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+        return _last_error(done, "git clone failed")
+    except subprocess.TimeoutExpired:
+        return f"git clone timed out after {timeout}s"
+
+
+def _fetch(target: Path, timeout: int) -> str:
+    """Fetches `origin` into the clone at `target`; git's last error line when it failed, else empty."""
+    try:
+        return _last_error(_git(target, ["fetch", "--quiet", "--prune", "origin"], timeout=timeout), "git fetch failed")
+    except subprocess.TimeoutExpired:
+        return f"git fetch timed out after {timeout}s"
+
+
+def _set_push(target: Path, read_only: bool) -> None:
+    """Turns pushing to `origin` off in a clone the agent only reads, and back on in any other."""
+    if read_only:
+        done = _git(target, ["config", "remote.origin.pushurl", NO_PUSH_URL])
+        if done.returncode != 0:
+            raise ToolError(f"git config failed: {done.stderr.strip()}")
+        return
+    # Exit 5 is git's answer when there is no push URL to unset.
+    done = _git(target, ["config", "--unset-all", "remote.origin.pushurl"])
+    if done.returncode not in (0, 5):
+        raise ToolError(f"git config failed: {done.stderr.strip()}")
+
+
 def op_git_setup(spec: dict[str, Any]) -> dict[str, Any]:
-    """Writes the agent's git identity and clones each guild repository missing from
-    the agent's repos/. A clone already there whose `origin` names another repository on the
-    same host, as after a rename, is pointed at the URL the guild has now. The orchestrator
-    never runs git itself."""
+    """Writes the agent's git identity, clones each repository missing from the agent's repos/,
+    and fetches each clone already there whose `origin` is the repository's URL. A clone whose
+    `origin` names another repository on the same host, as after a rename, is pointed at the URL
+    the guild has now first. Each clone of a repository the request marks `read_only` gets a push
+    URL that refuses every push; every other clone pushes to `origin`. A failed clone fails the
+    repository; a failed fetch leaves its clone as it was and is reported. The orchestrator never
+    runs git itself."""
     identity = spec.get("identity") or {}
     for key in ("name", "email"):
         value = identity.get(key)
@@ -165,6 +214,8 @@ def op_git_setup(spec: dict[str, Any]) -> dict[str, Any]:
     cloned: list[str] = []
     present: list[str] = []
     moved: list[str] = []
+    fetched: list[str] = []
+    unfetched: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
     timeout = _int(spec, "clone_timeout", CLONE_TIMEOUT, 10, CLONE_TIMEOUT)
     for entry in spec.get("repositories") or []:
@@ -177,32 +228,33 @@ def op_git_setup(spec: dict[str, Any]) -> dict[str, Any]:
             if origin and url and _same_repository_host(origin, url) and _url_key(origin) != _url_key(url):
                 if _git(target, ["remote", "set-url", "origin", url]).returncode == 0:
                     moved.append(name)
+                    origin = url
+            if not origin:
+                continue
+            _set_push(target, entry.get("read_only") is True)
+            if url and _url_key(origin) == _url_key(url):
+                error = _fetch(target, timeout)
+                if error:
+                    unfetched.append({"name": name, "error": error})
+                else:
+                    fetched.append(name)
             continue
-        try:
-            done = subprocess.run(
-                ["git", "clone", "--quiet", url, str(target)],
-                env=_git_env(),
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=timeout,
-                check=False,
-            )
-            error = "" if done.returncode == 0 else (done.stderr.strip().splitlines() or ["git clone failed"])[-1]
-        except subprocess.TimeoutExpired:
-            error = f"git clone timed out after {timeout}s"
+        error = _clone(url, target, timeout)
         if error:
             shutil.rmtree(target, ignore_errors=True)
             failed.append({"name": name, "error": error})
-        else:
-            cloned.append(name)
+            continue
+        cloned.append(name)
+        _set_push(target, entry.get("read_only") is True)
     text = f"cloned {', '.join(cloned) or 'nothing'}; present {', '.join(present) or 'nothing'}"
     if moved:
         text += f"; moved origin of {', '.join(moved)}"
+    if unfetched:
+        text += "; not fetched " + "; ".join(f"{item['name']}: {item['error']}" for item in unfetched)
     if failed:
         text += "; failed " + "; ".join(f"{item['name']}: {item['error']}" for item in failed)
-    return {"text": text, "meta": {"cloned": cloned, "present": present, "moved": moved, "failed": failed}}
+    meta = {"cloned": cloned, "present": present, "moved": moved, "fetched": fetched, "unfetched": unfetched, "failed": failed}
+    return {"text": text, "meta": meta}
 
 
 def _work_trees(names: Any) -> list[tuple[str, Path]]:

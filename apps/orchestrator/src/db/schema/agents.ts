@@ -84,11 +84,15 @@ export type AgentConfig = {
   /** The effort the harness runs its model at; null leaves it to the harness. */
   harness_effort: Effort | null;
   /**
-   * The repositories a subscription agent works on, by name, in this order: each one the agent
-   * can use (its guild's, or one picked on the GitHub login it clones with). Empty on an agent on a
-   * key.
+   * The repositories the agent works on, by name, in this order: each one the agent can use (its
+   * guild's, or one picked on the GitHub login it clones with).
    */
   repositories: string[];
+  /**
+   * The repositories of `repositories` the agent only reads: each is cloned and fetched like the
+   * others, and the agent is given no means to push to it.
+   */
+  read_only_repositories: string[];
   /**
    * Variable names the agent's commands see beside the secrets reaching it, each holding the
    * value of the secret it names: `{ CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" }`. An alias wins over
@@ -139,10 +143,13 @@ export type RunScriptSnapshot = {
  * `runs.config_snapshot`: the settings a run is created with, whose `model` states its model
  * source as `modelSourceOf` reads it, the tools it is offered (each an OpenAI function schema,
  * passed to the model as is), the connections and secrets it reaches, and the scripts it pins.
- * A subscription agent's turn reads its repositories from its agent when it starts, as it reads
- * the guild's.
+ * A generation reads its agent's repositories, and which of them are read-only, from its agent
+ * when it starts, as it reads the guild's.
  */
-export type RunConfigSnapshot = Omit<ResolvedAgentConfig, "max_scripts" | "max_workspace_mib" | "repositories"> & {
+export type RunConfigSnapshot = Omit<
+  ResolvedAgentConfig,
+  "max_scripts" | "max_workspace_mib" | "repositories" | "read_only_repositories"
+> & {
   projection_policy_version: number;
   database: boolean;
   tools: FunctionTool[];

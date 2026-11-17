@@ -55,11 +55,12 @@ test("a captured guild of subscription agents applies with repository steps, eac
       assert.equal(added.statusCode, 201, added.body);
     }
     const coderConfig = { model: null, browser: false, harness: "claude-code" };
-    for (const [name, repositories] of [
-      ["coder", ["api"]],
-      ["reviewer", ["web", "api"]],
+    for (const [name, repositories, readOnly] of [
+      ["coder", ["api"], []],
+      ["reviewer", ["web", "api"], ["web"]],
     ] as const) {
-      const agent = await call("POST", `/api/guilds/${sourceId}/agents`, { name, config: { ...coderConfig, repositories } });
+      const config = { ...coderConfig, repositories, read_only_repositories: readOnly };
+      const agent = await call("POST", `/api/guilds/${sourceId}/agents`, { name, config });
       assert.equal(agent.statusCode, 201, agent.body);
     }
 
@@ -78,6 +79,11 @@ test("a captured guild of subscription agents applies with repository steps, eac
     assert.deepEqual(
       Object.fromEntries(roles.map((role) => [role.role, role.config.repositories])),
       { coder: ["api"], reviewer: ["web", "api"] },
+    );
+    assert.deepEqual(
+      Object.fromEntries(roles.map((role) => [role.role, role.config.read_only_repositories])),
+      { coder: undefined, reviewer: ["web"] },
+      "a role carries the repositories its agent only reads",
     );
     assert.equal((body.connections as Array<{ server: string }>).some((item) => item.server === "github"), false);
 
@@ -109,6 +115,8 @@ test("a captured guild of subscription agents applies with repository steps, eac
     );
     const picks = async () =>
       Object.fromEntries((await listAgents(db, apply.guild_id)).map((agent) => [agent.name, agent.config.repositories]));
+    const readOnly = async () =>
+      Object.fromEntries((await listAgents(db, apply.guild_id)).map((agent) => [agent.name, agent.config.read_only_repositories]));
     const target = await listAgents(db, apply.guild_id);
     assert.equal(target[0]?.config.model, null);
     assert.deepEqual(await picks(), { "coder-two": [], "reviewer-two": [] }, "the new guild has none of the repositories yet");
@@ -126,6 +134,7 @@ test("a captured guild of subscription agents applies with repository steps, eac
     const step = (checked.json().checklist as Array<Record<string, unknown>>).find((item) => item.id === "repo:api");
     assert.equal(step?.status, "verified");
     assert.deepEqual(await picks(), { "coder-two": ["api"], "reviewer-two": ["api"] });
+    assert.deepEqual(await readOnly(), { "coder-two": [], "reviewer-two": [] });
     const web = await call("POST", `/api/guilds/${apply.guild_id}/repositories`, {
       name: "web",
       url: "https://git.example.com/team/web.git",
@@ -134,6 +143,7 @@ test("a captured guild of subscription agents applies with repository steps, eac
     const webChecked = await call("POST", `/api/applies/${apply.id}/steps/${encodeURIComponent("repo:web")}/verify`);
     assert.equal(webChecked.statusCode, 200, webChecked.body);
     assert.deepEqual(await picks(), { "coder-two": ["api"], "reviewer-two": ["web", "api"] }, "each pick takes its place in the role's order");
+    assert.deepEqual(await readOnly(), { "coder-two": [], "reviewer-two": ["web"] }, "a repository its role only reads joins it read-only");
   } finally {
     setInstanceKeys({});
     await app.close();

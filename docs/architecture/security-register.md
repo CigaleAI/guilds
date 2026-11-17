@@ -10,6 +10,7 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-73](#sec-73--a-repository-an-agent-only-reads-on-a-host-other-than-github-is-read-only-by-its-clones-push-url-alone) | A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone | Open, accepted |
 | [SEC-72](#sec-72--a-sandbox-on-the-hosted-vm-reached-the-metadata-server-private-addresses-and-caddy) | A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy | Fixed 2026-11-16 |
 | [SEC-71](#sec-71--a-sandbox-on-the-hosted-vm-reached-cloud-sqls-private-address-and-every-port-of-the-vm) | A sandbox on the hosted VM reached Cloud SQL's private address and every port of the VM | Fixed 2026-11-16 |
 | [SEC-70](#sec-70--customers-harness-logins-sit-in-their-agents-homes-on-the-hosted-vm-and-in-its-backups) | Customers' harness logins sit in their agents' homes on the hosted VM and in its backups | Open |
@@ -82,6 +83,45 @@ its date (the code that held the issue is removed).
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-73 — A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone
+
+**Status:** open, accepted.
+
+**Found:** 2026-11-17, letting an agent pick repositories it only
+reads.
+
+**Where:** `AccessTokenProvider` in
+`apps/orchestrator/src/coding/access-token-provider.ts`, `_set_push`
+and `NO_PUSH_URL` in `runtime/guilds-code`, and
+`/run/guilds/<agent id>/git-tokens.json`.
+
+**Exposure:** an agent's config can list a repository in
+`read_only_repositories`. On GitHub the token that reaches its machine
+for that repository holds `contents: read` alone, and GitHub refuses a
+push with it. A repository added with an access token kept as a secret
+(SEC-61) gets the same token whether the agent reads it only or
+pushes to it: the orchestrator cannot narrow a token another host
+minted. What stops the push there is the clone: its
+`remote.origin.pushurl` names a host that cannot exist. A process on
+the agent's machine that unsets the push URL, or pushes to the
+repository's URL by name, pushes with whatever the host grants the
+token, and the credential helper answers it, since git asks it the
+same question to fetch and to push. A harness steered by what it
+reads (SEC-66) can do that.
+
+**Control in place:** each generation's `git_setup` sets the push URL
+of every clone the agent only reads, so a push by `origin` fails and
+names the URL it refused; a clone picked writable again gets its push
+URL back. The system prompt tells the agent that git refuses to push a
+repository State marks `read_only`, and to never commit to it. The
+credential helper answers the token only for the repository's own
+host and path.
+
+**Fix to make:** give the agent a token the host itself limits to
+reading. Until then, an operator who needs the host to refuse the
+push adds the repository with an access token that only reads it, or
+with a GitHub login.
 
 ## SEC-72 — A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy
 
@@ -317,8 +357,10 @@ with an access token pushes with whatever the host grants that token
 **Control in place:** a turn gets tokens only for the repositories
 its agent picks. A GitHub token holds `contents: write` alone, which
 pushes a branch and opens no pull request, issue, workflow run, or
-administration change; it lives one hour and is replaced before it
-expires. Since 2026-11-16 no token the orchestrator mints for a
+administration change; for a repository the agent only reads it
+holds `contents: read` alone, and on another host the clone's push URL
+refuses the push (SEC-73). A GitHub token lives one hour and is
+replaced before it expires. Since 2026-11-16 no token the orchestrator mints for a
 repository holds `pull_requests` write: the coding agent's
 `code_task`, whose token held it, is removed. The CLI's environment holds no `GH_TOKEN`, `GITHUB_TOKEN`, or
 repository token, and the token is redacted from the run's rows. The

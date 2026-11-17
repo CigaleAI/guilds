@@ -2,6 +2,7 @@ import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
 import { remoteIdOf, githubRepositoriesOf } from "../github/repositories.js";
 import { agentHome } from "../lib/agent-file.js";
+import type { AgentRepositoryPicks } from "../db/agents.js";
 import type { GuildRepositoryListItemRow, GuildRepositoryRow } from "../db/guilds.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { RepositorySelection } from "../db/schema/index.js";
@@ -81,14 +82,20 @@ export type CodingRepository = Pick<
   | "username"
 >;
 
-/** A guild repository as a run's state lists it: where it sits in the agent's home. */
-export type StateRepository = { name: string; path: string; default_branch: string };
+/** A repository an agent picks, and whether the agent only reads it. */
+export type PickedRepository = CodingRepository & { read_only: boolean };
 
 /**
- * The repositories an agent's config picks, in its order: those the agent can use, and the names
- * of those it can no longer use.
+ * A repository as a run's state lists it: where it sits in the agent's home, its default branch,
+ * and whether the agent only reads it.
  */
-export type PickedRepositories = { repositories: CodingRepository[]; gone: string[] };
+export type StateRepository = { name: string; path: string; default_branch: string; read_only: boolean };
+
+/**
+ * The repositories an agent's config picks, in its order: those the agent can use, each marked
+ * read-only when the config reads it only, and the names of those it can no longer use.
+ */
+export type PickedRepositories = { repositories: PickedRepository[]; gone: string[] };
 
 /** The GitHub login `connectionId` as a repository's credential, for `url`; only a `https://github.com/<owner>/<repository>` URL takes one. */
 function validateGithubCredential(connectionId: string, url: string): RepositoryCredential {
@@ -238,16 +245,19 @@ export function usableRepositories(
   return [...selected, ...extras];
 }
 
-/** The repositories `names` picks among `usable`, in the order of `names`, and the names `usable` lacks. */
-export function pickedRepositories(usable: CodingRepository[], names: readonly string[]): PickedRepositories {
+/**
+ * The repositories `picks` names among `usable`, in the order of its `repositories`, each read-only
+ * when its `read_only_repositories` names it, and the names `usable` lacks.
+ */
+export function pickedRepositories(usable: CodingRepository[], picks: AgentRepositoryPicks): PickedRepositories {
   const byName = new Map(usable.map((repository) => [repository.name, repository]));
   const picked: PickedRepositories = { repositories: [], gone: [] };
-  for (const name of names) {
+  for (const name of picks.repositories) {
     const repository = byName.get(name);
     if (repository === undefined) {
       picked.gone.push(name);
     } else {
-      picked.repositories.push(repository);
+      picked.repositories.push({ ...repository, read_only: picks.read_only_repositories.includes(name) });
     }
   }
   return picked;
@@ -264,11 +274,12 @@ export function githubLoginItem(row: McpConnectionRow): GithubLogin {
   };
 }
 
-/** State's `repositories`: where each of the run's repositories sits in the agent's home. */
-export function stateRepositories(rows: CodingRepository[], agentId: string): StateRepository[] {
+/** State's `repositories`: where each of the run's repositories sits in the agent's home, and whether it only reads it. */
+export function stateRepositories(rows: PickedRepository[], agentId: string): StateRepository[] {
   return rows.map((row) => ({
     name: row.name,
     path: `${agentHome(agentId)}/repos/${row.name}`,
     default_branch: row.default_branch,
+    read_only: row.read_only,
   }));
 }

@@ -10,7 +10,7 @@ import {
 import { RepositoryTokenInstallationGoneError } from "../coding/github-provider.js";
 import { retireInstallationGone } from "../coding/guild-repositories.js";
 import { codingRepositoriesDatabase, loadAgentRepositories, type CodingRepositoriesDatabase } from "../coding/agent-repositories.js";
-import type { CodingRepository } from "../coding/repositories.js";
+import type { PickedRepository } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
 import type { McpConnectionRow } from "../db/mcp.js";
@@ -89,7 +89,7 @@ export type CodingRunsServices = {
   tools: ToolServices;
 };
 
-/** The repositories the helper's `git_setup` could not clone, with why. */
+/** The repositories the helper's `git_setup` lists under one of its failures, with why. */
 function failedClones(value: JsonValue | undefined): CloneFailure[] {
   if (!Array.isArray(value)) {
     return [];
@@ -98,6 +98,16 @@ function failedClones(value: JsonValue | undefined): CloneFailure[] {
     const failure = isObjectNode(item) ? keepMatching(CloneFailure, item) : null;
     return failure === null ? [] : [failure];
   });
+}
+
+/** Logs each clone `git_setup` could not fetch: the generation works on it as it was. */
+function warnUnfetched(gen: RunGeneration, unfetched: CloneFailure[]): void {
+  for (const { name, error } of unfetched) {
+    writeLog("warn", `${name} was not fetched, so it stays as the last fetch left it: ${error}`, {
+      ...gen.log,
+      operation: "repository.fetch",
+    });
+  }
 }
 
 /** A checkpoint's record of one repository as the run keeps it: its checkpoints and diffstat, without the files a call's record lists. */
@@ -127,7 +137,8 @@ export class CodingRuns {
 
   /**
    * A subscription turn's repositories, the ones its agent picks, placed with tokens that push
-   * branches, and the turn's start checkpoint of each; true at once for an agent that picks none.
+   * branches or read the ones it only reads, and the turn's start checkpoint of each; true at once
+   * for an agent that picks none.
    */
   async prepareTurnRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     if (!gen.agent.config.repositories.length) {
@@ -144,18 +155,20 @@ export class CodingRuns {
   }
 
   /**
-   * Places the repositories the generation's agent picks in its machine: a token that pushes for
-   * each one with a git provider, minted through it (written under
-   * /run/guilds and added to the run's redaction values; a GitHub login whose installation GitHub
-   * refuses is retired as `installation_gone`), the agent's git identity, and a clone of each one
-   * missing from the workspace. Tokens that expire are replaced before each command once they
-   * near it. Null when a token or a clone failed, and the run says why.
+   * Places the repositories the generation's agent picks in its machine: a token for each one with
+   * a git provider, minted through it, that pushes branches or, for one the agent only reads,
+   * reads it (written under /run/guilds and added to the run's redaction values; a GitHub login
+   * whose installation GitHub refuses is retired as `installation_gone`), the agent's git
+   * identity, a clone of each one missing from the workspace, a fetch of each one there, and
+   * pushing turned off in each clone the agent only reads. Tokens that expire are replaced before
+   * each command once they near it. Null when a token or a clone failed, and the run says why; a
+   * fetch that failed is logged.
    */
   private async placeRepositories(
     gen: SubscriptionGeneration,
     sandbox: SandboxHandle,
     tools: GenerationTools,
-  ): Promise<CodingRepository[] | null> {
+  ): Promise<PickedRepository[] | null> {
     const { db, events } = this.services;
     const { agent } = gen;
     const { repositories } = await loadAgentRepositories(db, agent);
@@ -192,11 +205,12 @@ export class CodingRuns {
         {
           op: "git_setup",
           identity: agentGitIdentity(agent, { email: guild?.git_author_email ?? "" }),
-          repositories: repositories.map((row) => ({ name: row.name, url: row.url })),
+          repositories: repositories.map((row) => ({ name: row.name, url: row.url, read_only: row.read_only })),
         },
         { timeoutSeconds: 60 + 600 * Math.max(1, repositories.length) },
       );
       failed = failedClones(setup.meta.failed);
+      warnUnfetched(gen, failedClones(setup.meta.unfetched));
     } catch (error) {
       await events.recordError(gen, "repository.clone", error);
       return null;

@@ -8,6 +8,30 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Added.** An agent reads some of its repositories without pushing to
+them: `config.read_only_repositories` lists them, each one of its
+`repositories`, and is empty when left out. Such a repository is
+cloned and fetched like the others. On GitHub its token holds contents
+read alone; on every host its clone's push URL refuses every push, and
+on a host other than GitHub that push URL is all that stops a push
+(SEC-73). The agent's State marks the repository `read_only`, and its
+system prompt says git refuses to push it. Removing a repository from
+the guild takes it out of each agent's read-only repositories too. The
+boot migration gives every stored agent config an empty
+`read_only_repositories`.
+
+**Breaking for extensions.** `AgentConfig` holds
+`read_only_repositories`, and `RunConfigSnapshot` leaves it out, as it
+leaves out `repositories`. An extension that builds an agent config in
+code adds it, `[]` for none; the boot migration adds it to every stored
+config.
+
+**Changed.** Each generation that works in repositories fetches every
+clone already in the agent's home whose `origin` is the repository's
+URL, besides cloning the missing ones. A fetch that fails leaves the
+clone as it was and is logged as `repository.fetch`; the generation
+goes on.
+
 **Added.** The Drive card's **Folder** shows the picked folder's
 name, its full path as the login can read it, and **Open in Google
 Drive**. The saved folder is read again on reload, and search results

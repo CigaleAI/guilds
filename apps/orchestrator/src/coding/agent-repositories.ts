@@ -73,12 +73,15 @@ export async function loadUsableRepositories(
   return usableRepositories(await db.listGuildRepositories(agent.guild_id), await githubConnectionOf(db, agent));
 }
 
-/** The repositories the agent's config picks, in its order: those it can use, and the names of those it can no longer use. */
+/**
+ * The repositories the agent's config picks, in its order: those it can use, each marked read-only
+ * when the config reads it only, and the names of those it can no longer use.
+ */
 export async function loadAgentRepositories(
   db: CodingRepositoriesDatabase,
   agent: Pick<AgentRow, "id" | "guild_id" | "org_id" | "config">,
 ): Promise<PickedRepositories> {
-  return pickedRepositories(await loadUsableRepositories(db, agent), agent.config.repositories);
+  return pickedRepositories(await loadUsableRepositories(db, agent), agent.config);
 }
 
 /**
@@ -104,7 +107,8 @@ export function agentRepositoriesProblem(picked: PickedRepositories): AgentRepos
 /**
  * Unpicks each of `names` from every agent within `owner`'s reach that picks it and can no longer
  * use it, on `client`: the transaction that took them from the guild or from a GitHub login. An
- * agent that still reaches a name, through another login or another row, keeps it.
+ * unpicked name leaves the agent's read-only repositories too. An agent that still reaches a name,
+ * through another login or another row, keeps it.
  */
 export async function unpickUnusableRepositories(
   client: Queryable,
@@ -120,7 +124,8 @@ export async function unpickUnusableRepositories(
     const usable = new Set((await loadUsableRepositories(db, agent)).map((repository) => repository.name));
     const kept = agent.config.repositories.filter((name) => usable.has(name) || !names.includes(name));
     if (kept.length !== agent.config.repositories.length) {
-      await setAgentRepositories(client, agent.id, kept, now);
+      const readOnly = agent.config.read_only_repositories.filter((name) => kept.includes(name));
+      await setAgentRepositories(client, agent.id, { repositories: kept, read_only_repositories: readOnly }, now);
     }
   }
 }

@@ -5,7 +5,7 @@ import { pullRequestToolOf, RepositoryTokens, type GitProvider, type TokenEntry 
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { RepositoryAccessError } from "../../src/github/tokens.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
-import { codingRepository } from "../helpers/repositories.js";
+import { pickedRepository } from "../helpers/repositories.js";
 
 process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
 
@@ -42,7 +42,7 @@ test("git asks for a repository's credential with its URL's host, a port other t
 test("an access token is the value of its repository's secret, sent with its username, for its own host and path, and never expires", async () => {
   const provider = accessTokens([storedSecret("sec_1", "GITLAB_TOKEN", "glpat-secret")]);
   const entries = await provider.mint([
-    codingRepository({
+    pickedRepository({
       name: "shop",
       url: "https://gitlab.com/acme/shop.git",
       provider: "access_token",
@@ -65,11 +65,19 @@ test("an access token is the value of its repository's secret, sent with its use
   ]);
 });
 
+test("a repository on an access token the agent only reads gets the same token, which the box cannot narrow", async () => {
+  const provider = accessTokens([storedSecret("sec_1", "GITLAB_TOKEN", "glpat-secret")]);
+  const repository = { name: "shop", url: "https://gitlab.com/acme/shop.git", provider: "access_token", secret_id: "sec_1", username: "oauth2" } as const;
+  const [writable] = [...(await provider.mint([pickedRepository(repository)])).values()];
+  const [readOnly] = [...(await provider.mint([pickedRepository({ ...repository, read_only: true })])).values()];
+  assert.deepEqual(readOnly, writable);
+});
+
 test("an access token whose secret is gone, unreadable, or spans lines is refused, naming the repository", async () => {
   const unreadable = { ...storedSecret("sec_bad", "BROKEN", "x"), nonce: Buffer.alloc(12) };
   const provider = accessTokens([unreadable, storedSecret("sec_lines", "MULTI", "one\ntwo")]);
   const repository = (secretId: string | null, username: string | null = "git") =>
-    codingRepository({ name: "app", url: "https://git.example.com/app.git", provider: "access_token", secret_id: secretId, username });
+    pickedRepository({ name: "app", url: "https://git.example.com/app.git", provider: "access_token", secret_id: secretId, username });
   const refusal = (pattern: RegExp) => (error: unknown) => error instanceof RepositoryAccessError && pattern.test(error.message);
   await assert.rejects(provider.mint([repository("sec_gone")]), refusal(/^app: the secret that holds its access token is gone$/));
   await assert.rejects(provider.mint([repository("sec_bad")]), refusal(/^app: the secret BROKEN that holds its access token cannot be read$/));
@@ -93,9 +101,9 @@ test("each repository's token is minted by its own provider; one without a provi
       ),
     },
     [
-      codingRepository({ name: "shop", connection_id: "conn_a" }),
-      codingRepository({ name: "infra", url: "https://gitlab.com/acme/infra", provider: "access_token", secret_id: "sec_1", username: "oauth2" }),
-      codingRepository({ name: "public", url: "https://git.example.com/public.git" }),
+      pickedRepository({ name: "shop", connection_id: "conn_a" }),
+      pickedRepository({ name: "infra", url: "https://gitlab.com/acme/infra", provider: "access_token", secret_id: "sec_1", username: "oauth2" }),
+      pickedRepository({ name: "public", url: "https://git.example.com/public.git" }),
     ],
   );
   await tokens.mint();
@@ -114,7 +122,7 @@ test("access tokens alone never need a refresh", async () => {
       github: fixedProvider({ token: "unused", expires_at: null, host: "github.com", username: "x", provider: "github" }, []),
       access_token: fixedProvider({ token: "glpat", expires_at: null, host: "gitlab.com", username: "oauth2", provider: "access_token" }, []),
     },
-    [codingRepository({ name: "infra", url: "https://gitlab.com/acme/infra", provider: "access_token", secret_id: "sec_1", username: "oauth2" })],
+    [pickedRepository({ name: "infra", url: "https://gitlab.com/acme/infra", provider: "access_token", secret_id: "sec_1", username: "oauth2" })],
   );
   await tokens.mint();
   assert.equal(tokens.hasExpiringTokens, false);
@@ -122,8 +130,8 @@ test("access tokens alone never need a refresh", async () => {
 });
 
 test("a run's pull request tool is the one it is offered of the connector of a repository's provider, by the name the run calls it", () => {
-  const github = codingRepository({ name: "shop", url: "https://github.com/acme/shop", provider: "github", connection_id: "conn_a" });
-  const elsewhere = codingRepository({ name: "app", url: "https://git.example.com/team/app.git", provider: "access_token" });
+  const github = pickedRepository({ name: "shop", url: "https://github.com/acme/shop", provider: "github", connection_id: "conn_a" });
+  const elsewhere = pickedRepository({ name: "app", url: "https://git.example.com/team/app.git", provider: "access_token" });
   const connector = (serverId: string, remoteName: string) => ({
     server_id: serverId,
     tools: [
@@ -136,5 +144,5 @@ test("a run's pull request tool is the one it is offered of the connector of a r
   assert.equal(pullRequestToolOf([github], [connector("mcp_github", "merge_pull_request")]), null, "a GitHub login whose pull request tool is not bound");
   assert.equal(pullRequestToolOf([github], [connector("mcp_other", "create_pull_request")]), null, "another connector's tool of that name");
   assert.equal(pullRequestToolOf([elsewhere], [connector("mcp_github", "create_pull_request")]), null, "a host without a connector");
-  assert.equal(pullRequestToolOf([codingRepository({ name: "open", provider: null })], [connector("mcp_github", "create_pull_request")]), null);
+  assert.equal(pullRequestToolOf([pickedRepository({ name: "open", provider: null })], [connector("mcp_github", "create_pull_request")]), null);
 });

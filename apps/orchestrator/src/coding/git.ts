@@ -8,7 +8,7 @@ import type { RunMcpConnection, RunMcpTool } from "../db/schema/index.js";
 import { GITHUB_SERVER_ID } from "../instance/integrations.js";
 import { accessTokenProvider } from "./access-token-provider.js";
 import { githubProvider } from "./github-provider.js";
-import type { CodingRepository } from "./repositories.js";
+import type { CodingRepository, PickedRepository } from "./repositories.js";
 
 /** Where an agent's repository tokens are kept in its machine, outside every home. */
 export function gitTokensPath(agentId: string): string {
@@ -50,11 +50,12 @@ export type TokenEntry = {
 
 /**
  * How a git provider gives its repositories their tokens: the entry of each of `repositories`, all
- * its own, by repository name, each token limited to pushing branches where the provider mints
- * it. A provider whose tokens the box does not mint carries what the host grants.
+ * its own, by repository name. Where the provider mints the token, one for a repository the agent
+ * only reads is limited to reading it, and any other to pushing branches. A provider whose tokens
+ * the box does not mint carries what the host grants, read-only or not.
  */
 export type GitProvider = {
-  mint(repositories: CodingRepository[]): Promise<Map<string, TokenEntry>>;
+  mint(repositories: PickedRepository[]): Promise<Map<string, TokenEntry>>;
 };
 
 /** Every git provider, by the name a repository gives it. */
@@ -94,15 +95,15 @@ export function pullRequestToolOf(
 }
 
 /**
- * The tokens of a run's guild repositories, each minted through its repository's git provider;
- * a repository without one gets none. Knows when a token needs replacing.
+ * The tokens of the repositories a generation's agent picks, each minted through its repository's
+ * git provider; a repository without one gets none. Knows when a token needs replacing.
  */
 export class RepositoryTokens {
   entries: Record<string, TokenEntry> = {};
 
   constructor(
     private providers: GitProviders,
-    private repositories: CodingRepository[],
+    private repositories: PickedRepository[],
   ) {}
 
   get values(): string[] {
@@ -146,8 +147,8 @@ export async function eraseRepositoryTokens(files: SandboxFiles, agentId: string
   await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: {} }) }]);
 }
 
-/** The tokens of a run's `repositories`, minted and recorded on `db` through each one's git provider. */
-export function repositoryTokens(db: Queryable, repositories: CodingRepository[]): RepositoryTokens {
+/** The tokens of a generation's `repositories`, minted and recorded on `db` through each one's git provider. */
+export function repositoryTokens(db: Queryable, repositories: PickedRepository[]): RepositoryTokens {
   return new RepositoryTokens({ github: githubProvider(db), access_token: accessTokenProvider(db) }, repositories);
 }
 

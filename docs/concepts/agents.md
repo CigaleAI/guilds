@@ -365,6 +365,7 @@ the agent.
 | `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_effort` | effort or null; needs a harness | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
 | `repositories` | list of repository names, each once, that the agent can use; only on a subscription agent | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
+| `read_only_repositories` | list of names of `repositories`, each once, that the agent only reads | `[]` | [Read-only repositories](coding/repositories.md#read-only-repositories) |
 | `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
 | `scripting` | boolean | `true` | [Scripts](scripts.md) |
 | `memory` | boolean | `true` | [Memory](memory.md) |

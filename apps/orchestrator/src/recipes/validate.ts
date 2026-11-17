@@ -8,7 +8,7 @@ import {
 } from "../db/schema/index.js";
 import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS } from "../agents/config.js";
-import { isValidRepositoryList, isValidSecretAliases } from "../agents/validation.js";
+import { isValidReadOnlyRepositoryList, isValidRepositoryList, isValidSecretAliases } from "../agents/validation.js";
 import {
   credentialFix,
   HARNESS_INFO,
@@ -196,6 +196,22 @@ function repositoryFindings(role: RecipeRole, recipe: RecipeDocument): RecipeFin
     .map((name) => finding("repositories.unknown", "error", path, `unknown repository ${name}; list it in the recipe's repositories`));
 }
 
+/** A role's read-only repositories apply cannot give its agent: not names of its config.repositories, each once. */
+function readOnlyRepositoryFindings(role: RecipeRole): RecipeFinding[] {
+  const listed = role.config.read_only_repositories;
+  if (listed === undefined || listed === null) return [];
+  const repositories = isValidRepositoryList(role.config.repositories) ? role.config.repositories : [];
+  if (isValidReadOnlyRepositoryList(listed, repositories)) return [];
+  return [
+    finding(
+      "read_only_repositories.invalid",
+      "error",
+      `roles.${role.role}.config.read_only_repositories`,
+      "config.read_only_repositories must list names of config.repositories, each once",
+    ),
+  ];
+}
+
 /** Config keys an agent does not have. */
 function unknownConfigKeys(role: RecipeRole): RecipeFinding[] {
   const unknown = Object.keys(role.config).filter((key) => !CONFIG_KEYS.has(key)).sort();
@@ -309,6 +325,7 @@ const ROLE_RULES: RoleRule[] = [
   modelFindings,
   harnessFindings,
   repositoryFindings,
+  readOnlyRepositoryFindings,
   subscriptionFindings,
   browserFlag,
   taskFindings,

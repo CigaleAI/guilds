@@ -366,16 +366,22 @@ export async function lockAgentsPickingRepositories(
   return result.rows;
 }
 
-/** Replaces the repositories the agent's config picks. */
+/** The repositories an agent's config picks, and those of them it only reads. */
+export type AgentRepositoryPicks = Pick<AgentConfig, "repositories" | "read_only_repositories">;
+
+/** Replaces the repositories the agent's config picks, and those of them it only reads. */
 export async function setAgentRepositories(
   db: Queryable,
   agentId: string,
-  repositories: AgentConfig["repositories"],
+  picks: AgentRepositoryPicks,
   now: Date,
 ): Promise<void> {
   await db.query(
-    `UPDATE agents SET config = jsonb_set(config, '{repositories}', $2::jsonb), updated_at = $3 WHERE id = $1`,
-    [agentId, formatJsonb(repositories), stamp(now)],
+    `UPDATE agents
+        SET config = config || jsonb_build_object('repositories', $2::jsonb, 'read_only_repositories', $3::jsonb),
+            updated_at = $4
+      WHERE id = $1`,
+    [agentId, formatJsonb(picks.repositories), formatJsonb(picks.read_only_repositories), stamp(now)],
   );
 }
 

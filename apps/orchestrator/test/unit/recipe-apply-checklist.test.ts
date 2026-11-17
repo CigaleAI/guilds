@@ -171,6 +171,17 @@ test("apply gives a subscription role its repositories, and no other role, nor a
   assert.deepEqual(configFromRecipeRole(role).repositories, []);
 });
 
+test("apply gives a role the repositories of its list it only reads, and none for a list that does not validate", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  role.config = { harness: "codex", repositories: ["web", "api"], read_only_repositories: ["api"] };
+  assert.deepEqual(configFromRecipeRole(role).read_only_repositories, ["api"]);
+  role.config = { harness: "codex", repositories: ["web"], read_only_repositories: ["api"] };
+  assert.deepEqual(configFromRecipeRole(role).read_only_repositories, [], "a name its repositories do not list");
+  role.config = { harness: "codex", repositories: ["web"] };
+  assert.deepEqual(configFromRecipeRole(role).read_only_repositories, []);
+});
+
 test("a repository whose step passes joins an agent's picks at its place in the role's list", () => {
   assert.deepEqual(addRoleRepository([], ["web", "api"], "api"), ["api"]);
   assert.deepEqual(addRoleRepository(["api"], ["web", "api"], "web"), ["web", "api"]);

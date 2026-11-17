@@ -173,7 +173,7 @@ helper that acts for one agent takes its id, or reads its home from
 | Path | What it is |
 | --- | --- |
 | `Dockerfile` | `python:3.12-slim` plus Chromium or Chrome, TigerVNC, noVNC, ttyd, gost, Playwright 1.52.0, Node.js 24, build tools, GitHub CLI, mise, the coding harnesses, and the helpers below. Codex (`CODEX_VERSION`) is always installed. Claude Code, the Cursor CLI, and the Antigravity CLI (`CLAUDE_CODE_VERSION`, `CURSOR_VERSION`, `ANTIGRAVITY_VERSION`) are installed when the `HARNESSES` build argument names them, which its default does. The harness CLIs it carries are listed at `/usr/local/share/guilds/harnesses` |
-| `guilds-code` | Home and machine sizes, and git setup, clones, checkpoints, and diffs; reads the agent's tokens from `/run/guilds/<agent id>/git-tokens.json` |
+| `guilds-code` | Home and machine sizes, and git setup, clones, fetches, the push URL of a read-only clone, checkpoints, and diffs; reads the agent's tokens from `/run/guilds/<agent id>/git-tokens.json` |
 | `guilds-harness` | The coding harnesses behind a subscription agent's turns: `check`, `start`, `poll`, `result`, and `stop`; one driver per harness (Claude Code, Codex, Cursor, Antigravity); call state under `/run/guilds/<agent id>/harness/` ([Harnesses](../concepts/coding/harnesses.md)) |
 | `agy` | The Antigravity CLI at the pinned version, installed as `/usr/local/bin/agy` |
 | `claude-code-managed-settings.json` | Claude Code's managed settings at `/etc/claude-code/managed-settings.json`: hooks off, no project MCP servers, no self-update |

@@ -6,7 +6,7 @@ import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { HARNESS_INFO, HARNESS_MCP_TOOL_PREFIX } from "../coding/harnesses.js";
 import { pullRequestToolOf } from "../coding/git.js";
-import { stateRepositories, type CodingRepository } from "../coding/repositories.js";
+import { stateRepositories, type PickedRepository } from "../coding/repositories.js";
 import { modelSourceOf, type AgentConfig, type ResolvedAgentConfig, type RunTaskSource } from "../db/schema/index.js";
 import { ARTIFACT_TOOLS, FILE_TOOLS, NOTE_TOOLS, SCHEDULE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
@@ -115,6 +115,8 @@ export type PromptCapabilities = {
   harness: boolean;
   harnessRules: boolean;
   repositories: boolean;
+  readOnlyRepositories: boolean;
+  writableRepositories: boolean;
   pullRequestTool: string | null;
   toolNaming: ToolNaming;
 };
@@ -133,16 +135,18 @@ export function runToolNaming(config: Pick<AgentConfig, "model" | "harness">): T
 
 /**
  * What the standing prompt of a run with `offer` tells an agent with `config`, which works in
- * `repositories`: a subscription agent with repositories also reads how it works in them, and
- * the tool its run offers that opens their pull requests; one on a harness that keeps its own
- * system prompt reads that the prompt comes beside it, as rules.
+ * `repositories`: a subscription agent with repositories also reads how it works in them, which
+ * of them it only reads, and the tool its run offers that opens the pull requests of the others;
+ * one on a harness that keeps its own system prompt reads that the prompt comes beside it, as
+ * rules.
  */
-function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: CodingRepository[]): PromptCapabilities {
+function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: PickedRepository[]): PromptCapabilities {
   const { tools } = offer;
   const memory = config.memory;
   const offers = (names: readonly string[]) => names.some((name) => tools.includes(name));
   const harness = modelSourceOf(config).kind === "subscription";
   const worksInRepositories = harness && repositories.length > 0;
+  const writable = repositories.filter((repository) => !repository.read_only);
   return {
     scripts: config.scripting && offers(SCRIPT_TOOLS),
     notes: offers(NOTE_TOOLS),
@@ -159,7 +163,9 @@ function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: 
     harness,
     harnessRules: harness && config.harness !== null && HARNESS_INFO[config.harness].prompt === "rules",
     repositories: worksInRepositories,
-    pullRequestTool: worksInRepositories ? pullRequestToolOf(repositories, offer.mcp) : null,
+    readOnlyRepositories: worksInRepositories && writable.length < repositories.length,
+    writableRepositories: worksInRepositories && writable.length > 0,
+    pullRequestTool: worksInRepositories ? pullRequestToolOf(writable, offer.mcp) : null,
     toolNaming: runToolNaming(config),
   };
 }

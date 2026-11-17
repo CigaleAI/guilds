@@ -234,6 +234,12 @@ among them.
   optional; a role without it works in none. Apply gives it to the
   role's agent one repository at a time, as each repository's step
   passes ([Applying recipes](applying-recipes.md#reference)).
+- `config.read_only_repositories` lists the ones of
+  `config.repositories` the role only reads, each once; another name,
+  or one twice, is the `read_only_repositories.invalid` error. It is
+  optional. Apply gives each to the role's agent read-only as its
+  repository's step passes
+  ([Read-only repositories](coding/repositories.md#read-only-repositories)).
 - `config.secret_aliases` maps variable names to secret names, under
   the agent configuration's rule (see [Secrets](secrets.md)). It is
   optional.
@@ -454,6 +460,7 @@ findings `collection.conflict` and `machine.*`
 | `repositories.unused` | warning | At `repositories.<name>`: no role lists the repository in `config.repositories` |
 | `repositories.invalid` | error | A role's `config.repositories` is not a list of repository names, each once |
 | `repositories.unknown` | error | A role's `config.repositories` names a repository the recipe does not list |
+| `read_only_repositories.invalid` | error | A role's `config.read_only_repositories` is not a list of names of its `config.repositories`, each once |
 | `repositories.key` | warning | A role on a key lists repositories; apply leaves them out |
 | `model.unknown` | warning | `config.model` is not a known model; apply asks for one |
 | `model.not_connected` | warning | The model's provider is not connected for the organisation; apply asks for another |

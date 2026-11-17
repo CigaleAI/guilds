@@ -306,20 +306,40 @@ export function isValidSecretAliases(value: unknown): value is AgentConfig["secr
   }
 }
 
-/** The repositories an agent works on: a list of repository names, each once. */
-function requireRepositories(value: unknown): AgentConfig["repositories"] {
+/** A config's list of repository names at `field`, each once; anything else is refused. */
+function requireRepositoryNames(value: unknown, field: string): string[] {
   if (!Array.isArray(value)) {
-    throw new AgentValidationError("repositories must be a list of repository names");
+    throw new AgentValidationError(`${field} must be a list of repository names`);
   }
   const names: string[] = [];
   for (const name of value) {
     if (typeof name !== "string" || !REPOSITORY_NAME_RE.test(name)) {
-      throw new AgentValidationError(`repositories: ${String(name)} is not a repository name`);
+      throw new AgentValidationError(`${field}: ${String(name)} is not a repository name`);
     }
     if (names.includes(name)) {
-      throw new AgentValidationError(`repositories: ${name} is listed twice`);
+      throw new AgentValidationError(`${field}: ${name} is listed twice`);
     }
     names.push(name);
+  }
+  return names;
+}
+
+/** The repositories an agent works on: a list of repository names, each once. */
+function requireRepositories(value: unknown): AgentConfig["repositories"] {
+  return requireRepositoryNames(value, "repositories");
+}
+
+/** The repositories an agent only reads: a list of names of its `repositories`, each once. */
+function requireReadOnlyRepositories(
+  value: unknown,
+  repositories: AgentConfig["repositories"],
+): AgentConfig["read_only_repositories"] {
+  const names = requireRepositoryNames(value, "read_only_repositories");
+  const unpicked = names.filter((name) => !repositories.includes(name));
+  if (unpicked.length) {
+    throw new AgentValidationError(
+      `read_only_repositories: ${unpicked.join(", ")} must also be in repositories`,
+    );
   }
   return names;
 }
@@ -335,6 +355,22 @@ function rejectRepositoriesOnKey(repositories: AgentConfig["repositories"], mode
 export function isValidRepositoryList(value: unknown): value is AgentConfig["repositories"] {
   try {
     requireRepositories(value);
+    return true;
+  } catch (error) {
+    if (error instanceof AgentValidationError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** Whether a value is read-only repositories a config with `repositories` takes, as `validateAgentConfig` checks them. */
+export function isValidReadOnlyRepositoryList(
+  value: unknown,
+  repositories: AgentConfig["repositories"],
+): value is AgentConfig["read_only_repositories"] {
+  try {
+    requireReadOnlyRepositories(value, repositories);
     return true;
   } catch (error) {
     if (error instanceof AgentValidationError) {
@@ -438,6 +474,7 @@ function agentConfigFrom(settings: JsonObject): AgentConfig {
     harness_model: harnessModel,
     harness_effort: requireHarnessEffort(filled.harness_effort, harness, harnessModel),
     repositories,
+    read_only_repositories: requireReadOnlyRepositories(filled.read_only_repositories, repositories),
     secret_aliases: requireSecretAliases(filled.secret_aliases),
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),

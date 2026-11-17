@@ -36,7 +36,7 @@ import { Scripts, type ScriptDatabase } from "../../src/scripts/catalog.js";
 import { RepositoryTokens } from "../../src/coding/git.js";
 import { AccessTokenProvider } from "../../src/coding/access-token-provider.js";
 import { GithubProvider } from "../../src/coding/github-provider.js";
-import type { CodingRepository } from "../../src/coding/repositories.js";
+import type { PickedRepository } from "../../src/coding/repositories.js";
 import type { GroupDelivery, NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { RunWakeRow } from "../../src/db/wakes.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
@@ -77,6 +77,7 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
   harness_model: null,
   harness_effort: null,
   repositories: [],
+  read_only_repositories: [],
   secret_aliases: {},
   scripting: true,
   memory: true,
@@ -89,7 +90,13 @@ export const AGENT_CONFIG: ResolvedAgentConfig = {
  */
 export function runSnapshot(config: AgentConfig = AGENT_CONFIG): RunConfigSnapshot {
   const resolved = resolveAgentConfig(config, DEFAULT_GUILD_KEEP_TOOL_RESULT_GENERATIONS);
-  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, repositories: _repositories, ...settings } = resolved;
+  const {
+    max_scripts: _maxScripts,
+    max_workspace_mib: _maxWorkspaceMib,
+    repositories: _repositories,
+    read_only_repositories: _readOnlyRepositories,
+    ...settings
+  } = resolved;
   return { ...settings, projection_policy_version: 1, database: false, tools: [], mcp: [], secrets: [] };
 }
 
@@ -496,7 +503,7 @@ export class FakeDB {
   }
 
   /** A run's repository tokens, minted and recorded through this fake. */
-  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
+  repositoryTokens(repositories: PickedRepository[]): RepositoryTokens {
     return new RepositoryTokens(
       { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
       repositories,
@@ -742,7 +749,7 @@ export class RecordingDB {
   }
 
   /** A run's repository tokens, minted and recorded through this fake. */
-  repositoryTokens(repositories: CodingRepository[]): RepositoryTokens {
+  repositoryTokens(repositories: PickedRepository[]): RepositoryTokens {
     return new RepositoryTokens(
       { github: new GithubProvider(this as never), access_token: new AccessTokenProvider(this as never) },
       repositories,

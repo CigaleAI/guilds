@@ -243,7 +243,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 23);
+  assert.equal(CONFIG_KEYS.size, 24);
   assert.throws(() => validateAgentConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateAgentConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateAgentConfig({ model }), false);
@@ -280,6 +280,7 @@ test("a config that leaves out every setting but its model takes every default",
     harness_model: null,
     harness_effort: null,
     repositories: [],
+    read_only_repositories: [],
     secret_aliases: {},
     scripting: true,
     memory: true,
@@ -459,6 +460,24 @@ test("only a subscription agent picks repositories", () => {
   const model = VALID_CONFIG.model;
   assert.throws(() => validateAgentConfig({ model, repositories: ["shop"] }), /repositories are only for subscription agents/);
   assert.deepEqual(validateAgentConfig({ model, repositories: [] }).repositories, []);
+});
+
+test("read-only repositories are some of the agent's repositories, each once", () => {
+  const picked = { model: null, harness: "codex", repositories: ["shop", "docs"] };
+  assert.deepEqual(validateAgentConfig(picked).read_only_repositories, [], "a config that leaves them out reads none only");
+  assert.deepEqual(validateAgentConfig({ ...picked, read_only_repositories: ["docs"] }).read_only_repositories, ["docs"]);
+  assert.throws(
+    () => validateAgentConfig({ ...picked, read_only_repositories: ["wiki"] }),
+    /read_only_repositories: wiki must also be in repositories/,
+  );
+  assert.throws(
+    () => validateAgentConfig({ ...picked, read_only_repositories: ["docs", "docs"] }),
+    /read_only_repositories: docs is listed twice/,
+  );
+  assert.throws(
+    () => validateAgentConfig({ ...picked, read_only_repositories: "docs" }),
+    /read_only_repositories must be a list of repository names/,
+  );
 });
 
 test("a config picks only repositories the agent can use, and keeps one it already picked", () => {

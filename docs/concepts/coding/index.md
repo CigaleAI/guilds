@@ -73,9 +73,12 @@ part in its Guidelines
 It says:
 
 - which repositories State lists, each with the path of its working
-  tree and its default branch, and where the turn starts;
-- to work on a branch named `agent/<its name>/<topic>`, never on the
-  default branch, and commit as it goes;
+  tree, its default branch, and whether it only reads it, and where
+  the turn starts;
+- for a repository it only reads, that git refuses to push it, and to
+  fetch it and never commit to it;
+- in any other, to work on a branch named `agent/<its name>/<topic>`,
+  never on the default branch, and commit as it goes;
 - to push with `git push origin <branch>`, the credential helper
   answering with the turn's token, and that it has no other git
   credential, no `gh` login, and no API token;
@@ -227,6 +230,7 @@ The keys live in the agent's `config` ([Agents](../agents.md#configuration-keys)
 | `harness_model` | a model name, or null | Needs a `harness` ([Harnesses](harnesses.md#model-and-effort)) |
 | `harness_effort` | an effort, or null | Needs a `harness`, and must be one the model runs at ([Harnesses](harnesses.md#model-and-effort)) |
 | `repositories` | repository names | Only on a subscription agent: 422 `repositories are only for subscription agents` ([An agent's picks](repositories.md#an-agents-picks)) |
+| `read_only_repositories` | names of `repositories` | The ones the agent only reads: 422 `read_only_repositories: <names> must also be in repositories` for a name `repositories` does not list ([Read-only repositories](repositories.md#read-only-repositories)) |
 | `secret_aliases` | variable name to secret name | Points the harness's token variable at a secret of another name ([Secrets](../secrets.md)) |
 
 A config with any other key, `coding` among them, is refused with 422

@@ -35,7 +35,8 @@ const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const HEADERS = { ...AUTH, "content-type": "application/json" };
 const TOKEN = "glpat-subscription-token";
 const dbName = uniqueDbName("agent_platform_subscription_repositories");
-const githubDbName = uniqueDbName("agent_platform_subscription_github");
+/** The databases each GitHub turn made, dropped once every test is done. */
+const githubDbNames: string[] = [];
 const timing = { ...harnessTurnTiming };
 const [INIT] = recordedEvents("claude-code");
 const REPLY = recordedEvents("claude-code").slice(-2);
@@ -43,7 +44,9 @@ const REPLY = recordedEvents("claude-code").slice(-2);
 after(async () => {
   Object.assign(harnessTurnTiming, timing);
   await dropIsolatedDatabase(dbName);
-  await dropIsolatedDatabase(githubDbName);
+  for (const name of githubDbNames) {
+    await dropIsolatedDatabase(name);
+  }
 });
 
 type MessageView = { payload: { role: string; content: string }; metadata: Record<string, unknown> };
@@ -187,7 +190,15 @@ async function githubLogin(db: Queryable, guildId: string): Promise<void> {
   );
 }
 
-test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone", { timeout: 120_000 }, async () => {
+/** What a turn on the GitHub repository `shop` asked of GitHub, what it asked the code helper, and the run's system prompt. */
+type GithubTurn = { asked: unknown[]; requests: Array<Record<string, unknown>>; system: string };
+
+/**
+ * One turn of a subscription agent with `config` on its guild's GitHub login, through the run API:
+ * the tokens GitHub is asked for, the code helper's requests, and the run's system prompt. The run
+ * ends without an error, its tokens file written for the turn and emptied after it.
+ */
+async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   harnessTurnTiming.pollMs = 50;
   setInstanceKeys(storeKeys({
@@ -211,7 +222,9 @@ test("a subscription agent's turn on a GitHub repository asks GitHub for a token
       headers: { "Content-Type": "application/json" },
     });
   }) as typeof fetch;
-  const database = await connect(await createIsolatedDatabase(githubDbName));
+  const name = uniqueDbName("agent_platform_subscription_github");
+  githubDbNames.push(name);
+  const database = await connect(await createIsolatedDatabase(name));
   const db = database.pool;
   const notes = new NotesStore(tempDir("guilds-subscription-github-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
@@ -239,13 +252,17 @@ test("a subscription agent's turn on a GitHub repository asks GitHub for a token
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: HEADERS,
-      payload: { name: "reviewer", config: { model: null, harness: "claude-code", repositories: ["shop"] }, machine_id: machineId },
+      payload: { name: "reviewer", config, machine_id: machineId },
     });
     assert.equal(created.statusCode, 201, created.body);
     const agentId = String(created.json().id);
     stub = stubCliSandbox("claude", [INIT!, ...REPLY], {}, agentId);
     // github.com is not reached here: the clone and the checkpoints are answered, and the working tree made.
-    answerOps(stub.sandbox, { check: { installed: true, version: "9.9.9 (stub)", credential: "secret" }, git_setup: { failed: [] }, checkpoint: { repositories: [] } });
+    const requests = answerOps(stub.sandbox, {
+      check: { installed: true, version: "9.9.9 (stub)", credential: "secret" },
+      git_setup: { failed: [] },
+      checkpoint: { repositories: [] },
+    });
     mkdirSync(path.join(stub.sandbox.home, "repos", "shop"), { recursive: true });
 
     const started = await app.inject({ method: "POST", url: `/api/agents/${agentId}/runs`, headers: HEADERS, payload: { message: "Look at the shop." } });
@@ -256,9 +273,11 @@ test("a subscription agent's turn on a GitHub repository asks GitHub for a token
     }
     const run = (await app.inject({ method: "GET", url: `/api/runs/${runId}`, headers: HEADERS })).json();
     assert.deepEqual(run.errors, []);
-    assert.deepEqual(asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");
     const tokens = stub.sandbox.written.filter((written) => written.endsWith("git-tokens.json"));
     assert.equal(tokens.length, 2, "written for the turn, then emptied");
+    const rows: MessageView[] = (await app.inject({ method: "GET", url: `/api/runs/${runId}/messages`, headers: HEADERS })).json();
+    const system = rows.find((row) => row.payload.role === "system")?.payload.content ?? "";
+    return { asked, requests, system };
   } finally {
     globalThis.fetch = realFetch;
     setInstanceKeys({});
@@ -266,4 +285,25 @@ test("a subscription agent's turn on a GitHub repository asks GitHub for a token
     await app.close();
     await database.close();
   }
+}
+
+/** The repositories the code helper's `git_setup` was asked to place. */
+function setupRepositories(requests: GithubTurn["requests"]): unknown {
+  return requests.find((request) => request.op === "git_setup")?.repositories;
+}
+
+test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone", { timeout: 120_000 }, async () => {
+  const turn = await githubTurn({ model: null, harness: "claude-code", repositories: ["shop"] });
+  assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");
+  assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: false }]);
+  assert.match(turn.system, /Push the branch with `git push origin <branch>`/);
+});
+
+test("a subscription agent's turn on a GitHub repository it only reads asks GitHub for a token that reads contents alone, and is told git refuses to push it", { timeout: 120_000 }, async () => {
+  const turn = await githubTurn({ model: null, harness: "claude-code", repositories: ["shop"], read_only_repositories: ["shop"] });
+  assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "read" } }]);
+  assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: true }]);
+  assert.match(turn.system, /"read_only": true/);
+  assert.match(turn.system, /is one you only read: git\n {2}refuses to push it/);
+  assert.doesNotMatch(turn.system, /git push origin/);
 });

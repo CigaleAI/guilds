@@ -6,7 +6,7 @@ import type {
   RecipeSchedule,
 } from "../db/schema/index.js";
 import { AGENT_CONFIG_DEFAULTS, MODEL_LOOP_SETTINGS } from "../agents/config.js";
-import { isValidRepositoryList, isValidSecretAliases } from "../agents/validation.js";
+import { isValidReadOnlyRepositoryList, isValidRepositoryList, isValidSecretAliases } from "../agents/validation.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
@@ -68,6 +68,13 @@ export function roleRepositories(role: RecipeRole): string[] {
   return roleRunsOnSubscription(role) && isValidRepositoryList(listed) ? listed : [];
 }
 
+/** The repositories of a role's list its agent only reads: the role's read-only list when it holds names of that list each once, else none. */
+export function roleReadOnlyRepositories(role: RecipeRole): string[] {
+  const listed = role.config.read_only_repositories;
+  const repositories = roleRepositories(role);
+  return isValidReadOnlyRepositoryList(listed, repositories) ? listed : [];
+}
+
 /**
  * Whether a role's agent runs on a subscription: it names a harness and no model. Each such role
  * counts against the subscription agents cap, as `countsAsSubscriptionAgent` reads an agent.
@@ -122,8 +129,8 @@ function withoutSubscriptionLoopSettings(role: RecipeRole): RecipeRole["config"]
  * The agent config a role applies as: the role's, with the model and harness the operator chose
  * (else the recipe's), and the browser flag settled. A subscription role has no model and leaves
  * out the model-loop settings it sets. Only a subscription role keeps a harness and its
- * repositories, and the recipe's harness model and effort only with the recipe's harness, and
- * secret aliases or repositories that do not validate are left out.
+ * repositories, with those of them it only reads, and the recipe's harness model and effort only
+ * with the recipe's harness, and secret aliases or repositories that do not validate are left out.
  * The agent browses with the step-by-step browser
  * tools. Every other setting the role leaves out takes its
  * default when `validateAgentConfig` reads the config. The machine the agent goes on is the apply's.
@@ -142,6 +149,7 @@ export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}):
     harness_model: appliedHarnessModel(roleConfig, applied),
     harness_effort: appliedHarnessEffort(roleConfig, applied),
     repositories: roleRepositories(role),
+    read_only_repositories: roleReadOnlyRepositories(role),
     secret_aliases: isValidSecretAliases(roleConfig.secret_aliases) ? roleConfig.secret_aliases : {},
   };
 }

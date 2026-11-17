@@ -81,6 +81,9 @@ test(
       const outside = await create("stray", { ...CODER, repositories: ["shop", "billing"] });
       assert.equal(outside.statusCode, 422, outside.body);
       assert.match(outside.body, /the agent cannot use billing/);
+      const unpicked = await create("unpicked", { ...CODER, repositories: ["shop"], read_only_repositories: ["docs"] });
+      assert.equal(unpicked.statusCode, 422, unpicked.body);
+      assert.match(unpicked.body, /read_only_repositories: docs must also be in repositories/);
       const plain = await create("plain", { model: TEST_MODEL, browser: false, repositories: ["shop"] });
       assert.equal(plain.statusCode, 422, plain.body);
       assert.match(plain.body, /repositories are only for subscription agents/);
@@ -124,7 +127,7 @@ test(
       assert.deepEqual(kept.json().config.repositories, ["shop", "docs"]);
 
       // Removing a repository from the guild unpicks it from each of its agents, and from no other guild's.
-      const reviewer = await create("reviewer", { ...CODER, repositories: ["shop", "site"] });
+      const reviewer = await create("reviewer", { ...CODER, repositories: ["shop", "site"], read_only_repositories: ["shop", "site"] });
       assert.equal(reviewer.statusCode, 201, reviewer.body);
       const other = await app.inject({ method: "POST", url: "/api/guilds", headers: OWNER, payload: { name: "other" } });
       assert.equal(other.statusCode, 201, other.body);
@@ -134,11 +137,12 @@ test(
       assert.equal(outsider.statusCode, 201, outsider.body);
       const removed = await app.inject({ method: "DELETE", url: `/api/guilds/${guildId}/repositories/${shopId}`, headers: READER });
       assert.equal(removed.statusCode, 204, removed.body);
-      const picksOf = async (id: string) =>
-        (await app.inject({ method: "GET", url: `/api/agents/${id}`, headers: OWNER })).json().config.repositories;
+      const configOf = async (id: string) =>
+        (await app.inject({ method: "GET", url: `/api/agents/${id}`, headers: OWNER })).json().config;
+      const picksOf = async (id: string) => (await configOf(id)).repositories;
       assert.deepEqual(await picksOf(agentId), ["docs"], "a gone pick the removal does not name stays");
       assert.deepEqual(await picksOf(String(reviewer.json().id)), ["site"]);
-      assert.deepEqual(await picksOf(String(outsider.json().id)), ["shop"]);
+      assert.deepEqual((await configOf(String(reviewer.json().id))).read_only_repositories, ["site"], "the removed one is no longer read-only either");
 
       // An agent that still reaches the name through its GitHub login keeps it when the guild's row goes.
       const otherShop = await app.inject({ method: "GET", url: `/api/guilds/${otherId}/repositories`, headers: READER });

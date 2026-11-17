@@ -603,6 +603,28 @@ test("a role's repositories are names the recipe lists, on a subscription role, 
   assert.deepEqual(found(), []);
 });
 
+test("a role's read-only repositories are names of its repositories, each once", () => {
+  const recipe = parseRecipe({
+    ...(fixtureDeskRecipe() as Record<string, unknown>),
+    repositories: [{ name: "api", purpose: "" }, { name: "web", purpose: "" }],
+  });
+  const role = recipe.roles[0]!;
+  const found = () =>
+    validateRecipe(recipe, ctx)
+      .filter((item) => item.code === "read_only_repositories.invalid")
+      .map((item) => [item.severity, item.path, item.message]);
+  const path = `roles.${role.role}.config.read_only_repositories`;
+  role.config = { ...role.config, model: null, harness: "codex", repositories: ["api", "web"], read_only_repositories: ["web"] };
+  assert.deepEqual(found(), []);
+  const refused = [["error", path, "config.read_only_repositories must list names of config.repositories, each once"]];
+  role.config = { ...role.config, read_only_repositories: ["docs"] };
+  assert.deepEqual(found(), refused, "a name its repositories do not list");
+  role.config = { ...role.config, read_only_repositories: ["web", "web"] };
+  assert.deepEqual(found(), refused);
+  role.config = { ...role.config, read_only_repositories: "web" };
+  assert.deepEqual(found(), refused);
+});
+
 test("a role's model is a recommendation: a bad one warns and never blocks", () => {
   const recipe = parseRecipe(fixtureDeskRecipe());
   recipe.roles[0]!.config = { ...recipe.roles[0]!.config, model: "deepinfra/zai-org/GLM-5.3-Flash" };

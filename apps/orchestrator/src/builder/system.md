@@ -255,7 +255,9 @@ login_failure_policy }`. That is what creates the apply take-control login
   operator to add each one with its URL and a credential. Each role that works
   in repositories lists them as `config.repositories`, names from that
   top-level list, each once; its agent clones only those, and a repository no
-  role lists warns as unused. Its Task names the repositories it works in, the
+  role lists warns as unused. A role that reads a repository without pushing
+  to it, such as one that reviews or specifies code, also lists it in
+  `config.read_only_repositories`. Its Task names the repositories it works in, the
   checks it runs before handing work over, and how work reaches its reviewer (a
   pushed branch and a pull or merge request opened with the repository host's
   connector tool, recorded where the guild tracks work). Subscription roles

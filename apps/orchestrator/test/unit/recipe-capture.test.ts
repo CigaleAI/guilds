@@ -193,7 +193,7 @@ function captureDeps(options: {
 test("portable role config carries every setting but the browser mode in the order of the config keys", () => {
   const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
   const config = portableRoleConfig(stored);
-  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model", "repositories"]);
+  const left = new Set(["secret_aliases", "keep_tool_result_generations", "browser_optimized", "browser_model", "repositories", "read_only_repositories"]);
   assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && !left.has(key)));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);
@@ -226,6 +226,16 @@ test("portable role config keeps a subscription role's harness and its aliases b
   assert.equal(config.harness, "claude-code");
   assert.equal(config.harness_model, "opus");
   assert.deepEqual(config.secret_aliases, { GH_PAT: "BOB_GH" });
+});
+
+test("portable role config carries the agent's repositories and those it only reads", () => {
+  const config = portableRoleConfig(
+    validateAgentConfig({ model: null, harness: "codex", repositories: ["shop", "docs"], read_only_repositories: ["docs"] }),
+  );
+  assert.deepEqual(config.repositories, ["shop", "docs"]);
+  assert.deepEqual(config.read_only_repositories, ["docs"]);
+  const writable = portableRoleConfig(validateAgentConfig({ model: null, harness: "codex", repositories: ["shop"] }));
+  assert.equal("read_only_repositories" in writable, false);
 });
 
 test("portable role config of a role on a key keeps every secret alias", () => {

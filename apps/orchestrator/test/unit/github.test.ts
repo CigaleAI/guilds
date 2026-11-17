@@ -11,7 +11,7 @@ import {
   usableRepositories,
   validateGithubRepositories,
   validateRepositoryInput,
-  type CodingRepository,
+  type PickedRepository,
 } from "../../src/coding/repositories.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
@@ -40,7 +40,7 @@ import {
   manifestAction,
 } from "../../src/github/manifest.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
-import { codingRepository } from "../helpers/repositories.js";
+import { codingRepository, pickedRepository } from "../helpers/repositories.js";
 import { connectionRow } from "../helpers/servers.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -388,7 +388,7 @@ function connection(id: string, status: McpConnectionRow["status"], installation
 }
 
 /** The tokens of `rows` as a run mints them, through GitHub on `db` with `options`; no row here uses an access token. */
-function githubTokens(db: unknown, rows: CodingRepository[], options: MintOptions): RepositoryTokens {
+function githubTokens(db: unknown, rows: PickedRepository[], options: MintOptions): RepositoryTokens {
   return new RepositoryTokens(
     { github: new GithubProvider(db as never, options), access_token: new AccessTokenProvider({} as never) },
     rows,
@@ -423,10 +423,10 @@ test("repository tokens: one per connection, limited to its repositories, refres
   const tokens = githubTokens(
     db,
     [
-      codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 }),
-      codingRepository({ name: "site", url: "https://github.com/acme/site.git", connection_id: "conn_a", remote_id: 102 }),
-      codingRepository({ name: "infra", url: "https://github.com/other/infra", connection_id: "conn_b", remote_id: 201 }),
-      codingRepository({ name: "public", url: "https://git.example.com/public.git", connection_id: null }),
+      pickedRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 }),
+      pickedRepository({ name: "site", url: "https://github.com/acme/site.git", connection_id: "conn_a", remote_id: 102 }),
+      pickedRepository({ name: "infra", url: "https://github.com/other/infra", connection_id: "conn_b", remote_id: 201 }),
+      pickedRepository({ name: "public", url: "https://git.example.com/public.git", connection_id: null }),
     ],
     { app: APP, fetch: fake.fetch, masterKey: MASTER, now: () => now },
   );
@@ -476,11 +476,48 @@ test("a token minted to push asks GitHub for contents write alone, on the same r
   });
   const tokens = new RepositoryTokens(
     { github: new GithubProvider(db as never, { app: APP, fetch: fake.fetch, masterKey: MASTER }), access_token: new AccessTokenProvider({} as never) },
-    [codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 })],
+    [pickedRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 })],
   );
   await tokens.mint();
   assert.deepEqual(asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");
   assert.equal(tokens.entries.shop?.token, "ghs_push");
+});
+
+test("a login's repositories the agent only reads get their own token, which reads their contents alone", async () => {
+  const db = { getMcpConnection: async (id: string) => connection(id, "connected", 11) };
+  const asked: Array<{ repository_ids: number[]; permissions: unknown }> = [];
+  const names: Record<number, string> = { 101: "acme/shop", 102: "acme/docs", 103: "acme/site" };
+  const fake = fakeFetch((_url, init) => {
+    const body = JSON.parse(String(init.body)) as { repository_ids: number[]; permissions: unknown };
+    asked.push(body);
+    return json(201, {
+      token: `ghs_${asked.length}`,
+      expires_at: "2026-09-30T13:00:00Z",
+      repositories: body.repository_ids.map((id) => ({ id, full_name: names[id] })),
+    });
+  });
+  const tokens = githubTokens(
+    db,
+    [
+      pickedRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 }),
+      pickedRepository({ name: "docs", url: "https://github.com/acme/docs", connection_id: "conn_a", remote_id: 102, read_only: true }),
+      pickedRepository({ name: "site", url: "https://github.com/acme/site", connection_id: "conn_a", remote_id: 103 }),
+    ],
+    { app: APP, fetch: fake.fetch, masterKey: MASTER },
+  );
+  await tokens.mint();
+  assert.deepEqual(asked, [
+    { repository_ids: [101, 103], permissions: { contents: "write" } },
+    { repository_ids: [102], permissions: { contents: "read" } },
+  ]);
+  assert.deepEqual(
+    Object.entries(tokens.entries).map(([name, entry]) => [name, entry.token, entry.path]),
+    [
+      ["shop", "ghs_1", "acme/shop"],
+      ["site", "ghs_1", "acme/site"],
+      ["docs", "ghs_2", "acme/docs"],
+    ],
+  );
 });
 
 test("a repository stored without an id finds it by its path, and one GitHub renamed gets its current URL", async () => {
@@ -518,10 +555,10 @@ test("a repository stored without an id finds it by its path, and one GitHub ren
       ],
     });
   });
-  const rows: CodingRepository[] = [
-    codingRepository({ name: "shop", url: "https://github.com/OldName/old-shop", connection_id: "conn_a", remote_id: 101 }),
-    codingRepository({ name: "site", url: "https://github.com/acme/site", connection_id: "conn_a" }),
-    codingRepository({ name: "docs", url: "https://github.com/OldOwner/docs", connection_id: "conn_a" }),
+  const rows: PickedRepository[] = [
+    pickedRepository({ name: "shop", url: "https://github.com/OldName/old-shop", connection_id: "conn_a", remote_id: 101 }),
+    pickedRepository({ name: "site", url: "https://github.com/acme/site", connection_id: "conn_a" }),
+    pickedRepository({ name: "docs", url: "https://github.com/OldOwner/docs", connection_id: "conn_a" }),
   ];
   const tokens = githubTokens(db, rows, { app: APP, fetch: fake.fetch, masterKey: MASTER });
   await tokens.mint();
@@ -555,7 +592,7 @@ test("a repository the App no longer reaches is named, whether it has an id or n
   });
   const unnamed = githubTokens(
     db,
-    [codingRepository({ name: "gone", url: "https://github.com/acme/gone", connection_id: "conn_a" })],
+    [pickedRepository({ name: "gone", url: "https://github.com/acme/gone", connection_id: "conn_a" })],
     { app: APP, fetch: reaches101.fetch, masterKey: MASTER },
   );
   await assert.rejects(
@@ -566,8 +603,8 @@ test("a repository the App no longer reaches is named, whether it has an id or n
   const revoked = githubTokens(
     db,
     [
-      codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 }),
-      codingRepository({ name: "infra", url: "https://github.com/acme/infra", connection_id: "conn_a", remote_id: 103 }),
+      pickedRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 }),
+      pickedRepository({ name: "infra", url: "https://github.com/acme/infra", connection_id: "conn_a", remote_id: 103 }),
     ],
     { app: APP, fetch: reaches101.fetch, masterKey: MASTER },
   );
@@ -580,13 +617,13 @@ test("a repository the App no longer reaches is named, whether it has an id or n
 test("a disconnected connection is refused; GitHub refusing the installation names the login it was minted for", async () => {
   const offline = githubTokens(
     { getMcpConnection: async (id: string) => connection(id, "disconnected", 11) },
-    [codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a" })],
+    [pickedRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a" })],
     { app: APP, masterKey: MASTER },
   );
   await assert.rejects(offline.mint(), (error: unknown) => error instanceof RepositoryAccessError && /disconnected/.test(error.message));
   const gone = githubTokens(
     { getMcpConnection: async (id: string) => connection(id, "connected", 11) },
-    [codingRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 })],
+    [pickedRepository({ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", remote_id: 101 })],
     { app: APP, masterKey: MASTER, fetch: fakeFetch(() => json(403, { message: "suspended" })).fetch },
   );
   await assert.rejects(

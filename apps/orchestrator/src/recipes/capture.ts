@@ -118,8 +118,8 @@ function clippedHint(value: string | null | undefined): string {
 /**
  * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A
  * subscription agent's absent model, a harness, harness model or harness effort left unset,
- * tool-result turns left to the guild, no repositories, and secret aliases a recipe carries none
- * of, leave their key out; apply settles them. The agent-optimized
+ * tool-result turns left to the guild, no repositories, none of them read-only, and secret aliases
+ * a recipe carries none of, leave their key out; apply settles them. The agent-optimized
  * browser stays behind: it needs the applying instance's System One key and a model of the
  * applying organisation, so a role browses with the step-by-step browser tools.
  */
@@ -145,6 +145,7 @@ export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
     ...(config.harness_model === null ? {} : { harness_model: config.harness_model }),
     ...(config.harness_effort === null ? {} : { harness_effort: config.harness_effort }),
     ...(config.repositories.length ? { repositories: [...config.repositories] } : {}),
+    ...(config.read_only_repositories.length ? { read_only_repositories: [...config.read_only_repositories] } : {}),
     ...(Object.keys(aliases).length ? { secret_aliases: aliases } : {}),
     scripting: config.scripting,
     memory: config.memory,

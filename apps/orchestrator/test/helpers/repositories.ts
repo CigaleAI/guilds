@@ -1,4 +1,4 @@
-import type { CodingRepository } from "../../src/coding/repositories.js";
+import type { CodingRepository, PickedRepository } from "../../src/coding/repositories.js";
 
 /**
  * A repository as a coding run clones it: `shop` on GitHub, cloned without credentials, unless
@@ -18,4 +18,10 @@ export function codingRepository(overrides: Partial<CodingRepository> = {}): Cod
     username: null,
     ...overrides,
   };
+}
+
+/** A repository as an agent picks it: `codingRepository` with `overrides`, read-only only when they say so. */
+export function pickedRepository(overrides: Partial<PickedRepository> = {}): PickedRepository {
+  const { read_only = false, ...repository } = overrides;
+  return { ...codingRepository(repository), read_only };
 }

@@ -4,7 +4,7 @@ import { bindQuery, type Queryable } from "../db/pg.js";
 import { getSecret } from "../db/secrets.js";
 import { RepositoryAccessError } from "../github/tokens.js";
 import type { GitProvider, TokenEntry } from "./git.js";
-import type { CodingRepository } from "./repositories.js";
+import type { PickedRepository } from "./repositories.js";
 
 /** A character git's credential protocol reads as the end of a value. */
 const LINE_END = /[\r\n\0]/;
@@ -26,13 +26,13 @@ export function credentialTarget(url: string): Pick<TokenEntry, "host" | "path">
  * A stored access token as a git provider, for a repository on any HTTPS host: its token is the
  * value of the secret the repository names, read when the run starts, and sent with the
  * repository's username. It never expires, so it is never refreshed, and it holds what the host
- * granted it.
+ * granted it: one the agent only reads gets the same token, which the box cannot narrow.
  */
 export class AccessTokenProvider implements GitProvider {
   constructor(private db: AccessTokenProviderDb) {}
 
   /** Each repository's entry, answered only for its own URL's host and path. */
-  async mint(repositories: CodingRepository[]): Promise<Map<string, TokenEntry>> {
+  async mint(repositories: PickedRepository[]): Promise<Map<string, TokenEntry>> {
     const entries = new Map<string, TokenEntry>();
     for (const row of repositories) {
       if (row.secret_id === null || row.username === null) {

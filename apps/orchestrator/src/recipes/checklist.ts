@@ -24,7 +24,7 @@ import { newId } from "../lib/ids.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
-import { prepareRecipeForApply, roleBrowses, roleRepositories } from "./prepare.js";
+import { prepareRecipeForApply, roleBrowses, roleReadOnlyRepositories, roleRepositories } from "./prepare.js";
 
 // An apply's checklist: the steps its skeleton leaves open, the server's checks of the steps it
 // verifies, and the operator's confirmations and skips of the rest.
@@ -347,7 +347,10 @@ export function addRoleRepository(picked: readonly string[], listed: readonly st
   return [...role, ...picked.filter((item) => !listed.includes(item))];
 }
 
-/** Gives the guild's repository `name` to each agent of the apply whose role lists it. */
+/**
+ * Gives the guild's repository `name` to each agent of the apply whose role lists it, read-only to
+ * one whose role reads it only.
+ */
 async function pickRoleRepository(apply: RecipeApply, row: RecipeApplyRow, name: string): Promise<void> {
   const recipe = await appliedRecipe(apply, row.recipe_id);
   for (const role of recipe.roles) {
@@ -355,7 +358,12 @@ async function pickRoleRepository(apply: RecipeApply, row: RecipeApplyRow, name:
     const agentId = row.plan.names.find((item) => item.role === role.role)?.agent_id;
     const agent = agentId && listed.includes(name) ? await getAgent(apply.db, agentId) : null;
     if (agent !== null && !agent.config.repositories.includes(name)) {
-      await setAgentRepositories(apply.db, agent.id, addRoleRepository(agent.config.repositories, listed, name), new Date());
+      const readOnly = agent.config.read_only_repositories;
+      const picks = {
+        repositories: addRoleRepository(agent.config.repositories, listed, name),
+        read_only_repositories: roleReadOnlyRepositories(role).includes(name) ? [...readOnly, name] : readOnly,
+      };
+      await setAgentRepositories(apply.db, agent.id, picks, new Date());
     }
   }
 }

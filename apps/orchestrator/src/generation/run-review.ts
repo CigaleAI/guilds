@@ -115,7 +115,7 @@ export async function loadHarnessView(services: RunReviewServices, agent: AgentR
     harness_model: harnessModelOf(config),
     harness_effort: harnessEffortOf(config),
     machine_harnesses: carried,
-    repositories: pickedRepositories(usable, config.repositories).repositories.map((row) => row.name),
+    repositories: pickedRepositories(usable, config).repositories.map((row) => row.name),
     usable_repositories: usable.map((row) => row.name),
     harnesses: HARNESSES.map((harness) => harnessView(harness, logins, aliases, granted)),
   };

@@ -82,9 +82,10 @@ that its own tools' calls count toward `max_tool_calls` too. On
 Cursor and Antigravity, which keep their vendor's system prompt and
 read this one as rules beside it, the part also says so. A
 subscription agent that picks repositories also gets a part on them:
-where they are, where its turn starts, how it branches, commits, and
-pushes through git's credential helper, and the tool that opens a
-pull request when its run offers one.
+where they are, where its turn starts, that git refuses to push the
+ones it only reads, how it branches, commits, and pushes the others
+through git's credential helper, and the tool that opens a pull
+request when its run offers one.
 
 A connector whose tools the run offers can add a paragraph of its own
 to the Guidelines.
@@ -237,8 +238,10 @@ without its tags, when the condition holds, and removed otherwise:
 | `group_post` | the run offers `group_post` |
 | `schedules` | the run offers a schedule tool |
 | `issues` | the run offers `report_issue` |
-| `pull_request_tool` | the run offers the connector tool that opens a pull request on the provider of one of the agent's repositories |
+| `pull_request_tool` | the run offers the connector tool that opens a pull request on the provider of one of the agent's repositories it pushes to |
 | `no_pull_request_tool` | the run offers no such tool |
+| `read_only_repositories` | the agent is a subscription agent that only reads one of its repositories |
+| `writable_repositories` | the agent is a subscription agent that pushes to one of its repositories |
 | `repositories` | the agent is a subscription agent that picks repositories |
 | `no_repositories` | the agent picks none, or is not a subscription agent |
 | `harness_rules` | the agent is a subscription agent on Cursor or Antigravity, whose CLI keeps its own system prompt and reads this one as rules |

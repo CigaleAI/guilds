@@ -55,6 +55,7 @@ export function configSnapshot(
     max_scripts: _maxScripts,
     max_workspace_mib: _maxWorkspaceMib,
     repositories: _repositories,
+    read_only_repositories: _readOnlyRepositories,
     ...settings
   } = config;
   const snapshot: RunConfigSnapshot = {

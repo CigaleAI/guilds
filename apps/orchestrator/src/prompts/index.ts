@@ -84,7 +84,11 @@ export type StandingCaps = {
   harnessRules?: boolean;
   /** Whether a subscription agent's turns work in repositories it picks. Missing means off. */
   repositories?: boolean;
-  /** The tool the run offers that opens a pull request on those repositories; missing or null for none. */
+  /** Whether it only reads some of them. Missing means off. */
+  readOnlyRepositories?: boolean;
+  /** Whether it pushes to some of them. Missing means off. */
+  writableRepositories?: boolean;
+  /** The tool the run offers that opens a pull request on those it pushes to; missing or null for none. */
   pullRequestTool?: string | null;
   /** How the prompt names the run's tools. Missing names each by its own name. */
   toolNaming?: ToolNaming;
@@ -144,9 +148,10 @@ export function stateIntroForCapabilities(caps: StandingCaps): string {
 }
 
 export const REPOSITORIES_INTRO =
-  "`repositories` lists the guild's git repositories: `name`, the `path` of your " +
-  "working tree, and the `default_branch`. The platform clones a missing one at run " +
-  "start; after that you fetch, branch, commit, and push yourself.";
+  "`repositories` lists the git repositories you work in: `name`, the `path` of your " +
+  "working tree, the `default_branch`, and `read_only`, true for one you only read. " +
+  "Before each of your turns the platform clones a missing one and fetches the others; " +
+  "you branch, commit, and push yourself.";
 
 /** The guild roster as the State section lists it: each agent and its purpose, then the operators. */
 export function formatStateRoster(state: RunState): string {
@@ -246,6 +251,8 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
     issues: caps.issues !== false,
     pull_request_tool: pullRequestTool !== null,
     no_pull_request_tool: pullRequestTool === null,
+    read_only_repositories: caps.readOnlyRepositories === true,
+    writable_repositories: caps.writableRepositories === true,
     repositories,
     no_repositories: !repositories,
     harness_rules: caps.harnessRules === true,

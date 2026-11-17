@@ -232,6 +232,13 @@
       "when": 1791993600000,
       "tag": "0033_kimi_removed",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791997200000,
+      "tag": "0034_agent_read_only_repositories",
+      "breakpoints": true
     }
   ]
 }

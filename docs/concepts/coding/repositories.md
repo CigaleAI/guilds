@@ -2,7 +2,8 @@
 
 A guild's repositories are the git repositories its subscription
 agents can work in ([Code work](index.md)). Each subscription agent
-picks the ones it works on, in its config's `repositories`. Each turn
+picks the ones it works on, in its config's `repositories`, and the
+ones of them it only reads, in `read_only_repositories`. Each turn
 clones the ones it picks into the agent's own
 [home](../agent-home.md), and the [harness](harnesses.md) runs there.
 A subscription agent on Cursor or Antigravity needs at least one
@@ -71,16 +72,20 @@ check passes, for each repository it picks:
 
 1. **Tokens.** Each repository with a git provider gets its token
    from that provider. For each GitHub login the repositories use, the
-   orchestrator mints a short-lived token limited to those repositories,
-   with contents write alone, which pushes a branch and opens no pull
-   request. For a repository with an access token, it reads the value
-   of the secret the repository names. It writes the tokens on the
-   agent's machine, outside every home, and adds them to the run's
-   redaction ([Tokens](#tokens)).
-2. **Identity and clone.** The agent's git identity is written into
-   its home, and each repository missing from `repos/` is cloned. A
-   clone already there whose `origin` names another URL on the same
-   host, as after a rename, is pointed at the current URL. The
+   orchestrator mints a short-lived token limited to those of them the
+   agent pushes to, with contents write alone, which pushes a branch
+   and opens no pull request, and one limited to those it only reads,
+   with contents read alone. For a repository with an access token, it
+   reads the value of the secret the repository names. It writes the
+   tokens on the agent's machine, outside every home, and adds them to
+   the run's redaction ([Tokens](#tokens)).
+2. **Identity, clone, and fetch.** The agent's git identity is written
+   into its home, each repository missing from `repos/` is cloned, and
+   each one there is fetched. A clone already there whose `origin`
+   names another URL on the same host, as after a rename, is pointed
+   at the current URL first. Each clone of a repository the agent only
+   reads gets a push URL that refuses every push
+   ([Read-only repositories](#read-only-repositories)). The
    orchestrator never runs git in its own process: a repository's
    hooks and configuration are the agent's.
 3. **Turn start checkpoint** of each one's working tree, under the
@@ -103,6 +108,28 @@ The system prompt of a subscription agent that picks repositories says
 which ones it has and where, where its turn starts, how it branches,
 commits and pushes, and how its pull request is opened
 ([System prompt](../system-prompt.md#capability-parts-of-the-guidelines)).
+
+### Read-only repositories
+
+An agent reads some of its repositories without pushing to them: a
+reviewer reads the code it reviews, a writer of specs reads the code
+it specifies. `read_only_repositories` lists them, each one of the
+agent's `repositories`. Such a repository is cloned and fetched like
+the others, and the agent is given no means to push to it:
+
+- on GitHub, its token holds contents read alone, so GitHub refuses a
+  push with it;
+- on every host, its clone's push URL names
+  `https://push-disabled.invalid/this-repository-is-read-only`, so a
+  push to `origin` fails and names that URL. An access token kept as a
+  secret is the host's to narrow, not the orchestrator's: the agent's
+  clone gets the same token whether it reads the repository only or
+  pushes to it, and the push URL alone stops the push
+  ([SEC-73](../../architecture/security-register.md#sec-73--a-repository-an-agent-only-reads-on-a-host-other-than-github-is-read-only-by-its-clones-push-url-alone)).
+
+State marks each such repository `read_only`, and the system prompt
+tells the agent that git refuses to push it. A repository picked
+writable again gets its push URL back at the next generation.
 
 ### Pull requests
 
@@ -157,7 +184,8 @@ the rule is the one that guards changing the secret.
 
 Removing a repository from the guild, or taking it out of a GitHub
 login's pick, unpicks it from each agent that picks it and can no
-longer use it, in the same transaction. An agent that still reaches
+longer use it, in the same transaction, and takes it out of that
+agent's read-only repositories. An agent that still reaches
 it, through another login or another of the guild's rows, keeps it.
 Removing a repository leaves the working trees already cloned in the
 agents' homes. Deleting a guild deletes its repositories. Deleting a
@@ -258,7 +286,9 @@ above, unticked.
 | Who may change them | Any operator who sees the guild |
 | Clone timeout | 600 seconds per repository |
 | Token refresh | Replaced within 10 minutes of expiry |
-| GitHub token permissions | Contents write alone |
+| GitHub token permissions | Contents write alone; contents read alone for a repository the agent only reads |
+| Read-only repositories | Some of the agent's picks, each once; cloned and fetched, with a push URL that refuses every push |
+| Fetch | Each generation fetches every clone whose `origin` is the repository's URL; a failed fetch leaves the clone as it was and is logged |
 | Tokens between turns | A subscription agent's tokens file is emptied when its turn ends |
 | Commit author email | Empty, or one email address of at most 254 characters, not on a `.invalid` domain |
 | Removing | Unpicks it from each agent that can no longer use it; leaves existing clones in place |
@@ -268,8 +298,9 @@ above, unticked.
 ### Storage
 
 `agents.config.repositories` holds the names a subscription agent
-picks, in order; it is empty on an agent on a key
-([Agents](../agents.md#reference)).
+picks, in order; it is empty on an agent on a key.
+`agents.config.read_only_repositories` holds those of them it only
+reads ([Agents](../agents.md#reference)).
 
 `guild_repositories`:
 
@@ -374,8 +405,9 @@ The repository's `provider` mints its token. A repository without one
 gets no token.
 
 - `github`: for each GitHub connection the repositories use, the
-  orchestrator mints an installation access token limited to those
-  repositories by their GitHub ids, with contents write alone. A
+  orchestrator mints an installation access token limited by their
+  GitHub ids to those the agent pushes to, with contents write alone,
+  and one limited to those it only reads, with contents read alone. A
   repository stored without an id gets the one GitHub lists
   under its path. GitHub's answer names every repository as it is now:
   a repository whose name or owner changed gets its current URL, on
@@ -384,7 +416,7 @@ gets no token.
 - `access_token`: the value of the secret `secret_id` names, read when
   the generation starts, sent with the repository's `username`. It has
   no expiry and is never refreshed, and carries what the host granted
-  it. The
+  it, whether the agent only reads the repository or not. The
   secret is not added to the agent's environment; an agent gets it
   there only when the secret is also granted to it
   ([Secrets](../secrets.md)).
@@ -453,6 +485,14 @@ The generation-start error `repository.token` covers:
   already pick: "repositories: the agent cannot use `<names>`: add it to
   the guild's Repositories first".
 
+`config.read_only_repositories` is a list of names of
+`config.repositories`, each once; left out, it is empty. A create or a
+reconfigure is 422 with a value that is not a list
+("read_only_repositories must be a list of repository names"), an
+item that is not a repository name, a name twice, or a name
+`repositories` does not list: "read_only_repositories: `<names>` must
+also be in repositories".
+
 The generation of a subscription agent that picks repositories, or
 whose harness needs one, fails at start, before the machine wakes:
 
@@ -474,8 +514,14 @@ subscription agent's turn clones (those the agent picks and can use, in its orde
 `guilds-code git_setup` writes `user.name` (the agent's name) and
 `user.email` into the `.gitconfig` in the agent's home, then runs
 `git clone` for each repository the agent picks that is missing from
-`repos/`, waiting up to
-600 seconds for each. A failed clone is removed, and the generation
+`repos/`, and `git fetch --prune origin` in each clone there whose
+`origin` is the repository's URL, waiting up to 600 seconds for each.
+It sets `remote.origin.pushurl` to
+`https://push-disabled.invalid/this-repository-is-read-only` in each
+clone of a repository the agent only reads, and unsets it in every
+other. A fetch that fails leaves the clone as it was; the generation
+goes on, and the orchestrator logs `repository.fetch` with git's
+error. A failed clone is removed, and the generation
 fails with `repository.clone`, "clone failed: `<name>`: `<error>`". When
 git wanted credentials, the error says which case it is:
 
@@ -490,8 +536,9 @@ git wanted credentials, the error says which case it is:
 ### State
 
 The State of a subscription agent that picks repositories carries `repositories`, the ones it picks and can use,
-in its config's order: `[{ name, path, default_branch }]`,
-where `path` is `/home/<agent id>/repos/<name>`. Live git state is not
+in its config's order: `[{ name, path, default_branch, read_only }]`,
+where `path` is `/home/<agent id>/repos/<name>` and `read_only` is true
+for one it only reads. Live git state is not
 in State.
 
 ### Code
