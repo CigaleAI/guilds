@@ -571,7 +571,11 @@ A harness that does not stop adds "It did not stop and may still be
 running; its log is `<path>`." Once `start` has gone, every way out
 but a clean exit or lost state sends `stop`: a cancel, the time limit,
 three failed polls, a stop the MCP server's calls asked for, or an
-error. However the turn ends, the generation's token is revoked once
+error. `stop` ends every process the turn started, whatever session or
+process group it moved to, and a CLI that exits by itself has every
+process it left running ended before its exit is seen, so nothing the
+turn started runs once it has ended
+([Process](coding/harnesses.md#process)). However the turn ends, the generation's token is revoked once
 the server has kept the call it is running, and a call of the
 harness's own tools still without a result gets the interrupted
 result, marked `from_harness`.

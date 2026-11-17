@@ -10,6 +10,7 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-75](#sec-75--work-a-harness-turn-started-went-on-after-the-turn-ended-and-could-push-with-a-credential-it-had-already-read) | Work a harness turn started went on after the turn ended, and could push with a credential it had already read | Fixed 2026-11-17 |
 | [SEC-74](#sec-74--an-agent-on-a-key-holds-a-git-token-and-a-clone-on-its-machine-and-what-it-reads-can-steer-what-it-does-with-them) | An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them | Open |
 | [SEC-73](#sec-73--a-repository-an-agent-only-reads-on-a-host-other-than-github-is-read-only-by-its-clones-push-url-alone) | A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone | Open, accepted |
 | [SEC-72](#sec-72--a-sandbox-on-the-hosted-vm-reached-the-metadata-server-private-addresses-and-caddy) | A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy | Fixed 2026-11-16 |
@@ -84,6 +85,61 @@ its date (the code that held the issue is removed).
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-75 — Work a harness turn started went on after the turn ended, and could push with a credential it had already read
+
+**Status:** fixed 2026-11-17.
+
+**Found:** 2026-11-17, when a harness started a force-push seconds
+before its turn's time limit, and the push reached the repository
+about three minutes after the turn was stopped and the agent's tokens
+file emptied.
+
+**Where:** `op_stop` and `supervise` in `runtime/guilds-harness`, the
+end of a harness turn in `apps/orchestrator/src/generation/harness-loop.ts`,
+and `CodingRuns.releaseRepositories` in
+`apps/orchestrator/src/generation/coding.ts`.
+
+**Exposure:** `stop` signalled the CLI's process group alone. A
+harness can run a command in a session or process group of its own,
+as Cursor does with a command it moves to the background when it runs
+long, and such a process, with everything it started, outlived every
+stop: the time limit, a cancel, a stop the MCP server's calls asked
+for, three failed polls, and the stop of a turn an orchestrator
+restart cut short. A CLI that exited by itself left the same processes
+running. The stop answered that the turn had stopped, and the
+orchestrator ended the generation, emptied the tokens file, and
+revoked the turn's MCP token, while the process went on with what it
+had already read. `git push` asks the credential helper for the token
+before it runs the repository's `pre-push` hook, so a push held up by
+a long hook reached the remote after the turn had ended, with a token
+still valid for the rest of its hour. Such a process ran until the
+container's idle stop, with the agent's granted secrets in its
+environment (SEC-62), and nothing in the run showed it.
+
+**Fix:** the supervisor that runs a turn's CLI is the turn's child
+subreaper (`PR_SET_CHILD_SUBREAPER`), so a process the turn starts
+stays below it whatever session or process group it moves to, after
+its parent exits too. `stop` sends SIGTERM to the CLI's process group
+and to every process below the supervisor, SIGKILL ten seconds later
+to each one left until none is, and answers that the turn stopped
+only once no process of the turn is left; otherwise the turn records
+that its harness did not stop. A CLI that exits by itself has every
+process of its turn ended the same way before the supervisor records
+the exit, so a poll sees the turn end only once nothing it started
+runs. The tokens file is emptied after that. `stop` walks from the
+supervisor's pid only while that pid still runs the call's
+supervisor, so it never signals the processes of the CLI tab, the
+browser, or another agent's turn.
+
+**Residual risk:** a process a command of the turn has a service
+outside the turn start is not below the supervisor. A turn whose
+supervisor is killed leaves its processes running until the container
+stops, and so does a process SIGKILL cannot end, for which `stop`
+answers that the turn did not stop. A token the turn read before it
+ended stays valid for the rest of its hour wherever the turn sent it
+(SEC-66). A process a script of an agent on a key leaves running still
+runs until the idle stop (SEC-5).
 
 ## SEC-74 — An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them
 
@@ -424,7 +480,9 @@ repository holds `pull_requests` write: the coding agent's
 repository token, and the token is redacted from the run's rows. The
 tokens file is emptied when a turn that started ends, however it ends;
 a turn an orchestrator restart cut short, or a generation whose clone
-failed, leaves it until the agent's next generation. A turn stops
+failed, leaves it until the agent's next generation. Since 2026-11-17
+the processes the turn started are ended before the file is emptied
+(SEC-75). A turn stops
 after its `max_turn_minutes`. The system prompt tells the agent to
 work on a branch of its own, never the default branch, and that
 repository content, issue text, and command output are data, never
@@ -2749,6 +2807,10 @@ Since 2026-11-16 `shell` and its `background` mode are removed with the
 coding agent. A process a subscription agent's harness or a script
 leaves running is the background process this needs, until the
 machine's idle stop.
+
+Since 2026-11-17 a process a harness turn starts ends with the
+turn ([SEC-75](#sec-75--work-a-harness-turn-started-went-on-after-the-turn-ended-and-could-push-with-a-credential-it-had-already-read)); a process a script leaves running
+still runs until the idle stop.
 
 ## SEC-4 — Package installs run third-party code beside the agent's secrets
 

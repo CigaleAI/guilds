@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -22,7 +22,7 @@ import { assertHarnessReady, checkHarnessOn, HarnessSetupError } from "../../src
 import { applySecretAliases } from "../../src/access/runtime.js";
 import { HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
-import type { StubCall } from "../helpers/harness-cli.js";
+import { HANG, type StubCall } from "../helpers/harness-cli.js";
 import { fakeToolboxDatabase, toolFixture, type ToolFixture, type ToolFixtureFields } from "../helpers/toolbox.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -931,6 +931,99 @@ test("stop kills a harness that ignores SIGTERM once the grace period is over", 
   assert.equal(stopped.meta.exited, true);
   assert.ok(Date.now() - began >= 9_000, "SIGTERM alone did not end it");
   assert.equal(stubsRunning(sandbox), false);
+});
+
+describe("the processes a turn starts, whatever session they move to", {
+  skip: process.platform === "linux" ? false : "only Linux has the child subreaper the supervisor relies on",
+}, () => {
+  /** The ops of call `callId` in run `runId`, on `sandbox`. */
+  function callOps(sandbox: HostCodeSandbox, runId: string, callId: string) {
+    const ctx = toolFixture({ run_id: runId, agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+    return (name: string, args: Record<string, unknown> = {}) =>
+      runCodeHelper(ctx.run, createToolHooks(), { op: name, call_id: callId, harness: "claude-code", ...args }, { helper: HARNESS_HELPER });
+  }
+
+  /**
+   * A Claude Code sandbox whose CLI starts `sleep` in a session of its own whose parent exits at
+   * once, after the recorded event at `at`, then goes on with `rest`; and the file the sleep's
+   * pid is written to.
+   */
+  function detachingSandbox(at: number, rest: string[]) {
+    const pidFile = path.join(tempDir("harness-detached-"), "pid");
+    const detach = JSON.stringify({ stub: "detach", argv: ["sleep", "300"], pid_file: pidFile });
+    const lines = recorded("claude-code").slice(0, at + 1);
+    const { sandbox } = harnessSandbox("claude", () => [...lines, detach, ...rest], { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
+    return { sandbox, pidFile };
+  }
+
+  /** The pid in `file` once it is written. */
+  async function pidIn(file: string): Promise<number> {
+    for (let attempt = 0; attempt < 100 && !existsSync(file); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return Number(readFileSync(file, "utf8"));
+  }
+
+  /** Whether process `pid` runs; a zombie has ended. */
+  function running(pid: number): boolean {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      return stat.slice(stat.lastIndexOf(")") + 2)[0] !== "Z";
+    } catch {
+      return false;
+    }
+  }
+
+  test("stop ends a process the harness started in a session of its own after its parent exited, and no process outside the turn", async () => {
+    const turnA = detachingSandbox(1, [HANG]);
+    const turnB = detachingSandbox(1, [HANG]);
+    const outside = spawn("sleep", ["300"], { detached: true, stdio: "ignore" });
+    const opA = callOps(turnA.sandbox, "r_tree", "call_tree");
+    const opB = callOps(turnB.sandbox, "r_tree", "call_tree");
+    try {
+      await opA("start", { repository: "app", prompt: "Anything." });
+      await opB("start", { repository: "app", prompt: "Anything." });
+      const [detachedA, detachedB] = [await pidIn(turnA.pidFile), await pidIn(turnB.pidFile)];
+      assert.equal(running(detachedA), true, "the detached process outlived the process that started it");
+      const stopped = await opA("stop");
+      assert.equal(stopped.meta.exited, true);
+      assert.equal(running(detachedA), false, "the turn's detached process ended before stop answered");
+      assert.equal(stubsRunning(turnA.sandbox), false);
+      assert.equal(running(detachedB), true, "another turn's process is left running");
+      assert.equal(running(outside.pid!), true, "a process outside every turn is left running");
+    } finally {
+      await opB("stop");
+      outside.kill("SIGKILL");
+    }
+  });
+
+  test("a process the harness left running ends with the turn when the CLI exits by itself", async () => {
+    const { sandbox, pidFile } = detachingSandbox(0, recorded("claude-code").slice(1));
+    const { ctx } = context(sandbox);
+    const result = await turn(ctx, "Anything.");
+    assert.equal(result.is_error, false);
+    assert.equal(running(await pidIn(pidFile)), false, "nothing the turn started outlives it");
+  });
+
+  test("stop leaves the processes of a pid the call's supervisor no longer holds", async () => {
+    const { sandbox } = hangingSandbox();
+    const op = callOps(sandbox, "r_reused", "call_reused");
+    await op("start", { repository: "app", prompt: "Anything." });
+    const other = spawn("sh", ["-c", "sleep 300 & echo $!; wait"], { detached: true, stdio: ["ignore", "pipe", "ignore"] });
+    try {
+      const child = Number(await new Promise<string>((resolve) => other.stdout.once("data", (chunk: Buffer) => resolve(chunk.toString("utf8")))));
+      const stateFile = path.join(sandbox.runDir, "a_1", "harness", "call_reused.json");
+      const state = JSON.parse(readFileSync(stateFile, "utf8")) as Record<string, unknown>;
+      writeFileSync(stateFile, JSON.stringify({ ...state, supervisor_pid: other.pid }));
+      const stopped = await op("stop");
+      assert.equal(stopped.meta.exited, true);
+      assert.equal(stubsRunning(sandbox), false, "the CLI's process group still ends");
+      assert.equal(running(other.pid!), true, "the process that holds the pid now is left running");
+      assert.equal(running(child), true, "and so is what it started");
+    } finally {
+      process.kill(-other.pid!, "SIGKILL");
+    }
+  });
 });
 
 /** The stub CLI's processes: their command line names the stub's own folder. */

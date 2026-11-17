@@ -12,7 +12,9 @@ the variables whose value holds HARNESS_STUB_SEEK to HARNESS_STUB_RECORD, then p
 events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
 `{"stub": "edit", "path": ..., "text": ...}` writes that file instead of printing;
 `{"stub": "run", "argv": [...]}` runs that command in the working directory and prints its exit code
-and output as a message; `{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
+and output as a message; `{"stub": "detach", "argv": [...], "pid_file": ...}` starts that command
+in a session of its own whose parent exits at once, so nothing the CLI runs is its parent, and
+writes its pid to that file; `{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
 until it is killed. `{"stub": "mcp", "method": ..., "params": ...}` posts that JSON-RPC request to
 the `guilds` server it was given, with its headers, appends the status and the answer to
 HARNESS_STUB_MCP_RECORD, and for a `tools/call` prints the events its CLI prints for an MCP call;
@@ -192,6 +194,18 @@ with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
         if event.get("stub") == "run":
             done = subprocess.run(event["argv"], capture_output=True, text=True, check=False)
             print_message(f"exit={done.returncode}\n{done.stdout}{done.stderr}")
+            continue
+        if event.get("stub") == "detach":
+            parent = os.fork()
+            if parent == 0:
+                os.setsid()
+                detached = os.fork()
+                if detached == 0:
+                    os.execvp(event["argv"][0], event["argv"])
+                with open(event["pid_file"], "w", encoding="utf-8") as handle:
+                    handle.write(str(detached))
+                os._exit(0)
+            os.waitpid(parent, 0)
             continue
         if event.get("stub") == "show_mcp_config":
             print_message(json.dumps(mcp_config()[0]))
