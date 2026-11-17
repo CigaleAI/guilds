@@ -22,6 +22,12 @@ is picked and saved. An inherited login's folder has no removal. Every
 login's **Save settings** stays off while a required setting is
 missing or empty.
 
+**Added.** While a table's **Access** tab is open, the Tables list
+groups the tables by who their access lists reach: **Organisation**,
+each guild, and **Individual agents**. A table with no read or write
+row in sight is under **Access not fully known**; a read in progress or
+failed is listed apart, with **Retry**.
+
 **Added.** A table's **Columns** view says below **Save columns**
 why it is off: no column changes to save, the columns being saved,
 or each column's rule break by its position and name.
@@ -30,15 +36,6 @@ or each column's rule break by its position and name.
 own tools, its shell commands, file reads, searches, and edits, as rows
 of its run with their results. A Cursor tool call event carries fields
 of its own beside the tool, and each such event was dropped.
-
-**Fixed.** Claude Code does not update itself when it is run from an
-agent's CLI tab, so the CLI the runtime image pins stays in place for
-the agent's turns and **Check login**.
-
-**Changed.** The runtime image carries Codex 0.169.0, Claude Code
-2.1.326, the Cursor CLI 2026.11.13, and the Antigravity CLI 1.5.10.
-`node scripts/update-harnesses.mjs` moves them to each vendor's latest
-release. A box runs them once its runtime image is rebuilt.
 
 ## 0.2.0
 

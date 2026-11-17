@@ -131,6 +131,25 @@ The left column lists them by owner: the organisation's first, then
 each guild's own under its name, guilds in name order. Each row shows
 the name, purpose, live record count, and when it last changed.
 
+While a table's **Access** tab is open, the left column lists the
+tables by who their access lists reach instead, each table under every
+group it matches, in name order within a group:
+
+- **Organisation**, for an organisation row of read or write.
+- **Guild · <name>**, one group per guild a read or write row names,
+  keyed by the guild's id and in name order.
+- **Individual agents**, for an agent row of read or write.
+- **Access not fully known**, for a list that is empty or holds only
+  agent **None** rows. The list leaves out the rows of private guilds
+  the operator does not operate, so it cannot show that no one reaches
+  the table; those rows are neither named nor counted.
+- **Reading access** while a table's list is being read, and
+  **Couldn't read access**, with **Retry**, when the read failed.
+
+Opening a table from this list keeps the **Access** tab, and so does
+going back to the list on a narrow screen. A saved access change
+regroups the list at once.
+
 **New table** asks for a name, a purpose, an owner (**Belongs to**:
 the organisation, or one guild), and at least one column. A hint says
 how the table starts: an organisation table with every agent reading

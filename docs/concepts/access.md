@@ -317,7 +317,8 @@ The **Access** panel shows and edits one item's access list. It is
 in these places:
 
 - a collection's **Access** tab on the **Tables** page. The tab's
-  count is the number of rows
+  count is the number of rows. While it is open, the list of tables
+  beside it is grouped by the subjects their rows give read or write
   ([Collections](collections.md#the-tables-page)).
 - the **Access** button in the header of an open note, in the notes
   browser, and a click on a greyed note, one no row reaches for the
