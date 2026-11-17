@@ -301,9 +301,11 @@ function setupRepositories(requests: GithubTurn["requests"]): unknown {
   return requests.find((request) => request.op === "git_setup")?.repositories;
 }
 
-test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone", { timeout: 120_000 }, async () => {
+test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone, and is told it runs code with its own tools", { timeout: 120_000 }, async () => {
   const turn = await githubTurn({ model: null, harness: "claude-code", repositories: ["shop"] });
   assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");
+  assert.match(turn.system, /Run commands and one-off code with your own tools/);
+  assert.doesNotMatch(turn.system, /only way to execute code/);
   assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: false }]);
   assert.match(turn.system, /Push the branch with `git push origin <branch>`/);
 });
@@ -317,9 +319,10 @@ test("a subscription agent's turn on a GitHub repository it only reads asks GitH
   assert.doesNotMatch(turn.system, /git push origin/);
 });
 
-test("an agent on a key gets the GitHub repositories it picks on its machine, with a token that writes contents alone, and is told a script works in them", { timeout: 120_000 }, async () => {
+test("an agent on a key gets the GitHub repositories it picks on its machine, with a token that writes contents alone, and is told a script works in them and is its only way to run code", { timeout: 120_000 }, async () => {
   const turn = await githubTurn({ model: TEST_MODEL, repositories: ["shop"] });
   assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "write" } }]);
+  assert.match(turn.system, /A script is the only way to execute code/);
   assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: false }]);
   assert.equal(turn.requests.some((request) => request.op === "checkpoint"), false, "an agent on a key keeps no turn checkpoints");
   assert.match(turn.system, /"path": "\/home\/[^"]+\/repos\/shop"/, "State names where the repository is");

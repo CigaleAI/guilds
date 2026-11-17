@@ -235,6 +235,8 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
   const repositories = caps.repositories === true;
   const pullRequestTool = caps.pullRequestTool ?? null;
   const resolved = resolveCapabilities(standing, {
+    key_scripts: caps.harness !== true,
+    harness_scripts: caps.harness === true,
     scripts: caps.scripts,
     notes: caps.notes,
     files: caps.files === true,

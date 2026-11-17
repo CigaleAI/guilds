@@ -24,7 +24,9 @@ like any other tool.
 
 A subscription agent keeps scripts too, for reusable code. Its
 harness also runs commands with its own tools, so turning scripting
-off does not stop it from running commands.
+off does not stop it from running commands. Its Guidelines tell it to
+run commands and one-off code with those tools, and to keep a script
+for work it repeats ([System prompt](system-prompt.md#guidelines-topics)).
 
 ## How it works
 
