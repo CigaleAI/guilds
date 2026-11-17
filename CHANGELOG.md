@@ -22,6 +22,10 @@ is picked and saved. An inherited login's folder has no removal. Every
 login's **Save settings** stays off while a required setting is
 missing or empty.
 
+**Added.** A table's **Columns** view says below **Save columns**
+why it is off: no column changes to save, the columns being saved,
+or each column's rule break by its position and name.
+
 **Fixed.** A subscription agent on Cursor keeps the calls of Cursor's
 own tools, its shell commands, file reads, searches, and edits, as rows
 of its run with their results. A Cursor tool call event carries fields

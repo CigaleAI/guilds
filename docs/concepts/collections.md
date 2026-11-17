@@ -209,6 +209,10 @@ A collection opens at `/tables/<id>` on **Records**.
     in every record, a removal deletes the values, a retype or a
     changed value list leaves values as they are.
   - Adding a column or changing a description applies directly.
+  - While **Save columns** is off, the reason shows below it: no
+    column changes to save, the columns being saved, or each rule
+    break with its column's position and name, or the table's for
+    too many columns.
   - **Discard** drops the unsaved changes.
   - A column that cannot become unique because values repeat is
     refused by the server, with the duplicates listed.
