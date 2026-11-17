@@ -135,17 +135,16 @@ export function runToolNaming(config: Pick<AgentConfig, "model" | "harness">): T
 
 /**
  * What the standing prompt of a run with `offer` tells an agent with `config`, which works in
- * `repositories`: a subscription agent with repositories also reads how it works in them, which
- * of them it only reads, and the tool its run offers that opens the pull requests of the others;
- * one on a harness that keeps its own system prompt reads that the prompt comes beside it, as
- * rules.
+ * `repositories`: an agent with repositories also reads how it works in them, which of them it
+ * only reads, and the tool its run offers that opens the pull requests of the others; one on a
+ * harness that keeps its own system prompt reads that the prompt comes beside it, as rules.
  */
 function promptCapabilities(config: AgentConfig, offer: RunOffer, repositories: PickedRepository[]): PromptCapabilities {
   const { tools } = offer;
   const memory = config.memory;
   const offers = (names: readonly string[]) => names.some((name) => tools.includes(name));
   const harness = modelSourceOf(config).kind === "subscription";
-  const worksInRepositories = harness && repositories.length > 0;
+  const worksInRepositories = repositories.length > 0;
   const writable = repositories.filter((repository) => !repository.read_only);
   return {
     scripts: config.scripting && offers(SCRIPT_TOOLS),

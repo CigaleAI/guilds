@@ -85,7 +85,9 @@ subscription agent that picks repositories also gets a part on them:
 where they are, where its turn starts, that git refuses to push the
 ones it only reads, how it branches, commits, and pushes the others
 through git's credential helper, and the tool that opens a pull
-request when its run offers one.
+request when its run offers one. An agent on a key that picks
+repositories gets the same part, which says, in place of where its
+turn starts, that it has no shell and a script runs git in them.
 
 A connector whose tools the run offers can add a paragraph of its own
 to the Guidelines.
@@ -106,7 +108,7 @@ the snapshot as JSON. The JSON holds:
 - the collections the agent can read, with their columns
 - the agent's scripts
 - the names of the secrets the agent has, never their values
-- the repositories a subscription agent picks
+- the repositories the agent picks, and which of them it only reads
 - facts a connector adds for the agent's logins
 
 Notes are not listed. The agent searches them with `note_find`
@@ -240,10 +242,12 @@ without its tags, when the condition holds, and removed otherwise:
 | `issues` | the run offers `report_issue` |
 | `pull_request_tool` | the run offers the connector tool that opens a pull request on the provider of one of the agent's repositories it pushes to |
 | `no_pull_request_tool` | the run offers no such tool |
-| `read_only_repositories` | the agent is a subscription agent that only reads one of its repositories |
-| `writable_repositories` | the agent is a subscription agent that pushes to one of its repositories |
-| `repositories` | the agent is a subscription agent that picks repositories |
-| `no_repositories` | the agent picks none, or is not a subscription agent |
+| `read_only_repositories` | the agent only reads one of its repositories |
+| `writable_repositories` | the agent pushes to one of its repositories |
+| `harness_repositories` | the agent is a subscription agent that picks repositories |
+| `script_repositories` | the agent is on a key, picks repositories, and the run offers script tools |
+| `repositories` | the agent picks repositories |
+| `no_repositories` | the agent picks none |
 | `harness_rules` | the agent is a subscription agent on Cursor or Antigravity, whose CLI keeps its own system prompt and reads this one as rules |
 | `harness` | the agent is a subscription agent, whose harness runs its turns |
 
@@ -261,8 +265,8 @@ the native tools its access grants under its switches, with
 
 Without scripts, the State intro drops the `scripts` explanation.
 Without tools, it drops the sentences on listing tools and the tool
-budget. The State intro of a subscription agent that picks
-repositories adds a line on `repositories`.
+budget. The State intro of an agent that picks repositories adds a
+line on `repositories`.
 
 ### Tool names
 
@@ -292,7 +296,7 @@ included, is written the same way.
 | `collections` | every collection the agent can read, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
 | `scripts` | the script catalog ([Scripts](scripts.md)) |
 | `environment` | bound secret names with descriptions ([Secrets](secrets.md)) |
-| `repositories` | the repositories a subscription agent that picks some works in: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
+| `repositories` | the repositories an agent that picks some works in: `name`, working-tree `path`, `default_branch`, and `read_only`, true for one it only reads ([Repositories](coding/repositories.md)) |
 | a connector key | what a connector's `state` hook returns for the agent's logins |
 
 ### Connector State and guidance

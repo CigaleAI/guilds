@@ -124,8 +124,10 @@ minutes old. A listing that fails keeps the stored list
 ([Tools of a login](connectors.md#tools-of-a-login)).
 
 A GitHub login with no repositories picked lists no tools, so the run
-starts without them. A subscription agent's turn also reaches GitHub
-with `git` through the repositories it picks ([GitHub](github.md)).
+starts without them. A generation of an agent that picks repositories
+also reaches GitHub with `git` through them: a subscription agent's
+harness with its shell, an agent on a key with its scripts
+([GitHub](github.md)).
 
 ### Browser calls
 

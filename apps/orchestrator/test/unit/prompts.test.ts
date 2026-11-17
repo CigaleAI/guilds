@@ -431,6 +431,28 @@ test("a subscription agent with repositories and no pull request tool is told it
   assert.ok(!standing.includes("<pull_request_tool/>") && !standing.includes("<capability"));
 });
 
+test("an agent on a key with repositories reads where they are, that a script works in them, and how it pushes, and nothing of a harness turn", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const standing = standingForCapabilities(text, {
+    scripts: true,
+    notes: false,
+    browser: false,
+    tools: true,
+    repositories: true,
+    writableRepositories: true,
+    pullRequestTool: null,
+  });
+  assert.ok(standing.includes("You work in the git repositories State `repositories` lists"));
+  assert.ok(standing.includes("You have no shell: a script runs git in them, reads their files, and\nruns their code (`<tool>script_run</tool>`)."));
+  assert.ok(standing.includes("Push the branch with `git push origin <branch>`"));
+  assert.ok(!standing.includes("Your turn\nstarts in the working tree"), "the turn's start is a harness's");
+  assert.ok(!standing.includes("in your own Linux container"));
+  assert.ok(!standing.includes("<capability"));
+  const harness = standingForCapabilities(text, { ...HARNESS_CAPS, pullRequestTool: null });
+  assert.ok(harness.includes("Your turn\nstarts in the working tree"));
+  assert.ok(!harness.includes("You have no shell"));
+});
+
 test("a subscription agent that only reads some of its repositories is told git refuses to push them", () => {
   const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
   const standing = standingForCapabilities(text, { ...HARNESS_CAPS, readOnlyRepositories: true, pullRequestTool: null });

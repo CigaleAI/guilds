@@ -8,6 +8,19 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Added.** An agent on a model key picks repositories as a subscription
+agent does, in `config.repositories`, some of them read-only. Before
+each of its generations the platform clones or fetches them into its
+home, under `repos/<name>`, with the same tokens, replaced before a
+command one of its tools runs once they near expiry, and empties its
+tokens file when the generation ends. It has no shell: its system
+prompt says where the repositories are, which it only reads, and that
+a script runs git in them, reads their files, and runs their code.
+Its generations record no turn changes. A create or a settings change
+no longer answers 422 `repositories are only for subscription agents`.
+A recipe role on a key keeps its `config.repositories`, and the
+`repositories.key` finding is gone (SEC-74).
+
 **Added.** An agent reads some of its repositories without pushing to
 them: `config.read_only_repositories` lists them, each one of its
 `repositories`, and is empty when left out. Such a repository is

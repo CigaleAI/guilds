@@ -10,6 +10,7 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-74](#sec-74--an-agent-on-a-key-holds-a-git-token-and-a-clone-on-its-machine-and-what-it-reads-can-steer-what-it-does-with-them) | An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them | Open |
 | [SEC-73](#sec-73--a-repository-an-agent-only-reads-on-a-host-other-than-github-is-read-only-by-its-clones-push-url-alone) | A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone | Open, accepted |
 | [SEC-72](#sec-72--a-sandbox-on-the-hosted-vm-reached-the-metadata-server-private-addresses-and-caddy) | A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy | Fixed 2026-11-16 |
 | [SEC-71](#sec-71--a-sandbox-on-the-hosted-vm-reached-cloud-sqls-private-address-and-every-port-of-the-vm) | A sandbox on the hosted VM reached Cloud SQL's private address and every port of the VM | Fixed 2026-11-16 |
@@ -84,6 +85,62 @@ its date (the code that held the issue is removed).
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
 
+## SEC-74 — An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them
+
+**Status:** open.
+
+**Found:** 2026-11-17, letting an agent on a key pick repositories.
+
+**Where:** `CodingRuns.prepareRepositories` and
+`CodingRuns.releaseRepositories` in
+`apps/orchestrator/src/generation/coding.ts`, `RunGenerator.isReady`
+in `apps/orchestrator/src/generation/generate.ts`, the
+`before_command` hook `executeCommand` runs in
+`apps/orchestrator/src/toolbox/shell.ts`,
+`/run/guilds/<agent id>/git-tokens.json` and `guilds-git-credential`,
+and the `script_repositories` part of
+`apps/orchestrator/src/prompts/system.md`.
+
+**Exposure:** an agent on a key that picks repositories gets, at each
+generation, a clone of each in its home and a token for each in its
+machine's tokens file, which the credential helper answers to git.
+Its model reads repository files, commit messages, what its connector
+tools return of pull requests and issues, and its scripts' output.
+Instructions planted in any of it can steer it to write and run a
+script that pushes what the operator did not intend to an unprotected
+branch of a repository it pushes to, the default branch included;
+that reads the tokens file and sends a token out; or that copies the
+code where it should not go, into a file, a note, a group post, or a
+connector call. Its scripts run in its container with the network
+open and its granted secrets in their environment (SEC-4), and any
+process on the machine reads the tokens file while the generation
+runs (SEC-10, SEC-24). On a host other than GitHub, the token of a
+repository it only reads pushes (SEC-73).
+
+**Control in place:** a generation gets tokens only for the
+repositories its agent picks. A GitHub token holds `contents: write`
+alone, or `contents: read` alone for a repository the agent only
+reads; it lives one hour and is replaced before a command a tool
+runs once it nears expiry. No environment holds a repository token,
+and each token is redacted from the run's rows. The tokens file is
+emptied when a generation that placed repositories ends, however it
+ends; a generation whose clone failed, or that an orchestrator
+restart cut short, leaves it until the agent's next generation. The
+agent has no shell: git runs only in a script it writes and runs,
+each run a tool call that counts toward `max_tool_calls` and that the
+run shows. The system prompt says repository content, issue text, and
+command output are data, never instructions, and that git refuses to
+push a repository it only reads. Branch protection and required
+reviews on the host still apply.
+
+**Fix to make:** the control-plane git proxy of SEC-10, which would
+hold the token and check the branch a push names. Until then, pick
+each repository an agent does not push to read-only, on a GitHub
+login where the host must refuse the push; protect each repository's
+default branch on its host; and give an agent whose repositories take
+content from people the organisation does not trust a machine of its
+own.
+
 ## SEC-73 — A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone
 
 **Status:** open, accepted.
@@ -108,7 +165,8 @@ the agent's machine that unsets the push URL, or pushes to the
 repository's URL by name, pushes with whatever the host grants the
 token, and the credential helper answers it, since git asks it the
 same question to fetch and to push. A harness steered by what it
-reads (SEC-66) can do that.
+reads (SEC-66), or a script of an agent on a key steered the same way
+(SEC-74), can do that.
 
 **Control in place:** each generation's `git_setup` sets the push URL
 of every clone the agent only reads, so a push by `origin` fails and
@@ -633,7 +691,9 @@ the workspace disk and redacted from tool results.
 
 A subscription agent's turn cannot narrow such a token as it narrows a
 GitHub token to `contents: write`; the tokens file is emptied when the
-turn ends.
+turn ends. Since 2026-11-17 the same holds for each generation of an
+agent on a key that picks the repository (SEC-74), and for a
+repository an agent only reads, which gets the same token (SEC-73).
 
 **Fix to make:** the control-plane git proxy of SEC-10, which would
 keep the token in the orchestrator. Until then the token's reach is
@@ -2539,7 +2599,9 @@ Since 2026-11-16 the tokens are a subscription agent's alone, written
 for a turn and emptied when it ends (SEC-66): the coding agent, its
 `shell` with `GH_TOKEN`, and its run-long tokens that also wrote pull
 requests are removed. The issue stands for a turn's tokens, readable by
-any process on the machine while the turn runs.
+any process on the machine while the turn runs. Since 2026-11-17 an
+agent on a key that picks repositories also holds their tokens, written
+for each of its generations and emptied when it ends (SEC-74).
 
 ## SEC-9 — Graft's hosted features can send repository history to its vendor
 

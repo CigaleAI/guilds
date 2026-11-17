@@ -139,7 +139,7 @@ A subscription agent has no model: its harness is its model source
 ([Agents](../agents.md#model-source)). It names the harness, its
 model, and its effort in `harness`, `harness_model`, and
 `harness_effort`. It may pick repositories, which its turns work in
-([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
+([Repositories](repositories.md#what-a-generation-does-with-them)).
 
 - Each harness runs a subscription agent's turns: each generation of
   its run is one turn of the CLI in the agent's home, or in its one
@@ -361,7 +361,7 @@ harness). The CLI names a Cursor model starts under stay on the server.
 | `harness_model` | Its model, or null |
 | `harness_effort` | Its effort, or null |
 | `machine_harnesses` | The harness CLIs the agent's machine carries; null until its container first started |
-| `repositories` | The names of the repositories a subscription agent's turn clones: those the agent picks and can use, in its order |
+| `repositories` | The names of the repositories the agent's generations clone, on a key or a subscription: those it picks and can use, in its order |
 | `usable_repositories` | The names of the repositories the agent can use ([Repositories](repositories.md#an-agents-picks)) |
 | `harnesses` | One entry per harness, below |
 

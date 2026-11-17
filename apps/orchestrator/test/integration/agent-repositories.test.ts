@@ -84,9 +84,18 @@ test(
       const unpicked = await create("unpicked", { ...CODER, repositories: ["shop"], read_only_repositories: ["docs"] });
       assert.equal(unpicked.statusCode, 422, unpicked.body);
       assert.match(unpicked.body, /read_only_repositories: docs must also be in repositories/);
-      const plain = await create("plain", { model: TEST_MODEL, browser: false, repositories: ["shop"] });
-      assert.equal(plain.statusCode, 422, plain.body);
-      assert.match(plain.body, /repositories are only for subscription agents/);
+      const plain = await create("plain", {
+        model: TEST_MODEL,
+        browser: false,
+        repositories: ["shop", "docs"],
+        read_only_repositories: ["docs"],
+      });
+      assert.equal(plain.statusCode, 201, plain.body);
+      assert.deepEqual(plain.json().config.repositories, ["shop", "docs"], "an agent on a key picks repositories");
+      assert.deepEqual(plain.json().config.read_only_repositories, ["docs"]);
+      const plainOutside = await create("plain-stray", { model: TEST_MODEL, browser: false, repositories: ["billing"] });
+      assert.equal(plainOutside.statusCode, 422, plainOutside.body);
+      assert.match(plainOutside.body, /the agent cannot use billing/);
       const twice = await create("twice", { ...CODER, repositories: ["shop", "shop"] });
       assert.equal(twice.statusCode, 422, twice.body);
 
@@ -143,6 +152,8 @@ test(
       assert.deepEqual(await picksOf(agentId), ["docs"], "a gone pick the removal does not name stays");
       assert.deepEqual(await picksOf(String(reviewer.json().id)), ["site"]);
       assert.deepEqual((await configOf(String(reviewer.json().id))).read_only_repositories, ["site"], "the removed one is no longer read-only either");
+      const plainAfter = await configOf(String(plain.json().id));
+      assert.deepEqual([plainAfter.repositories, plainAfter.read_only_repositories], [["docs"], ["docs"]], "an agent on a key unpicks it too");
 
       // An agent that still reaches the name through its GitHub login keeps it when the guild's row goes.
       const otherShop = await app.inject({ method: "GET", url: `/api/guilds/${otherId}/repositories`, headers: READER });

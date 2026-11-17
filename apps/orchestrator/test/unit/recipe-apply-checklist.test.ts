@@ -158,13 +158,14 @@ test("a recipe's repositories add a check per repository, each asking for its UR
   assert.equal(listed.find((item) => item.id === "conn:github")?.setup, "Install the App.");
 });
 
-test("apply gives a subscription role its repositories, and no other role, nor a list that does not validate, any", () => {
+test("apply gives a role its repositories, on a key as on a subscription, and none for a list that does not validate", () => {
   const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
   const role = recipe.roles[0]!;
   role.config = { harness: "codex", repositories: ["web", "api"] };
   assert.deepEqual(configFromRecipeRole(role).repositories, ["web", "api"]);
-  role.config = { model: TEST_MODEL, repositories: ["web"] };
-  assert.deepEqual(configFromRecipeRole(role).repositories, []);
+  role.config = { model: TEST_MODEL, repositories: ["web"], read_only_repositories: ["web"] };
+  assert.deepEqual(configFromRecipeRole(role).repositories, ["web"]);
+  assert.deepEqual(configFromRecipeRole(role).read_only_repositories, ["web"]);
   role.config = { harness: "codex", repositories: ["web", "web"] };
   assert.deepEqual(configFromRecipeRole(role).repositories, []);
   role.config = { harness: "codex" };

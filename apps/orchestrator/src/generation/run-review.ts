@@ -49,8 +49,8 @@ export type HarnessCredential = Pick<HarnessInfo, "harness" | "label" | "secret"
 
 /**
  * A subscription agent's harness, model and effort, the harness CLIs its machine carries (null
- * before the machine first started), the repositories its turns clone (those it picks and can use,
- * in its order), the repositories it can use, and each harness's credentials.
+ * before the machine first started), the repositories any agent's generations clone (those it
+ * picks and can use, in its order), the repositories it can use, and each harness's credentials.
  */
 export type AgentHarness = {
   harness: Harness | null;

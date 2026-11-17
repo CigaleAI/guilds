@@ -3,7 +3,7 @@
 Every change a subscription agent's turn makes to a repository can be
 reviewed from its run. The platform takes **checkpoints**: snapshots of
 each working tree, uncommitted files included, around every turn of a
-subscription agent that works in repositories ([Repositories](repositories.md#what-a-subscription-agents-turn-does-with-them)).
+subscription agent that works in repositories ([Repositories](repositories.md#what-a-generation-does-with-them)).
 The difference between two checkpoints is the diff the operator
 reviews: what one harness turn changed.
 

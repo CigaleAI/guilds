@@ -579,7 +579,7 @@ test("a recipe repository no role lists warns as unused, one a role lists does n
   assert.deepEqual(unused(validateRecipe(recipe, ctx)), [["warning", "repositories.api"]]);
 });
 
-test("a role's repositories are names the recipe lists, on a subscription role, each once", () => {
+test("a role's repositories are names the recipe lists, each once, on a role on a key as on a subscription role", () => {
   const recipe = parseRecipe({
     ...(fixtureDeskRecipe() as Record<string, unknown>),
     repositories: [{ name: "api", purpose: "" }],
@@ -598,7 +598,9 @@ test("a role's repositories are names the recipe lists, on a subscription role, 
   role.config = { ...role.config, repositories: "api" };
   assert.deepEqual(found(), [["repositories.invalid", "error", path, "config.repositories must be a list of repository names, each once"]]);
   role.config = { ...role.config, model: keyModel, harness: null, repositories: ["api"] };
-  assert.deepEqual(found(), [["repositories.key", "warning", path, "config.repositories is only for a subscription role; apply leaves it out"]]);
+  assert.deepEqual(found(), [], "a role on a key works on repositories too");
+  role.config = { ...role.config, repositories: ["billing"] };
+  assert.deepEqual(found(), [["repositories.unknown", "error", path, "unknown repository billing; list it in the recipe's repositories"]]);
   role.config = { ...role.config, repositories: [] };
   assert.deepEqual(found(), []);
 });

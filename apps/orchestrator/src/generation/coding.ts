@@ -117,8 +117,9 @@ function repositoryChange(record: RunRepositoryChange): RunRepositoryChange {
 }
 
 /**
- * What a subscription agent's turn does around its CLI: the harness checked, and the turn's work
- * in the repositories its agent picks; and, outside a run, a turn's diff and the harness check an
+ * What a generation does in the repositories its agent picks, on a key or a subscription, and
+ * what a subscription agent's turn does around its CLI: the harness checked, and the turn's
+ * checkpoints in those repositories; and, outside a run, a turn's diff and the harness check an
  * operator asks for.
  */
 export class CodingRuns {
@@ -136,41 +137,55 @@ export class CodingRuns {
   }
 
   /**
-   * A subscription turn's repositories, the ones its agent picks, placed with tokens that push
-   * branches or read the ones it only reads, and the turn's start checkpoint of each; true at once
-   * for an agent that picks none.
+   * The repositories `agent`, whose run the generation `gen` is, picks, placed in its machine with
+   * tokens that push branches or read the ones it only reads, and kept on the generation's run
+   * record, whose end empties their tokens (`releaseRepositories`); true at once for an agent that
+   * picks none. False when placing them failed, and the run says why.
    */
-  async prepareTurnRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
-    if (!gen.agent.config.repositories.length) {
+  async prepareRepositories(gen: RunGeneration, agent: AgentRow, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
+    if (!agent.config.repositories.length) {
       return true;
     }
-    const repositories = await this.placeRepositories(gen, sandbox, tools);
+    const repositories = await this.placeRepositories(gen, agent, sandbox, tools);
     if (repositories === null) {
       return false;
     }
-    const names = repositories.map((row) => row.name);
-    await this.checkpoint(maintenanceRun(gen.runId, gen.agent, sandbox), "start", names, harnessTurnCallId(gen));
-    tools.run.code_repositories = names;
+    tools.run.code_repositories = repositories.map((row) => row.name);
     return true;
   }
 
   /**
-   * Places the repositories the generation's agent picks in its machine: a token for each one with
-   * a git provider, minted through it, that pushes branches or, for one the agent only reads,
-   * reads it (written under /run/guilds and added to the run's redaction values; a GitHub login
-   * whose installation GitHub refuses is retired as `installation_gone`), the agent's git
-   * identity, a clone of each one missing from the workspace, a fetch of each one there, and
-   * pushing turned off in each clone the agent only reads. Tokens that expire are replaced before
-   * each command once they near it. Null when a token or a clone failed, and the run says why; a
-   * fetch that failed is logged.
+   * A subscription turn's repositories, the ones its agent picks, prepared as any generation's
+   * are, and the turn's start checkpoint of each.
+   */
+  async prepareTurnRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
+    if (!(await this.prepareRepositories(gen, gen.agent, sandbox, tools))) {
+      return false;
+    }
+    const names = tools.run.code_repositories;
+    if (names.length) {
+      await this.checkpoint(maintenanceRun(gen.runId, gen.agent, sandbox), "start", names, harnessTurnCallId(gen));
+    }
+    return true;
+  }
+
+  /**
+   * Places the repositories `agent`, whose run the generation `gen` is, picks in its machine: a
+   * token for each one with a git provider, minted through it, that pushes branches or, for one
+   * the agent only reads, reads it (written under /run/guilds and added to the run's redaction
+   * values; a GitHub login whose installation GitHub refuses is retired as `installation_gone`),
+   * the agent's git identity, a clone of each one missing from the workspace, a fetch of each one
+   * there, and pushing turned off in each clone the agent only reads. Tokens that expire are
+   * replaced before each command once they near it. Null when a token or a clone failed, and the
+   * run says why; a fetch that failed is logged.
    */
   private async placeRepositories(
-    gen: SubscriptionGeneration,
+    gen: RunGeneration,
+    agent: AgentRow,
     sandbox: SandboxHandle,
     tools: GenerationTools,
   ): Promise<PickedRepository[] | null> {
     const { db, events } = this.services;
-    const { agent } = gen;
     const { repositories } = await loadAgentRepositories(db, agent);
     const tokens = db.repositoryTokens(repositories);
     const mint = async () => {
@@ -235,9 +250,9 @@ export class CodingRuns {
   }
 
   /**
-   * Ends a subscription turn in its `repositories`: takes the turn's end checkpoint, keeps on the
-   * run what the turn changed when it changed a repository, and empties the tokens file the
-   * credential helper answers from. A turn without repositories has nothing to end.
+   * Ends a subscription turn in its `repositories`: takes the turn's end checkpoint, and keeps on
+   * the run what the turn changed when it changed a repository. A turn without repositories has
+   * nothing to end.
    */
   async endTurnInRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, repositories: string[]): Promise<void> {
     if (!repositories.length) {
@@ -252,8 +267,16 @@ export class CodingRuns {
       const turn: RunTurnChange = { call_id: callId, generation: gen.generation, repos: changed };
       await db.mergeRunMetadata(gen.runId, { turn_changes: [...kept, turn] }, new Date());
     }
-    if (sandbox.files) {
-      await eraseRepositoryTokens(sandbox.files, gen.agent.id);
+  }
+
+  /**
+   * Empties `agent`'s tokens file once a generation that placed `repositories` ends, however it
+   * ends, so the credential helper answers no repository until the next generation writes it. A
+   * generation that placed none wrote none.
+   */
+  async releaseRepositories(agent: AgentRow, sandbox: SandboxHandle, repositories: string[]): Promise<void> {
+    if (repositories.length && sandbox.files) {
+      await eraseRepositoryTokens(sandbox.files, agent.id);
     }
   }
 

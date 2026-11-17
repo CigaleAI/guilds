@@ -228,11 +228,15 @@ the recipe records.
   read with `note_get`. A file that must enter every run is embedded
   with `![[org/<key>]]` ([Task](task.md)). Tasks name systems and
   outcomes, not namespaced tool ids.
-- **Subscription.** Every role that reads, changes, runs, and ships
-  code in git repositories is a subscription role, and so is any other
-  role the operator asks to run on their own harness subscription
-  ([Code work](coding/index.md)). A role on a key does no code work in
-  a repository. The coach writes no `config.model`, sets
+- **Subscription.** Every role that changes, runs, and ships code in
+  git repositories is a subscription role, and so is any other role
+  the operator asks to run on their own harness subscription
+  ([Code work](coding/index.md)). A role on a key whose work reads code
+  without changing it stays on its key and lists the repositories it
+  reads, as a subscription role does; its agent works in them with
+  scripts. A role that reads a repository without pushing to it also
+  lists it in `config.read_only_repositories`. For a subscription
+  role, the coach writes no `config.model`, sets
   `config.harness` to the one the operator named, else `claude-code`,
   which the operator may change at apply, and `cursor` or
   `antigravity` only for a role that lists repositories. It sets

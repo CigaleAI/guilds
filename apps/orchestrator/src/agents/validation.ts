@@ -344,13 +344,6 @@ function requireReadOnlyRepositories(
   return names;
 }
 
-/** Only a subscription agent, which has no model, works on repositories: a list on an agent on a key is refused. */
-function rejectRepositoriesOnKey(repositories: AgentConfig["repositories"], model: string | null): void {
-  if (repositories.length && model !== null) {
-    throw new AgentValidationError("repositories are only for subscription agents");
-  }
-}
-
 /** Whether a value is repositories an agent's config takes, as `validateAgentConfig` checks them. */
 export function isValidRepositoryList(value: unknown): value is AgentConfig["repositories"] {
   try {
@@ -450,7 +443,6 @@ function agentConfigFrom(settings: JsonObject): AgentConfig {
   rejectUnsoundModelSource(model, harness);
   const harnessModel = requireHarnessModel(filled.harness_model, harness);
   const repositories = requireRepositories(filled.repositories);
-  rejectRepositoriesOnKey(repositories, model);
   const config: AgentConfig = {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),

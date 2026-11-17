@@ -456,9 +456,11 @@ test("a subscription agent's repositories are a list of repository names, each o
   assert.throws(() => validateAgentConfig({ ...coding, repositories: ["shop", "shop"] }), /repositories: shop is listed twice/);
 });
 
-test("only a subscription agent picks repositories", () => {
+test("an agent on a key picks repositories, some of them read-only, as a subscription agent does", () => {
   const model = VALID_CONFIG.model;
-  assert.throws(() => validateAgentConfig({ model, repositories: ["shop"] }), /repositories are only for subscription agents/);
+  const config = validateAgentConfig({ model, repositories: ["shop", "docs"], read_only_repositories: ["docs"] });
+  assert.deepEqual(config.repositories, ["shop", "docs"]);
+  assert.deepEqual(config.read_only_repositories, ["docs"]);
   assert.deepEqual(validateAgentConfig({ model, repositories: [] }).repositories, []);
 });
 

@@ -58,9 +58,8 @@ flowchart TD
   their tools.
 - **secrets** are the [secrets](secrets.md) each role needs, by name.
 - **external** lists setup the operator does outside the platform.
-- **repositories** are the git repositories subscription roles work
-  in, by name and purpose. Each such role lists
-  the ones it works in. See [Repositories](coding/repositories.md).
+- **repositories** are the git repositories the roles work in, by
+  name and purpose. Each role that works in some lists them. See [Repositories](coding/repositories.md).
 - **design** records the reasoning behind the guild. It does not run.
 
 ### Placeholders that apply resolves
@@ -214,7 +213,7 @@ among them.
   [subscription agent](agents.md#model-source), whose
   [harness](coding/harnesses.md) is its model source: `claude-code`,
   `codex`, `cursor`, or `antigravity`; the operator may pick another at
-  apply. It is the only role that works in repositories
+  apply. Its harness's shell makes it the role that writes code
   ([Code work](coding/index.md)). It takes no model at apply, and none
   of the model loop's settings: `temperature`, `thinking_level`,
   `max_tokens`, `max_input_tokens`, and `keep_tool_result_generations`
@@ -228,8 +227,8 @@ among them.
 - `config.harness_effort` names the effort that model runs at, under
   the agent configuration's rule. It is optional; without it the model
   runs at its default effort.
-- `config.repositories` lists the repositories a subscription role
-  works in, by name, each once. Each name is one the recipe lists in
+- `config.repositories` lists the repositories a role works in, on a
+  key or on a subscription, by name, each once. Each name is one the recipe lists in
   `repositories`; another is the `repositories.unknown` error. It is
   optional; a role without it works in none. Apply gives it to the
   role's agent one repository at a time, as each repository's step
@@ -397,8 +396,8 @@ A connection whose server the box lacks is a blocking error:
 
 ### repositories
 
-`repositories` lists the git repositories the guild's subscription
-roles work in, by `name` and a one-line `purpose`.
+`repositories` lists the git repositories the guild's roles work in,
+by `name` and a one-line `purpose`.
 
 - `name` matches `^[a-z][a-z0-9_-]{0,62}$`. It is unique. It is the
   folder under `repos/` in the home of each agent whose role
@@ -461,7 +460,6 @@ findings `collection.conflict` and `machine.*`
 | `repositories.invalid` | error | A role's `config.repositories` is not a list of repository names, each once |
 | `repositories.unknown` | error | A role's `config.repositories` names a repository the recipe does not list |
 | `read_only_repositories.invalid` | error | A role's `config.read_only_repositories` is not a list of names of its `config.repositories`, each once |
-| `repositories.key` | warning | A role on a key lists repositories; apply leaves them out |
 | `model.unknown` | warning | `config.model` is not a known model; apply asks for one |
 | `model.not_connected` | warning | The model's provider is not connected for the organisation; apply asks for another |
 | `harness.unknown` | warning | `config.harness` is not one of the four harnesses; apply asks for one |

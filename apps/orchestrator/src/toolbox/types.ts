@@ -122,7 +122,7 @@ export type ToolRun = {
   harness_model: string | null;
   /** The effort the run's harness runs its model at, from its snapshot; null for the harness's default. */
   harness_effort: Effort | null;
-  /** The repositories a subscription turn works on, the ones its agent picks, by their folder under `repos/`. */
+  /** The repositories the generation placed, the ones its agent picks, by their folder under `repos/`. */
   code_repositories: string[];
 };
 
@@ -136,7 +136,7 @@ export type ToolHooks = {
   touch_browser: (() => void) | null;
   /** The upstream base and headers of the agent's DevTools relay; null without a browser. */
   cdp_target: (() => Promise<CdpTarget>) | null;
-  /** Runs before each `shell` command and harness poll: replaces repository tokens close to expiry. */
+  /** Runs before each sandbox command a tool runs and each harness poll: replaces repository tokens close to expiry. */
   before_command: (() => Promise<void>) | null;
   /** Saves values the agent produced as secrets of its organisation; null where the run cannot. */
   secret_store: AgentSecretStore | null;

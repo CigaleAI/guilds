@@ -40,7 +40,7 @@ flowchart TD
 - **Its own collections.** A collection that belongs to the guild
   starts read and written by its agents
   ([Collections](collections.md)).
-- **Repositories** its subscription agents work in
+- **Repositories** its agents work in
   ([Repositories](coding/repositories.md)).
 
 Notes and files belong to the organisation, not to a guild. Which

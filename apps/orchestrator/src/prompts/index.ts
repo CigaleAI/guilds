@@ -82,7 +82,7 @@ export type StandingCaps = {
   harness?: boolean;
   /** Whether that harness keeps its own system prompt and reads this one as rules beside it. Missing means off. */
   harnessRules?: boolean;
-  /** Whether a subscription agent's turns work in repositories it picks. Missing means off. */
+  /** Whether the agent's turns work in repositories it picks. Missing means off. */
   repositories?: boolean;
   /** Whether it only reads some of them. Missing means off. */
   readOnlyRepositories?: boolean;
@@ -253,6 +253,8 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
     no_pull_request_tool: pullRequestTool === null,
     read_only_repositories: caps.readOnlyRepositories === true,
     writable_repositories: caps.writableRepositories === true,
+    harness_repositories: repositories && caps.harness === true,
+    script_repositories: repositories && caps.harness !== true && caps.scripts,
     repositories,
     no_repositories: !repositories,
     harness_rules: caps.harnessRules === true,

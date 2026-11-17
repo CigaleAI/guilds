@@ -10,7 +10,7 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | [Organisation](concepts/organisations.md) | The ownership boundary: its guilds, machines, model keys, secrets, logins, and usage stay inside it. |
 | [Guild](concepts/guilds.md) | A standing team of agents with one group chat, shared notes, and shared collections. |
 | [Agent](concepts/agents.md) | One worker in one guild: a name, a focus, a model source, and tools. It sits on one machine. |
-| [Subscription agent](concepts/agents.md#model-source) | An agent with no model on a key: every turn runs its harness on the operator's own subscription. It alone does [code work](concepts/coding/index.md) in repositories. |
+| [Subscription agent](concepts/agents.md#model-source) | An agent with no model on a key: every turn runs its harness on the operator's own subscription. Its harness's shell makes it the agent that writes [code](concepts/coding/index.md). |
 | [Machine](concepts/machines.md) | One sandbox container, shared by several agents of one organisation. |
 | [Home](concepts/agent-home.md) | One agent's directory on its machine. |
 
@@ -71,4 +71,4 @@ The words used throughout guilds.run. Each one links to the page that explains i
 | --- | --- |
 | [Recipe](concepts/recipes.md) | A portable snapshot of a guild's configuration. It holds no credentials, no Memory, and no records, and it runs only when applied. |
 | [Harness](concepts/coding/harnesses.md) | The coding program a subscription agent runs every turn on, such as Claude Code, Codex, Cursor, or Antigravity. |
-| [Repository](concepts/coding/repositories.md) | A git repository a guild's subscription agents clone and work in. It is picked on a GitHub login or added by URL. |
+| [Repository](concepts/coding/repositories.md) | A git repository a guild's agents clone and work in, some of them read-only. It is picked on a GitHub login or added by URL. |

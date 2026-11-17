@@ -305,8 +305,8 @@ export class RunGenerator {
 
   /**
    * Sets the generation up and runs it, in model steps on a key or in a turn of the harness on a
-   * subscription; afterwards a subscription turn's end in its repositories and the workspace
-   * sizes are kept.
+   * subscription; afterwards a subscription turn's end in its repositories is kept, the tokens of
+   * the repositories the generation placed are emptied, and the workspace sizes are kept.
    */
   private async runGeneration(gen: Generation): Promise<void> {
     const { coding, workspace, generations, harness } = this.services;
@@ -324,6 +324,7 @@ export class RunGenerator {
       if (gen.source === "subscription") {
         await coding.endTurnInRepositories(gen, ready.sandbox, ready.tools.run.code_repositories);
       }
+      await coding.releaseRepositories(gen.agent, ready.sandbox, ready.tools.run.code_repositories);
       if (!generations.isCancelled(gen.runId)) {
         logOperationFailure(await workspace.recordSize(gen.runId, gen.agent, ready.sandbox), "warn");
       }
@@ -352,14 +353,12 @@ export class RunGenerator {
   }
 
   /**
-   * A subscription run whose agent picks repositories, or whose harness needs one, starts only when
-   * its agent picks one and can use each of them.
+   * A run whose agent picks repositories, or a subscription run whose harness needs one, starts
+   * only when its agent picks one and can use each of them.
    */
   private async isStartable(gen: Generation): Promise<boolean> {
-    if (gen.source === "key") {
-      return true;
-    }
-    const inRepositories = gen.agent.config.repositories.length > 0 || harnessNeedsRepository(gen.snapshot.harness);
+    const needsOne = gen.source === "subscription" && harnessNeedsRepository(gen.snapshot.harness);
+    const inRepositories = gen.agent.config.repositories.length > 0 || needsOne;
     return !inRepositories || this.canUseItsRepositories(gen);
   }
 
@@ -425,8 +424,8 @@ export class RunGenerator {
   }
 
   /**
-   * Whether the generation may take its first step: the workspace has room, and on a subscription
-   * the harness is ready and the repositories the turn works in are cloned.
+   * Whether the generation may take its first step: the workspace has room, the repositories its
+   * agent picks are placed, and on a subscription the harness is ready first.
    */
   private async isReady(gen: Generation, sandbox: SandboxHandle, tools: GenerationTools): Promise<boolean> {
     const { workspace, coding } = this.services;
@@ -434,7 +433,7 @@ export class RunGenerator {
       return false;
     }
     if (gen.source === "key") {
-      return true;
+      return coding.prepareRepositories(gen, gen.agent, sandbox, tools);
     }
     return (await coding.harnessReady(gen, tools.run)) && (await coding.prepareTurnRepositories(gen, sandbox, tools));
   }

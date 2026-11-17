@@ -260,11 +260,13 @@ agents, or the organisation's) that can no longer use it
 ### Tokens
 
 The App's private key and the installation id never leave the
-orchestrator. At each turn of a subscription agent that picks
+orchestrator. At each generation of an agent that picks
 repositories, it signs an
 App token (RS256, 9 minutes) and mints, per connection, an
 installation token limited to the repositories the agent picks that
-use that connection, valid one hour ([Repositories](../concepts/coding/repositories.md#tokens)).
+use that connection and it pushes to, with contents write, and one
+limited to those it only reads, with contents read, each valid one
+hour ([Repositories](../concepts/coding/repositories.md#tokens)).
 
 `guilds-git-credential` is the credential helper for every HTTPS
 host with `useHttpPath`, GitHub's included. It reads

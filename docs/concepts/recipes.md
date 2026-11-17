@@ -59,7 +59,7 @@ A recipe carries the design of a guild:
 - seed notes the Tasks rely on, with who may read and write them
 - the tools and connectors each role may use
 - the secrets each role needs, by name only
-- the repositories subscription roles work in, by name only
+- the repositories the roles work in, by name only
 - setup steps the operator does outside the platform
 
 It never carries credentials, Memory, collection records, browser
@@ -234,8 +234,9 @@ What capture writes:
 - The guild's repositories are captured by name with an empty
   `purpose`, followed by each other repository an agent picks, such as
   one picked on a GitHub login. Their URLs, branches, and GitHub
-  connections stay with the guild. Each subscription role's
-  `config.repositories` is the list its agent picks, in its order.
+  connections stay with the guild. Each role's `config.repositories`
+  is the list its agent picks, in its order, and its
+  `config.read_only_repositories` the ones of them it only reads.
 - The guild's own collections are written as `scope: "guild"`.
 - Every organisation collection the guild reaches is written as
   `scope: "org"`: the organisation's row, the guild's row, or a row of

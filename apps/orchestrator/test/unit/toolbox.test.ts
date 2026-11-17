@@ -388,6 +388,31 @@ test("run_command cancel raises interrupted", async () => {
   assert.equal(tracked[tracked.length - 1], null);
 });
 
+test("a tool's sandbox command runs once the run's before_command hook has run", async () => {
+  const { executeCommand } = await import("../../src/toolbox/shell.js");
+  const order: string[] = [];
+  const ctx = toolFixture({
+    run_id: "r_1",
+    agent_id: "a_1",
+    guild_id: "guild_1",
+    sandbox: {
+      commands: {
+        async run(command) {
+          order.push(`run ${command}`);
+          return { exit_code: 0, logs: { stdout: [], stderr: [] } };
+        },
+        async interrupt() {},
+      },
+    },
+    secrets: {},
+    before_command: async () => {
+      order.push("before_command");
+    },
+  });
+  await executeCommand(ctx.run, ctx.hooks, "git fetch");
+  assert.deepEqual(order, ["before_command", "run git fetch"]);
+});
+
 test("browser_encode_spec is helper command", () => {
   const command = encodeSpec({ op: "navigate", url: "https://example.com" });
   assert.ok(command.startsWith(`python3 ${HELPER} `));

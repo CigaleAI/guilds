@@ -176,19 +176,13 @@ function unusedRepositories(recipe: RecipeDocument): RecipeFinding[] {
     );
 }
 
-/**
- * A role's repositories apply cannot give its agent: not a list of names each once, on a role on
- * a key, or naming a repository the recipe does not list.
- */
+/** A role's repositories apply cannot give its agent: not a list of names each once, or naming a repository the recipe does not list. */
 function repositoryFindings(role: RecipeRole, recipe: RecipeDocument): RecipeFinding[] {
   const listed = role.config.repositories;
   const path = `roles.${role.role}.config.repositories`;
   if (listed === undefined || listed === null) return [];
   if (!isValidRepositoryList(listed)) {
     return [finding("repositories.invalid", "error", path, "config.repositories must be a list of repository names, each once")];
-  }
-  if (listed.length && !roleRunsOnSubscription(role)) {
-    return [finding("repositories.key", "warning", path, "config.repositories is only for a subscription role; apply leaves it out")];
   }
   const known = new Set(recipe.repositories.map((repository) => repository.name));
   return listed

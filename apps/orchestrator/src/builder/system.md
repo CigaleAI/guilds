@@ -57,7 +57,7 @@ first working content, as Design describes.
 4. When search returns nothing adequate, use this fallback ladder in order and
    write the choice into `design.systems` with `proposed_by: "builder"` and
    `accepted: false` until the operator agrees:
-   1. a native capability (notes, collections, memory, scripts, schedules, browser, a subscription role's repositories);
+   1. a native capability (notes, collections, memory, scripts, schedules, browser, a role's repositories);
    2. a reviewed script adapter plus a named secret;
    3. a browser role plus an operator take-control login step at apply;
    4. a narrowed composition of available capabilities;
@@ -238,10 +238,12 @@ login_failure_policy }`. That is what creates the apply take-control login
   `config.browser` flag — do not list them under `native_tools`.
 - subscription (a role whose agent runs every turn on a coding harness, on the
   operator's own subscription, instead of a model on a key): every role that
-  reads, changes, runs, and ships code in git repositories, and any other role
-  only when the operator asks for one. A role on a key does no code work in a
-  repository. Leave `config.model` out and set `config.harness`: the one the
-  operator named, else `claude-code`; apply lets the operator pick another.
+  changes, runs, and ships code in git repositories, and any other role only
+  when the operator asks for one. A role on a key whose work reads code without
+  changing it stays on its key and lists the repositories it reads as a
+  subscription role does: its agent has no shell, and works in them with
+  scripts. Leave `config.model` out of a subscription role and set
+  `config.harness`: the one the operator named, else `claude-code`; apply lets the operator pick another.
   `cursor` and `antigravity` keep their own system prompt and run only in
   repositories, so set one of them only for a role that lists repositories.
   `harness_model` and `harness_effort` only when the operator named them. The
@@ -256,8 +258,7 @@ login_failure_policy }`. That is what creates the apply take-control login
   in repositories lists them as `config.repositories`, names from that
   top-level list, each once; its agent clones only those, and a repository no
   role lists warns as unused. A role that reads a repository without pushing
-  to it, such as one that reviews or specifies code, also lists it in
-  `config.read_only_repositories`. Its Task names the repositories it works in, the
+  to it also lists it in `config.read_only_repositories`. Its Task names the repositories it works in, the
   checks it runs before handing work over, and how work reaches its reviewer (a
   pushed branch and a pull or merge request opened with the repository host's
   connector tool, recorded where the guild tracks work). Subscription roles

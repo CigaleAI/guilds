@@ -125,9 +125,13 @@ reach you as rules beside it; for the guild's work, follow them.
 You work in the git repositories State `repositories` lists, each with
 the `path` of its working tree in your home, its `default_branch`, and
 `read_only`. Before each of your turns the platform clones the ones
-missing, fetches the others, and gives git a token for them. Your turn
+missing, fetches the others, and gives git a token for them.<capability name="harness_repositories"> Your turn
 starts in the working tree when you have one repository, and in your
-home when you have several.
+home when you have several.</capability>
+<capability name="script_repositories">
+You have no shell: a script runs git in them, reads their files, and
+runs their code (`<tool>script_run</tool>`).
+</capability>
 
 <capability name="read_only_repositories">- A repository State marks `read_only` is one you only read: git
   refuses to push it. Fetch it for its latest commits; never commit to

@@ -14,8 +14,14 @@ for them; the harness edits, runs, commits, and pushes with its own
 tools, and the turn's changes are kept for
 [review](reviewing-changes.md).
 
-An agent on a model key does no code work in a repository: it picks
-no repositories and its runs clone none.
+An agent on a model key can pick repositories too, as one whose work
+reads code without writing it does. Before each of its generations
+the platform clones or fetches them into its home, as for a
+subscription agent; it has no shell, and works in them with its
+scripts ([Repositories](repositories.md#what-a-generation-does-with-them)).
+Either kind can pick a repository read-only: it gets the code, and no
+means to push to it
+([Read-only repositories](repositories.md#read-only-repositories)).
 
 ## Why it exists
 
@@ -52,7 +58,7 @@ flowchart TD
    agent picks one, and in its home when it picks several. It works
    on a branch of its own, commits, and pushes; git's credential helper
    answers the push with the turn's token
-   ([What a subscription agent's turn does with them](repositories.md#what-a-subscription-agents-turn-does-with-them)).
+   ([What a generation does with them](repositories.md#what-a-generation-does-with-them)).
 4. It opens the branch's pull request with the repository host's
    connector tool when the run offers one, such as the
    [GitHub](../../tools-and-connectors/github.md) connector's
@@ -67,14 +73,16 @@ for this turn.
 
 ### What the agent is told
 
-A subscription agent that picks repositories reads a `repositories`
-part in its Guidelines
+An agent that picks repositories reads a `repositories` part in its
+Guidelines
 ([System prompt](../system-prompt.md#capability-parts-of-the-guidelines)).
 It says:
 
 - which repositories State lists, each with the path of its working
-  tree, its default branch, and whether it only reads it, and where
-  the turn starts;
+  tree, its default branch, and whether it only reads it; on a
+  subscription, where the turn starts; on a key, that it has no shell
+  and a script runs git in them, reads their files, and runs their
+  code;
 - for a repository it only reads, that git refuses to push it, and to
   fetch it and never commit to it;
 - in any other, to work on a branch named `agent/<its name>/<topic>`,
@@ -205,7 +213,7 @@ own, and a **Changes** panel under the transcript
 
 | Rule | Value or behaviour |
 | --- | --- |
-| Who works in repositories | A subscription agent alone; a list on an agent on a key is refused |
+| Who works in repositories | Any agent that picks some: a subscription agent with its harness's shell, an agent on a key with its scripts |
 | Harness | Required on a subscription agent: `claude-code`, `codex`, `cursor`, or `antigravity` |
 | Repository on Cursor or Antigravity | Required on every create and update; a run of one whose repositories are all gone fails at start |
 | Machine minimum | 2 CPUs and 4 GiB, with the harness in the machine's image |
@@ -229,7 +237,7 @@ The keys live in the agent's `config` ([Agents](../agents.md#configuration-keys)
 | `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null | With a model: 422 `harness is for a subscription agent, which has no model`. Any other value: 422 `harness must be one of: claude-code, codex, cursor, antigravity`. A harness the box turns off, unless the agent is already on it: 422 `<Harness> is turned off on this box: pick another harness in the agent's Settings` ([Harnesses](harnesses.md)) |
 | `harness_model` | a model name, or null | Needs a `harness` ([Harnesses](harnesses.md#model-and-effort)) |
 | `harness_effort` | an effort, or null | Needs a `harness`, and must be one the model runs at ([Harnesses](harnesses.md#model-and-effort)) |
-| `repositories` | repository names | Only on a subscription agent: 422 `repositories are only for subscription agents` ([An agent's picks](repositories.md#an-agents-picks)) |
+| `repositories` | repository names | On any agent; each one it can use ([An agent's picks](repositories.md#an-agents-picks)) |
 | `read_only_repositories` | names of `repositories` | The ones the agent only reads: 422 `read_only_repositories: <names> must also be in repositories` for a name `repositories` does not list ([Read-only repositories](repositories.md#read-only-repositories)) |
 | `secret_aliases` | variable name to secret name | Points the harness's token variable at a secret of another name ([Secrets](../secrets.md)) |
 
@@ -264,6 +272,10 @@ At every generation of a subscription agent's run, in this order:
 The turn's end checkpoint is taken when the turn ends, however it ends
 ([Reviewing changes](reviewing-changes.md)).
 
+A generation of an agent on a key that picks repositories runs step 2
+before the machine is woken, then, once the machine is up and its
+workspace has room, step 5 without the checkpoint.
+
 ### Policy
 
 The organisation policy's `maxSubscriptionAgents` bounds how many of
@@ -279,8 +291,8 @@ remaining `subscription_agents`.
 | Path | Holds |
 | --- | --- |
 | `apps/orchestrator/src/coding/` | Harnesses (`harnesses.ts`), the model catalogue (`harness-models.ts`), repositories (`repositories.ts`), the repositories an agent can use and picks (`agent-repositories.ts`), a guild's repositories and their GitHub logins (`guild-repositories.ts`), repository tokens and clone errors (`git.ts`, `github-provider.ts`, `access-token-provider.ts`) |
-| `apps/orchestrator/src/generation/generate.ts` | The repository check before the machine is woken, and the order of the checks |
-| `apps/orchestrator/src/generation/coding.ts` | What a subscription turn does around its CLI: the harness check, the repositories' tokens and clone, and the turn checkpoints; and the turn diff and harness check an operator asks for |
+| `apps/orchestrator/src/generation/generate.ts` | The repository check before the machine is woken, the order of the checks, and the repositories of an agent on a key placed before its first step |
+| `apps/orchestrator/src/generation/coding.ts` | What a generation does in its agent's repositories, their tokens, clone and fetch, and what a subscription turn does around its CLI: the harness check and the turn checkpoints; and the turn diff and harness check an operator asks for |
 | `apps/orchestrator/src/generation/harness-loop.ts` | One harness turn of a run |
 | `apps/orchestrator/src/generation/run-review.ts` | A subscription agent's harness view and a turn's changes |
 | `apps/orchestrator/src/toolbox/harness-setup.ts`, `harness-ops.ts`, `harness-result.ts` | The harness checks, the harness ops, and their results |
@@ -288,7 +300,7 @@ remaining `subscription_agents`.
 | `apps/orchestrator/src/http/coding-routes.ts` | Repository, harness, and turn diff routes |
 | `apps/orchestrator/src/prompts/system.md` | The `repositories` part of the Guidelines |
 | `runtime/guilds-harness` | The harness helper and its drivers |
-| `runtime/guilds-code` | Git setup, checkpoints, diffs, and sizes in the sandbox |
+| `runtime/guilds-code` | Git setup, clones, fetches, the push URL of a read-only clone, checkpoints, diffs, and sizes in the sandbox |
 | `apps/web/src/features/agent/CreateStandardAgent.tsx`, `AgentSteps.tsx` | **Create an agent** |
 | `apps/web/src/features/agent/harness.ts` | Harness problems and token choices |
 | `apps/web/src/features/agent/settings/HarnessFields.tsx`, `HarnessReadiness.tsx`, `ModelSourceField.tsx` | The model source, the harness picker, and the Harness section |

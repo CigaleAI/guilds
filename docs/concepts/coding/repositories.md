@@ -1,14 +1,16 @@
 # Repositories
 
-A guild's repositories are the git repositories its subscription
-agents can work in ([Code work](index.md)). Each subscription agent
+A guild's repositories are the git repositories its agents can work
+in ([Code work](index.md)). Any agent, on a key or on a subscription,
 picks the ones it works on, in its config's `repositories`, and the
-ones of them it only reads, in `read_only_repositories`. Each turn
-clones the ones it picks into the agent's own
-[home](../agent-home.md), and the [harness](harnesses.md) runs there.
-A subscription agent on Cursor or Antigravity needs at least one
-before it can run; one on Claude Code or Codex that picks none works
-in its home. An agent on a key picks none.
+ones of them it only reads, in `read_only_repositories`. Picking is
+optional. Before each generation the platform clones the ones it picks
+into the agent's own [home](../agent-home.md), or fetches them when
+they are there. A subscription agent's [harness](harnesses.md) works
+in them with its own shell; an agent on a key, which has no shell,
+works in them with its scripts. A subscription agent on Cursor or
+Antigravity needs at least one before it can run; one on Claude Code
+or Codex that picks none works in its home.
 
 A repository comes from one of two places. It is picked on a
 [GitHub](../../tools-and-connectors/github.md) login, under **Tools**,
@@ -28,8 +30,10 @@ with the host's connector tools, such as the GitHub connector's
 
 ## Why it exists
 
-The repositories belong to the guild, so its subscription agents can
-work on the same code, and each agent picks the ones its work needs. An
+The repositories belong to the guild, so its agents can work on the
+same code, and each agent picks the ones its work needs: an agent
+that writes the code pushes to them, and one that only reads the code
+gets it without a means to push. An
 agent that reviews the site does not clone the shop, and its runs get
 no token for it. Each agent has its own clone, so agents never edit
 each other's files. Work moves between them as branches on the remote
@@ -59,16 +63,17 @@ stays picked when it can no longer use it, as after its login
 disconnects; its runs then fail at start, naming it, until it comes
 back or is unpicked.
 
-### What a subscription agent's turn does with them
+### What a generation does with them
 
-A subscription agent's turn works in the repositories its agent picks,
-in its harness's CLI. At each generation the run checks the agent's
-picks first: one it can no longer use fails the run with
-`coding.repositories_gone`, naming it. An agent that picks none skips
-the rest, and its turn starts in its home; on Cursor or Antigravity,
-which need a repository, the run fails instead with
-`coding.repositories_missing`. Then, once the harness
-check passes, for each repository it picks:
+Every generation of an agent that picks repositories, on a key or on a
+subscription, places them on its machine before its first step. The
+run checks the agent's picks first: one it can no longer use fails the
+run with `coding.repositories_gone`, naming it. An agent that picks
+none skips the rest; a subscription agent's turn then starts in its
+home, and on Cursor or Antigravity, which need a repository, the run
+fails instead with `coding.repositories_missing`. Then, once a
+subscription agent's harness check passes, for each repository the
+agent picks:
 
 1. **Tokens.** Each repository with a git provider gets its token
    from that provider. For each GitHub login the repositories use, the
@@ -88,33 +93,45 @@ check passes, for each repository it picks:
    ([Read-only repositories](#read-only-repositories)). The
    orchestrator never runs git in its own process: a repository's
    hooks and configuration are the agent's.
-3. **Turn start checkpoint** of each one's working tree, under the
-   turn's call id ([Reviewing changes](reviewing-changes.md#checkpoints)).
+3. **Turn start checkpoint** of each one's working tree, on a
+   subscription agent's turn, under the turn's call id
+   ([Reviewing changes](reviewing-changes.md#checkpoints)).
 
-The CLI starts in the repository's working tree when the agent picks
-one, and in its home when it picks several. It branches, commits, and
-pushes with its own tools: git's credential helper answers the push
-with the turn's token. The CLI's environment never holds `GH_TOKEN`
-or `GITHUB_TOKEN`, nor any repository token. Tokens that near their
-expiry are replaced before each poll of the turn.
+A subscription agent's CLI starts in the repository's working tree
+when the agent picks one, and in its home when it picks several. It
+branches, commits, and pushes with its own tools: git's credential
+helper answers the push with the turn's token. The CLI's environment
+never holds `GH_TOKEN` or `GITHUB_TOKEN`, nor any repository token.
+Tokens that near their expiry are replaced before each poll of the
+turn.
 
-When the turn ends, however it ends, the run takes the turn's end
-checkpoint, records what the turn changed in each repository it
-changed ([Reviewing changes](reviewing-changes.md#refs)), and empties
-the agent's tokens file, so the credential helper answers no
-repository between turns.
+An agent on a key has no shell. It reads the repositories and runs git
+in them with the scripts it writes and runs (`script_run`), and shares
+a file from them with its file tools. git's credential helper answers
+its scripts' git as it answers a harness. Tokens that near their
+expiry are replaced before each command one of its tools runs. Its
+generations take no checkpoints: the run records no turn changes for
+it.
 
-The system prompt of a subscription agent that picks repositories says
-which ones it has and where, where its turn starts, how it branches,
-commits and pushes, and how its pull request is opened
+When the generation ends, however it ends, a subscription agent's
+turn takes its end checkpoint and records what the turn changed in
+each repository it changed
+([Reviewing changes](reviewing-changes.md#refs)). Then the agent's
+tokens file is emptied, so the credential helper answers no
+repository between generations.
+
+The system prompt of an agent that picks repositories says which ones
+it has and where, which of them it only reads, how it works in them (a
+subscription agent's turn starts in them; an agent on a key reads that
+a script runs git in them), how it branches, commits and pushes the
+others, and how its pull request is opened
 ([System prompt](../system-prompt.md#capability-parts-of-the-guidelines)).
 
 ### Read-only repositories
 
-An agent reads some of its repositories without pushing to them: a
-reviewer reads the code it reviews, a writer of specs reads the code
-it specifies. `read_only_repositories` lists them, each one of the
-agent's `repositories`. Such a repository is cloned and fetched like
+An agent can read some of its repositories without pushing to them.
+`read_only_repositories` lists them, each one of the agent's
+`repositories`. Such a repository is cloned and fetched like
 the others, and the agent is given no means to push to it:
 
 - on GitHub, its token holds contents read alone, so GitHub refuses a
@@ -138,11 +155,12 @@ host, under that connector's own login and bindings, never with a
 repository token. For a GitHub repository it is the GitHub connector's
 `create_pull_request`, which a subscription agent reaches through the
 orchestrator's MCP server like any of its Guilds tools
-([Tools in a run](../../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)).
-Like every writing tool it starts Off. A subscription agent whose run
-offers it reads its name, as its harness calls it, in its system
-prompt. One whose run offers none, or whose repositories are on a host
-without a connector, reads that the pushed branch ends its part.
+([Tools in a run](../../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)),
+and an agent on a key calls as any of its tools. Like every writing
+tool it starts Off. An agent whose run offers it reads its name, as
+its run calls it, in its system prompt. One whose run offers none, or
+whose repositories it pushes to are on a host without a connector,
+reads that the pushed branch ends its part.
 
 ### Git identity
 
@@ -167,8 +185,8 @@ the one the host asks for with that kind of token:
 | Gitea, Forgejo | An access token with repository write | The account's username |
 | Azure DevOps | A personal access token with Code read and write | Any name that is not empty |
 
-The orchestrator reads the secret's value when a subscription agent's
-generation starts. A changed value reaches the next generation. The value is not
+The orchestrator reads the secret's value when the generation of an
+agent that picks the repository starts. A changed value reaches the next generation. The value is not
 added to the agents' environment unless the secret is also granted to
 them. The token never expires on the box's side and is never
 refreshed; the host's own expiry, when the token has one, still
@@ -177,8 +195,8 @@ applies.
 Only a member who manages the secret may add a repository with it:
 an organisation owner or admin, or a member for a secret granted only
 in guilds they see ([Secrets](../secrets.md)). The token reaches every
-subscription agent of the guild that picks the repository through git, so
-the rule is the one that guards changing the secret.
+agent of the guild that picks the repository through git, so the rule
+is the one that guards changing the secret.
 
 ### Removing a repository
 
@@ -203,9 +221,9 @@ The guild's **Settings** tab has two parts for code work:
   commits. Its hint reads "A verified email on the GitHub account that
   owns the Vercel project (Hobby: the account owner). Empty uses each
   agent's platform address." It is saved with **Save**.
-- **Repositories**: the extra git URLs the guild's subscription agents
-  can pick. Each agent that picks one clones it into `repos/<name>` in
-  its home, at its next turn. They sit under the line "Other git
+- **Repositories**: the extra git URLs the guild's agents can pick.
+  Each agent that picks one clones it into `repos/<name>` in its home,
+  at its next generation. They sit under the line "Other git
   repositories, added by URL." Each row
   shows the name, URL, and default branch, a tag, "anonymous",
   "GitHub · `<account>`", "`<account>` disconnected", or
@@ -275,7 +293,7 @@ above, unticked.
 | Rule | Value or behaviour |
 | --- | --- |
 | Name | `^[a-z][a-z0-9_-]{0,62}$`, unique in the guild; also the folder under `repos/` |
-| An agent's picks | Only on a subscription agent; each a repository it can use, once; a pick it can no longer use stays until it is unpicked; at least one on a subscription agent on Cursor or Antigravity |
+| An agent's picks | On any agent, optional; each a repository it can use, once; a pick it can no longer use stays until it is unpicked; at least one on a subscription agent on Cursor or Antigravity |
 | URL | `https` on any host, without credentials, query, or fragment; SSH is refused |
 | Credential | One at most: a GitHub login, or an access token's secret and username |
 | With a GitHub login | `https://github.com/<owner>/<repository>`, reachable by that login's installation |
@@ -289,7 +307,8 @@ above, unticked.
 | GitHub token permissions | Contents write alone; contents read alone for a repository the agent only reads |
 | Read-only repositories | Some of the agent's picks, each once; cloned and fetched, with a push URL that refuses every push |
 | Fetch | Each generation fetches every clone whose `origin` is the repository's URL; a failed fetch leaves the clone as it was and is logged |
-| Tokens between turns | A subscription agent's tokens file is emptied when its turn ends |
+| Tokens between generations | The agent's tokens file is emptied when a generation that placed repositories ends |
+| Turn changes | Recorded for a subscription agent's turns; an agent on a key's generations record none |
 | Commit author email | Empty, or one email address of at most 254 characters, not on a `.invalid` domain |
 | Removing | Unpicks it from each agent that can no longer use it; leaves existing clones in place |
 
@@ -297,10 +316,9 @@ above, unticked.
 
 ### Storage
 
-`agents.config.repositories` holds the names a subscription agent
-picks, in order; it is empty on an agent on a key.
-`agents.config.read_only_repositories` holds those of them it only
-reads ([Agents](../agents.md#reference)).
+`agents.config.repositories` holds the names an agent picks, in
+order. `agents.config.read_only_repositories` holds those of them it
+only reads ([Agents](../agents.md#reference)).
 
 `guild_repositories`:
 
@@ -447,11 +465,14 @@ helper follows. The agent's own git configuration cannot replace it,
 for any HTTPS host.
 
 A harness gets no repository token in its environment
-([Harness environment](harnesses.md#harness-environment)).
+([Harness environment](harnesses.md#harness-environment)), and an
+agent on a key's scripts get none in theirs.
 
-Before each poll of a subscription agent's turn, a token within 10 minutes of
-expiry is replaced and rewritten. When a subscription agent's turn
-ends, the tokens file is rewritten as `{ repositories: {} }`.
+Before each poll of a subscription agent's turn, and before each
+sandbox command a tool of an agent on a key runs, a token within 10
+minutes of expiry is replaced and rewritten. When a generation that
+placed repositories ends, the tokens file is rewritten as
+`{ repositories: {} }`.
 
 The generation-start error `repository.token` covers:
 
@@ -475,8 +496,6 @@ The generation-start error `repository.token` covers:
 `config.repositories` is a list of repository names, each once
 ([Agents](../agents.md#reference)). A create or a reconfigure is 422:
 
-- with a list on an agent on a key: "repositories are only for
-  subscription agents";
 - with a value that is not a list: "repositories must be a list of
   repository names"; with an item that is not a repository name:
   "repositories: `<item>` is not a repository name"; with a name twice:
@@ -493,8 +512,9 @@ item that is not a repository name, a name twice, or a name
 `repositories` does not list: "read_only_repositories: `<names>` must
 also be in repositories".
 
-The generation of a subscription agent that picks repositories, or
-whose harness needs one, fails at start, before the machine wakes:
+The generation of an agent that picks repositories, or of a
+subscription agent whose harness needs one, fails at start, before the
+machine wakes:
 
 - with `coding.repositories_gone` while the agent picks a repository
   it can no longer use: "this agent picks `<names>`, which it can no
@@ -504,9 +524,9 @@ whose harness needs one, fails at start, before the machine wakes:
   Antigravity: "this agent has no repository: pick one in its Settings under
   Repositories, then send again".
 
-`GET /api/agents/:id/harness` lists `repositories`, the names a
-subscription agent's turn clones (those the agent picks and can use, in its order), and
-`usable_repositories`, the names it can use
+`GET /api/agents/:id/harness` lists, for any agent, `repositories`,
+the names its generations clone (those the agent picks and can use, in
+its order), and `usable_repositories`, the names it can use
 ([Harnesses](harnesses.md#reference)).
 
 ### Identity and clone
@@ -535,7 +555,7 @@ git wanted credentials, the error says which case it is:
 
 ### State
 
-The State of a subscription agent that picks repositories carries `repositories`, the ones it picks and can use,
+The State of an agent that picks repositories carries `repositories`, the ones it picks and can use,
 in its config's order: `[{ name, path, default_branch, read_only }]`,
 where `path` is `/home/<agent id>/repos/<name>` and `read_only` is true
 for one it only reads. Live git state is not
@@ -561,8 +581,8 @@ repositories and the GitHub logins they use, and
 `retireInstallationGone`, which retires a login whose installation
 GitHub refused, while its repositories are listed and while a run's
 tokens are minted),
-`apps/orchestrator/src/generation/coding.ts` (a subscription turn's
-tokens, clones, and checkpoints),
+`apps/orchestrator/src/generation/coding.ts` (a generation's tokens
+and clones, and a subscription turn's checkpoints),
 `apps/orchestrator/src/mcp/connections.ts` (the GitHub login an
 operator sees),
 `apps/orchestrator/src/guilds/validation.ts` (the commit author

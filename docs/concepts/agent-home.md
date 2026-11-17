@@ -3,7 +3,7 @@
 Every agent has a home: its own folder on its [machine](machines.md).
 The home keeps what the agent builds up between runs: its
 [scripts](scripts.md), its [browser](browser.md) profile and logins,
-a subscription agent's repositories, caches, and toolchains. The machine's
+the repositories it picks, caches, and toolchains. The machine's
 container comes and goes, but the home stays.
 
 Every command an agent runs starts in its home. The operator reaches

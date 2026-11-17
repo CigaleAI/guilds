@@ -28,8 +28,13 @@ There are two kinds of agent, by their model source:
   Antigravity only for an agent with a repository. Each
   generation of its run is one turn of the harness, with the
   harness's own tools and the platform's tools it is offered
-  ([Model source](#model-source)). It alone does code work, in the
-  guild's repositories it picks ([Code work](coding/index.md)).
+  ([Model source](#model-source)). Its harness's shell makes it the
+  agent that writes code.
+
+Either kind may pick among the guild's repositories, some of them
+read-only; its generations clone them into its home
+([Code work](coding/index.md)). An agent on a key has no shell, and
+works in them with its scripts.
 
 ## How it works
 
@@ -94,7 +99,7 @@ run's next generation resumes the same session. A subscription agent:
 - works in the repositories it picks, if any: its turn clones them,
   starts in its one repository, and pushes branches through git's
   credential helper with a token that pushes alone
-  ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them));
+  ([Repositories](coding/repositories.md#what-a-generation-does-with-them));
 - records each turn's tokens on its reply, at no price
   ([Usage](usage.md#cost-of-a-harness-turn)), and stops a turn after
   its **Max turn minutes**.
@@ -325,7 +330,7 @@ saves.
 | Wake triggers | at most 500 characters |
 | Secret aliases | at most 32 |
 | Subscription agent | no model; a harness, and on Cursor or Antigravity a repository; loop settings at their defaults; each generation one turn of its harness, offered the platform's tools through the orchestrator's MCP server |
-| Repositories | only on a subscription agent; each one the agent can use ([Repositories](coding/repositories.md)) |
+| Repositories | on any agent, optional; each one the agent can use, some of them read-only ([Repositories](coding/repositories.md)) |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation; null only for a subscription agent |
 | Rename | refused while the agent generates, or while its guild is being deleted |
@@ -364,7 +369,7 @@ the agent.
 | `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null; only without a model | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_effort` | effort or null; needs a harness | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
-| `repositories` | list of repository names, each once, that the agent can use; only on a subscription agent | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
+| `repositories` | list of repository names, each once, that the agent can use | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
 | `read_only_repositories` | list of names of `repositories`, each once, that the agent only reads | `[]` | [Read-only repositories](coding/repositories.md#read-only-repositories) |
 | `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
 | `scripting` | boolean | `true` | [Scripts](scripts.md) |
@@ -400,8 +405,8 @@ Native tools come from bindings (instance → organisation → guild →
 agent) and sandbox environment values from secret grants, not from
 this JSON ([Access](access.md), [Secrets](secrets.md)). A login's
 settings, such as the folder a Drive login reads or the repositories a
-GitHub login picks, live on that login in Tools; a subscription agent picks
-among them, and among its guild's repositories, in `repositories`. The browser,
+GitHub login picks, live on that login in Tools; an agent picks among
+them, and among its guild's repositories, in `repositories`. The browser,
 script (when `scripting` is off), and memory (when `memory` is off)
 tools follow their flags, not only the bindings.
 

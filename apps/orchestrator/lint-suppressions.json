@@ -540,9 +540,6 @@
   "src/toolbox/shell.ts": {
     "limits/silent-catch": {
       "count": 1
-    },
-    "max-depth": {
-      "count": 2
     }
   },
   "src/typesafe/client.ts": {

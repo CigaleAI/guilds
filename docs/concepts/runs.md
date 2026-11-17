@@ -450,9 +450,9 @@ and credentialed
 ([Harnesses](coding/harnesses.md#credentials-and-errors),
 [Code work](coding/index.md#generation-start-checks)). Its tools
 are narrowed to the agent's live bindings as a model's are; no model
-credential is resolved. One whose agent picks repositories has them
-prepared before its turn
-([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them)).
+credential is resolved. A run whose agent picks repositories, on a
+key or on a subscription, has them prepared before its first step
+([Repositories](coding/repositories.md#what-a-generation-does-with-them)).
 
 It loads every payload in order and repeats the loop up to
 `max_steps` times. Each step filters every tool result through the
@@ -505,7 +505,7 @@ under the call id `turn_<generation>_<run id>`
 
 1. **Start.** `guilds-harness start` runs the CLI in the agent's home,
    or in the working tree of the one repository it picks, under
-   `repos/<name>` ([Repositories](coding/repositories.md#what-a-subscription-agents-turn-does-with-them)),
+   `repos/<name>` ([Repositories](coding/repositories.md#what-a-generation-does-with-them)),
    on the agent's harness model and effort, with the run's first row,
    its composed system prompt: in place of the CLI's own on Claude Code
    and Codex, and as a rules file in the agent's home beside the CLI's

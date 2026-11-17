@@ -21,7 +21,9 @@ import { connect } from "../../src/seed/connect.js";
 import { answerOps } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
-import { FakeSandboxes } from "../helpers/generation.js";
+import { completionReply, FakeSandboxes } from "../helpers/generation.js";
+import { connectModelProvider, TEST_MODEL } from "../helpers/models.js";
+import { generationLive } from "../../src/generation/completion.js";
 import { GitServer } from "../helpers/git-server.js";
 import { recordedEvents, runLine, stubCliSandbox } from "../helpers/harness-cli.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
@@ -190,13 +192,14 @@ async function githubLogin(db: Queryable, guildId: string): Promise<void> {
   );
 }
 
-/** What a turn on the GitHub repository `shop` asked of GitHub, what it asked the code helper, and the run's system prompt. */
+/** What a generation on the GitHub repository `shop` asked of GitHub, what it asked the code helper, and the run's system prompt. */
 type GithubTurn = { asked: unknown[]; requests: Array<Record<string, unknown>>; system: string };
 
 /**
- * One turn of a subscription agent with `config` on its guild's GitHub login, through the run API:
- * the tokens GitHub is asked for, the code helper's requests, and the run's system prompt. The run
- * ends without an error, its tokens file written for the turn and emptied after it.
+ * One generation of an agent with `config`, on a subscription or on a key, on its guild's GitHub
+ * login, through the run API: the tokens GitHub is asked for, the code helper's requests, and the
+ * run's system prompt. The run ends without an error, its tokens file written for the generation
+ * and emptied after it.
  */
 async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -222,6 +225,10 @@ async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> 
       headers: { "Content-Type": "application/json" },
     });
   }) as typeof fetch;
+  const previousStream = generationLive.streamCompletion;
+  generationLive.streamCompletion = async function* stream() {
+    yield ["done", completionReply("I read the shop.")];
+  };
   const name = uniqueDbName("agent_platform_subscription_github");
   githubDbNames.push(name);
   const database = await connect(await createIsolatedDatabase(name));
@@ -246,6 +253,7 @@ async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> 
     assert.equal(guild.statusCode, 201, guild.body);
     const guildId = String(guild.json().id);
     await githubLogin(db, guildId);
+    await connectModelProvider(db, "org_home", "deepinfra");
     const machineId = await codeDefaultMachine(app, HEADERS);
     await db.query("UPDATE machines SET harnesses = $2 WHERE id = $1", [machineId, ["claude-code"]]);
     const created = await app.inject({
@@ -280,6 +288,7 @@ async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> 
     return { asked, requests, system };
   } finally {
     globalThis.fetch = realFetch;
+    generationLive.streamCompletion = previousStream;
     setInstanceKeys({});
     await loop.close();
     await app.close();
@@ -301,6 +310,26 @@ test("a subscription agent's turn on a GitHub repository asks GitHub for a token
 
 test("a subscription agent's turn on a GitHub repository it only reads asks GitHub for a token that reads contents alone, and is told git refuses to push it", { timeout: 120_000 }, async () => {
   const turn = await githubTurn({ model: null, harness: "claude-code", repositories: ["shop"], read_only_repositories: ["shop"] });
+  assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "read" } }]);
+  assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: true }]);
+  assert.match(turn.system, /"read_only": true/);
+  assert.match(turn.system, /is one you only read: git\n {2}refuses to push it/);
+  assert.doesNotMatch(turn.system, /git push origin/);
+});
+
+test("an agent on a key gets the GitHub repositories it picks on its machine, with a token that writes contents alone, and is told a script works in them", { timeout: 120_000 }, async () => {
+  const turn = await githubTurn({ model: TEST_MODEL, repositories: ["shop"] });
+  assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "write" } }]);
+  assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: false }]);
+  assert.equal(turn.requests.some((request) => request.op === "checkpoint"), false, "an agent on a key keeps no turn checkpoints");
+  assert.match(turn.system, /"path": "\/home\/[^"]+\/repos\/shop"/, "State names where the repository is");
+  assert.match(turn.system, /You have no shell: a script runs git in them/);
+  assert.match(turn.system, /Push the branch with `git push origin <branch>`/);
+  assert.doesNotMatch(turn.system, /Your turn\nstarts in the working tree/);
+});
+
+test("an agent on a key that only reads its GitHub repository gets a token that reads contents alone, and is told git refuses to push it", { timeout: 120_000 }, async () => {
+  const turn = await githubTurn({ model: TEST_MODEL, repositories: ["shop"], read_only_repositories: ["shop"] });
   assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "read" } }]);
   assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: true }]);
   assert.match(turn.system, /"read_only": true/);

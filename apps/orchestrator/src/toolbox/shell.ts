@@ -1,5 +1,5 @@
 import { exitCodeOf, type CommandInit, type CommandOptions, type CommandResult } from "../sandbox/sdk.js";
-import type { ToolHooks, ToolInvocation, ToolRun } from "./types.js";
+import type { CancelEvent, ToolHooks, ToolInvocation, ToolRun } from "./types.js";
 import { SandboxCommandError, ToolUnavailableError } from "./errors.js";
 
 export const COMMAND_TIMEOUT_SECONDS = 120;
@@ -27,8 +27,9 @@ export function commandOutput(call: ToolInvocation, execution: CommandResult): s
 }
 
 /**
- * Runs one sandbox command of `run`, interruptible by the run's cancel event and tracked with
- * the run's `track_command` hook, and returns it unformatted.
+ * Runs one sandbox command of `run`, once the run's `before_command` hook has run, interruptible
+ * by the run's cancel event and tracked with the run's `track_command` hook, and returns it
+ * unformatted.
  */
 export async function executeCommand(
   run: ToolRun,
@@ -39,6 +40,7 @@ export async function executeCommand(
   if (!run.sandbox) {
     throw new ToolUnavailableError("sandbox is not available");
   }
+  await hooks.before_command?.();
   const timeoutSeconds = options.timeoutSeconds ?? COMMAND_TIMEOUT_SECONDS;
   const opts: CommandOptions = {
     workingDirectory: run.agent_home,
@@ -58,36 +60,31 @@ export async function executeCommand(
       : undefined;
   const runPromise = run.sandbox.commands.run(command, opts, handlers);
   try {
-    let execution: CommandResult;
-    if (run.cancel_event === null) {
-      execution = await runPromise;
-    } else {
-      const waitAbort = new AbortController();
-      try {
-        const winner = await Promise.race([
-          runPromise.then((result) => ({ kind: "run" as const, result })),
-          run.cancel_event.wait(waitAbort.signal).then(
-            () => ({ kind: "cancel" as const }),
-            () => ({ kind: "wait-aborted" as const }),
-          ),
-        ]);
-        if (winner.kind === "cancel") {
-          void runPromise.catch(() => undefined);
-          throw new SandboxCommandError("execution interrupted");
-        }
-        if (winner.kind === "wait-aborted") {
-          execution = await runPromise;
-        } else {
-          execution = winner.result;
-        }
-      } finally {
-        waitAbort.abort();
-      }
-    }
-    return execution;
+    return run.cancel_event === null ? await runPromise : await untilCancelled(runPromise, run.cancel_event);
   } finally {
     if (track !== null) {
       track(null);
     }
+  }
+}
+
+/** The command's result, unless `cancel` fires first, which throws `SandboxCommandError` "execution interrupted". */
+async function untilCancelled(runPromise: Promise<CommandResult>, cancel: CancelEvent): Promise<CommandResult> {
+  const waitAbort = new AbortController();
+  try {
+    const winner = await Promise.race([
+      runPromise.then((result) => ({ kind: "run" as const, result })),
+      cancel.wait(waitAbort.signal).then(
+        () => ({ kind: "cancel" as const }),
+        () => ({ kind: "wait-aborted" as const }),
+      ),
+    ]);
+    if (winner.kind === "cancel") {
+      void runPromise.catch(() => undefined);
+      throw new SandboxCommandError("execution interrupted");
+    }
+    return winner.kind === "wait-aborted" ? await runPromise : winner.result;
+  } finally {
+    waitAbort.abort();
   }
 }
