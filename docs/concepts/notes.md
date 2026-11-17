@@ -156,7 +156,7 @@ The list groups the listed notes by who their access lists reach,
 each note under every group it matches:
 
 - **Organisation**, for an organisation row of read or write.
-- **Guild · <name>**, one group per guild a read or write row names,
+- **Guild · `<name>`**, one group per guild a read or write row names,
   keyed by the guild's id and in name order.
 - **Individual agents**, for an agent row of read or write.
 - **Access not fully known**, for a list that is empty or holds only
