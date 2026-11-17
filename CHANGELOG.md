@@ -37,6 +37,15 @@ own tools, its shell commands, file reads, searches, and edits, as rows
 of its run with their results. A Cursor tool call event carries fields
 of its own beside the tool, and each such event was dropped.
 
+**Fixed.** Claude Code does not update itself when it is run from an
+agent's CLI tab, so the CLI the runtime image pins stays in place for
+the agent's turns and **Check login**.
+
+**Changed.** The runtime image carries Codex 0.169.0, Claude Code
+2.1.326, the Cursor CLI 2026.11.13, and the Antigravity CLI 1.5.10.
+`node scripts/update-harnesses.mjs` moves them to each vendor's latest
+release. A box runs them once its runtime image is rebuilt.
+
 ## 0.2.0
 
 **Breaking.** An agent can run on the operator's own Claude Code,
