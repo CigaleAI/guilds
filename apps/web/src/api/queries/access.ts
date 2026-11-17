@@ -1,6 +1,7 @@
 import {
   type Query,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -241,11 +242,20 @@ const itemAccessPaths: Record<AccessTarget["kind"], string> = {
 const itemAccessPath = (target: AccessTarget) =>
   `${itemAccessPaths[target.kind]}/${encodeURIComponent(target.id)}/access`;
 
+const itemAccessQuery = (target: AccessTarget) => ({
+  queryKey: accessKeys.itemAccess(target),
+  queryFn: () => api<AccessList>(itemAccessPath(target)),
+});
+
 /** Who reaches a note, a table, or a file: its access list. */
 export function useItemAccess(target: AccessTarget) {
-  return useQuery({
-    queryKey: accessKeys.itemAccess(target),
-    queryFn: () => api<AccessList>(itemAccessPath(target)),
+  return useQuery(itemAccessQuery(target));
+}
+
+/** The access lists of these tables, each read and cached as the table's own Access tab reads it. */
+export function useTablesAccess(tableIds: readonly string[]) {
+  return useQueries({
+    queries: tableIds.map((id) => itemAccessQuery({ kind: "collection", id })),
   });
 }
 
