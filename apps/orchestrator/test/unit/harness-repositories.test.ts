@@ -13,7 +13,7 @@ import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
-import { recordedEvents, stubCliSandbox } from "../helpers/harness-cli.js";
+import { recordedEvents, runLine, stubCliSandbox } from "../helpers/harness-cli.js";
 import { connectionRow } from "../helpers/servers.js";
 
 // A subscription agent's turn in the repositories it picks, driven through the generation loop
@@ -115,6 +115,35 @@ test("a turn that changes a repository records the turn's checkpoints and diffst
   await run.loop.generator.generate("r_1", 2);
   assert.deepEqual(run.errors(), []);
   assert.equal((run.metadata().turn_changes as unknown[]).length, 1, "the second turn changed nothing");
+});
+
+test("a turn that rewrites a repository's history to the same files, or switches its branch, is recorded as a change with its heads at start and end", async () => {
+  const url = bareRepository();
+  const run = repositoryLoop([], ["app"], [guildRepository("app", url)]);
+  const repo = path.join(run.sandbox.home, "repos", "app");
+  const head = () => execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const identity = ["-c", "user.name=Agent", "-c", "user.email=agent@example.invalid"];
+  run.replay([INIT!, runLine("git", ...identity, "commit", "--amend", "--quiet", "-m", "Start, reworded"), ...REPLY]);
+  await run.loop.generator.generate("r_1", 1);
+  assert.deepEqual(run.errors(), []);
+  const rewritten = (run.metadata().turn_changes as Array<{ repos: Array<Record<string, unknown>> }>)[0]?.repos[0];
+  assert.deepEqual(
+    [rewritten?.files_changed, rewritten?.start_branch, rewritten?.branch, rewritten?.head_sha],
+    [0, "main", "main", head()],
+    "an amend to the same files changes no file",
+  );
+  assert.equal(typeof rewritten?.start_head_sha, "string");
+  assert.notEqual(rewritten?.start_head_sha, rewritten?.head_sha, "the head the turn started on is not the one it ended on");
+
+  run.replay([INIT!, runLine("git", "checkout", "--quiet", "-b", "topic"), ...REPLY]);
+  nextMessage(run.db, "work on a branch");
+  await run.loop.generator.generate("r_1", 2);
+  const switched = (run.metadata().turn_changes as Array<{ generation: number; repos: Array<Record<string, unknown>> }>).at(-1);
+  assert.equal(switched?.generation, 2);
+  assert.deepEqual(
+    [switched?.repos[0]?.files_changed, switched?.repos[0]?.start_branch, switched?.repos[0]?.branch, switched?.repos[0]?.start_head_sha === switched?.repos[0]?.head_sha],
+    [0, "main", "topic", true],
+  );
 });
 
 test("an agent that picks a repository it can no longer use fails its turn at start, and the CLI never runs", async () => {

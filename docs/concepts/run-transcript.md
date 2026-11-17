@@ -175,8 +175,9 @@ result lands.
 
 A run whose turns changed a repository ends with a **Changes** panel:
 each turn's repositories with their branch and diffstat, and **Show
-diff**, which fetches that turn's diff from the agent's machine
-([Reviewing changes](coding/reviewing-changes.md)).
+diff**, which fetches that turn's diff from the agent's machine; a turn
+that changed no file shows the branch and head commit it moved in
+place of a diff ([Reviewing changes](coding/reviewing-changes.md)).
 
 ### Harness turns
 

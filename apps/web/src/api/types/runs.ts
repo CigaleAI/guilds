@@ -107,11 +107,16 @@ export type LiveDelta = { text: string; content?: string };
  */
 export type RunTurnChange = { call_id: string; generation: number; repos: RunRepositoryChange[] };
 
-/** One repository's change over a run, or over one turn of it: its start and end checkpoints and their diffstat. */
+/**
+ * One repository's change over a run, or over one turn of it: its branch and head commit at the
+ * end and at the start, its start and end checkpoints, and their diffstat.
+ */
 export type RunRepositoryChange = {
   name: string;
   branch: string | null;
   head_sha: string | null;
+  start_branch: string | null;
+  start_head_sha: string | null;
   start_sha: string | null;
   end_sha: string;
   files_changed: number;

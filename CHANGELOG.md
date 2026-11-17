@@ -8,6 +8,16 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Fixed.** A turn of a subscription agent that moves a repository's
+head or branch without changing a file, such as one that amends,
+squashes, splits, or rebases commits to the same files and
+force-pushes, or switches branches, is listed in the **Changes** panel,
+as "no file changes" with the branch and head commit it moved. The
+start head and branch come from the agent image's `guilds-code`, which
+`./setup.sh` rebuilds: a machine whose container started before the
+update records no change for its turns until its container is
+recreated.
+
 **Fixed.** A subscription agent's turn that is cancelled, timed out,
 stopped at its tool calls' asking, or cut by an orchestrator restart
 records on its reply the tokens its CLI reported for its model calls

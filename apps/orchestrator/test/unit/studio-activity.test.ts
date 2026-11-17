@@ -401,6 +401,8 @@ test("a wake lists what its turns changed in each repository as code writes, sum
     name,
     branch,
     head_sha: "h",
+    start_branch: branch,
+    start_head_sha: "h0",
     start_sha: "s",
     end_sha: "e",
     files_changed: files,
