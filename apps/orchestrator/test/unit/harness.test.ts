@@ -551,7 +551,16 @@ test("each turn first removes the harness's local configuration and memory, neve
     {
       harness: "cursor",
       binary: "agent",
-      removed: [".cursor/hooks.json", ".cursor/mcp.json", ".cursor/rules/r.mdc", "AGENTS.md", "repos/AGENTS.md", "repos/.cursor/rules/r.mdc"],
+      removed: [
+        ".cursor/hooks.json",
+        ".cursor/mcp.json",
+        ".cursor/rules/r.mdc",
+        ".cursor/projects/home-a_1-repos-app/mcp-approvals.json",
+        ".cursor/projects/home-a_1/mcp-disabled.json",
+        "AGENTS.md",
+        "repos/AGENTS.md",
+        "repos/.cursor/rules/r.mdc",
+      ],
       kept: [".config/cursor/auth.json", ".cursor/cli-config.json", ".cursor/chats/c/store.db"],
     },
     {
@@ -845,6 +854,37 @@ describe("a harness started for a run's own turn", () => {
       await op("result", { harness });
       assert.equal(existsSync(configFile), false, `${harness}: the configuration that carried the token goes with the call's state`);
     }
+  });
+
+  test("a Cursor turn in the home approves its MCP server there once it is written, and a turn in a repository approves none", async () => {
+    const approvals = path.join(tempDir("harness-approvals-"), "approvals.jsonl");
+    const { sandbox, calls } = harnessSandbox("agent", () => [JSON.stringify({ stub: "hang" })], { HARNESS_STUB_APPROVALS: approvals });
+    const approved = () => readFileSync(approvals, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as Recorded);
+    await startTurn(sandbox, "call_cursor_home", MCP, "cursor");
+    await firstCall(calls);
+    const [approval] = approved();
+    assert.deepEqual(approval!.argv.slice(1), ["mcp", "enable", "guilds"]);
+    assert.equal(realpathSync(approval!.cwd), realpathSync(sandbox.home));
+    assert.deepEqual(approval!.mcp_config, {
+      mcpServers: { guilds: { type: "http", url: MCP.url, headers: { Authorization: `Bearer ${MCP.token}` } } },
+    });
+    const home = turnOps(sandbox, "call_cursor_home");
+    await home("stop", { harness: "cursor" });
+    await home("result", { harness: "cursor" });
+    const repository = turnOps(sandbox, "call_cursor_repository");
+    await repository("start", { harness: "cursor", repository: "app", prompt: "hello", mcp_url: MCP.url, mcp_token: MCP.token });
+    await repository("stop", { harness: "cursor" });
+    await repository("result", { harness: "cursor" });
+    assert.equal(approved().length, 1, "in a repository the home's configuration is the user's alone");
+  });
+
+  test("a Cursor turn in the home whose MCP server the CLI does not approve fails before the CLI starts", async () => {
+    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"), { HARNESS_STUB_APPROVE_EXIT: "1" });
+    await assert.rejects(
+      startTurn(sandbox, "call_cursor_refused", MCP, "cursor"),
+      /agent did not approve the guilds MCP server: MCP server 'guilds' not found in configuration/,
+    );
+    assert.equal(calls().length, 0);
   });
 
   test("an MCP server whose URL or token is malformed, or that comes without the other, is refused", async () => {

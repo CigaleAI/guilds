@@ -511,16 +511,18 @@ with mode 0600, and `result` removes it with the call's state:
 | --- | --- | --- |
 | Claude Code | `<run folder>/<call id>.mcp.json`: `mcpServers.guilds`, the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
 | Codex | `<run folder>/<call id>.mcp.json`: the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
-| Cursor | `~/.cursor/mcp.json`: `mcpServers.guilds`, its `url` and the header | none: the CLI reads its user configuration, which needs no approval |
+| Cursor | `~/.cursor/mcp.json`: `mcpServers.guilds`, its `url` and the header | none: the CLI reads its user configuration, which needs no approval in a repository. In the home it is the workspace's configuration too, whose servers load only on an approval: `start` first runs `agent mcp enable guilds` there, and the approval names that server's exact configuration and the home alone |
 | Antigravity | `~/.gemini/config/mcp_config.json`: `mcpServers.guilds`, its `serverUrl` and the header | none: the CLI reads its MCP configuration |
 
 Cursor and Antigravity read an MCP configuration only in the home,
 never from a path a call names, so theirs sits there for the call; the
 removal before each call clears what any earlier call or the agent left
-there. Claude Code, Cursor, and Antigravity read the token from the
-file. Codex reads it from
-`GUILDS_MCP_TOKEN`, which the supervisor sets from the file in the
-CLI's own environment alone, never its own or `guilds-harness`'s, and
+there. A Cursor CLI that refuses the approval fails the start, naming
+its reason (`agent did not approve the guilds MCP server: …`). Claude
+Code, Cursor, and Antigravity read the token from the file. Codex
+reads it from `GUILDS_MCP_TOKEN`, which the supervisor sets from the
+file in the CLI's own environment alone, never its own or
+`guilds-harness`'s, and
 which Codex leaves out of the commands its model runs. Codex's
 configuration in the home holds no server: the overrides last one
 call. The URL must be an `http` or `https` URL with no query, the
@@ -593,7 +595,7 @@ it:
 | --- | --- |
 | Claude Code | `~/.claude/` `settings.json`, `settings.local.json`, `CLAUDE.md`, `CLAUDE.local.md`, `rules/`, `hooks/`, `plugins/`, `skills/`, `commands/`, `agents/`, `output-styles/`, and each project's `memory/` under `projects/` |
 | Codex | `~/.codex/` `AGENTS.md`, `AGENTS.override.md`, `skills/`, `prompts/`, `rules/`, `memories/` and its `memories_*.sqlite` databases, `hooks.json` |
-| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
+| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`, and each workspace's stored MCP approvals and disabled servers, `projects/*/mcp-approvals.json` and `projects/*/mcp-disabled.json`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
 | Antigravity | `~/.gemini/` `GEMINI.md`, `AGENTS.md`, and under `config/`: `GEMINI.md`, `AGENTS.md`, `rules/`, `hooks.json`, `mcp_config.json`, `skills/`, `skills.json`, `plugins/`, `plugins.json`, `workflows/`, `workflows.json`, `global_workflows/`, `sidecars/` |
 
 A path whose link resolves outside the home is left alone. The logins
@@ -617,7 +619,7 @@ A repository's own harness configuration (`.claude/`, `.mcp.json`,
 | --- | --- |
 | Claude Code | Off: no settings source is loaded, `--strict-mcp-config` loads no MCP server the call does not pass, skills are off, and the managed settings turn hooks off |
 | Codex | Off: hooks, plugins, apps, and execution-policy rules are off, and `mcp_servers` is empty |
-| Cursor | An MCP server needs `--approve-mcps`, which the driver never passes. Project hooks in `.cursor/hooks.json` run: the CLI has no switch to turn them off ([SEC-31](../../architecture/security-register.md#sec-31--cursor-runs-a-repositorys-hooks)) |
+| Cursor | An MCP server needs `--approve-mcps`, which the driver never passes, or an approval stored for it in the home, which `start` removes ([SEC-75](../../architecture/security-register.md#sec-75--cursor-loaded-a-repositorys-mcp-server-on-an-approval-stored-in-the-agents-home)). Project hooks in `.cursor/hooks.json` run: the CLI has no switch to turn them off ([SEC-31](../../architecture/security-register.md#sec-31--cursor-runs-a-repositorys-hooks)) |
 | Antigravity | A repository's `.agents/`, `GEMINI.md`, and `AGENTS.md` load: the CLI has no switch to ignore them |
 
 What a repository can still steer is recorded in
@@ -639,7 +641,7 @@ seconds.
 | Op | Does |
 | --- | --- |
 | `check` | Whether the harness's CLI is installed, its version, its credential (`secret`, `login`, or none), and with a login its `account` |
-| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives one, the system prompt file, forks a supervisor in its own session, and returns |
+| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives them, the system prompt file and the MCP configuration, approves Cursor's MCP server when it starts in the home, forks a supervisor in its own session, and returns |
 | `poll` | The raw events after a byte offset into the log as whole lines, their progress lines, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
 | `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
 | `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |

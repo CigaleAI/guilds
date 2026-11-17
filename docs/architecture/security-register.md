@@ -10,6 +10,7 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-75](#sec-75--cursor-loaded-a-repositorys-mcp-server-on-an-approval-stored-in-the-agents-home) | Cursor loaded a repository's MCP server on an approval stored in the agent's home | Fixed 2026-11-17 |
 | [SEC-74](#sec-74--an-agent-on-a-key-holds-a-git-token-and-a-clone-on-its-machine-and-what-it-reads-can-steer-what-it-does-with-them) | An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them | Open |
 | [SEC-73](#sec-73--a-repository-an-agent-only-reads-on-a-host-other-than-github-is-read-only-by-its-clones-push-url-alone) | A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone | Open, accepted |
 | [SEC-72](#sec-72--a-sandbox-on-the-hosted-vm-reached-the-metadata-server-private-addresses-and-caddy) | A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy | Fixed 2026-11-16 |
@@ -84,6 +85,45 @@ its date (the code that held the issue is removed).
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-75 — Cursor loaded a repository's MCP server on an approval stored in the agent's home
+
+**Status:** fixed 2026-11-17.
+
+**Found:** 2026-11-17, giving a Cursor turn that starts in the agent's
+home its Guilds tools.
+
+**Where:** the Cursor driver in `runtime/guilds-harness`, pinned to
+the Cursor CLI `2026.11.13-eacade1`, and the approvals that CLI keeps
+per workspace in the agent's home,
+`~/.cursor/projects/<workspace>/mcp-approvals.json`.
+
+**Exposure:** the Cursor CLI loads a server of a workspace's own
+`.cursor/mcp.json` once an approval stored for that workspace names
+the server's exact configuration; `agent mcp enable <name>`, run in
+the workspace, stores one. Before every call the driver removed the
+configuration Cursor reads in the home, but not these approvals. A
+process on the agent's machine that ran `agent mcp enable` in a
+repository's working tree, such as a command the agent or a steered
+harness runs (SEC-28), a package install (SEC-4), or another agent on
+the machine (SEC-24), made every later turn in that repository load
+the repository's server: a command that runs when it loads, with the
+agent's secrets in its environment, without the model deciding to run
+it (SEC-29), until the repository changed that server's configuration.
+
+**Fix:** before every call the driver removes each workspace's stored
+MCP approvals and disabled servers, `~/.cursor/projects/*/mcp-approvals.json`
+and `~/.cursor/projects/*/mcp-disabled.json`. The only approval a turn
+has is the one the driver gives its own server. A turn that starts in
+the home, where Cursor reads the home's `~/.cursor/mcp.json` as the
+workspace's configuration too, runs `agent mcp enable guilds` there
+once the turn's configuration is written: its approval names the
+`guilds` server with the turn's URL and token, and the home alone.
+
+**Residual risk:** between the reset and the start of the CLI, another
+process on the machine can store an approval again; the window is the
+time of one exec, as for the rest of the configuration the reset
+removes (SEC-29).
 
 ## SEC-74 — An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them
 
@@ -1910,7 +1950,10 @@ does not pass, and it passes none; skills off; and `--settings` with
 file overrides, turn hooks off and project MCP servers off. Every
 Codex call ignores `config.toml` and execution-policy rules, disables
 hooks, plugins, apps, and memories, and sets `mcp_servers` empty.
-Cursor calls never pass `--approve-mcps`. Before every call the driver
+Cursor calls never pass `--approve-mcps`; since 2026-11-17 no MCP
+approval stored in the home survives the reset either, and a Cursor
+turn that starts in the home approves only the platform's own server
+(SEC-75). Before every call the driver
 removes the harness's user-level configuration and memory from the
 agent's home, so what the agent, its commands, an earlier harness
 turn, or another agent on the machine (SEC-24) wrote there does not
