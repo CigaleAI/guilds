@@ -22,7 +22,7 @@ import {
   toolSchemaName,
   type ToolBindingScope,
 } from "./offered-tools.js";
-import { executedToolCalls, type GenerationTools, type ToolCalls } from "./tool-calls.js";
+import { guildsToolCalls, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 
 // The orchestrator's MCP server, which serves a subscription agent's harness the Guilds tools its
 // run offers, over MCP's Streamable HTTP transport answered with plain JSON. Each generation's
@@ -91,8 +91,9 @@ export type HarnessTurnStop = { kind: "max_tool_calls" } | { kind: "blocked"; is
 
 /**
  * A generation's grant on the server: the generation and its tools, whose redaction holds the
- * token, the token's digest it is compared by, its calls in arrival order, and the stop its calls
- * asked of its turn, null until one does.
+ * token, the token's digest it is compared by, its calls in arrival order, the stop its calls
+ * asked of its turn, null until one does, and whether its harness has reached its tools, by
+ * listing them or calling one.
  */
 export type HarnessGrant = {
   gen: SubscriptionGeneration;
@@ -100,6 +101,7 @@ export type HarnessGrant = {
   digest: Buffer;
   calls: AsyncLock;
   stop: HarnessTurnStop | null;
+  connected: boolean;
 };
 
 /** A grant just opened, and the MCP server its generation's turn is given under it. */
@@ -163,6 +165,14 @@ function refusedCall(text: string): ServedCallResult {
   return { content: [{ type: "text", text }], isError: true };
 }
 
+/**
+ * Whether the grant's turn was offered a tool its harness never reached: it neither listed the
+ * grant's tools nor called one, so the turn ran without them.
+ */
+export function harnessNeverConnected(grant: HarnessGrant): boolean {
+  return grant.tools.schemas.length > 0 && !grant.connected;
+}
+
 /** What a call made after a turn's stop is refused with. */
 function stopText(stop: HarnessTurnStop): string {
   return stop.kind === "blocked" ? new GenerationBlocked(stop.issueId).message : TOOL_CALL_LIMIT_MESSAGE;
@@ -190,7 +200,7 @@ export class HarnessMcpServer {
     const token = randomBytes(TOKEN_BYTES).toString("base64url");
     const secrets = { ...tools.secrets, [HARNESS_MCP_TOKEN_SECRET]: token };
     const redacting: GenerationTools = { ...tools, secrets, run: { ...tools.run, secrets: { ...tools.run.secrets, [HARNESS_MCP_TOKEN_SECRET]: token } } };
-    const grant: HarnessGrant = { gen, tools: redacting, digest: tokenDigest(token), calls: new AsyncLock(), stop: null };
+    const grant: HarnessGrant = { gen, tools: redacting, digest: tokenDigest(token), calls: new AsyncLock(), stop: null, connected: false };
     this.grants.set(gen.agent.id, grant);
     return { grant, access: { url: `${this.baseUrl}/mcp/${encodeURIComponent(gen.agent.id)}`, token } };
   }
@@ -241,9 +251,13 @@ export class HarnessMcpServer {
         });
       case "ping":
         return this.respond(message.id, {});
-      case "tools/list":
-        return this.respond(message.id, { tools: (await this.liveTools(grant)).schemas.map(servedTool) });
+      case "tools/list": {
+        const listed = (await this.liveTools(grant)).schemas.map(servedTool);
+        grant.connected = true;
+        return this.respond(message.id, { tools: listed });
+      }
       case "tools/call":
+        grant.connected = true;
         return this.answerCall(grant, message.id, params);
       default:
         return this.fail(message.id, METHOD_NOT_FOUND, `method ${message.method} not found`);
@@ -285,7 +299,7 @@ export class HarnessMcpServer {
     if (!tools.run.offered_tools?.has(name) && !(name in tools.run.dynamic_tools)) {
       return null;
     }
-    if (executedToolCalls(await this.services.db.listMessages(grant.gen.runId)) >= tools.maxToolCalls) {
+    if (guildsToolCalls(await this.services.db.listMessages(grant.gen.runId)) >= tools.maxToolCalls) {
       grant.stop = { kind: "max_tool_calls" };
       return refusedCall(TOOL_CALL_LIMIT_MESSAGE);
     }

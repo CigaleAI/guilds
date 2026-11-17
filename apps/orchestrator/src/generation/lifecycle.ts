@@ -10,8 +10,33 @@ import { terminalCapOf } from "./caps.js";
 export type RunStanding = "open" | "waiting" | "generating" | "completed" | "capped";
 
 /** Whether an operator resumed the run, which then stays open for their messages. */
-export function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
+function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
   return Boolean(run.metadata.resumed_at);
+}
+
+/** Whether the run takes an operator's messages while it is active: it is direct, or an operator resumed it. */
+export function runTakesMessages(run: Pick<RunRow, "kind" | "metadata">): boolean {
+  return run.kind === "direct" || runWasResumed(run);
+}
+
+/**
+ * Whether the run completes when its generation `generation` ends: a run a wake-up reopened for
+ * that generation does, and a schedule run does. A resumed run stays open, and a group run is
+ * completed by its delivery.
+ */
+export function completesAfter(run: Pick<RunRow, "kind" | "metadata">, generation: number): boolean {
+  if (run.metadata.wake_reopened_generation === generation) {
+    return true;
+  }
+  return !runWasResumed(run) && run.kind === "schedule";
+}
+
+/**
+ * Whether the run stays open for a next generation once its generation `generation` ends: it
+ * takes an operator's messages, and does not complete then.
+ */
+export function staysOpenAfter(run: Pick<RunRow, "kind" | "metadata">, generation: number): boolean {
+  return runTakesMessages(run) && !completesAfter(run, generation);
 }
 
 /**
@@ -27,7 +52,7 @@ export function runStanding(
     return "generating";
   }
   if (run.status === "active") {
-    return run.kind === "direct" || runWasResumed(run) ? "open" : "waiting";
+    return runTakesMessages(run) ? "open" : "waiting";
   }
   return terminalCapOf(run) === null ? "completed" : "capped";
 }

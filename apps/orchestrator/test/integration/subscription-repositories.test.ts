@@ -25,7 +25,7 @@ import { completionReply, FakeSandboxes } from "../helpers/generation.js";
 import { connectModelProvider, TEST_MODEL } from "../helpers/models.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { GitServer } from "../helpers/git-server.js";
-import { recordedEvents, runLine, stubCliSandbox } from "../helpers/harness-cli.js";
+import { freePort, recordedEvents, runLine, serveHarnessMcp, stubCliSandbox } from "../helpers/harness-cli.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
@@ -71,11 +71,13 @@ test("a subscription agent's turn commits and pushes a branch of its repository 
     sandboxes.running.add(machine.id);
     return stub?.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
+  const port = await freePort();
   const loop = generationLoop(
     db,
-    { notes, workspaceRoot: tempDir("guilds-subscription-repositories-ws-"), harnessMcpUrl: "http://127.0.0.1:8090", sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
+    { notes, workspaceRoot: tempDir("guilds-subscription-repositories-ws-"), harnessMcpUrl: `http://127.0.0.1:${port}`, sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
+  const listener = await serveHarnessMcp(loop, port);
   const app = await buildApp(database, { db, notes, artifacts, scripts: agentScripts(db), schedules: agentSchedules(db), generation: loop });
   const settled = async (runId: string) => {
     for (let attempt = 0; attempt < 400 && loop.isGenerating(runId); attempt += 1) {
@@ -175,6 +177,7 @@ test("a subscription agent's turn commits and pushes a branch of its repository 
     assert.deepEqual(second.errors, []);
     assert.equal(second.turn_changes.length, 1);
   } finally {
+    await listener.close();
     await loop.close();
     await app.close();
     await server.close();
@@ -242,11 +245,13 @@ async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> 
     sandboxes.running.add(machine.id);
     return stub?.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
+  const port = await freePort();
   const loop = generationLoop(
     db,
-    { notes, workspaceRoot: tempDir("guilds-subscription-github-ws-"), harnessMcpUrl: "http://127.0.0.1:8090", sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
+    { notes, workspaceRoot: tempDir("guilds-subscription-github-ws-"), harnessMcpUrl: `http://127.0.0.1:${port}`, sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
+  const listener = await serveHarnessMcp(loop, port);
   const app = await buildApp(database, { db, notes, artifacts, scripts: agentScripts(db), schedules: agentSchedules(db), generation: loop });
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: HEADERS, payload: { name: "github" } });
@@ -290,6 +295,7 @@ async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> 
     globalThis.fetch = realFetch;
     generationLive.streamCompletion = previousStream;
     setInstanceKeys({});
+    await listener.close();
     await loop.close();
     await app.close();
     await database.close();

@@ -20,7 +20,7 @@ import { answerOps } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { FakeSandboxes } from "../helpers/generation.js";
-import { recordedEvents, runLine, stubCliSandbox } from "../helpers/harness-cli.js";
+import { freePort, recordedEvents, runLine, serveHarnessMcp, stubCliSandbox } from "../helpers/harness-cli.js";
 import { GitServer } from "../helpers/git-server.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
@@ -56,11 +56,13 @@ test("a private repository on another host clones and pushes a branch with its s
     sandboxes.running.add(machine.id);
     return stub?.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
+  const port = await freePort();
   const loop = generationLoop(
     db,
-    { notes, workspaceRoot: tempDir("guilds-git-providers-ws-"), harnessMcpUrl: "http://127.0.0.1:8090", sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
+    { notes, workspaceRoot: tempDir("guilds-git-providers-ws-"), harnessMcpUrl: `http://127.0.0.1:${port}`, sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
+  const listener = await serveHarnessMcp(loop, port);
   const app = await buildApp(database, { db, notes, artifacts, scripts: agentScripts(db), schedules: agentSchedules(db), generation: loop });
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: OWNER, payload: { name: "elsewhere" } });
@@ -165,6 +167,7 @@ test("a private repository on another host clones and pushes a branch with its s
     assert.equal(existsSync(path.join(reviewed.home, "repos", "site", ".git")), true);
     assert.equal(existsSync(path.join(reviewed.home, "repos", "app")), false);
   } finally {
+    await listener.close();
     await loop.close();
     await app.close();
     await server.close();

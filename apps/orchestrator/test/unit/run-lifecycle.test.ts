@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RunRow } from "../../src/db/runs.js";
 import type { RunError } from "../../src/db/schema/index.js";
-import { runStanding } from "../../src/generation/lifecycle.js";
+import { runStanding, runTakesMessages, staysOpenAfter } from "../../src/generation/lifecycle.js";
 
 type StandingRow = Pick<RunRow, "status" | "kind" | "errors" | "metadata">;
 
@@ -64,4 +64,20 @@ test("a_completed_run_without_a_cap_is_completed_whatever_else_failed", () => {
     ),
     "completed",
   );
+});
+
+test("a direct run takes an operator's messages, and a group or schedule run does once an operator resumed it", () => {
+  assert.equal(runTakesMessages({ kind: "direct", metadata: {} }), true);
+  assert.equal(runTakesMessages({ kind: "group", metadata: {} }), false);
+  assert.equal(runTakesMessages({ kind: "schedule", metadata: {} }), false);
+  assert.equal(runTakesMessages({ kind: "schedule", metadata: { resumed_at: "2026-01-01T00:00:00.000Z" } }), true);
+});
+
+test("a run stays open after a generation when it takes messages and does not complete then", () => {
+  assert.equal(staysOpenAfter({ kind: "direct", metadata: {} }, 1), true);
+  assert.equal(staysOpenAfter({ kind: "direct", metadata: { wake_reopened_generation: 3 } }, 3), false);
+  assert.equal(staysOpenAfter({ kind: "direct", metadata: { wake_reopened_generation: 3 } }, 4), true);
+  assert.equal(staysOpenAfter({ kind: "group", metadata: {} }, 1), false);
+  assert.equal(staysOpenAfter({ kind: "schedule", metadata: {} }, 1), false);
+  assert.equal(staysOpenAfter({ kind: "group", metadata: { resumed_at: "2026-01-01T00:00:00.000Z" } }, 2), true);
 });

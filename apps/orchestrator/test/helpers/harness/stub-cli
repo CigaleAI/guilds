@@ -8,8 +8,10 @@ the MCP server it is given (the content and mode of the file `--mcp-config` name
 configuration Cursor and Antigravity read in the home, or for Codex its `mcp_servers.guilds`
 overrides with the token of the variable they name, in Claude Code's shape), the variables
 named in HARNESS_STUB_SHOW, and the names of
-the variables whose value holds HARNESS_STUB_SEEK to HARNESS_STUB_RECORD, then prints the
-events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
+the variables whose value holds HARNESS_STUB_SEEK to HARNESS_STUB_RECORD. Given a `guilds` server,
+it connects to it as a CLI does at its start, `initialize` then `tools/list`, unless
+HARNESS_STUB_MCP_CONNECT is `0`; a server it cannot reach is left, as a CLI leaves one. It then
+prints the events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
 `{"stub": "edit", "path": ..., "text": ...}` writes that file instead of printing;
 `{"stub": "run", "argv": [...]}` runs that command in the working directory and prints its exit code
 and output as a message; `{"stub": "detach", "argv": [...], "pid_file": ...}` starts that command
@@ -158,6 +160,19 @@ def mcp_request(event, number):
     except urllib.error.HTTPError as error:
         return error.code, None
 
+def connect_mcp():
+    """Connects to the `guilds` server the CLI was given, as a CLI does at its start; one it cannot reach is left."""
+    configured = mcp_config()[0]
+    if os.environ.get("HARNESS_STUB_MCP_CONNECT") == "0" or not configured or "guilds" not in configured["mcpServers"]:
+        return
+    handshake = [{"method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}}}, {"method": "tools/list"}]
+    for number, event in enumerate(handshake, start=1):
+        try:
+            mcp_request(event, f"connect_{number}")
+        except (urllib.error.URLError, OSError, ValueError):
+            return
+
+
 if len(sys.argv) > 1 and sys.argv[1] == "--version":
     print(os.environ.get("HARNESS_STUB_VERSION", "9.9.9 (stub)"))
     sys.exit(0)
@@ -189,6 +204,7 @@ if record:
             "env_holding_seek": holding,
         }
         handle.write(json.dumps(entry) + "\n")
+connect_mcp()
 delay = float(os.environ.get("HARNESS_STUB_DELAY", "0"))
 with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
     for line in events:

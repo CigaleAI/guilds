@@ -46,7 +46,7 @@ export const limitFields = [
   {
     key: "max_tool_calls",
     label: "Max tool calls",
-    hint: "The run ends when this many tools have been called.",
+    hint: "The run ends when this many of the guild's tools have been called; a harness's own tools do not count.",
   },
   {
     key: "max_input_tokens",

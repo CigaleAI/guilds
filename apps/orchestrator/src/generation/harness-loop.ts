@@ -60,8 +60,8 @@ import {
   type HarnessTurnReader,
   type HarnessUsageStep,
 } from "./harness-rows.js";
-import { harnessTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
-import type { HarnessGrant, HarnessMcpServer } from "./harness-mcp.js";
+import { harnessTurnFailure, unconnectedTurnFailure, type HarnessTurnEnding } from "./harness-ending.js";
+import { harnessNeverConnected, type HarnessGrant, type HarnessMcpServer } from "./harness-mcp.js";
 import { attachmentHomePath, harnessTurnPrompt, openingAttachments } from "./harness-prompt.js";
 import { pendingToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 import { maintenanceRun } from "./workspace.js";
@@ -195,10 +195,15 @@ export class HarnessLoop {
   /**
    * Ends the generation as its turn ended: with the stop the run's tool calls asked for, or the
    * step limit its CLI stopped at, the way the model loop ends on them, else with the run error of
-   * a turn that did not exit cleanly.
+   * a turn that did not exit cleanly. A turn whose harness never connected to the guild's tools it
+   * was offered records that first, so the error of how the turn ended stays the run's last.
    */
   private async recordEnding(gen: SubscriptionGeneration, turn: HarnessRunTurn, ending: HarnessTurnEnding): Promise<void> {
     const { db, events } = this.services;
+    if (harnessNeverConnected(turn.grant)) {
+      const unconnected = unconnectedTurnFailure(gen, turn.log_path);
+      await events.recordError(gen, unconnected.code, unconnected);
+    }
     const stop = turn.grant.stop;
     if (stop?.kind === "blocked") {
       await events.recordError(gen, "generation.blocked", new GenerationBlocked(stop.issueId));
@@ -217,7 +222,7 @@ export class HarnessLoop {
       await events.recordError(gen, "generation.max_steps", new RunLimitError("generation.max_steps", STEP_LIMIT_MESSAGE));
       return;
     }
-    const failure = harnessTurnFailure(turn.harness, ending, turn.log_path, gen.snapshot.max_turn_minutes);
+    const failure = harnessTurnFailure(gen, ending, turn.log_path);
     if (failure !== null) {
       await events.recordError(gen, failure.code, failure);
     }
