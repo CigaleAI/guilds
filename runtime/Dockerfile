@@ -130,10 +130,10 @@ RUN set -eu; \
 # npm package: their release tarballs are pinned and checksum-verified per architecture. The
 # Antigravity binary is started through the agy wrapper, which holds it at the pinned version.
 ARG HARNESSES="claude-code cursor antigravity"
-ARG CODEX_VERSION=0.162.1
-ARG CLAUDE_CODE_VERSION=2.1.296
-ARG CURSOR_VERSION=2026.10.01-e373342
-ARG ANTIGRAVITY_VERSION=1.4.0-5281842794987520
+ARG CODEX_VERSION=0.169.0
+ARG CLAUDE_CODE_VERSION=2.1.326
+ARG CURSOR_VERSION=2026.11.13-eacade1
+ARG ANTIGRAVITY_VERSION=1.5.10-5253791805734912
 COPY agy /usr/local/share/guilds/agy
 RUN set -eu; \
     for harness in $HARNESSES; do \
@@ -150,8 +150,8 @@ RUN set -eu; \
     esac; \
     case " $HARNESSES " in *" cursor "*) \
         case "$(dpkg --print-architecture)" in \
-            amd64) asset=x64; sum=a79726c6e644520e993970be4c45775a6889802b67abe461a677a53219ae28e8 ;; \
-            arm64) asset=arm64; sum=785c5f6bf2a60eb1121e27ed8c14f5ee07ed1b5b6692324f2d9a997238245eb5 ;; \
+            amd64) asset=x64; sum=c02e4321f20d691ee03af94d29948dc3a81c6c34e7328da7bb1afade4c75812f ;; \
+            arm64) asset=arm64; sum=e4ba0611045a24d1cf78f021d34c19461680fc7234c19c1f981f1cc169f70cdc ;; \
             *) echo "unsupported architecture for the Cursor CLI" >&2; exit 1 ;; \
         esac; \
         curl -fsSL -o /tmp/cursor.tar.gz "https://downloads.cursor.com/lab/${CURSOR_VERSION}/linux/${asset}/agent-cli-package.tar.gz"; \
@@ -165,8 +165,8 @@ RUN set -eu; \
     esac; \
     case " $HARNESSES " in *" antigravity "*) \
         case "$(dpkg --print-architecture)" in \
-            amd64) asset=linux-x64/cli_linux_x64; sum=6c4b298c2a69b6bd0f58567031cc56d8097a32be54c4b633aa80ad395871b389618ab3860d4ba0a12599831b8226b51b03e258ee2ec7fae105a45b8e0fce2188 ;; \
-            arm64) asset=linux-arm/cli_linux_arm64; sum=64dfb2a9665ebd19b6e9d687c094673b61ca9f5ffdebc81391cea8e3858773e1c88154f088e8a8691208561d946a7aea9acbec7a3bdca9e5d8a48fa197b0a308 ;; \
+            amd64) asset=linux-x64/cli_linux_x64; sum=713ae840845d74736e2d4a96f5d84e3353d614e73a875793ddf500997ccee09595448cebfd8e94fdd90ce2a0fa97707bd1cc29763dcfe01c945d80c92234378f ;; \
+            arm64) asset=linux-arm/cli_linux_arm64; sum=f9f5c7ebc47a8b8de536acca8116b1f5a43dca614cde94008fe5a510517b23535fb281d85416930d76e76478858bf3dc66ea6d1b0c9b6eeadcfabe4d8ef2a807 ;; \
             *) echo "unsupported architecture for the Antigravity CLI" >&2; exit 1 ;; \
         esac; \
         curl -fsSL -o /tmp/antigravity.tar.gz "https://storage.googleapis.com/antigravity-public/antigravity-cli/${ANTIGRAVITY_VERSION}/${asset}.tar.gz"; \

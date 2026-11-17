@@ -436,10 +436,17 @@ the CLI's version.
 | Build argument | Default | Role |
 | --- | --- | --- |
 | `HARNESSES` | `claude-code cursor antigravity` | The proprietary harnesses to install; any other name fails the build |
-| `CODEX_VERSION` | `0.162.1` | Codex, installed with npm, always |
-| `CLAUDE_CODE_VERSION` | `2.1.296` | Claude Code, installed with npm |
-| `CURSOR_VERSION` | `2026.10.01-e373342` | The Cursor CLI release tarball, checksum-verified per architecture |
-| `ANTIGRAVITY_VERSION` | `1.4.0-5281842794987520` | The Antigravity CLI release tarball, checksum-verified per architecture |
+| `CODEX_VERSION` | `0.169.0` | Codex, installed with npm, always |
+| `CLAUDE_CODE_VERSION` | `2.1.326` | Claude Code, installed with npm |
+| `CURSOR_VERSION` | `2026.11.13-eacade1` | The Cursor CLI release tarball, checksum-verified per architecture |
+| `ANTIGRAVITY_VERSION` | `1.5.10-5253791805734912` | The Antigravity CLI release tarball, checksum-verified per architecture |
+
+`node scripts/update-harnesses.mjs` moves the four versions to each
+vendor's latest release: it rewrites them, and the tarball checksums of
+the Cursor and Antigravity CLIs, in `runtime/Dockerfile` and in the
+table above. The image's build then installs each CLI and runs it, and
+the check runs the turns recorded from them. A machine runs the new
+CLIs once its sandbox starts from the new image.
 
 The published image is built with `HARNESSES` empty, and with
 `BROWSER=chromium`. To build an image with Codex alone:
