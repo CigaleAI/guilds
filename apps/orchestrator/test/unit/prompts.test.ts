@@ -221,6 +221,22 @@ test("standing omits script and note guides when those capabilities are off", ()
   assert.ok(!on.includes("<capability"));
 });
 
+test("an agent on a harness runs code with its own tools and keeps scripts for work it repeats, and one on a key runs code only in scripts", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const caps = { scripts: true, notes: false, browser: false };
+  const key = standingForCapabilities(text, caps);
+  assert.ok(key.includes("A script is the only way to execute code"));
+  assert.ok(!key.includes("Run commands and one-off code with your own tools"));
+  const harness = standingForCapabilities(text, { ...caps, harness: true });
+  assert.ok(harness.includes("Run commands and one-off code with your own tools"));
+  assert.ok(harness.includes("A script is for\nwork you will repeat"));
+  assert.ok(harness.includes("change a script with the script tools, never in that folder"));
+  assert.ok(!harness.includes("only way to execute code"));
+  assert.ok(!harness.includes("<capability"));
+  const unscripted = standingForCapabilities(text, { ...caps, scripts: false, harness: true });
+  assert.ok(!unscripted.includes("A script is for"), "without script tools nothing is said of scripts");
+});
+
 test("standing omits memory guides when memory is off", () => {
   const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
   const off = standingForCapabilities(text, {
@@ -361,6 +377,15 @@ test("a run that offers no tool drops the tool budget and every part on a tool i
   assert.ok(bare.includes("do the part your domain owns. When those fields are empty"));
   assert.ok(bare.includes("Group Chat info:"), "a group run's opening message is still explained");
   assert.ok(!bare.includes("$GUILDS_PORTS"), "the harness part is for a subscription agent");
+});
+
+test("the issues part asks for a report only on what the run cannot get past", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const standing = standingForCapabilities(text, { scripts: false, notes: false, browser: false });
+  assert.ok(standing.includes("Call `<tool>report_issue</tool>` when this run cannot get past a problem and an\noperator must act on it"));
+  assert.ok(standing.includes("content the work needs was cut off\nand no other way reaches it"));
+  assert.ok(standing.includes("Do not report what you\ngot past in this run (a corrected call, a narrower read, a retry)"));
+  assert.ok(!standing.includes("a result is truncated"));
 });
 
 test("a key agent without group_post, schedules, or report_issue loses only those parts", () => {

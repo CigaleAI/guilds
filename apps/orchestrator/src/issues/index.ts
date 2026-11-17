@@ -24,6 +24,10 @@ export const ISSUE_DETAIL_MAX = 4000;
 export const ISSUE_TOOL_NAME_MAX = 120;
 export const ISSUE_OPEN_CAP = 100;
 
+/** Whether a guild with `open` open issues holds as many as it may, so that every new report is refused. */
+function isAtOpenIssueCap(open: number): boolean {
+  return open >= ISSUE_OPEN_CAP;
+}
 
 /** A refused issue request, with the HTTP status it answers with: 404 for one that does not exist, else 422. */
 export class IssueError extends Error {
@@ -127,6 +131,12 @@ export type IssueItem = Pick<
   agent: { id: string; name: string; avatar_shape: string; avatar_color: string } | null;
 };
 
+/**
+ * A guild's issues as its Issues tab lists them, with the most open issues the guild may hold and
+ * whether it holds that many, while every new report is refused.
+ */
+export type GuildIssueList = { issues: IssueItem[]; open_cap: number; at_open_cap: boolean };
+
 export function issueItem(row: GuildIssueRow): IssueItem {
   return {
     id: row.id,
@@ -172,8 +182,7 @@ export class Issues {
     if (guild === null) {
       throw new IssueError("guild not found", 404);
     }
-    const open = await this.db.countOpenIssues(args.guildId);
-    if (open >= ISSUE_OPEN_CAP) {
+    if (isAtOpenIssueCap(await this.db.countOpenIssues(args.guildId))) {
       throw new IssueError(
         `this guild already has ${ISSUE_OPEN_CAP} open issues; wait for the operator to resolve some`,
       );
@@ -197,13 +206,20 @@ export class Issues {
     );
   }
 
-  async listForGuild(guildId: string, status?: string): Promise<IssueItem[]> {
+  async listForGuild(guildId: string, status?: string): Promise<GuildIssueList> {
     let filter: IssueRow["status"] | null = null;
     if (status !== undefined && status !== "" && status !== "all") {
       filter = oneOf(status, ISSUE_STATUSES, "status");
     }
-    const rows = await this.db.listIssuesForGuild(guildId, filter);
-    return rows.map((row) => issueItem(row));
+    const [rows, open] = await Promise.all([
+      this.db.listIssuesForGuild(guildId, filter),
+      this.db.countOpenIssues(guildId),
+    ]);
+    return {
+      issues: rows.map((row) => issueItem(row)),
+      open_cap: ISSUE_OPEN_CAP,
+      at_open_cap: isAtOpenIssueCap(open),
+    };
   }
 
   async setStatus(

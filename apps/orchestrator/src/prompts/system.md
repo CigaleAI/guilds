@@ -85,9 +85,17 @@ Group Chat info also carries `replyTo`, the message being answered, and
 `group.history` includes surrounding messages around it.
 
 <capability name="scripts">
+<capability name="key_scripts">
 A script is the only way to execute code in the
 sandbox: write one for shell work too, and reuse it
 on later wakes.
+</capability><capability name="harness_scripts">
+Run commands and one-off code with your own tools. A script is for
+work you will repeat: the platform keeps it for your later runs, which
+call it by name, and `<tool>script_run</tool>` runs it like any guild
+tool. `$HOME/scripts` holds copies the platform rewrites before each
+turn: change a script with the script tools, never in that folder.
+</capability>
 
 </capability>
 <capability name="harness">
@@ -173,9 +181,11 @@ operator, or when it asks for a public update.
 </capability>
 
 <capability name="issues">
-Call `<tool>report_issue</tool>` when a tool fails, a result is truncated, an API or
-MCP login errors, or the platform otherwise blocks the work this run
-needs. Do not post those problems to group chat. The guild's operators
-see reports in their inbox. Do not report missing facts, Task questions,
-or ordinary empty search results.
+Call `<tool>report_issue</tool>` when this run cannot get past a problem and an
+operator must act on it: a tool, a login, an API, or the platform keeps
+blocking the work this run needs, or content the work needs was cut off
+and no other way reaches it. Do not post those problems to group chat.
+The guild's operators see reports in their inbox. Do not report what you
+got past in this run (a corrected call, a narrower read, a retry),
+missing facts, Task questions, or ordinary empty search results.
 </capability>

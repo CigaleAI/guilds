@@ -8,6 +8,31 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Breaking for API clients.** `GET /api/guilds/:id/issues` returns
+`{ issues, open_cap, at_open_cap }` in place of the array of issues:
+`issues` is that array, `open_cap` the most open issues a guild may
+hold, and `at_open_cap` whether it holds that many, whatever the
+`status` filter, while `report_issue` refuses every new report. A
+client that reads the array reads `issues`. While `at_open_cap` is
+true, the guild's **Issues** tab warns that its agents' new reports,
+blocking ones included, are refused until some are resolved.
+
+**Changed.** An agent is told to call `report_issue` only when its run
+cannot get past a problem and an operator must act on it: a tool, a
+login, an API, or the platform that keeps blocking the work, or content
+the work needs that was cut off and that no other way reaches. A
+failure or a cut-off result the run gets past, by a corrected call, a
+narrower read, or a retry, is not reported. The system prompt, the
+tool's description, and the guild Issues tab's empty state say so.
+
+**Changed.** The system prompt of a subscription agent with scripting
+on no longer says a script is the only way to run code. It says to run
+commands and one-off code with the harness's own tools, to keep a
+script for work the agent repeats, and to change a script with the
+script tools, since its copy in `$HOME/scripts` is rewritten before
+each turn. An agent on a key reads that a script is its only way to
+run code, as before.
+
 **Added.** Every agent's Settings has **Repositories**, on a key as on a
 subscription, and **Create an agent** ends on it as an optional fourth
 step. Each ticked repository has a **Read-only** switch. While the guild

@@ -27,7 +27,7 @@ export function issueDisabling<T extends Issue>(
 
 /** The open blocking issue that disables the guild's agent; undefined while none does. */
 export function useDisablingIssue(guildId: string, agentId: string): Issue | undefined {
-  return issueDisabling(agentId, useOpenIssues(guildId).data ?? []);
+  return issueDisabling(agentId, useOpenIssues(guildId).data?.issues ?? []);
 }
 
 /** Which issues a list shows by severity: every one, or those of one level. */

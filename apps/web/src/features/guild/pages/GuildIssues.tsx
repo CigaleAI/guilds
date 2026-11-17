@@ -25,6 +25,7 @@ import {
 } from "@guildsrun/ui";
 import { useInvestigateIssue } from "../../studio/investigate";
 import { GuildPage } from "./GuildPage";
+import { OpenIssueCapBanner } from "./OpenIssueCapBanner";
 
 type Filter = "open" | "resolved" | "all";
 
@@ -49,7 +50,7 @@ export function GuildIssues() {
   const [filter, setFilter] = useState<Filter>("open");
   const severity: SeverityFilter = useSearch({ from: "/guilds/$guildId/issues" }).severity ?? "all";
 
-  const all = issues.data ?? [];
+  const all = issues.data?.issues ?? [];
   const open = all.filter((issue) => issue.status === "open").length;
   const ofStatus = filter === "all" ? all : all.filter((issue) => issue.status === filter);
   const listed = issuesOfSeverity(ofStatus, severity);
@@ -106,6 +107,7 @@ export function GuildIssues() {
           ]}
         />
       </div>
+      <OpenIssueCapBanner list={issues.data} />
       <IssueSeverityFilter
         issues={ofStatus}
         value={severity}
@@ -142,7 +144,7 @@ export function GuildIssues() {
                 ? "No open issues"
                 : "No issues"
           }
-          description="Agents report an issue when a tool fails, a result is cut short, or a login errors."
+          description="Agents report an issue when a tool, a login or the platform blocks their work, or content they need is cut off."
         />
       ) : (
         <div className="flex flex-col gap-3">
