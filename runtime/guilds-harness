@@ -68,6 +68,8 @@ RUNS = HOME / ".runs"
 REPOS = HOME / "repos"
 KEEP_RUNS = 20
 VERSION_TIMEOUT = 20
+# How long a CLI may take to approve the call's MCP server before its turn starts.
+APPROVE_TIMEOUT = 20
 START_WAIT = 5.0
 STOP_GRACE = 10.0
 # How long SIGKILL is sent again to what is left of a turn: a process may fork between the walk
@@ -685,7 +687,7 @@ class Cursor(Driver):
             capture_output=True,
             text=True,
             errors="replace",
-            timeout=VERSION_TIMEOUT,
+            timeout=APPROVE_TIMEOUT,
             env=env,
             check=False,
         )
