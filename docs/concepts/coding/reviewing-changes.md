@@ -57,8 +57,9 @@ Guild-Run: <run id>
 Guild-Agent: <agent id>
 ```
 
-A `prepare-commit-msg` hook in the image's git template adds them. A
-commit made elsewhere, such as from the **CLI** tab, gets none.
+They are added in every repository, whatever hooks path it sets, and
+the repository's own hooks still run. A commit made elsewhere, such as
+from the **CLI** tab, gets none.
 
 ## In the app
 
@@ -141,17 +142,49 @@ GET /api/runs/:id/turns/:call_id/changes/:repository/diff
 
 ### Commit trailers
 
-The hook is `prepare-commit-msg` in `/usr/local/share/guilds/git-template`,
-the image's `init.templateDir`. It runs `git interpret-trailers` with
-`--if-exists addIfDifferent`, only when `GUILD_RUN_ID` is set, and
-`Guild-Agent` falls back to `unknown`. The harness's environment sets
-both variables. Clones and `git init` take the hook from the template. A
-repository that sets its own hooks path skips it.
+A harness's environment sets `core.hooksPath` to the image's
+`/usr/local/share/guilds/git-hooks`, as the next `GIT_CONFIG_KEY_<n>`
+and `GIT_CONFIG_VALUE_<n>` after the image's own entries
+([Harness environment](harnesses.md#harness-environment)). git reads
+those after every configuration file, so they win over a repository's
+own `core.hooksPath`; only `git -c core.hooksPath=...` on one command
+wins over them. The CLI tab's environment does not set it.
+
+Every hook name git looks up in a hooks directory (those of
+githooks(5) but `fsmonitor-watchman`, which `core.fsmonitor` names by
+its path) is a link to `guilds-hook`. It first finds the repository's
+own hooks directory as git would without the platform's: the last
+`core.hooksPath` of the system, global, local, or worktree
+configuration, with `~` expanded and a relative path taken from the
+directory git runs hooks in, else `hooks` in the repository's common
+git directory, which its worktrees share. A hooks directory that is
+the platform's own counts as none. When that directory has an
+executable hook of the name, `guilds-hook` runs it with git's
+arguments, standard input, environment, and working directory, and
+exits with its status, so a failing hook still fails the command. The
+environment keeps the platform's `core.hooksPath`, so git that the hook
+runs goes through the platform's hooks too. A
+missing or non-executable one is no hook, as for git, which for
+`push-to-checkout` means updating the checked-out branch's working tree
+as git does itself.
+
+`prepare-commit-msg` runs the repository's hook first, then, when
+`GUILD_RUN_ID` is set, `git interpret-trailers` with
+`--if-exists addIfDifferent`; `Guild-Agent` falls back to `unknown`.
+Run after the repository's hook, the trailers stay in the message's
+last paragraph, where git reads trailers. `--no-verify` skips
+`pre-commit` and `commit-msg`, not `prepare-commit-msg`.
+
+git removes `GIT_CONFIG_COUNT` from the environment of the
+`receive-pack` it starts for a push to a repository on the same
+machine, so that repository runs its own hooks, without the
+platform's.
 
 ### Code
 
 `runtime/guilds-code` (`checkpoint`, `diff`),
-`runtime/git-template/hooks/prepare-commit-msg`,
+`runtime/git-hooks/guilds-hook`, `runtime/guilds-harness` (the
+harness's environment),
 `apps/orchestrator/src/generation/coding.ts` (a subscription turn's
 checkpoints, and reading a diff from the machine),
 `apps/orchestrator/src/generation/run-review.ts` (which diff a request

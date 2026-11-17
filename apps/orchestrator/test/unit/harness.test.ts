@@ -178,6 +178,24 @@ describe("a turn with the Claude Code driver", () => {
     assert.ok(!existsSync(path.join(sandbox.home, ".runs/r_harness/call_task.prompt.md")), "the prompt file goes");
   });
 
+  test("a turn's git takes the platform's hooks path after the git configuration its environment holds", async () => {
+    const show = { HARNESS_STUB_SHOW: "GIT_CONFIG_COUNT,GIT_CONFIG_KEY_0,GIT_CONFIG_VALUE_0,GIT_CONFIG_KEY_3,GIT_CONFIG_VALUE_3" };
+    const { sandbox, calls } = harnessSandbox("claude", () => recorded("claude-code"), { CLAUDE_CODE_OAUTH_TOKEN: TOKEN, ...show });
+    await turn(context(sandbox).ctx, "x");
+    const [call] = calls();
+    assert.equal(call!.env.GIT_CONFIG_COUNT, "4");
+    assert.equal(call!.env.GIT_CONFIG_KEY_0, "credential.https://.helper", "the image's entries stay first");
+    assert.equal(call!.env.GIT_CONFIG_KEY_3, "core.hooksPath");
+    assert.equal(call!.env.GIT_CONFIG_VALUE_3, "/usr/local/share/guilds/git-hooks");
+
+    const bare = harnessSandbox("claude", () => recorded("claude-code"), { CLAUDE_CODE_OAUTH_TOKEN: TOKEN, ...show, GIT_CONFIG_COUNT: "" });
+    await turn(context(bare.sandbox).ctx, "x");
+    const [first] = bare.calls();
+    assert.equal(first!.env.GIT_CONFIG_COUNT, "1", "an empty count is git's none");
+    assert.equal(first!.env.GIT_CONFIG_KEY_0, "core.hooksPath");
+    assert.equal(first!.env.GIT_CONFIG_VALUE_0, "/usr/local/share/guilds/git-hooks");
+  });
+
   test("a session resumes with the prompt as its next turn", async () => {
     const { sandbox, calls } = harnessSandbox("claude", () => recorded("claude-code"), { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
     const { ctx } = context(sandbox);

@@ -195,12 +195,13 @@ COPY guilds-locale /usr/local/bin/guilds-locale
 COPY guilds-code /usr/local/bin/guilds-code
 COPY guilds-harness /usr/local/bin/guilds-harness
 COPY guilds-git-credential /usr/local/bin/guilds-git-credential
-COPY git-template /usr/local/share/guilds/git-template
+# The platform's git hooks, each hook name a link to guilds-hook; a harness turn's environment
+# points core.hooksPath at them.
+COPY git-hooks /usr/local/share/guilds/git-hooks
 # git asks the credential helper for every HTTPS host (`https://` names them all) with the
-# repository path, so each guild repository gets its own token; new clones take the trailer hook.
+# repository path, so each guild repository gets its own token.
 RUN git config --system credential.https://.helper /usr/local/bin/guilds-git-credential \
     && git config --system credential.https://.useHttpPath true \
-    && git config --system init.templateDir /usr/local/share/guilds/git-template \
     && git config --system init.defaultBranch main
 # The same helper from the environment, which git reads after every configuration file: the
 # agent's own git configuration cannot replace it. An empty `helper` drops every helper set
@@ -216,7 +217,7 @@ ENV GIT_CONFIG_COUNT=3 \
 RUN chmod 755 /usr/local/bin/agent-browser-start /usr/local/bin/agent-cli-start /usr/local/bin/agent-stop \
         /usr/local/bin/guilds-browser /usr/local/bin/guilds-script-run /usr/local/bin/guilds-locale \
         /usr/local/bin/guilds-code /usr/local/bin/guilds-harness /usr/local/bin/guilds-git-credential \
-        /usr/local/share/guilds/git-template/hooks/prepare-commit-msg \
+        /usr/local/share/guilds/git-hooks/guilds-hook \
     && chmod 644 /usr/local/lib/guilds/agent-lib.sh /etc/claude-code/managed-settings.json \
     && mkdir -p /tmp/.X11-unix /run/guilds/requests \
     && chmod 1777 /tmp/.X11-unix \

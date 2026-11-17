@@ -94,6 +94,9 @@ EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max",
 ANTIGRAVITY_TOKEN = Path(".gemini/antigravity-cli/antigravity-oauth-token")
 # Never in a harness's environment: the harness does not open pull requests.
 DROPPED_ENV = ("GUILDS_RUN_DIR", "GH_TOKEN", "GITHUB_TOKEN")
+# The platform's git hooks: each runs the repository's own hook of its name, and
+# prepare-commit-msg names the run in the commit.
+GIT_HOOKS = "/usr/local/share/guilds/git-hooks"
 # The name the orchestrator's MCP server is configured under: the orchestrator names its tools in
 # the prompt by it.
 MCP_SERVER = "guilds"
@@ -1051,9 +1054,22 @@ def _run_dir(run_id: str) -> Path:
     return folder
 
 
+def _git_hooks_config(env: dict[str, str]) -> dict[str, str]:
+    """The variables that set core.hooksPath to the platform's hooks after the configuration
+    entries `env` holds. git reads them after every configuration file, so a repository that sets
+    its own hooks path still runs the platform's, and they run its own."""
+    count = int(env.get("GIT_CONFIG_COUNT") or 0)
+    return {
+        "GIT_CONFIG_COUNT": str(count + 1),
+        f"GIT_CONFIG_KEY_{count}": "core.hooksPath",
+        f"GIT_CONFIG_VALUE_{count}": GIT_HOOKS,
+    }
+
+
 def _child_env(spec: dict[str, Any], driver: Driver) -> dict[str, str]:
     env = {key: value for key, value in os.environ.items() if key not in DROPPED_ENV}
     env.update(CHILD_ENV)
+    env.update(_git_hooks_config(env))
     for key, name in (("run_id", "GUILD_RUN_ID"), ("agent_id", "GUILD_AGENT_ID")):
         value = spec.get(key)
         if isinstance(value, str) and value:

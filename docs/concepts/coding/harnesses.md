@@ -687,8 +687,10 @@ runs for the agent: `HOME`, `GUILDS_AGENT_HOME`, `PORT`,
 `GUILDS_PORTS`, the agent's secrets, and its secret aliases
 ([Agent home](../agent-home.md)). It also gets `PAGER=cat`,
 `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
-`DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and
-`GUILD_AGENT_ID`, so commit trailers work
+`DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, `GUILD_AGENT_ID`,
+and `core.hooksPath` on the platform's git hooks as one more
+`GIT_CONFIG_*` entry after the image's, so commit trailers work in
+every repository
 ([Reviewing changes](reviewing-changes.md#commit-trailers)).
 
 `GH_TOKEN`, `GITHUB_TOKEN`, and `GUILDS_RUN_DIR` are never in a
