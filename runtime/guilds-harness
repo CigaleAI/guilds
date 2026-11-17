@@ -19,8 +19,9 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
   starts the CLI with that one MCP server, the token sent as its bearer. The token reaches the
   CLI through a private file: Claude Code reads it there, Cursor and Antigravity read it from
   their MCP configuration in the home, and the supervisor sets it in Codex's own environment
-  alone. A request with a `max_turns` starts a CLI that takes a limit on its model calls with
-  that limit; any other CLI refuses it.
+  alone. A Cursor turn that starts in the home first approves that one server there, where Cursor
+  reads the home's configuration as the workspace's too. A request with a `max_turns` starts a
+  CLI that takes a limit on its model calls with that limit; any other CLI refuses it.
 - `poll`: the raw events after a byte offset into the log, their normalised progress lines,
   the new offset, the session id once the harness has reported one, and whether the CLI has
   exited.
@@ -191,8 +192,8 @@ class Driver:
     added_env: dict[str, str] = {}
     prompt_on_stdin = True
     # The harness's own configuration and memory in the agent's home, as globs: removed before
-    # every call, so the brief is the only state the agent hands it. Logins, account state, and
-    # session transcripts (which a resume needs) are never in it.
+    # every call, so the brief is the only state the agent hands it. The harness's own login,
+    # account state, and session transcripts (which a resume needs) are never in it.
     local_state: tuple[str, ...] = ()
 
     def reset(self) -> list[str]:
@@ -254,6 +255,11 @@ class Driver:
         """The variables the CLI alone is started with for the MCP configuration file at `path`;
         none for a CLI that reads the file itself."""
         return {}
+
+    def approve_mcp_server(self, cwd: Path, env: dict[str, str]) -> None:
+        """Approves the call's MCP server, once its configuration is written, for a CLI that loads
+        it in `cwd` only on an approval; nothing for one that asks none there."""
+        return None
 
     def max_turns_args(self, max_turns: int) -> list[str]:
         """The arguments that end the turn after `max_turns` model calls."""
@@ -604,7 +610,12 @@ class Cursor(Driver):
     prompt_on_stdin = False
     # It has no switch to ignore the configuration in the home; a repository's own `.cursor/`,
     # hooks included, still loads. Besides its own folder, it reads the rules of every folder
-    # from the one it runs in up to the root: the home's and `repos/`'s too.
+    # from the one it runs in up to the root: the home's and `repos/`'s too. It loads a workspace's
+    # MCP server once an approval stored for that workspace names it, and skips one a workspace's
+    # disabled list names: both go, so the only approval a call has is the one the driver gives.
+    # It also loads the plugins of the account it runs on, fetched from Cursor's servers on every
+    # start and kept out by no switch; a sign-in made in the home to one of their MCP servers goes,
+    # so it does not reach the next call.
     local_state = (
         ".cursor/hooks.json",
         ".cursor/hooks",
@@ -614,6 +625,9 @@ class Cursor(Driver):
         ".cursor/commands",
         ".cursor/agents",
         ".cursor/plugins",
+        ".cursor/projects/*/mcp-approvals.json",
+        ".cursor/projects/*/mcp-disabled.json",
+        ".cursor/projects/*/mcp-auth.json",
         "AGENTS.md",
         "CLAUDE.md",
         "CLAUDE.local.md",
@@ -624,7 +638,8 @@ class Cursor(Driver):
     )
     # Where it reads a user rule and a user MCP server, which apply wherever it runs: the call's
     # system prompt as a rule that always applies, and the call's MCP server, which a user
-    # configuration gives without the approval a repository's own `.cursor/mcp.json` needs.
+    # configuration gives without the approval a repository's own `.cursor/mcp.json` needs, except
+    # in the home (`approve_mcp_server`).
     rules_file = Path(".cursor/rules/guilds.mdc")
     mcp_file = Path(".cursor/mcp.json")
 
@@ -656,6 +671,27 @@ class Cursor(Driver):
 
     def mcp_config_args(self, path: Path) -> list[str]:
         return []
+
+    def approve_mcp_server(self, cwd: Path, env: dict[str, str]) -> None:
+        # In the home the user configuration is also the workspace's own, whose servers load only
+        # on an approval. The CLI's approval names the server's exact configuration and this
+        # workspace, so it covers the server just written and no repository's.
+        if os.path.realpath(cwd) != os.path.realpath(HOME):
+            return
+        done = subprocess.run(
+            [self.binary, "mcp", "enable", MCP_SERVER],
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=VERSION_TIMEOUT,
+            env=env,
+            check=False,
+        )
+        if done.returncode != 0:
+            reason = _first_line(done.stderr) or _first_line(done.stdout) or f"exit {done.returncode}"
+            raise ToolError(f"{self.binary} did not approve the {MCP_SERVER} MCP server: {reason}")
 
     def credential(self, env: dict[str, str]) -> str | None:
         if env.get("CURSOR_API_KEY"):
@@ -1250,6 +1286,7 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
         _write_private(files.system, driver.system_prompt_text(system_prompt))
     if files.mcp and mcp:
         _write_private(files.mcp, json.dumps(driver.mcp_config(mcp)))
+        driver.approve_mcp_server(cwd, _child_env(spec, driver))
     state = {
         "call_id": call_id,
         "run_id": run_id,

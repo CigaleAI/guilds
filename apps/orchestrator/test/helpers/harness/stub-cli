@@ -19,6 +19,10 @@ until it is killed. `{"stub": "mcp", "method": ..., "params": ...}` posts that J
 the `guilds` server it was given, with its headers, appends the status and the answer to
 HARNESS_STUB_MCP_RECORD, and for a `tools/call` prints the events its CLI prints for an MCP call;
 `{"stub": "show_mcp_config"}` prints that server as a message. It exits with HARNESS_STUB_EXIT.
+
+`mcp enable <name>` replays nothing: it appends its argv, working directory, and the MCP server it
+would approve to HARNESS_STUB_APPROVALS, and exits with HARNESS_STUB_APPROVE_EXIT, naming the
+failure on stderr when that is not 0.
 """
 import json
 import os
@@ -157,6 +161,15 @@ def mcp_request(event, number):
 if len(sys.argv) > 1 and sys.argv[1] == "--version":
     print(os.environ.get("HARNESS_STUB_VERSION", "9.9.9 (stub)"))
     sys.exit(0)
+if sys.argv[1:3] == ["mcp", "enable"]:
+    approvals = os.environ.get("HARNESS_STUB_APPROVALS")
+    if approvals:
+        with open(approvals, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "mcp_config": mcp_config()[0]}) + "\n")
+    code = int(os.environ.get("HARNESS_STUB_APPROVE_EXIT", "0"))
+    if code:
+        print(f"MCP server '{sys.argv[3]}' not found in configuration", file=sys.stderr)
+    sys.exit(code)
 stdin = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
 record = os.environ.get("HARNESS_STUB_RECORD")
 if record:
