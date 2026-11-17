@@ -1,23 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AccessEntry, AccessSubjectType, AgentAccessMode } from "../../api/types/access";
-import type { Collection } from "../../api/types/tables";
-import { tablesByAccess, type TableAccessRead } from "./accessGroups";
+import { itemsByAccess, type AccessRead } from "./accessGroups";
 
-function table(id: string, name: string, guild: Collection["guild"] = null): Collection {
-  return {
-    id,
-    name,
-    purpose: "",
-    columns: [],
-    display_path: `org/o1/collections/${name}`,
-    scope: guild ? "guild" : "org",
-    guild,
-    created_at: "2026-01-01T00:00:00.000Z",
-    updated_at: "2026-01-01T00:00:00.000Z",
-    count: 0,
-  };
-}
+type Item = { id: string; name: string };
+
+const item = (id: string, name: string): Item => ({ id, name });
 
 function row(
   type: AccessSubjectType,
@@ -28,34 +16,30 @@ function row(
   return { type, id, name, mode, guild_id: type === "org" ? null : "g1", guild_name: null };
 }
 
-const read = (subjects: AccessEntry[]): TableAccessRead => ({
+const read = (subjects: AccessEntry[]): AccessRead => ({
   status: "success",
   list: { subjects },
 });
 
-/** The groups as label and table names, the shape the list shows. */
-function grouped(tables: Collection[], reads: Record<string, TableAccessRead>) {
-  return tablesByAccess(tables, (id) => reads[id] ?? { status: "pending" }).map((group) => [
+/** The groups as label and item names, the shape the list shows. */
+function grouped(items: Item[], reads: Record<string, AccessRead>) {
+  return itemsByAccess(items, (entry) => reads[entry.id] ?? { status: "pending" }).map((group) => [
     group.label,
-    group.tables.map((item) => item.name),
+    group.items.map((entry) => entry.name),
   ]);
 }
 
-test("tables are grouped by the subjects their rows give read or write, never by where they belong", () => {
-  const sales = { id: "g_sales", name: "sales" };
-  const tables = [
-    table("t1", "orders", sales),
-    table("t2", "leads"),
-    table("t3", "budget", sales),
-    table("t4", "roadmap"),
-  ];
+test("items are grouped by the subjects their rows give read or write, each group in the items' order", () => {
   assert.deepEqual(
-    grouped(tables, {
-      t1: read([row("org", "o1", "acme", "read")]),
-      t2: read([row("guild", "g_ops", "ops", "write")]),
-      t3: read([row("guild", "g_sales", "sales", "read"), row("guild", "g_ops", "ops", "read")]),
-      t4: read([row("org", "o1", "acme", "write"), row("guild", "g_ops", "ops", "write")]),
-    }),
+    grouped(
+      [item("t3", "budget"), item("t2", "leads"), item("t1", "orders"), item("t4", "roadmap")],
+      {
+        t1: read([row("org", "o1", "acme", "read")]),
+        t2: read([row("guild", "g_ops", "ops", "write")]),
+        t3: read([row("guild", "g_sales", "sales", "read"), row("guild", "g_ops", "ops", "read")]),
+        t4: read([row("org", "o1", "acme", "write"), row("guild", "g_ops", "ops", "write")]),
+      },
+    ),
     [
       ["Organisation", ["orders", "roadmap"]],
       ["Guild · ops", ["budget", "leads", "roadmap"]],
@@ -65,11 +49,11 @@ test("tables are grouped by the subjects their rows give read or write, never by
 });
 
 test("guild groups are keyed by id, so two guilds of one name stay apart, ordered by name", () => {
-  const groups = tablesByAccess([table("t1", "a"), table("t2", "b")], (id) =>
-    read([row("guild", id === "t1" ? "g_2" : "g_1", "twin", "read")]),
+  const groups = itemsByAccess([item("t1", "a"), item("t2", "b")], (entry) =>
+    read([row("guild", entry.id === "t1" ? "g_2" : "g_1", "twin", "read")]),
   );
   assert.deepEqual(
-    groups.map((group) => [group.key, group.label, group.tables.map((item) => item.name)]),
+    groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.name)]),
     [
       ["guild:g_1", "Guild · twin", ["b"]],
       ["guild:g_2", "Guild · twin", ["a"]],
@@ -77,9 +61,9 @@ test("guild groups are keyed by id, so two guilds of one name stay apart, ordere
   );
 });
 
-test("agents' read and write rows list the table under Individual agents, beside any wider grant", () => {
+test("agents' read and write rows list the item under Individual agents, beside any wider grant", () => {
   assert.deepEqual(
-    grouped([table("t1", "notes"), table("t2", "drafts"), table("t3", "shared")], {
+    grouped([item("t2", "drafts"), item("t1", "notes"), item("t3", "shared")], {
       t1: read([row("agent", "a1", "scout", "read")]),
       t2: read([row("agent", "a1", "scout", "write"), row("agent", "a2", "keeper", "none")]),
       t3: read([row("org", "o1", "acme", "read"), row("agent", "a1", "scout", "write")]),
@@ -93,7 +77,7 @@ test("agents' read and write rows list the table under Individual agents, beside
 
 test("an empty list and a list of only None rows are not fully known, never an empty group", () => {
   assert.deepEqual(
-    grouped([table("t1", "empty"), table("t2", "closed")], {
+    grouped([item("t2", "closed"), item("t1", "empty")], {
       t1: read([]),
       t2: read([row("agent", "a1", "scout", "none")]),
     }),
@@ -103,7 +87,7 @@ test("an empty list and a list of only None rows are not fully known, never an e
 
 test("a list with hidden rows left out still shows the grants the viewer sees", () => {
   assert.deepEqual(
-    grouped([table("t1", "ledger")], {
+    grouped([item("t1", "ledger")], {
       t1: read([row("org", "o1", "acme", "read"), row("agent", "a1", "scout", "none")]),
     }),
     [["Organisation", ["ledger"]]],
@@ -112,7 +96,7 @@ test("a list with hidden rows left out still shows the grants the viewer sees", 
 
 test("a read still running or failed is its own group, never an empty list", () => {
   assert.deepEqual(
-    grouped([table("t1", "slow"), table("t2", "broken"), table("t3", "open")], {
+    grouped([item("t1", "slow"), item("t2", "broken"), item("t3", "open")], {
       t2: { status: "error" },
       t3: read([row("org", "o1", "acme", "read")]),
     }),
@@ -124,6 +108,6 @@ test("a read still running or failed is its own group, never an empty list", () 
   );
 });
 
-test("no tables give no groups", () => {
+test("no items give no groups", () => {
   assert.deepEqual(grouped([], {}), []);
 });

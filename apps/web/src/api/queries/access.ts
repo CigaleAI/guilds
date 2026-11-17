@@ -252,10 +252,10 @@ export function useItemAccess(target: AccessTarget) {
   return useQuery(itemAccessQuery(target));
 }
 
-/** The access lists of these tables, each read and cached as the table's own Access tab reads it. */
-export function useTablesAccess(tableIds: readonly string[]) {
+/** The access lists of these items of one kind, each read and cached as the item's own access list reads it. */
+export function useItemsAccess(kind: AccessTarget["kind"], ids: readonly string[]) {
   return useQueries({
-    queries: tableIds.map((id) => itemAccessQuery({ kind: "collection", id })),
+    queries: ids.map((id) => itemAccessQuery({ kind, id })),
   });
 }
 
