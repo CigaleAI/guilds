@@ -62,7 +62,7 @@ export async function listAccess(store: ArtifactStore, actor: ArtifactActor, tar
 export async function accessList(store: ArtifactStore, actor: ArtifactActor, target: AccessTarget): Promise<AccessList> {
   assertOperator(actor);
   await requireTarget(store, actor, target);
-  return { subjects: await loadEntries(store.db, actor, target) };
+  return { subjects: await loadEntries(store.db, actor, target), complete: !actor.hidden.guildIds.length };
 }
 
 /**
@@ -101,7 +101,7 @@ export async function replaceAccess(
     for (const change of changes) {
       await recordConfigChange(client, actor, change);
     }
-    return { subjects: await loadEntries(client, actor, target) };
+    return { subjects: await loadEntries(client, actor, target), complete: !actor.hidden.guildIds.length };
   });
 }
 

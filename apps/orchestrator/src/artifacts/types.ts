@@ -55,8 +55,12 @@ export type AccessSubjectRef = { type: AccessSubject; id: string };
 
 export type AccessGrant = { type: AccessSubject; id: string; mode: AgentAccessMode };
 
-/** An item's access list as the operator reads it. */
-export type AccessList = { subjects: AccessEntry[] };
+/**
+ * An item's access list as the operator reads it, without the rows of guilds the operator cannot
+ * see and of their agents; `complete` is true when the operator sees every guild of the
+ * organisation, so no row is left out.
+ */
+export type AccessList = { subjects: AccessEntry[]; complete: boolean };
 
 export const WRITE_MAX_BYTES = 256 * 1024;
 /** The largest file one put may store. */

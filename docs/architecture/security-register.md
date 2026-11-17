@@ -1519,6 +1519,8 @@ private guilds they do not operate, by the rule above. The access
 routes (`/api/notes/:note_id/access`, `/api/collections/:collection_id/access`)
 leave out the rows of those guilds and their agents, keep them
 unchanged on a `PUT`, and refuse those guilds and agents as subjects.
+Their `complete` flag says only whether the caller sees every guild of
+the organisation, never whether one item has rows left out.
 The `reach` routes leave out their items. Every change to a list is
 logged in `config_changes`.
 

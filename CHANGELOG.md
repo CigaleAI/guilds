@@ -22,6 +22,14 @@ is picked and saved. An inherited login's folder has no removal. Every
 login's **Save settings** stays off while a required setting is
 missing or empty.
 
+**Added.** While a table's **Access** tab is open, the Tables list
+groups the tables by who their access lists reach: **Organisation**,
+each guild, **Individual agents**, **No access assigned**, and **No
+granting access**. A table whose list may hold rows the operator cannot
+see is under **Access not fully known**; a read in progress or failed
+is listed apart, with **Retry**. The access list routes answer
+`complete`, true when the caller sees every guild of the organisation.
+
 **Added.** A table's **Columns** view says below **Save columns**
 why it is off: no column changes to save, the columns being saved,
 or each column's rule break by its position and name.

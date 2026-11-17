@@ -63,8 +63,12 @@ export type AccessEntry = AccessRow & {
   guild_name: string | null;
 };
 
-/** An item's access list: the organisation's row, then guilds', then agents'. */
-export type AccessList = { subjects: AccessEntry[] };
+/**
+ * An item's access list: the organisation's row, then guilds', then agents'. The rows of guilds the
+ * viewer cannot see, and of their agents, are left out; `complete` is true when the viewer sees
+ * every guild of the organisation, so none can be.
+ */
+export type AccessList = { subjects: AccessEntry[]; complete: boolean };
 
 /** A note a guild's or an agent's rows reach, with the mode it ends up with. */
 export type ReachedNote = {

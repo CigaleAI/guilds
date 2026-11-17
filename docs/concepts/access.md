@@ -620,12 +620,12 @@ Every other note and file stays under its home, without the removed
 rows.
 
 ```text
-GET  /api/notes/:note_id/access                { subjects }
-PUT  /api/notes/:note_id/access                { subjects: [{ type, id, mode }] }; answers { subjects }
-GET  /api/files/:file_id/access                { subjects }
-PUT  /api/files/:file_id/access                { subjects: [{ type, id, mode }] }; answers { subjects }
-GET  /api/collections/:collection_id/access    { subjects }
-PUT  /api/collections/:collection_id/access    { subjects: [{ type, id, mode }] }; answers { subjects }
+GET  /api/notes/:note_id/access                { subjects, complete }
+PUT  /api/notes/:note_id/access                { subjects: [{ type, id, mode }] }; answers { subjects, complete }
+GET  /api/files/:file_id/access                { subjects, complete }
+PUT  /api/files/:file_id/access                { subjects: [{ type, id, mode }] }; answers { subjects, complete }
+GET  /api/collections/:collection_id/access    { subjects, complete }
+PUT  /api/collections/:collection_id/access    { subjects: [{ type, id, mode }] }; answers { subjects, complete }
 GET  /api/guilds/:guild_id/reach               { notes, tables }
 GET  /api/agents/:agent_id/reach               { notes, tables }
 ```
@@ -636,7 +636,9 @@ Each entry of `subjects` is
 subject belongs to; both are null for the organisation. The list is
 ordered: the organisation, then guilds, then agents by guild and name.
 Rows of private guilds the caller does not operate, and of their
-agents, are left out.
+agents, are left out. `complete` is true when the caller sees every
+guild of the organisation, so no row can be left out; it is the same
+for every item and says nothing about any one list.
 
 `PUT` takes the full list and replaces the list with it. A subject
 left out loses its row. Rows the caller cannot see are not in the

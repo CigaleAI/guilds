@@ -39,6 +39,7 @@ import { AccessListPanel } from "../access/AccessListPanel";
 import { ColumnsEditor } from "./ColumnsEditor";
 import { CreateTableDialog } from "./CreateTableDialog";
 import { RecordsPanel } from "./RecordsPanel";
+import { TablesByAccess } from "./TablesByAccess";
 import { orgScope, TableScopeSelect } from "./TableScope";
 import {
   columnErrors,
@@ -87,11 +88,22 @@ type TablesListProps = {
   onNew: () => void;
 };
 
-/** The organisation's tables, grouped by where each belongs: the organisation, then each guild. */
+/**
+ * The organisation's tables, grouped by where each belongs: the organisation, then each guild;
+ * while a table's Access tab is open, by who their access lists reach, opening each on Access.
+ */
 function TablesList({ selectedId, visible, onNew }: TablesListProps) {
   const navigate = useNavigate();
+  const search = useSearch({ strict: false });
+  const byAccess = search.tab === "access";
   const tables = useDatabases();
   const list = tables.data ?? [];
+  const open = (collectionId: string) =>
+    void navigate({
+      to: "/tables/$collectionId",
+      params: { collectionId },
+      search: byAccess ? { tab: "access" } : {},
+    });
   const groups = [
     { label: "Organisation", items: list.filter((item) => !item.guild) },
     ...[...new Set(list.flatMap((item) => (item.guild ? [item.guild.name] : [])))]
@@ -115,6 +127,8 @@ function TablesList({ selectedId, visible, onNew }: TablesListProps) {
           <SkeletonRows rows={5} label="Loading tables" />
         ) : tables.isError ? (
           <Banner tone="error" title="Couldn't load the tables" meta={tables.error.message} />
+        ) : byAccess ? (
+          <TablesByAccess tables={list} selectedId={selectedId} onOpen={open} />
         ) : (
           groups.map((group) => (
             <div key={group.label} className="flex flex-col gap-1">
@@ -127,12 +141,7 @@ function TablesList({ selectedId, visible, onNew }: TablesListProps) {
                   count={item.count ?? 0}
                   age={relativeTime(item.updated_at)}
                   selected={item.id === selectedId}
-                  onClick={() =>
-                    void navigate({
-                      to: "/tables/$collectionId",
-                      params: { collectionId: item.id },
-                    })
-                  }
+                  onClick={() => open(item.id)}
                 />
               ))}
             </div>
@@ -155,6 +164,7 @@ type OpenTableSectionProps = {
 function OpenTableSection({ selectedId, onNew }: OpenTableSectionProps) {
   const params = useParams({ strict: false });
   const navigate = useNavigate();
+  const search = useSearch({ strict: false });
   const wide = useMediaQuery(wideScreen);
   const tables = useDatabases();
   const visible =
@@ -166,7 +176,15 @@ function OpenTableSection({ selectedId, onNew }: OpenTableSectionProps) {
         <TableDetail
           key={selectedId}
           id={selectedId}
-          {...(wide ? {} : { onBack: () => void navigate({ to: "/tables" }) })}
+          {...(wide
+            ? {}
+            : {
+                onBack: () =>
+                  void navigate({
+                    to: "/tables",
+                    search: search.tab === "access" ? { tab: "access" } : {},
+                  }),
+              })}
         />
       ) : tables.isPending ? null : (
         <div className="grid flex-1 place-items-center p-6">

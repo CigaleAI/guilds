@@ -132,11 +132,17 @@ test("organisation-wide note, table, and change routes keep a private guild to i
       payload: { subjects: [{ type: "agent", id: agentId, mode: "write" }, { type: "org", id: "org_home", mode: "read" }] },
     });
     assert.equal(opened.statusCode, 200, opened.body);
+    assert.equal((opened.json() as { complete: boolean }).complete, true, "the guild's operator sees every guild");
     const shown = await app.inject({ method: "GET", url: "/api/notes/" + keeperId + "/access", headers: TEAMMATE });
     assert.deepEqual(
       (shown.json() as { subjects: Array<{ type: string }> }).subjects.map((entry) => entry.type),
       ["org"],
       "the private guild's agent row stays out of the list a member reads",
+    );
+    assert.equal(
+      (shown.json() as { complete: boolean }).complete,
+      false,
+      "a member who cannot see a guild is not told the list is whole",
     );
     const emptied = await app.inject({
       method: "PUT",
