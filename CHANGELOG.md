@@ -8,6 +8,13 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Fixed.** A subscription agent's turn that is cancelled, timed out,
+stopped at its tool calls' asking, or cut by an orchestrator restart
+records on its reply the tokens its CLI reported for its model calls
+while it ran (Claude Code and Antigravity report them), read **at
+least** in the run view, or says **tokens not reported** when its CLI
+reported none (Codex and Cursor report tokens only at a turn's end).
+
 **Fixed.** A call a subscription agent's harness makes of its own tools
 and that its CLI says failed, such as a command that exited otherwise
 than 0 or a read of a file that is not there, reads as a failed call:

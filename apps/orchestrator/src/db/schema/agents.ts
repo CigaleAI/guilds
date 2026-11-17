@@ -193,10 +193,12 @@ export type RunTurnChange = { call_id: string; generation: number; repos: RunRep
 
 /**
  * A subscription agent's run's latest turn on its harness: the call id its state and log are
- * kept under, the harness, the session the run's next turn resumes, and the log.
+ * kept under, the generation it runs, the harness, the session the run's next turn resumes, and
+ * the log.
  */
 export type RunHarnessTurn = {
   call_id: string;
+  generation: number;
   harness: Harness;
   session_id: string | null;
   log_path: string;

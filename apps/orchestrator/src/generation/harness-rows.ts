@@ -23,7 +23,8 @@ import { interruptionRecord } from "./tool-calls.js";
 // messages and tool calls take, marked as the harness's, and the tokens its turn spent, kept on the
 // turn's reply as a model call's are on its message. A call of a tool of the orchestrator's MCP
 // server is kept as a tool call of the run where the server runs it, so its events make no row.
-// Where a harness reports no tokens, its turn records none.
+// A turn whose harness did not report its tokens at its end records those of the model calls it
+// reported, or that it reported none.
 
 /** What a result row holds when the harness's tool returned something other than text. */
 export const NOT_TEXT_OUTPUT = "(the tool returned no text)";
@@ -57,11 +58,45 @@ export type HarnessResultStep = { kind: "result"; result: HarnessToolResult; cal
 export type HarnessUsageStep = { kind: "turn_usage"; usage: TokenUsage } | { kind: "session_usage"; usage: TokenUsage };
 
 /**
- * What an event of a harness's log makes of the run's rows: a message of the harness's, redacted,
- * whose calls of its own tools wait for their results; the result of such a call; or the tokens
- * its turn spent.
+ * The tokens one model call of the turn spent, by the harness's id of the call, which a later
+ * report of the same call replaces.
  */
-export type HarnessTurnStep = { kind: "message"; payload: AssistantMessage } | HarnessResultStep | HarnessUsageStep;
+export type HarnessModelCallStep = { kind: "model_call_usage"; call: string; usage: TokenUsage };
+
+/**
+ * What an event of a harness's log makes of the run's rows: a message of the harness's, redacted,
+ * whose calls of its own tools wait for their results; the result of such a call; the tokens its
+ * turn spent; or those of one of its model calls.
+ */
+export type HarnessTurnStep =
+  | { kind: "message"; payload: AssistantMessage }
+  | HarnessResultStep
+  | HarnessUsageStep
+  | HarnessModelCallStep;
+
+/**
+ * What a turn's log reported of its tokens: the harness's report of the whole turn, the last when
+ * there are several, null when there is none; and each model call's, by its last report.
+ */
+export type HarnessTurnTokens = { reported: HarnessUsageStep | null; model_calls: TokenUsage[] };
+
+/** What the steps of a turn's log, `steps`, report of its tokens. */
+export function harnessTurnTokens(steps: readonly HarnessTurnStep[]): HarnessTurnTokens {
+  let reported: HarnessUsageStep | null = null;
+  const calls = new Map<string, TokenUsage>();
+  for (const step of steps) {
+    if (step.kind === "turn_usage" || step.kind === "session_usage") {
+      reported = step;
+    } else if (step.kind === "model_call_usage") {
+      calls.set(step.call, step.usage);
+    }
+  }
+  return { reported, model_calls: [...calls.values()] };
+}
+
+/** What a harness turn's reply records of the tokens the turn spent, and how much of them. */
+export type HarnessUsageRecord = Partial<Pick<CompletionMetadata, "usage" | "cost_usd" | "cost_source">> &
+  Required<Pick<HarnessMessageMetadata, "usage_extent">>;
 
 /**
  * Whether a harness that names the orchestrator's MCP server's tools under a prefix, `harness`,
@@ -100,8 +135,9 @@ export function claudeCodeAssistantMessage(
 
 /**
  * The steps Claude Code's `stream-json` lines in `raw` make, in order, redacted with `secrets`:
- * each message with text or calls of its own tools, each result its tools returned, and the tokens
- * of its invocation, the turn's own. A result names only its call, which its message announced.
+ * each message with text or calls of its own tools, the tokens of the model call that returned
+ * it, each result its tools returned, and the tokens of its invocation, the turn's own. A result
+ * names only its call, which its message announced.
  */
 export function claudeCodeTurnSteps(raw: string, secrets: Record<string, string>): HarnessTurnStep[] {
   return parseClaudeCodeEvents(raw).flatMap((event): HarnessTurnStep[] => {
@@ -116,7 +152,11 @@ export function claudeCodeTurnSteps(raw: string, secrets: Record<string, string>
       return [{ kind: "turn_usage", usage: event.usage }];
     }
     const payload = claudeCodeAssistantMessage(event, secrets);
-    return payload === null ? [] : [{ kind: "message", payload }];
+    const message: HarnessTurnStep[] = payload === null ? [] : [{ kind: "message", payload }];
+    if (event.model_call === null || event.usage === null) {
+      return message;
+    }
+    return [...message, { kind: "model_call_usage", call: event.model_call, usage: event.usage }];
   });
 }
 
@@ -243,7 +283,7 @@ function isAntigravityGuildsCall(tool: AntigravityToolUse): boolean {
 /**
  * The message a piece of Antigravity's response text makes: none until its step is done, the
  * pieces kept in `drafts` by step meanwhile; then the step's whole text, redacted with `secrets`,
- * when it holds any.
+ * when it holds any, and the tokens of the step's model call, when it reports them.
  */
 function antigravityMessage(piece: AntigravityText, secrets: Record<string, string>, drafts: Map<number, string>): HarnessTurnStep[] {
   const text = (drafts.get(piece.step) ?? "") + piece.text;
@@ -252,12 +292,16 @@ function antigravityMessage(piece: AntigravityText, secrets: Record<string, stri
     return [];
   }
   drafts.delete(piece.step);
-  return text.trim() ? [{ kind: "message", payload: { role: "assistant", content: redact(text.trimEnd(), secrets) } }] : [];
+  const message: HarnessTurnStep[] = text.trim()
+    ? [{ kind: "message", payload: { role: "assistant", content: redact(text.trimEnd(), secrets) } }]
+    : [];
+  return piece.usage === null ? message : [...message, { kind: "model_call_usage", call: `step_${piece.step}`, usage: piece.usage }];
 }
 
 /**
  * The steps Antigravity's `stream-json` lines in `raw` make, in order, redacted with `secrets`:
- * each response with text once its step is done, its pieces kept in `drafts` until then, each call
+ * each response with text once its step is done, its pieces kept in `drafts` until then, with the
+ * tokens of its model call, each call
  * of one of its own tools, when it starts and with its output when it ends, and the tokens of its
  * conversation, the session's. A call's id is its step's under `turnId`, the turn's call id.
  */
@@ -304,7 +348,7 @@ export const HARNESS_TURN_STEPS: Record<Harness, (turnId: string) => HarnessTurn
 };
 
 /** The tokens of `usages` together; cache writes only when one of them reports them. */
-function totalUsage(usages: readonly TokenUsage[]): TokenUsage {
+export function totalUsage(usages: readonly TokenUsage[]): TokenUsage {
   const total: TokenUsage = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
   for (const usage of usages) {
     total.input_tokens += usage.input_tokens;
@@ -342,11 +386,24 @@ export function sessionTurnUsage(session: TokenUsage, kept: readonly TokenUsage[
 }
 
 /**
- * What a harness turn's reply records of the tokens the turn spent, as a model call's message does:
- * the tokens, and no price, since the turn ran on the operator's subscription.
+ * What a harness turn's reply records of the tokens its harness reported for the whole turn, as a
+ * model call's message does: the tokens, all of the turn's, and no price, since the turn ran on
+ * the operator's subscription.
  */
-export function subscriptionUsageRecord(usage: TokenUsage): Pick<CompletionMetadata, "usage" | "cost_usd" | "cost_source"> {
-  return { usage, cost_usd: 0, cost_source: "subscription" };
+export function subscriptionUsageRecord(usage: TokenUsage): HarnessUsageRecord {
+  return { usage, cost_usd: 0, cost_source: "subscription", usage_extent: "complete" };
+}
+
+/**
+ * What the reply of a turn that ended without its harness's report of the whole turn records: the
+ * tokens of the model calls it reported, `calls`, with no price, which are part of the turn's;
+ * or, when it reported none, that it records none.
+ */
+export function unreportedUsageRecord(calls: readonly TokenUsage[]): HarnessUsageRecord {
+  if (!calls.length) {
+    return { usage_extent: "none" };
+  }
+  return { usage: totalUsage(calls), cost_usd: 0, cost_source: "subscription", usage_extent: "partial" };
 }
 
 /**

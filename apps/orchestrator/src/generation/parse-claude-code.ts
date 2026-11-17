@@ -5,8 +5,9 @@ import { isJsonObject, JsonObjectSchema } from "../lib/json.js";
 
 // Claude Code's `stream-json` events, as its driver logs them in `runtime/guilds-harness`: each
 // line one event. A subscription agent's run keeps two kinds as rows, an assistant message and
-// the results of its tools, and reads the tokens the invocation spent from its `result`; every
-// other event, and every block of another shape, is dropped.
+// the results of its tools, and reads the tokens the invocation spent from its `result`, and
+// those of each model call from the message it returned; every other event, and every block of
+// another shape, is dropped.
 
 const TextBlock = Type.Object({ type: Type.Literal("text"), text: Type.String() });
 const ToolUseBlock = Type.Object({
@@ -22,8 +23,11 @@ const ToolResultBlock = Type.Object({
   is_error: Type.Optional(Type.Boolean()),
 });
 
-/** The tokens a `result` event reports, which Anthropic counts apart from the cache's. */
-const ResultUsage = Type.Object({
+/** The model call a message names: its id. */
+const ModelCall = Type.Object({ id: Type.String() });
+
+/** The tokens a `result` event, or a model call's message, reports, which Anthropic counts apart from the cache's. */
+const ReportedUsage = Type.Object({
   input_tokens: Type.Number(),
   output_tokens: Type.Number(),
   cache_read_input_tokens: Type.Optional(Type.Number()),
@@ -42,10 +46,17 @@ export type ClaudeCodeToolUse = Static<typeof ToolUseBlock>;
  */
 export type ClaudeCodeToolResult = { tool_use_id: string; output: string | null; is_error: boolean };
 
-/** A message Claude Code wrote: its text and its calls of its own tools, in order. */
+/**
+ * A message Claude Code wrote: its text and its calls of its own tools, in order, and the model
+ * call that returned it, by its id, with the tokens it spent; each null when the event names none.
+ * Claude Code writes each block of a model call's message as an event of its own, each with the
+ * call's id and its tokens.
+ */
 export type ClaudeCodeMessage = {
   type: "assistant";
   content: Array<ClaudeCodeText | ClaudeCodeToolUse>;
+  model_call: string | null;
+  usage: TokenUsage | null;
 };
 
 /** The results of Claude Code's tools, which it hands back to its model as a user turn. */
@@ -84,11 +95,11 @@ function toolResult(block: unknown): ClaudeCodeToolResult | null {
 }
 
 /**
- * The tokens of a `result` event's `usage`, its input counted with the cache's reads and writes;
- * null when it reports none.
+ * The tokens of a `usage` a `result` event or a model call's message reports, its input counted
+ * with the cache's reads and writes; null when it reports none.
  */
-function resultUsage(event: unknown): TokenUsage | null {
-  const usage = isJsonObject(event) && isJsonObject(event.usage) ? keepMatching(ResultUsage, event.usage) : null;
+function reportedUsage(reported: unknown): TokenUsage | null {
+  const usage = isJsonObject(reported) ? keepMatching(ReportedUsage, reported) : null;
   if (usage === null) {
     return null;
   }
@@ -110,11 +121,17 @@ function parseEvent(line: string): ClaudeCodeEvent | null {
   } catch {
     return null;
   }
-  const kind = isJsonObject(event) ? event.type : undefined;
+  if (!isJsonObject(event)) {
+    return null;
+  }
+  const kind = event.type;
   if (kind === "assistant") {
+    const message = isJsonObject(event.message) ? event.message : {};
     return {
       type: "assistant",
       content: contentBlocks(event).flatMap((block) => messageBlock(block) ?? []),
+      model_call: keepMatching(ModelCall, message)?.id ?? null,
+      usage: reportedUsage(message.usage),
     };
   }
   if (kind === "user") {
@@ -123,7 +140,7 @@ function parseEvent(line: string): ClaudeCodeEvent | null {
       results: contentBlocks(event).flatMap((block) => toolResult(block) ?? []),
     };
   }
-  const usage = kind === "result" ? resultUsage(event) : null;
+  const usage = kind === "result" ? reportedUsage(event.usage) : null;
   return usage === null ? null : { type: "result", usage };
 }
 

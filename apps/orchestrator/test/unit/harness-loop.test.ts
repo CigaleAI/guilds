@@ -125,12 +125,14 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
       [{ input_tokens: 12, output_tokens: 140, cache_read_tokens: 0 }, 0, "subscription"],
       "the reply records the turn's usage, with no price",
     );
+    assert.equal(kept[6]?.metadata.usage_extent, "complete");
     assert.ok(kept.slice(0, 6).every((row) => row.metadata.usage === undefined));
     assert.equal(published[0], "generation.started");
     assert.equal(published.at(-1), "generation.finished");
     assert.equal(db.run.status, "active", "a direct run waits for its next message");
     assert.deepEqual((db.run.metadata as Record<string, unknown>).harness_turn, {
       call_id: "turn_1_r_1",
+      generation: 1,
       harness: "claude-code",
       session_id: RECORDED_SESSION,
       log_path: ".runs/r_1/turn_1_r_1.harness.jsonl",
@@ -220,6 +222,35 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     const reply = unfinished.rows().at(-1);
     assert.match(String(reply?.payload.content), /Should the greeting also name the agent\?$/, "the held reply is kept when the turn ends");
     assert.equal(reply?.metadata.usage, undefined);
+    assert.equal(reply?.metadata.usage_extent, "none", "it says the CLI reported none of the turn's tokens");
+  });
+
+  test("a turn stopped before its CLI reported the whole turn records on its reply the tokens of the model calls it reported", async () => {
+    harnessTurnTiming.minuteMs = 20;
+    try {
+      const recorded = recordedEvents("claude-code");
+      const called = (line: string, usage: Record<string, number>) => {
+        const event = JSON.parse(line) as { message: Record<string, unknown> };
+        return JSON.stringify({ ...event, message: { ...event.message, usage } });
+      };
+      const { loop, db, rows } = subscriptionLoop([
+        recorded[0]!,
+        called(recorded[1]!, { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 400 }),
+        recorded[2]!,
+        called(recorded[3]!, { input_tokens: 12, output_tokens: 20, cache_read_input_tokens: 500 }),
+        HANG,
+      ]);
+      db.run.config_snapshot = { ...(db.run.config_snapshot as Record<string, unknown>), max_turn_minutes: 50 };
+      await loop.generator.generate("r_1", 1);
+      const reply = rows().at(-1);
+      assert.deepEqual(reply?.payload, { role: "assistant", content: "" }, "an empty reply, after the call's interrupted result");
+      assert.deepEqual(
+        [reply?.metadata.usage, reply?.metadata.cost_source, reply?.metadata.usage_extent],
+        [{ input_tokens: 922, output_tokens: 25, cache_read_tokens: 900 }, "subscription", "partial"],
+      );
+    } finally {
+      harnessTurnTiming.minuteMs = timing.minuteMs;
+    }
   });
 
   test("a cancel stops the CLI mid-tool, and the call it was in gets the interrupted result", async () => {
@@ -230,9 +261,10 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
     await loop.cancel("r_1");
     assert.equal(stubsRunning(bin), false, "the CLI was stopped");
     const kept = rows();
-    assert.deepEqual(kept.map((row) => row.payload.role), ["assistant", "tool"]);
+    assert.deepEqual(kept.map((row) => row.payload.role), ["assistant", "tool", "assistant"]);
     assert.equal(kept[1]?.payload.content, INTERRUPTED_CONTENT);
     assert.equal(kept[1]?.metadata.from_harness, "claude-code");
+    assert.equal(kept[2]?.metadata.usage_extent, "none", "the reply says the CLI reported no tokens before the cancel");
     assert.equal(errors().at(-1)?.operation, "generation.cancelled");
   });
 
@@ -256,7 +288,7 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
       assert.equal(errors().at(-1)?.operation, "harness.timed_out");
       assert.match(String(errors().at(-1)?.message), /^Claude Code was stopped after 50 minutes\. The run's next turn resumes its session\.$/);
       assert.equal(stubsRunning(bin), false);
-      assert.equal(rows().at(-1)?.payload.content, INTERRUPTED_CONTENT);
+      assert.equal(rows().at(-2)?.payload.content, INTERRUPTED_CONTENT);
     } finally {
       harnessTurnTiming.minuteMs = timing.minuteMs;
     }
@@ -307,33 +339,45 @@ describe("a subscription agent's generation runs a turn of its harness", () => {
 });
 
 describe("a turn lost with the orchestrator", () => {
-  test("is ended at boot: its harness stopped, its open call interrupted, its session kept for the next turn", async () => {
-    const { loop, db, sandbox, sandboxes, rows, bin, calls } = subscriptionLoop([...recordedEvents("claude-code").slice(0, 2), HANG]);
+  test("is ended at boot: its harness stopped once its log is read, its open call interrupted, its session kept, and the tokens its log reported recorded", async () => {
+    const [init, first] = recordedEvents("claude-code");
+    const event = JSON.parse(first!) as { message: Record<string, unknown> };
+    const reported = JSON.stringify({ ...event, message: { ...event.message, usage: { input_tokens: 30, output_tokens: 7, cache_read_input_tokens: 600 } } });
+    const { loop, db, sandbox, sandboxes, rows, bin, calls } = subscriptionLoop([init!, reported, HANG]);
     // What the process that died left: a started turn on the machine, its first row, and its record.
     const ctx = toolFixture({ run_id: "r_1", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
     await runCodeHelper(ctx.run, createToolHooks(), { op: "start", call_id: "turn_1_r_1", harness: "claude-code", prompt: "use bash twice" }, { helper: HARNESS_HELPER });
     await until(() => calls().length > 0);
     const call = { id: "toolu_01", type: "function", function: { name: "Read", arguments: "{}" } };
     db.messages.push({ id: 3, seq: 2, payload: { role: "assistant", content: "I'll look.", tool_calls: [call] }, metadata: { generation: 1, from_harness: "claude-code" }, created_at: new Date() });
-    db.run.metadata = { harness_turn: { call_id: "turn_1_r_1", harness: "claude-code", session_id: null, log_path: ".runs/r_1/turn_1_r_1.harness.jsonl" } };
+    db.run.metadata = { harness_turn: { call_id: "turn_1_r_1", generation: 1, harness: "claude-code", session_id: null, log_path: ".runs/r_1/turn_1_r_1.harness.jsonl" } };
     sandboxes.running.add("mach_1");
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     await loop.reconcile();
 
     assert.equal(stubsRunning(bin), false, "the harness that kept running is stopped");
-    const last = rows().at(-1);
-    assert.deepEqual(last?.payload, { role: "tool", tool_call_id: "toolu_01", content: INTERRUPTED_CONTENT });
-    assert.equal(last?.metadata.from_harness, "claude-code");
+    const [interrupted, reply] = rows().slice(-2);
+    assert.deepEqual(interrupted?.payload, { role: "tool", tool_call_id: "toolu_01", content: INTERRUPTED_CONTENT });
+    assert.equal(interrupted?.metadata.from_harness, "claude-code");
+    assert.deepEqual(reply?.payload, { role: "assistant", content: "" });
+    assert.deepEqual(
+      [reply?.metadata.generation, reply?.metadata.from_harness, reply?.metadata.usage, reply?.metadata.usage_extent],
+      [1, "claude-code", { input_tokens: 630, output_tokens: 7, cache_read_tokens: 600 }, "partial"],
+    );
     assert.equal((db.run.metadata as { harness_turn?: { session_id: string | null } }).harness_turn?.session_id, RECORDED_SESSION);
     assert.equal(db.run.status, "active", "a direct run stays open for its next message");
+
+    const rowsBefore = rows().length;
+    await loop.reconcile();
+    assert.equal(rows().length, rowsBefore, "a turn whose reply recorded its tokens records nothing more");
   });
 
   test("is left alone when its machine is not running, its open call still interrupted", async () => {
     const { loop, db, rows } = subscriptionLoop(recordedEvents("claude-code"));
     const call = { id: "toolu_01", type: "function", function: { name: "Read", arguments: "{}" } };
     db.messages.push({ id: 3, seq: 2, payload: { role: "assistant", content: "", tool_calls: [call] }, metadata: { generation: 1, from_harness: "claude-code" }, created_at: new Date() });
-    db.run.metadata = { harness_turn: { call_id: "turn_1_r_1", harness: "claude-code", session_id: "s_1", log_path: ".runs/r_1/turn_1_r_1.harness.jsonl" } };
+    db.run.metadata = { harness_turn: { call_id: "turn_1_r_1", generation: 1, harness: "claude-code", session_id: "s_1", log_path: ".runs/r_1/turn_1_r_1.harness.jsonl" } };
     await loop.reconcile();
     assert.equal(rows().at(-1)?.metadata.from_harness, "claude-code");
     assert.equal((db.run.metadata as { harness_turn?: { session_id: string | null } }).harness_turn?.session_id, "s_1");

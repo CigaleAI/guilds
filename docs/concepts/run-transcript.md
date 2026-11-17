@@ -60,7 +60,10 @@ in the Task show as their inlined bodies, the nested hop included.
   cost, such as **120 tok · $0.0020**, with input, output, and the
   cache's reads and writes on hover. A subscription agent's reply
   records its whole turn's tokens and reads **on the subscription** in
-  place of a cost.
+  place of a cost. A turn that ended before its CLI reported its total
+  reads **at least** before the tokens of the model calls the CLI
+  reported, and one whose CLI reported none reads **tokens not
+  reported** ([Usage](usage.md#cost-of-a-harness-turn)).
 - While the agent generates and nothing has streamed yet, the
   transcript shows the agent's avatar, three pulsing dots, and
   **`<name>` is thinking…**. Once text streams, three pulsing dots sit

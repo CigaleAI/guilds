@@ -7,13 +7,21 @@ import { isJsonObject, JsonObjectSchema, type JsonObject } from "../lib/json.js"
 // one event, its payload under the event's name. A subscription agent's run keeps two kinds of step
 // as rows, the agent's response, whose text streams in pieces until the step is done, and a call of
 // one of its tools, when it starts and again when it ends; it reads the tokens the conversation
-// spent from `result`. Every other event and step is dropped.
+// spent from `result`, and those of each model call from the response step it ended. Every other
+// event and step is dropped.
 
 const ToolInfo = Type.Object({
   name: Type.Optional(Type.String()),
   parameters: Type.Optional(JsonObjectSchema),
   output: Type.Optional(Type.String()),
   error: Type.Optional(Type.Object({ message: Type.Optional(Type.String()) })),
+});
+
+/** The tokens `result` reports: the conversation's, over every turn of it; or a response step: its model call's. Input is apart from the cache's reads. */
+const ReportedUsage = Type.Object({
+  input_tokens: Type.Number(),
+  output_tokens: Type.Number(),
+  cache_read_tokens: Type.Optional(Type.Number()),
 });
 
 const StepUpdate = Type.Object({
@@ -23,13 +31,7 @@ const StepUpdate = Type.Object({
   text_delta: Type.Optional(Type.String()),
   tool_name: Type.Optional(Type.String()),
   tool_info: Type.Optional(ToolInfo),
-});
-
-/** The tokens `result` reports: the conversation's, over every turn of it, its input apart from the cache's reads. */
-const ResultUsage = Type.Object({
-  input_tokens: Type.Number(),
-  output_tokens: Type.Number(),
-  cache_read_tokens: Type.Optional(Type.Number()),
+  usage: Type.Optional(ReportedUsage),
 });
 
 /** The state of a step that failed. */
@@ -44,8 +46,11 @@ const CALL_MCP_TOOL = "call_mcp_tool";
  */
 export type AntigravityToolUse = { name: string; server: string | null; parameters: JsonObject };
 
-/** A piece of the text of the agent's response at step `step`; `done` on the step's last piece. */
-export type AntigravityText = { type: "text"; step: number; text: string; done: boolean };
+/**
+ * A piece of the text of the agent's response at step `step`; `done` on the step's last piece,
+ * which carries the tokens the step's model call spent, null when it reports none.
+ */
+export type AntigravityText = { type: "text"; step: number; text: string; done: boolean; usage: TokenUsage | null };
 
 /** A call of one of Antigravity's tools at step `step` as it starts. */
 export type AntigravityToolStarted = { type: "tool_started"; step: number; tool: AntigravityToolUse };
@@ -95,22 +100,22 @@ function stepEvent(body: JsonObject): AntigravityEvent | null {
     return null;
   }
   if (step.step_type === "agent_response") {
-    return { type: "text", step: step.step_index, text: step.text_delta ?? "", done: step.state !== "ACTIVE" };
+    const usage = step.usage === undefined ? null : tokenUsage(step.usage);
+    return { type: "text", step: step.step_index, text: step.text_delta ?? "", done: step.state !== "ACTIVE", usage };
   }
   return step.step_type === "tool" ? toolEvent(step) : null;
 }
 
-/** The tokens of a `result`'s `usage`, its input counted with the cache's reads; null when it reports none. */
-function resultUsage(result: JsonObject): AntigravitySessionUsage | null {
-  const reported = isJsonObject(result.usage) ? keepMatching(ResultUsage, result.usage) : null;
-  if (reported === null) {
-    return null;
-  }
+/** The tokens of a reported `usage`, its input counted with the cache's reads. */
+function tokenUsage(reported: Static<typeof ReportedUsage>): TokenUsage {
   const read = reported.cache_read_tokens ?? 0;
-  return {
-    type: "session_usage",
-    usage: { input_tokens: reported.input_tokens + read, output_tokens: reported.output_tokens, cache_read_tokens: read },
-  };
+  return { input_tokens: reported.input_tokens + read, output_tokens: reported.output_tokens, cache_read_tokens: read };
+}
+
+/** The tokens of a `result`'s `usage`; null when it reports none. */
+function resultUsage(result: JsonObject): AntigravitySessionUsage | null {
+  const reported = isJsonObject(result.usage) ? keepMatching(ReportedUsage, result.usage) : null;
+  return reported === null ? null : { type: "session_usage", usage: tokenUsage(reported) };
 }
 
 /** The event one line of the log holds; null for a line that is not JSON or an event the run keeps no row of. */

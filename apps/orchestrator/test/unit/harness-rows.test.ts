@@ -14,8 +14,10 @@ import {
   interruptedHarnessToolRecord,
   FAILED_CALL_REASON,
   NOT_TEXT_OUTPUT,
+  harnessTurnTokens,
   sessionTurnUsage,
   subscriptionUsageRecord,
+  unreportedUsageRecord,
 } from "../../src/generation/harness-rows.js";
 import { parseAntigravityEvents } from "../../src/generation/parse-antigravity.js";
 import { parseCodexEvents } from "../../src/generation/parse-codex.js";
@@ -44,6 +46,8 @@ test("a recorded Claude Code turn parses into its messages and its tools' result
       { type: "text", text: "I'll look at the greeting first." },
       { type: "tool_use", id: "toolu_01", name: "Read", input: { file_path: "/home/a_1/repos/app/greet.py" } },
     ],
+    model_call: "msg_01",
+    usage: null,
   });
   assert.deepEqual(events[1], { type: "user", results: [{ tool_use_id: "toolu_01", output: "1\tprint('hello')\n", is_error: false }] });
 });
@@ -60,8 +64,8 @@ test("a line that is not JSON, an event of another kind, and a block of another 
     ].join("\n"),
   );
   assert.deepEqual(events, [
-    { type: "assistant", content: [{ type: "text", text: "hi" }] },
-    { type: "assistant", content: [] },
+    { type: "assistant", content: [{ type: "text", text: "hi" }], model_call: null, usage: null },
+    { type: "assistant", content: [], model_call: null, usage: null },
     { type: "user", results: [] },
   ]);
 });
@@ -76,6 +80,8 @@ test("a tool result whose content is not text parses with no output", () => {
 test("a call of a tool of the orchestrator's MCP server makes no tool call of the message", () => {
   const message: ClaudeCodeMessage = {
     type: "assistant",
+    model_call: null,
+    usage: null,
     content: [
       { type: "text", text: "Writing the note." },
       { type: "tool_use", id: "toolu_mcp", name: "mcp__guilds__note_write", input: { path: "a.md" } },
@@ -94,6 +100,8 @@ test("a call of a tool of the orchestrator's MCP server makes no tool call of th
 test("a message holding only a call of the orchestrator's MCP server makes no row", () => {
   const message: ClaudeCodeMessage = {
     type: "assistant",
+    model_call: null,
+    usage: null,
     content: [{ type: "tool_use", id: "toolu_mcp", name: "mcp__guilds__group_post", input: { content: "hi" } }],
   };
   assert.equal(claudeCodeAssistantMessage(message, {}), null);
@@ -102,6 +110,8 @@ test("a message holding only a call of the orchestrator's MCP server makes no ro
 test("a call of another MCP server's tool stays a call of the harness's own", () => {
   const message: ClaudeCodeMessage = {
     type: "assistant",
+    model_call: null,
+    usage: null,
     content: [{ type: "tool_use", id: "toolu_other", name: "mcp__guildsx__note_write", input: {} }],
   };
   assert.deepEqual(claudeCodeAssistantMessage(message, {})?.tool_calls?.map((call) => call.function.name), [
@@ -112,6 +122,8 @@ test("a call of another MCP server's tool stays a call of the harness's own", ()
 test("a message's text becomes an assistant row, and its tool uses its tool calls, both redacted", () => {
   const message: ClaudeCodeMessage = {
     type: "assistant",
+    model_call: null,
+    usage: null,
     content: [
       { type: "text", text: "Using tok-123." },
       { type: "tool_use", id: "toolu_01", name: "Bash", input: { command: "echo tok-123" } },
@@ -124,11 +136,11 @@ test("a message's text becomes an assistant row, and its tool uses its tool call
       { id: "toolu_01", type: "function", function: { name: "Bash", arguments: '{"command":"echo [REDACTED:TOKEN]"}' } },
     ],
   });
-  assert.deepEqual(claudeCodeAssistantMessage({ type: "assistant", content: [{ type: "text", text: "Done." }] }, {}), {
+  assert.deepEqual(claudeCodeAssistantMessage({ type: "assistant", content: [{ type: "text", text: "Done." }], model_call: null, usage: null }, {}), {
     role: "assistant",
     content: "Done.",
   });
-  assert.equal(claudeCodeAssistantMessage({ type: "assistant", content: [{ type: "text", text: "  " }] }, {}), null);
+  assert.equal(claudeCodeAssistantMessage({ type: "assistant", content: [{ type: "text", text: "  " }], model_call: null, usage: null }, {}), null);
 });
 
 test("a tool's result becomes a tool row marked as the harness's, redacted and capped as a tool's output", () => {
@@ -334,7 +346,52 @@ test("a session's turn spent what its total holds past the turns the run kept, o
 
 test("a harness turn's usage is recorded with no price, from the subscription", () => {
   const usage = { input_tokens: 12, output_tokens: 140, cache_read_tokens: 0 };
-  assert.deepEqual(subscriptionUsageRecord(usage), { usage, cost_usd: 0, cost_source: "subscription" });
+  assert.deepEqual(subscriptionUsageRecord(usage), { usage, cost_usd: 0, cost_source: "subscription", usage_extent: "complete" });
+});
+
+test("a turn that ended without its harness's report of the whole turn records its model calls' tokens as partial, or that it records none", () => {
+  const first = { input_tokens: 1200, output_tokens: 40, cache_read_tokens: 1000, cache_write_tokens: 100 };
+  const second = { input_tokens: 1300, output_tokens: 60, cache_read_tokens: 1200 };
+  assert.deepEqual(unreportedUsageRecord([first, second]), {
+    usage: { input_tokens: 2500, output_tokens: 100, cache_read_tokens: 2200, cache_write_tokens: 100 },
+    cost_usd: 0,
+    cost_source: "subscription",
+    usage_extent: "partial",
+  });
+  assert.deepEqual(unreportedUsageRecord([]), { usage_extent: "none" });
+});
+
+test("Claude Code's model calls report their tokens once per call, its blocks' repeats replaced by the last", () => {
+  const block = (id: string, content: Record<string, unknown>, usage: Record<string, number>) =>
+    JSON.stringify({ type: "assistant", message: { id, content: [content], usage } });
+  const steps = claudeCodeTurnSteps(
+    [
+      block("msg_1", { type: "text", text: "Looking." }, { input_tokens: 5, output_tokens: 2, cache_read_input_tokens: 900, cache_creation_input_tokens: 100 }),
+      block("msg_1", { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "ls" } }, { input_tokens: 5, output_tokens: 30, cache_read_input_tokens: 900, cache_creation_input_tokens: 100 }),
+      block("msg_2", { type: "text", text: "Done." }, { input_tokens: 7, output_tokens: 10 }),
+      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "no id" }], usage: { input_tokens: 1, output_tokens: 1 } } }),
+    ].join("\n"),
+    {},
+  );
+  assert.deepEqual(
+    steps.filter((step) => step.kind === "model_call_usage"),
+    [
+      { kind: "model_call_usage", call: "msg_1", usage: { input_tokens: 1005, output_tokens: 2, cache_read_tokens: 900, cache_write_tokens: 100 } },
+      { kind: "model_call_usage", call: "msg_1", usage: { input_tokens: 1005, output_tokens: 30, cache_read_tokens: 900, cache_write_tokens: 100 } },
+      { kind: "model_call_usage", call: "msg_2", usage: { input_tokens: 7, output_tokens: 10, cache_read_tokens: 0 } },
+    ],
+    "a message that names no model call reports none",
+  );
+  assert.deepEqual(harnessTurnTokens(steps), {
+    reported: null,
+    model_calls: [
+      { input_tokens: 1005, output_tokens: 30, cache_read_tokens: 900, cache_write_tokens: 100 },
+      { input_tokens: 7, output_tokens: 10, cache_read_tokens: 0 },
+    ],
+  });
+  const total = { input_tokens: 2000, output_tokens: 50, cache_read_tokens: 1800 };
+  const ended = harnessTurnTokens([...steps, { kind: "turn_usage", usage: total }]);
+  assert.deepEqual(ended.reported, { kind: "turn_usage", usage: total }, "the harness's report of the whole turn is kept apart");
 });
 
 test("a recorded Cursor chat parses into its messages and its tools' calls as they start and complete", () => {
@@ -532,23 +589,34 @@ test("an Antigravity turn's responses are messages once done, its calls rows und
     steps.map((step) => (step.kind === "message" ? `message ${step.payload.tool_calls?.[0]?.function.name ?? step.payload.content}` : step.kind)),
     [
       "message I'll look at the greeting first.",
+      "model_call_usage",
       "message run_command",
       "result",
+      "model_call_usage",
       "message write_to_file",
       "result",
+      "model_call_usage",
       "message run_command",
       "result",
       'message Changed the greeting in greet.py to "hello, [REDACTED:TOKEN]" and ran it.\n\nShould the greeting also name the agent?',
+      "model_call_usage",
       "session_usage",
     ],
-    "a response without text makes no row",
+    "a response without text makes no row, and each response reports its model call's tokens",
   );
-  assert.deepEqual(steps[1]?.kind === "message" ? steps[1].payload.tool_calls?.[0] : null, {
+  assert.deepEqual(steps[1], { kind: "model_call_usage", call: "step_1", usage: { input_tokens: 1200, output_tokens: 35, cache_read_tokens: 100 } });
+  const { model_calls } = harnessTurnTokens(steps);
+  assert.deepEqual(
+    [model_calls.length, model_calls.reduce((sum, usage) => sum + usage.input_tokens, 0)],
+    [4, 4806],
+    "the model calls' tokens add up to what the conversation reports",
+  );
+  assert.deepEqual(steps[2]?.kind === "message" ? steps[2].payload.tool_calls?.[0] : null, {
     id: "turn_1.step_2",
     type: "function",
     function: { name: "run_command", arguments: '{"CommandLine":"cat greet.py"}' },
   });
-  assert.deepEqual(steps[4]?.kind === "result" ? steps[4].result : null, { harness: "antigravity", tool_use_id: "turn_1.step_4", output: null, failed: false, exit_code: null });
+  assert.deepEqual(steps[6]?.kind === "result" ? steps[6].result : null, { harness: "antigravity", tool_use_id: "turn_1.step_4", output: null, failed: false, exit_code: null });
 });
 
 test("a response Antigravity streams over several polls becomes one message once its step is done", () => {

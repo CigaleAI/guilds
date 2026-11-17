@@ -579,27 +579,37 @@ running; its log is `<path>`." Once `start` has gone, every way out
 but a clean exit or lost state sends `stop`: a cancel, the time limit,
 three failed polls, a stop the MCP server's calls asked for, or an
 error. However the turn ends, the generation's token is revoked once
-the server has kept the call it is running, and a call of the
-harness's own tools still without a result gets the interrupted
-result, marked `from_harness`.
+the server has kept the call it is running, a call of the harness's
+own tools still without a result gets the interrupted result, marked
+`from_harness`, and then the turn's reply is kept.
 
 The turn's reply records the tokens the turn spent, over every model
 call of the CLI, as a model reply records its call's
 ([Usage](usage.md#cost-of-a-harness-turn)): `metadata.usage`,
-`cost_usd` 0, and `cost_source: "subscription"`. A message of the CLI
-with no call of its own tools is held until the CLI's next event, so
-the reply is the one the usage follows; when none is held, an empty
-reply records it, and a turn that ends without its usage keeps the
-held message as it is.
+`cost_usd` 0, `cost_source: "subscription"`, and
+`metadata.usage_extent: "complete"`. A message of the CLI with no
+call of its own tools is held until the CLI's next event, so the
+reply is the one the usage follows; when none is held, an empty reply
+records it.
 
-| CLI | Usage read from | The turn's tokens |
-| --- | --- | --- |
-| Claude Code | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the invocation's; input counts the cache's reads and writes |
-| Codex | `turn.completed`'s `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` | the thread's total less what the run's earlier Codex replies recorded; a total below that is a new thread's, all of it the turn's |
-| Cursor | the `result` event's `usage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` | the invocation's; input counts the cache's reads and writes. A `result` without `usage` records none |
-| Antigravity | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_tokens` | the conversation's total less what the run's earlier Antigravity replies recorded, as Codex's; input counts the cache's reads |
+A turn that ends without the CLI's report of the whole turn, because
+it was cancelled, timed out, stopped at its tool calls' asking, lost,
+or the CLI exited without one, records on its reply, or on an empty
+reply when none is held, what the CLI reported of its model calls
+while the turn ran: their tokens summed, `cost_usd` 0,
+`cost_source: "subscription"`, and `usage_extent: "partial"`, a floor
+of what the turn spent, since a model call still running when the turn
+ended reported nothing. A CLI that reported no model call's tokens
+leaves the reply with no `usage` and `usage_extent: "none"`.
 
-`metadata.harness_turn` holds `call_id`, `harness`, `session_id`, and
+| CLI | The whole turn's usage, read from | The turn's tokens | Each model call's usage, read from |
+| --- | --- | --- | --- |
+| Claude Code | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the invocation's; input counts the cache's reads and writes | each `assistant` event's `message.usage`, in the same fields, under `message.id`; the events of one model call's blocks repeat it, and the last counts |
+| Codex | `turn.completed`'s `usage`: `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens` | the thread's total less what the run's earlier Codex replies recorded; a total below that is a new thread's, all of it the turn's | none: its events carry no usage before `turn.completed` |
+| Cursor | the `result` event's `usage`: `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens` | the invocation's; input counts the cache's reads and writes | none: its events carry no usage before `result` |
+| Antigravity | the `result` event's `usage`: `input_tokens`, `output_tokens`, `cache_read_tokens` | the conversation's total less what the run's earlier Antigravity replies recorded, as Codex's; input counts the cache's reads | each `agent_response` step's `usage` once the step is done, in the same fields |
+
+`metadata.harness_turn` holds `call_id`, `generation`, `harness`, `session_id`, and
 `log_path`. The turn's raw log stays at `log_path` in the agent's home,
 `.runs/<run id>/turn_<generation>_<run id>.harness.jsonl`
 ([Agent home](agent-home.md)). A turn in repositories that changed
@@ -759,12 +769,18 @@ every unresolved call, so the next model request is valid.
 On orchestrator startup, unresolved tool calls in active runs get
 those interruption results. Startup does not replay a model call. A
 subscription agent's run with
-a `metadata.harness_turn` has its harness turn ended first: the turn's
-CLI gets `stop` on the agent's machine when the machine runs, the
-session its result names replaces the one kept, so the run's next
-generation resumes it, and each call of the harness's own tools
-without a result gets the interrupted result, marked `from_harness`
-([Harness turns](#harness-turns)).
+a `metadata.harness_turn` has its harness turn ended first: when the
+agent's machine runs, the turn's whole log is read and its CLI gets
+`stop`, the session its result names replaces the one kept, so the
+run's next generation resumes it, and each call of the harness's own
+tools without a result gets the interrupted result, marked
+`from_harness`. When the turn's call still had its state on the
+machine and no reply of its generation recorded its tokens, an empty
+reply of that generation records the tokens the log reported: the
+CLI's report of the whole turn when the CLI finished it, else its
+model calls' as `partial`, else `usage_extent: "none"`
+([Harness turns](#harness-turns)). A turn whose machine is not running
+has no log read and records no reply.
 
 An interrupted group or schedule run that the operator has not
 resumed records `generation.interrupted` (`orchestrator restarted`)
