@@ -233,6 +233,34 @@ test("open issue cap is enforced", async () => {
   );
 });
 
+test("a guild's issue list says it is at its open issue cap exactly while a new report is refused", async () => {
+  const db = new MemoryIssuesDB();
+  const issues = new Issues(db as never);
+  const report = {
+    guildId: "guild_1",
+    agentId: "a_1",
+    agentName: "researcher",
+    runId: "r_1",
+    kind: "other",
+    detail: "detail",
+  };
+  for (let index = 0; index < ISSUE_OPEN_CAP - 1; index += 1) {
+    await issues.create({ ...report, summary: `issue ${index}` });
+  }
+  const below = await issues.listForGuild("guild_1");
+  assert.equal(below.at_open_cap, false);
+  assert.equal(below.open_cap, ISSUE_OPEN_CAP);
+  const last = await issues.create({ ...report, summary: "the last one", severity: "blocking" });
+  const full = await issues.listForGuild("guild_1", "resolved");
+  assert.equal(full.at_open_cap, true, "whatever status the list is filtered to");
+  assert.deepEqual(full.issues, []);
+  await assert.rejects(() => issues.create({ ...report, summary: "refused" }), IssueError);
+  await assert.rejects(() => issues.create({ ...report, summary: "refused", severity: "blocking" }), IssueError);
+  await issues.setStatus("guild_1", String(last.id), "resolved", "operator");
+  assert.equal((await issues.listForGuild("guild_1")).at_open_cap, false);
+  await issues.create({ ...report, summary: "accepted again" });
+});
+
 test("operator can resolve and reopen", async () => {
   const db = new MemoryIssuesDB();
   const issues = new Issues(db as never);
@@ -278,7 +306,7 @@ test("operator can resolve every open issue", async () => {
   await issues.setStatus("guild_1", String(first.id), "resolved", "operator");
   assert.equal(await issues.resolveOpen("guild_1", "ada"), 1);
   const listed = await issues.listForGuild("guild_1");
-  const byId = Object.fromEntries(listed.map((row) => [String(row.id), row]));
+  const byId = Object.fromEntries(listed.issues.map((row) => [String(row.id), row]));
   assert.equal(byId[String(first.id)]?.status, "resolved");
   assert.equal(byId[String(first.id)]?.resolved_by, "operator");
   assert.equal(byId[String(second.id)]?.status, "resolved");

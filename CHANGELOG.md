@@ -8,6 +8,15 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Breaking for API clients.** `GET /api/guilds/:id/issues` returns
+`{ issues, open_cap, at_open_cap }` in place of the array of issues:
+`issues` is that array, `open_cap` the most open issues a guild may
+hold, and `at_open_cap` whether it holds that many, whatever the
+`status` filter, while `report_issue` refuses every new report. A
+client that reads the array reads `issues`. While `at_open_cap` is
+true, the guild's **Issues** tab warns that its agents' new reports,
+blocking ones included, are refused until some are resolved.
+
 **Changed.** An agent is told to call `report_issue` only when its run
 cannot get past a problem and an operator must act on it: a tool, a
 login, an API, or the platform that keeps blocking the work, or content
