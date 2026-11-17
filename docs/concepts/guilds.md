@@ -50,13 +50,16 @@ guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 Each note and file has a home guild: the guild it was made in, or
 none for the organisation's ([Notes](notes.md#home-guild)). The
-guild's **State › Notes** and **State › Files** list two sections:
+guild's **State › Notes** and **State › Files** list:
 
-- **Guild notes** and **Guild files**: the notes and files homed in
-  the guild, whether or not a row reaches its agents;
-- **Shared with this guild**: those homed elsewhere, or in the
-  organisation, that a row for the guild, one of its agents, or the
-  organisation reaches.
+- the notes and files homed in the guild, whether or not a row
+  reaches its agents;
+- those homed elsewhere, or in the organisation, that a row for the
+  guild, one of its agents, or the organisation reaches.
+
+**State › Files** shows them in two sections, **Guild files** and
+**Shared with this guild**. **State › Notes** groups them by who
+their access lists reach ([Notes](notes.md#in-the-app)).
 
 A private guild's notes and files, those homed in it, are hidden from
 the operators who do not operate it, even when a row opens them to

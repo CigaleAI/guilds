@@ -267,7 +267,7 @@ sideways when they do not fit.
 | **Settings** | everything on this page | below |
 
 The agent's **State › Notes** and **State › Files** list what its
-guild's page lists, in the same two sections: the items homed in the
+guild's page lists, shown the same way: the items homed in the
 agent's guild, and those shared with the guild. Each item carries the
 agent's own mode on it, **Read & write** or **Read**, and an item no
 row reaches the agent is greyed, **No access**

@@ -22,6 +22,14 @@ is picked and saved. An inherited login's folder has no removal. Every
 login's **Save settings** stays off while a required setting is
 missing or empty.
 
+**Changed.** A guild's and an agent's **State › Notes** group the
+listed notes by who their access lists reach: **Organisation**, each
+guild, and **Individual agents**, in place of **Guild notes** and
+**Shared with this guild**. A note with no read or write row in sight
+is under **Access not fully known**; a read in progress or failed is
+listed apart, with **Retry**. Which notes are listed, and who reaches
+them, is unchanged.
+
 **Added.** While a table's **Access** tab is open, the Tables list
 groups the tables by who their access lists reach: **Organisation**,
 each guild, and **Individual agents**. A table with no read or write

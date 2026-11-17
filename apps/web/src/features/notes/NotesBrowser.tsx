@@ -1,5 +1,5 @@
 import { useBlocker } from "@tanstack/react-router";
-import { ArrowLeft, Copy, FilePlus, FileText, Pin, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, FilePlus, FileText, Pin, RotateCw, ShieldCheck, Trash2 } from "lucide-react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { ApiError } from "../../api/client";
@@ -41,12 +41,14 @@ import {
   toast,
 } from "@guildsrun/ui";
 import type { InsertKind } from "@guildsrun/ui";
+import { itemsByAccess } from "../access/accessGroups";
 import { AccessListDialog } from "../access/AccessListDialog";
 import { HomeGuildField } from "../access/HomeGuildField";
 import { homeLabel, isUnreached, listedItems, type OpenItem } from "../access/listedItems";
 import { sectionCopy } from "../access/sectionCopy";
 import { StartingAccessField } from "../access/StartingAccessField";
 import { UnlistedItem } from "../access/UnlistedItem";
+import { useAccessReads } from "../access/useAccessReads";
 import { useOpenItem } from "../access/useOpenItem";
 import { EmbedPreview } from "./EmbedPreview";
 import { embedIsBroken } from "./embeds";
@@ -72,8 +74,8 @@ const noNotes: ItemSections<NoteItem> = { own: [], shared: [] };
 const noteAccessIntro = "Who reads and writes this note.";
 
 /**
- * A guild's or an agent's notes in two sections, the guild's own and those shared with it, beside
- * the open note in an editor. A greyed note, which no row reaches for the page, opens its access
+ * A guild's or an agent's notes, the guild's own and those shared with it, grouped by who their
+ * access lists reach, beside the open note in an editor. A greyed note, which no row reaches for the page, opens its access
  * list. A save over a version someone saved since is refused and the text kept; embeds work as in
  * the Task.
  */
@@ -253,44 +255,70 @@ type NoteListContentProps = {
   onPick: (item: NoteItem) => void;
 };
 
-/** The page's notes as they load: the two sections, or a failure. */
+/** The page's notes as they load: grouped by who their access lists reach, or a failure. */
 function NoteListContent({ page, list, shown, searching, selectedPath, onPick }: NoteListContentProps) {
   if (list.isPending) return <SkeletonRows rows={5} label="Loading notes" />;
   if (list.isError) {
     return <Banner tone="error" title="Couldn't load the notes" meta={list.error.message} />;
   }
-  const copy = sectionCopy("note", page.type);
+  return (
+    <NotesByAccess
+      page={page}
+      shown={shown}
+      searching={searching}
+      selectedPath={selectedPath}
+      onPick={onPick}
+    />
+  );
+}
+
+type NotesByAccessProps = Omit<NoteListContentProps, "list">;
+
+const byPath = (a: NoteItem, b: NoteItem) => a.path.localeCompare(b.path) || a.id.localeCompare(b.id);
+
+/**
+ * The page's listed notes by who their access lists reach, each note under every group it matches,
+ * in name order. A note homed elsewhere names its home. A failed read lists its notes apart, with a
+ * retry, and never stops another note from opening.
+ */
+function NotesByAccess({ page, shown, searching, selectedPath, onPick }: NotesByAccessProps) {
+  const notes = listedItems(shown).sort(byPath);
+  const { readOf, retry } = useAccessReads(
+    "note",
+    notes.map((item) => item.id),
+  );
+  const homedElsewhere = new Set(shown.shared.map((item) => item.id));
+  const groups = itemsByAccess(notes, (item) => readOf(item.id));
+  if (!groups.length) {
+    return (
+      <p className="px-3 py-1.5 text-sm text-muted">
+        {searching ? sectionCopy("note", page.type).noMatch : "No notes listed."}
+      </p>
+    );
+  }
   return (
     <div className="flex flex-col gap-3">
-      <SectionList
-        label={copy.ownLabel}
-        count={shown.own.length}
-        empty={searching ? copy.noMatch : copy.ownEmpty}
-      >
-        {shown.own.map((item) => (
-          <NoteRow
-            key={item.id}
-            item={item}
-            selected={item.display_path === selectedPath}
-            onPick={onPick}
-          />
-        ))}
-      </SectionList>
-      <SectionList
-        label={copy.sharedLabel}
-        count={shown.shared.length}
-        empty={searching ? copy.noMatch : copy.sharedEmpty}
-      >
-        {shown.shared.map((item) => (
-          <NoteRow
-            key={item.id}
-            item={item}
-            meta={homeLabel(item)}
-            selected={item.display_path === selectedPath}
-            onPick={onPick}
-          />
-        ))}
-      </SectionList>
+      {groups.map((group) => (
+        <div key={group.key} className="flex flex-col gap-1">
+          <SectionList label={group.label} count={group.items.length}>
+            {group.items.map((item) => (
+              <NoteRow
+                key={item.id}
+                item={item}
+                {...(homedElsewhere.has(item.id) ? { meta: homeLabel(item) } : {})}
+                selected={item.display_path === selectedPath}
+                onPick={onPick}
+              />
+            ))}
+          </SectionList>
+          {group.kind === "error" ? (
+            <Button className="self-start" variant="ghost" size="sm" onClick={retry}>
+              <Icon icon={RotateCw} size={14} />
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }
