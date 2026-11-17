@@ -10,8 +10,13 @@ import { terminalCapOf } from "./caps.js";
 export type RunStanding = "open" | "waiting" | "generating" | "completed" | "capped";
 
 /** Whether an operator resumed the run, which then stays open for their messages. */
-export function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
+function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
   return Boolean(run.metadata.resumed_at);
+}
+
+/** Whether the run takes an operator's messages while it is active: it is direct, or an operator resumed it. */
+export function runTakesMessages(run: Pick<RunRow, "kind" | "metadata">): boolean {
+  return run.kind === "direct" || runWasResumed(run);
 }
 
 /**
@@ -39,7 +44,7 @@ export function runStanding(
     return "generating";
   }
   if (run.status === "active") {
-    return run.kind === "direct" || runWasResumed(run) ? "open" : "waiting";
+    return runTakesMessages(run) ? "open" : "waiting";
   }
   return terminalCapOf(run) === null ? "completed" : "capped";
 }
