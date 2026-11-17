@@ -32,7 +32,7 @@ export function isTableTab(value: unknown): value is (typeof tableTabs)[number] 
 const reservedColumns = ["id", "created_at", "updated_at", "created_by", "updated_by"];
 const columnName = /^[a-z][a-z0-9_]{0,63}$/;
 const tableName = /^[a-z][a-z0-9_-]{0,62}$/;
-const maxColumns = 64;
+export const maxColumns = 64;
 export const maxValues = 50;
 /** A column's description is instructions every agent that reads the table gets in State. */
 export const maxColumnDescription = 1000;
@@ -243,6 +243,27 @@ export function columnErrors(columns: readonly ColumnInput[]): Map<number, strin
   for (const index of unique.slice(1)) errors.set(index, "Only one column can be unique.");
   if (columns.length > maxColumns) errors.set(maxColumns, `At most ${maxColumns} columns.`);
   return errors;
+}
+
+/**
+ * Why a columns edit cannot be saved, one short phrase each; empty when it can. The errors are
+ * `columnErrors`'s, each named by its column's position and name, the column count's by the table.
+ */
+export function columnsSaveDisabledReasons(
+  columns: readonly ColumnInput[],
+  errors: ReadonlyMap<number, string>,
+  changed: boolean,
+  saving: boolean,
+): string[] {
+  if (saving) return ["Saving columns…"];
+  const reasons = [...errors]
+    .sort(([a], [b]) => a - b)
+    .map(([index, error]) =>
+      index === maxColumns && columns.length > maxColumns
+        ? error
+        : `Column ${index + 1} (${columns[index]?.name.trim() || "unnamed"}): ${error}`,
+    );
+  return changed ? reasons : ["No column changes to save.", ...reasons];
 }
 
 /** Why a table cannot take a name; undefined when it can. */

@@ -1,6 +1,6 @@
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, Database, Download, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import {
   useDatabase,
   useDatabases,
@@ -43,6 +43,7 @@ import { orgScope, TableScopeSelect } from "./TableScope";
 import {
   columnErrors,
   columnsForSave,
+  columnsSaveDisabledReasons,
   describeChanges,
   isTableTab,
   tableNameError,
@@ -340,7 +341,7 @@ function columnsOf(collection: Collection): ColumnInput[] {
 
 type ColumnsTabProps = { collection: Collection };
 
-function ColumnsTab({ collection }: ColumnsTabProps) {
+export function ColumnsTab({ collection }: ColumnsTabProps) {
   const update = useUpdateDatabase(collection.id);
   const [draft, setDraft] = useState<ColumnInput[] | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -348,6 +349,8 @@ function ColumnsTab({ collection }: ColumnsTabProps) {
   const errors = columnErrors(columns);
   const changes = describeChanges(collection.columns, columns);
   const dirty = draft !== null && changes.length > 0;
+  const saveReasons = columnsSaveDisabledReasons(columns, errors, dirty, update.isPending);
+  const saveReasonsId = useId();
   const reshapes =
     (collection.count ?? 0) > 0 &&
     changes.some(
@@ -367,25 +370,37 @@ function ColumnsTab({ collection }: ColumnsTabProps) {
   return (
     <div className="flex flex-col gap-4">
       <ColumnsEditor columns={columns} onChange={setDraft} errors={errors} />
-      <div className="sticky bottom-0 flex items-center justify-end gap-2 rounded-lg bg-surface px-4 py-3">
-        {dirty ? (
-          <span className="mr-auto text-sm text-muted">{changes.length} unsaved changes</span>
-        ) : null}
-        <Button
-          variant="ghost"
-          disabled={!dirty || update.isPending}
-          onClick={() => setDraft(null)}
+      <div className="sticky bottom-0 flex flex-col gap-2 rounded-lg bg-surface px-4 py-3">
+        <div className="flex items-center justify-end gap-2">
+          {dirty ? (
+            <span className="mr-auto text-sm text-muted">{changes.length} unsaved changes</span>
+          ) : null}
+          <Button
+            variant="ghost"
+            disabled={!dirty || update.isPending}
+            onClick={() => setDraft(null)}
+          >
+            Discard
+          </Button>
+          <Button
+            disabled={saveReasons.length > 0}
+            aria-describedby={saveReasons.length ? saveReasonsId : undefined}
+            onClick={() =>
+              reshapes ? setConfirming(true) : update.mutate(columnsUpdate, saveToasts)
+            }
+          >
+            Save columns
+          </Button>
+        </div>
+        <ul
+          id={saveReasonsId}
+          aria-live="polite"
+          className="flex flex-col gap-1 text-sm break-words text-muted empty:hidden"
         >
-          Discard
-        </Button>
-        <Button
-          disabled={!dirty || errors.size > 0 || update.isPending}
-          onClick={() =>
-            reshapes ? setConfirming(true) : update.mutate(columnsUpdate, saveToasts)
-          }
-        >
-          Save columns
-        </Button>
+          {saveReasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
       </div>
       <ConfirmDialog
         open={confirming}

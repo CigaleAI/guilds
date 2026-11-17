@@ -4,6 +4,7 @@ import type { Column } from "../../api/types/tables";
 import {
   columnErrors,
   columnsForSave,
+  columnsSaveDisabledReasons,
   describeChanges,
   fieldError,
   fieldText,
@@ -246,6 +247,50 @@ test("column definitions are checked like the server does", () => {
   assert.equal(errors.has(2), false);
   assert.match(errors.get(3) ?? "", /one column/);
   assert.match(errors.get(4) ?? "", /Describe/);
+});
+
+test("why columns cannot be saved: saving alone while a save runs, else no change and each column's error by position and name", () => {
+  const reasons = (columns: Column[], changed: boolean, saving = false) =>
+    columnsSaveDisabledReasons(columns, columnErrors(columns), changed, saving);
+  const valid = [column("status", "text")];
+  assert.deepEqual(reasons(valid, false), ["No column changes to save."]);
+  assert.deepEqual(reasons(valid, true), []);
+  assert.deepEqual(reasons(valid, false, true), ["Saving columns…"]);
+  assert.deepEqual(reasons([column("Bad", "text")], true, true), ["Saving columns…"]);
+
+  assert.deepEqual(
+    reasons(
+      [
+        column("status", "text"),
+        column("  ", "text"),
+        column("id", "text"),
+        column("status", "text"),
+        column("notes", "text", { description: " " }),
+        column("flag", "boolean", { unique: true }),
+        column("tags", "array", { values: Array.from({ length: 51 }, (_, at) => `v${at}`) }),
+        column("email", "text", { unique: true }),
+        column("code", "number", { unique: true }),
+      ],
+      true,
+    ),
+    [
+      "Column 2 (unnamed): Lowercase letters, digits and _, starting with a letter.",
+      'Column 3 (id): "id" is reserved.',
+      "Column 4 (status): Another column has this name.",
+      "Column 5 (notes): Describe the column for the agents.",
+      "Column 6 (flag): Only a text or number column can be unique.",
+      "Column 7 (tags): At most 50 values.",
+      "Column 8 (email): Only one column can be unique.",
+      "Column 9 (code): Only one column can be unique.",
+    ],
+  );
+  assert.deepEqual(reasons([column("Bad", "text")], false), [
+    "No column changes to save.",
+    "Column 1 (Bad): Lowercase letters, digits and _, starting with a letter.",
+  ]);
+
+  const many = Array.from({ length: 65 }, (_, at) => column(`c${at}`, "text"));
+  assert.deepEqual(reasons(many, true), ["At most 64 columns."]);
 });
 
 test("a columns edit is described change by change", () => {
