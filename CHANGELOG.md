@@ -8,6 +8,11 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Changed.** The coding harnesses are at their latest releases: Codex
+0.170.0, Claude Code 2.1.327, the Cursor CLI 2026.11.17, and the
+Antigravity CLI 1.5.11. A machine runs them once `./setup.sh` has
+rebuilt the agent image and its container is recreated.
+
 **Added.** Every agent's Settings has **Repositories**, on a key as on a
 subscription, and **Create an agent** ends on it as an optional fourth
 step. Each ticked repository has a **Read-only** switch. While the guild

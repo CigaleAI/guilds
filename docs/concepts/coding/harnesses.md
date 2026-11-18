@@ -436,10 +436,10 @@ the CLI's version.
 | Build argument | Default | Role |
 | --- | --- | --- |
 | `HARNESSES` | `claude-code cursor antigravity` | The proprietary harnesses to install; any other name fails the build |
-| `CODEX_VERSION` | `0.169.0` | Codex, installed with npm, always |
-| `CLAUDE_CODE_VERSION` | `2.1.326` | Claude Code, installed with npm |
-| `CURSOR_VERSION` | `2026.11.13-eacade1` | The Cursor CLI release tarball, checksum-verified per architecture |
-| `ANTIGRAVITY_VERSION` | `1.5.10-5253791805734912` | The Antigravity CLI release tarball, checksum-verified per architecture |
+| `CODEX_VERSION` | `0.170.0` | Codex, installed with npm, always |
+| `CLAUDE_CODE_VERSION` | `2.1.327` | Claude Code, installed with npm |
+| `CURSOR_VERSION` | `2026.11.17-f532c45` | The Cursor CLI release tarball, checksum-verified per architecture |
+| `ANTIGRAVITY_VERSION` | `1.5.11-6132547114106880` | The Antigravity CLI release tarball, checksum-verified per architecture |
 
 `node scripts/update-harnesses.mjs` moves the four versions to each
 vendor's latest release: it rewrites them, and the tarball checksums of
