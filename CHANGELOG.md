@@ -13,6 +13,17 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 Antigravity CLI 1.5.11. A machine runs them once `./setup.sh` has
 rebuilt the agent image and its container is recreated.
 
+**Changed.** Settings lists each harness's current models. Codex:
+GPT-6.2-Sol, GPT-6.2-Astra, GPT-6.1-Terra, and GPT-6-Luna. Cursor
+gains Claude Fable 5.2 and Claude Sonnet 5.5. Antigravity lists models
+for the first time: Gemini 4 Hydrogen, Gemini 4 Argon, Gemini 3.8
+Flash, Claude Opus 5.5, and Claude Sonnet 5.5. GPT-5.6-Terra and
+GPT-5.6-Luna on Codex are no longer listed and keep running as custom
+names. **Breaking for a Cursor agent on Claude Fable 5.1 or Claude
+Fable 5.1 Thinking:** neither is listed, so the agent's model is read
+as a custom name, which Cursor refuses without its effort; pick Claude
+Fable 5.2 in the agent's Settings.
+
 **Added.** Every agent's Settings has **Repositories**, on a key as on a
 subscription, and **Create an agent** ends on it as an optional fourth
 step. Each ticked repository has a **Read-only** switch. While the guild

@@ -30,20 +30,29 @@ test("a listed model's efforts are known efforts, and its default effort is one 
   }
 });
 
-test("a Cursor model with a name per effort has one for each effort it lists", () => {
-  for (const entry of HARNESS_MODELS.cursor.filter((item) => item.ids)) {
-    assert.deepEqual(Object.keys(entry.ids!), [...entry.efforts], entry.id);
-    assert.notEqual(entry.default_effort, null, entry.id);
+test("a model with a name per effort has one for each effort it lists", () => {
+  for (const harness of HARNESSES) {
+    for (const entry of HARNESS_MODELS[harness].filter((item) => item.ids)) {
+      assert.deepEqual(Object.keys(entry.ids!), [...entry.efforts], entry.id);
+      assert.notEqual(entry.default_effort, null, entry.id);
+    }
   }
 });
 
 test("Cursor starts a listed model under the CLI name for its effort, with no effort apart", () => {
   assert.deepEqual(harnessLaunch("cursor", "claude-opus-5-5", "high"), { model: "claude-opus-5-5-high", effort: null });
   assert.deepEqual(harnessLaunch("cursor", "gpt-5.6-sol", "none"), { model: "gpt-5.6-sol-none", effort: null });
-  assert.deepEqual(harnessLaunch("cursor", "claude-fable-5-1-thinking", "max"), {
-    model: "claude-fable-5-1-thinking-max",
+  assert.deepEqual(harnessLaunch("cursor", "claude-fable-5-2", "max"), { model: "claude-fable-5-2-max", effort: null });
+});
+
+test("Antigravity starts a listed model under the CLI name for its effort, and any other by its name with the effort apart", () => {
+  assert.deepEqual(harnessLaunch("antigravity", "gemini-4-hydrogen", "xhigh"), {
+    model: "gemini-4-hydrogen-xhigh",
     effort: null,
   });
+  assert.deepEqual(harnessLaunch("antigravity", "gemini-4-argon", null), { model: "gemini-4-argon-medium", effort: null });
+  assert.deepEqual(harnessLaunch("antigravity", "custom-model", "high"), { model: "custom-model", effort: "high" });
+  assert.deepEqual(harnessLaunch("antigravity", null, "low"), { model: null, effort: "low" });
 });
 
 test("Cursor starts a listed model without an effort, or at one it does not list, under its default effort's name", () => {
@@ -59,14 +68,14 @@ test("Cursor starts a model without effort names, or a custom one, under its own
 
 test("Claude Code and Codex start the model by its name, with the effort apart", () => {
   assert.deepEqual(harnessLaunch("claude-code", "opus", "xhigh"), { model: "opus", effort: "xhigh" });
-  assert.deepEqual(harnessLaunch("codex", "gpt-5.6-terra", "ultra"), { model: "gpt-5.6-terra", effort: "ultra" });
+  assert.deepEqual(harnessLaunch("codex", "gpt-6.1-terra", "ultra"), { model: "gpt-6.1-terra", effort: "ultra" });
   assert.deepEqual(harnessLaunch("claude-code", null, "low"), { model: null, effort: "low" });
   assert.deepEqual(harnessLaunch("codex", "custom-model", null), { model: "custom-model", effort: null });
 });
 
 test("a harness runs a listed model at its efforts, and any other at the efforts the harness takes", () => {
   assert.deepEqual(harnessEffortsFor("codex", "gpt-6-luna"), ["low", "medium", "high", "xhigh", "max"]);
-  assert.ok(harnessEffortsFor("codex", "gpt-5.6-terra").includes("ultra"));
+  assert.ok(harnessEffortsFor("codex", "gpt-6.1-terra").includes("ultra"));
   assert.deepEqual(harnessEffortsFor("claude-code", null), ["low", "medium", "high", "xhigh", "max"]);
   assert.deepEqual(harnessEffortsFor("codex", "custom-model"), [...EFFORTS]);
   assert.deepEqual(harnessEffortsFor("cursor", "composer-2.5"), []);

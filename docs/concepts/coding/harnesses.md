@@ -321,20 +321,24 @@ effort it gets when none is set.
 | Harness | Listed models | Efforts |
 | --- | --- | --- |
 | Claude Code | `fable`, `opus`, `sonnet`, `haiku` | `low` to `max`; the harness's default without one |
-| Codex | `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` | `low` to `max`, and `ultra` for `gpt-5.6-terra`; `medium` without one |
+| Codex | `gpt-6.2-sol`, `gpt-6.2-astra`, `gpt-6.1-terra` | `low` to `max`, and `ultra`; `low` without one |
+| | `gpt-6-luna` | `low` to `max`; `medium` without one |
 | Cursor | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | `none`, then `low` to `max`; `medium` without one |
-| | `claude-fable-5-1`, `claude-fable-5-1-thinking` | `low` to `max`; `high` without one |
-| | `claude-opus-5-5` | `low` to `max`; `medium` without one |
+| | `claude-fable-5-2` | `low` to `max`; `high` without one |
+| | `claude-opus-5-5`, `claude-sonnet-5-5` | `low` to `max`; `medium` without one |
 | | `grok-4.7` | `low` to `xhigh`; `medium` without one |
 | | `composer-2.5` | none |
-| Antigravity | none | `low` to `max` for the default model or a custom name |
+| Antigravity | `gemini-4-hydrogen` | `low` to `xhigh`; `medium` without one |
+| | `gemini-4-argon`, `gemini-3.8-flash`, `claude-opus-5-5`, `claude-sonnet-5-5` | `low` to `high`; `medium` without one |
 
-Claude Code, Codex, and Antigravity take the effort apart from the
-model name. Cursor names a model and its effort together, so a listed
-Cursor model maps each effort to the CLI name it starts under
-(`claude-opus-5-5` at `high` starts as `claude-opus-5-5-high`), and
-without an effort it starts under the name for its default effort.
-Cursor's fast variants are not listed; they run as custom names.
+Claude Code and Codex take the effort apart from the model name.
+Cursor names a model and its effort together, and so does Antigravity
+for the models it lists, so a listed model of either maps each effort
+to the CLI name it starts under (`claude-opus-5-5` at `high` starts as
+`claude-opus-5-5-high`), and without an effort it starts under the
+name for its default effort. Antigravity's default model and a custom
+name take the effort apart. Cursor's fast variants are not listed;
+they run as custom names.
 
 ### HTTP
 
@@ -351,7 +355,7 @@ subscription agent on it needs a repository), `models`, and
 `unlisted_efforts`: the
 efforts the default model or a custom name runs at. Each model holds
 `id`, `label`, `efforts`, and `default_effort` (null leaves it to the
-harness). The CLI names a Cursor model starts under stay on the server.
+harness). The CLI names a model starts under stay on the server.
 
 `GET /api/agents/:id/harness` returns what the harness still needs:
 

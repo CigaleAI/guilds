@@ -15,8 +15,9 @@ export type HarnessModel = {
   /** The effort a run gets without one set; null leaves it to the harness. */
   default_effort: Effort | null;
   /**
-   * The CLI's model name for each effort, for a harness that names a model and its effort
-   * together (Cursor). Without it the id is the CLI's model name and the effort goes apart.
+   * The CLI's model name for each effort, for a model the CLI names together with its effort
+   * (Cursor's, and Antigravity's listed ones). Without it the id is the CLI's model name and the
+   * effort goes apart.
    */
   ids?: Partial<Record<Effort, string>>;
 };
@@ -28,15 +29,16 @@ function model(id: string, label: string, efforts: readonly Effort[], defaultEff
   return { id, label, efforts, default_effort: defaultEffort };
 }
 
-/** A Cursor model whose CLI name for each effort is `<prefix>-<effort>`. */
-function cursorModel(
-  names: { id: string; label: string; prefix: string },
-  efforts: readonly Effort[],
-  defaultEffort: Effort,
-): HarnessModel {
-  const ids = Object.fromEntries(efforts.map((effort) => [effort, `${names.prefix}-${effort}`]));
-  return { id: names.id, label: names.label, efforts, default_effort: defaultEffort, ids };
+/** A model whose CLI name carries its effort: `<id>-<effort>` for each effort it runs at. */
+function effortNamedModel(id: string, label: string, efforts: readonly Effort[], defaultEffort: Effort): HarnessModel {
+  const ids = Object.fromEntries(efforts.map((effort) => [effort, `${id}-${effort}`]));
+  return { id, label, efforts, default_effort: defaultEffort, ids };
 }
+
+const LOW_TO_HIGH: readonly Effort[] = ["low", "medium", "high"];
+const LOW_TO_XHIGH: readonly Effort[] = [...LOW_TO_HIGH, "xhigh"];
+const LOW_TO_ULTRA: readonly Effort[] = [...LOW_TO_MAX, "ultra"];
+const NONE_TO_MAX: readonly Effort[] = ["none", ...LOW_TO_MAX];
 
 /** The models Settings lists for each harness. Any other model name still runs, as a custom one. */
 export const HARNESS_MODELS: Readonly<Record<Harness, readonly HarnessModel[]>> = {
@@ -47,25 +49,28 @@ export const HARNESS_MODELS: Readonly<Record<Harness, readonly HarnessModel[]>> 
     model("haiku", "Haiku", LOW_TO_MAX, null),
   ],
   codex: [
+    model("gpt-6.2-sol", "GPT-6.2-Sol", LOW_TO_ULTRA, "low"),
+    model("gpt-6.2-astra", "GPT-6.2-Astra", LOW_TO_ULTRA, "low"),
+    model("gpt-6.1-terra", "GPT-6.1-Terra", LOW_TO_ULTRA, "low"),
     model("gpt-6-luna", "GPT-6-Luna", LOW_TO_MAX, "medium"),
-    model("gpt-5.6-terra", "GPT-5.6-Terra", [...LOW_TO_MAX, "ultra"], "medium"),
-    model("gpt-5.6-luna", "GPT-5.6-Luna", LOW_TO_MAX, "medium"),
   ],
   cursor: [
-    cursorModel({ id: "gpt-5.6-sol", label: "GPT-5.6 Sol", prefix: "gpt-5.6-sol" }, ["none", ...LOW_TO_MAX], "medium"),
-    cursorModel({ id: "gpt-5.6-terra", label: "GPT-5.6 Terra", prefix: "gpt-5.6-terra" }, ["none", ...LOW_TO_MAX], "medium"),
-    cursorModel({ id: "gpt-5.6-luna", label: "GPT-5.6 Luna", prefix: "gpt-5.6-luna" }, ["none", ...LOW_TO_MAX], "medium"),
-    cursorModel({ id: "claude-fable-5-1", label: "Claude Fable 5.1", prefix: "claude-fable-5-1" }, LOW_TO_MAX, "high"),
-    cursorModel(
-      { id: "claude-fable-5-1-thinking", label: "Claude Fable 5.1 Thinking", prefix: "claude-fable-5-1-thinking" },
-      LOW_TO_MAX,
-      "high",
-    ),
-    cursorModel({ id: "claude-opus-5-5", label: "Claude Opus 5.5", prefix: "claude-opus-5-5" }, LOW_TO_MAX, "medium"),
-    cursorModel({ id: "grok-4.7", label: "Grok 4.7", prefix: "grok-4.7" }, ["low", "medium", "high", "xhigh"], "medium"),
+    effortNamedModel("gpt-5.6-sol", "GPT-5.6 Sol", NONE_TO_MAX, "medium"),
+    effortNamedModel("gpt-5.6-terra", "GPT-5.6 Terra", NONE_TO_MAX, "medium"),
+    effortNamedModel("gpt-5.6-luna", "GPT-5.6 Luna", NONE_TO_MAX, "medium"),
+    effortNamedModel("claude-fable-5-2", "Claude Fable 5.2", LOW_TO_MAX, "high"),
+    effortNamedModel("claude-opus-5-5", "Claude Opus 5.5", LOW_TO_MAX, "medium"),
+    effortNamedModel("claude-sonnet-5-5", "Claude Sonnet 5.5", LOW_TO_MAX, "medium"),
+    effortNamedModel("grok-4.7", "Grok 4.7", LOW_TO_XHIGH, "medium"),
     model("composer-2.5", "Composer 2.5", [], null),
   ],
-  antigravity: [],
+  antigravity: [
+    effortNamedModel("gemini-4-hydrogen", "Gemini 4 Hydrogen", LOW_TO_XHIGH, "medium"),
+    effortNamedModel("gemini-4-argon", "Gemini 4 Argon", LOW_TO_HIGH, "medium"),
+    effortNamedModel("gemini-3.8-flash", "Gemini 3.8 Flash", LOW_TO_HIGH, "medium"),
+    effortNamedModel("claude-opus-5-5", "Claude Opus 5.5", LOW_TO_HIGH, "medium"),
+    effortNamedModel("claude-sonnet-5-5", "Claude Sonnet 5.5", LOW_TO_HIGH, "medium"),
+  ],
 };
 
 /**

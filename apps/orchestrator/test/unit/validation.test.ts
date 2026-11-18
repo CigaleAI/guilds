@@ -398,7 +398,7 @@ test("harness_effort is one its model runs at; blank or missing leaves the harne
   assert.equal(validateAgentConfig(coder).harness_effort, null);
   assert.equal(validateAgentConfig({ ...coder, harness_effort: "  " }).harness_effort, null);
   assert.equal(validateAgentConfig({ ...coder, harness_effort: " high " }).harness_effort, "high");
-  assert.equal(validateAgentConfig({ ...coder, harness_model: "gpt-5.6-terra", harness_effort: "ultra" }).harness_effort, "ultra");
+  assert.equal(validateAgentConfig({ ...coder, harness_model: "gpt-6.1-terra", harness_effort: "ultra" }).harness_effort, "ultra");
   assert.throws(() => validateAgentConfig({ ...coder, harness_effort: "ultra" }), /one of low, medium, high, xhigh, max for gpt-6-luna/);
   assert.throws(() => validateAgentConfig({ ...coder, harness_effort: "turbo" }), /harness_effort must be one of: none,/);
   assert.throws(() => validateAgentConfig({ ...coder, harness_effort: 3 }), /harness_effort must be one of: none,/);

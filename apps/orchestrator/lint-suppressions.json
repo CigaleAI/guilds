@@ -90,11 +90,6 @@
       "count": 1
     }
   },
-  "src/coding/harness-models.ts": {
-    "limits/inline-parameter-type": {
-      "count": 1
-    }
-  },
   "src/compose.ts": {
     "limits/inline-parameter-type": {
       "count": 1
