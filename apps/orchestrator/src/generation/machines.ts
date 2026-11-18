@@ -326,7 +326,7 @@ export class AgentMachines {
     const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.sandboxes.connectRunning(agent.machine_id);
     if (sandbox === null) {
-      throw new SandboxStoppedError();
+      throw new RunRequestError(503, "sandbox is not running");
     }
     try {
       return await this.sandboxes.novncTarget(sandbox, agentSeat(agent));

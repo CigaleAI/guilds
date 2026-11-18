@@ -28,9 +28,13 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-/** The code a terminal socket the orchestrator accepts and then refuses closes with. */
-async function refusedCloseCode(url: string, headers: Record<string, string>): Promise<number> {
-  const socket = await openWs(url, headers, "tty");
+/** The code a sandbox view socket the orchestrator accepts and then refuses closes with. */
+async function refusedCloseCode(
+  url: string,
+  headers: Record<string, string>,
+  subprotocol = "tty",
+): Promise<number> {
+  const socket = await openWs(url, headers, subprotocol);
   const [code] = (await once(socket, "close")) as [number];
   return code;
 }
@@ -210,6 +214,16 @@ test(
       assert.equal(startedBrowser.statusCode, 200, startedBrowser.body);
       assert.deepEqual(sandboxes.browserStarts, [], "the CLI tab starts no Chrome");
       assert.equal(browserAgent.json().machine_id, machineId, "both agents share the organisation's machine");
+
+      generation.machines.cancelIdle(machineId);
+      sandboxes.running.delete(machineId);
+      assert.equal(
+        await refusedCloseCode(`ws://127.0.0.1:${port}/api/agents/${browserId}/browser/vnc/websockify`, AUTH, "binary"),
+        1013,
+        "the Browser view on a stopped machine keeps its close code",
+      );
+      assert.ok(!sandboxes.running.has(machineId), "a refused Browser view does not wake the machine");
+      assert.deepEqual(sandboxes.browserStarts, [], "nor start Chrome");
     } finally {
       for (const id of [...generation.machines.idle.keys()]) {
         generation.machines.cancelIdle(id);

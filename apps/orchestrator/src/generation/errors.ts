@@ -70,7 +70,7 @@ export class RunRequestError extends Error {
 }
 
 /**
- * A proxied sandbox view found its machine stopped: only an explicit start wakes it again. It keeps
+ * The terminal proxy found its machine stopped: only an explicit start wakes it again. It keeps
  * the name `RunRequestError`, which logs and Sentry group its 503s by.
  */
 export class SandboxStoppedError extends RunRequestError {

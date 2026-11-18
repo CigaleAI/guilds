@@ -13,8 +13,9 @@ const SANDBOX_TOUCH_INTERVAL_MS = 30_000;
 
 /**
  * The close code of a sandbox view's WebSocket whose target was refused. ttyd reconnects at once,
- * with no backoff, on any code but 1000, so a stopped machine closes normally and the terminal waits
- * for the operator; a refusal on a running machine (1013) and a refused agent (1008) do not.
+ * with no backoff, on any code but 1000, so the terminal's stopped machine closes normally and the
+ * terminal waits for the operator; the Browser view on a stopped machine and any other refusal on a
+ * running machine close with 1013, and a refused agent with 1008.
  */
 export function sandboxRefusalCloseCode(error: Error): number {
   if (error instanceof SandboxStoppedError) {
