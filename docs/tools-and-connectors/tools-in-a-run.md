@@ -26,7 +26,7 @@ Agent flags and the run kind narrow that set:
 | --- | --- |
 | The eight step-by-step browser tools | `config.browser` is true and the agent-optimized browser is not on |
 | `browse` and `browser_eval` | `config.browser` and `config.browser_optimized` are true and the System One platform key is on |
-| The five script tools | `config.scripting` is not false |
+| The five script tools | `config.scripting` is not false, which it always is on a subscription agent |
 | `memory_write` | `config.memory` is not false |
 | The seven schedule tools | The run is a direct or group-chat run, not a schedule run |
 | `secret_request` | The run is a direct run |

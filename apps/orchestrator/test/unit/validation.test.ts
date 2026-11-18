@@ -306,6 +306,15 @@ test("harness is one of the coding harnesses, and only a subscription agent has 
   assert.throws(() => validateAgentConfig({ model, harness: "cursor" }), /harness is for a subscription agent, which has no model/);
 });
 
+test("a subscription agent has no scripting, whatever its payload sets; an agent on a key keeps what it sets", () => {
+  const subscription = { model: null, harness: "codex" };
+  assert.equal(validateAgentConfig(subscription).scripting, false);
+  assert.equal(validateAgentConfig({ ...subscription, scripting: true }).scripting, false);
+  assert.throws(() => validateAgentConfig({ ...subscription, scripting: "yes" }), /scripting must be a boolean/);
+  assert.equal(validateAgentConfig({ model: "openrouter/a/b" }).scripting, true);
+  assert.equal(validateAgentConfig({ model: "openrouter/a/b", scripting: false }).scripting, false);
+});
+
 test("an agent without a model is a subscription agent on its harness, any of the four", () => {
   const subscription = validateAgentConfig({ model: null, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "high" });
   assert.equal(subscription.model, null);

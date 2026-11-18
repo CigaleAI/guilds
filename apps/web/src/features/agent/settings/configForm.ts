@@ -362,7 +362,7 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     repositories: form.repositories,
     read_only_repositories: form.read_only_repositories.filter((name) => form.repositories.includes(name)),
     secret_aliases: form.secret_aliases,
-    scripting: form.scripting,
+    scripting: !takesHarness(form) && form.scripting,
     memory: form.memory,
     max_tokens: Number(form.max_tokens),
     max_steps: Number(form.max_steps),

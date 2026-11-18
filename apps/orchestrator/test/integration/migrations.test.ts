@@ -24,6 +24,7 @@ const accessDb = uniqueDbName("agent_platform_migrate_access");
 const configDb = uniqueDbName("agent_platform_migrate_config");
 const systemOneDb = uniqueDbName("agent_platform_migrate_system_one");
 const browserConfigDb = uniqueDbName("agent_platform_migrate_browser_config");
+const scriptingDb = uniqueDbName("agent_platform_migrate_scripting");
 const listOnlyDb = uniqueDbName("agent_platform_migrate_list_only");
 const listOnlyPathsDb = uniqueDbName("agent_platform_migrate_list_only_paths");
 const homeGuildDb = uniqueDbName("agent_platform_migrate_home_guild");
@@ -57,6 +58,7 @@ after(async () => {
   await dropIsolatedDatabase(subscriptionOnlyDb);
   await dropIsolatedDatabase(kimiDb);
   await dropIsolatedDatabase(readOnlyRepositoriesDb);
+  await dropIsolatedDatabase(scriptingDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -676,6 +678,43 @@ test("the read-only repositories migration gives every agent config an empty lis
     const configs = new Map(agents.rows.map((row) => [row.id, row.config]));
     assert.deepEqual(configs.get("old"), agentConfig(coder));
     assert.deepEqual(configs.get("reader"), reader);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the scripting migration turns scripting off for every subscription agent, and leaves an agent on a key as it is", async () => {
+  const pool = await createPool(await createIsolatedDatabase(scriptingDb), reportPoolError);
+  try {
+    const folder = chainBefore("0035_subscription_agents_without_scripting");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    const coder = agentConfig({ model: null, harness: "codex", repositories: ["shop"] });
+    await agent("coder", 0, { ...coder, scripting: true });
+    const scripted = agentConfig({ model: "openrouter/a/b" });
+    await agent("scripted", 1, scripted);
+    const unscripted = agentConfig({ model: "openrouter/a/b", scripting: false });
+    await agent("unscripted", 2, unscripted);
+
+    await applyMigrations(pool);
+    const agents = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents");
+    const configs = new Map(agents.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(configs.get("coder"), coder);
+    assert.equal(coder.scripting, false);
+    assert.deepEqual(configs.get("scripted"), scripted);
+    assert.deepEqual(configs.get("unscripted"), unscripted);
   } finally {
     await pool.end();
   }

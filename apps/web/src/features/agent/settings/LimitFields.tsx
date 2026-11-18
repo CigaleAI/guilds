@@ -1,5 +1,5 @@
 import { TextField } from "@guildsrun/ui";
-import { limitFieldsFor, type FieldsProps } from "./configForm";
+import { limitFieldsFor, takesHarness, type FieldsProps } from "./configForm";
 
 /**
  * The run limits and the tool-result turns; a subscription agent shows only the limits its harness
@@ -85,12 +85,15 @@ export function MaxScriptsField({ form, onChange, errors }: FieldsProps) {
   );
 }
 
-/** The agent home's disk cap, in MiB, beside how many scripts the agent may keep. */
+/**
+ * The agent home's disk cap, in MiB, beside how many scripts the agent may keep; a subscription
+ * agent keeps none, so it has the disk cap alone.
+ */
 export function DiskFields(props: FieldsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <MaxDiskField {...props} />
-      <MaxScriptsField {...props} />
+      {takesHarness(props.form) ? null : <MaxScriptsField {...props} />}
     </div>
   );
 }

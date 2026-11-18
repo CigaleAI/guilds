@@ -233,8 +233,6 @@ without its tags, when the condition holds, and removed otherwise:
 | Name | Kept when |
 |---|---|
 | `notes` | the run offers note tools |
-| `key_scripts` | the agent is on a key, inside `scripts` |
-| `harness_scripts` | the agent is a subscription agent, inside `scripts` |
 | `scripts` | `scripting` is on and the run offers script tools |
 | `memory` | `memory` is on |
 | `no_memory` | `memory` is off |
@@ -345,11 +343,9 @@ this order:
    Check each delivery against the Task. Tag an agent, an operator,
    or `@user`. The Group Chat info message
    ([Group chat](group-chat.md)).
-4. Scripts, when offered ([Scripts](scripts.md)). On a key, a script
-   is the only way to run code. A subscription agent runs commands
-   and one-off code with its harness's own tools, keeps a script for
-   work it repeats, and changes a script with the script tools, since
-   its copy in `$HOME/scripts` is rewritten before each turn.
+4. Scripts, when offered ([Scripts](scripts.md)): a script is the
+   only way to run code. A subscription agent, which has no
+   scripting, gets none of it.
 5. Routines, when the run offers the schedule tools: the Schedule
    wake-up message, and `previous_run_at` as the mark of what changed
    since the last fire ([Routines](routines.md)).

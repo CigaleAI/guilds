@@ -221,22 +221,6 @@ test("standing omits script and note guides when those capabilities are off", ()
   assert.ok(!on.includes("<capability"));
 });
 
-test("an agent on a harness runs code with its own tools and keeps scripts for work it repeats, and one on a key runs code only in scripts", () => {
-  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
-  const caps = { scripts: true, notes: false, browser: false };
-  const key = standingForCapabilities(text, caps);
-  assert.ok(key.includes("A script is the only way to execute code"));
-  assert.ok(!key.includes("Run commands and one-off code with your own tools"));
-  const harness = standingForCapabilities(text, { ...caps, harness: true });
-  assert.ok(harness.includes("Run commands and one-off code with your own tools"));
-  assert.ok(harness.includes("A script is for\nwork you will repeat"));
-  assert.ok(harness.includes("change a script with the script tools, never in that folder"));
-  assert.ok(!harness.includes("only way to execute code"));
-  assert.ok(!harness.includes("<capability"));
-  const unscripted = standingForCapabilities(text, { ...caps, scripts: false, harness: true });
-  assert.ok(!unscripted.includes("A script is for"), "without script tools nothing is said of scripts");
-});
-
 test("standing omits memory guides when memory is off", () => {
   const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
   const off = standingForCapabilities(text, {

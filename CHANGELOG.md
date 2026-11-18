@@ -8,6 +8,17 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Breaking for a subscription agent that keeps scripts.** A
+subscription agent has no scripting: its harness runs commands and
+code with its own tools. Its runs offer no script tool, its prompt
+says nothing of scripts, Settings shows it no **Scripting** button,
+and its State has no **Scripts** view. The platform no longer writes
+to or clears the `scripts` folder of its home. A migration turns
+`scripting` off on every subscription agent, and a config that sets it
+on for one is stored with it off. The scripts a subscription agent
+kept stay in the database, unused, and run again if the agent moves to
+a key with scripting on.
+
 **Changed.** The coding harnesses are at their latest releases: Codex
 0.170.0, Claude Code 2.1.327, the Cursor CLI 2026.11.17, and the
 Antigravity CLI 1.5.11. A machine runs them once `./setup.sh` has
@@ -23,6 +34,7 @@ names. **Breaking for a Cursor agent on Claude Fable 5.1 or Claude
 Fable 5.1 Thinking:** neither is listed, so the agent's model is read
 as a custom name, which Cursor refuses without its effort; pick Claude
 Fable 5.2 in the agent's Settings.
+
 **Changed.** A subscription agent is told that every process its turn
 starts ends with the turn, so it waits for a background command it
 needs and does not hand over a server that is no longer running.

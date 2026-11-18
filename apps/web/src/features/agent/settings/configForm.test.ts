@@ -25,6 +25,12 @@ test("a new agent's form starts with scripts and Memory on, no browser, and the 
   assert.equal("coding" in configOf(form, undefined), false, "no config carries a coding flag");
 });
 
+test("a subscription agent's form sends no scripting, and the same form back on a key sends what it holds", () => {
+  const form = configFormOf(defaultAgentConfig, "subscription");
+  assert.equal(configOf({ ...form, harness: "codex" }, undefined).scripting, false);
+  assert.equal(configOf({ ...form, model_source: "key", model: "openai/gpt-5" }, undefined).scripting, true);
+});
+
 test("a new agent's form starts on the step-by-step browser with no browser model", () => {
   const form = configFormOf(defaultAgentConfig, "key");
   assert.equal(form.browser_optimized, false);

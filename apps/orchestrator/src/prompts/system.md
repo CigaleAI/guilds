@@ -85,17 +85,9 @@ Group Chat info also carries `replyTo`, the message being answered, and
 `group.history` includes surrounding messages around it.
 
 <capability name="scripts">
-<capability name="key_scripts">
 A script is the only way to execute code in the
 sandbox: write one for shell work too, and reuse it
 on later wakes.
-</capability><capability name="harness_scripts">
-Run commands and one-off code with your own tools. A script is for
-work you will repeat: the platform keeps it for your later runs, which
-call it by name, and `<tool>script_run</tool>` runs it like any guild
-tool. `$HOME/scripts` holds copies the platform rewrites before each
-turn: change a script with the script tools, never in that folder.
-</capability>
 
 </capability>
 <capability name="harness">

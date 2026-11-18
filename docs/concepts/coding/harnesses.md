@@ -240,7 +240,7 @@ A subscription agent's Settings have **Identity**, **Harness**,
 **Machine**, and **Repositories**. Its **Harness** section starts with **Model source**, to
 move it to a model on a key, then the harness buttons, with the
 harness's model and effort, then **Agent
-capabilities** and **Run limits** without the model loop's: max steps, max tool calls, max wake-ups, and **Max scripts**.
+capabilities**, without **Scripting**, and **Run limits** without the model loop's and without **Max scripts**: max steps, max tool calls, max wake-ups, and max turn minutes.
 A subscription agent that is not ready opens on the banner "The
 subscription isn't ready", listing what its harness lacks.
 

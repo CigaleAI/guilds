@@ -393,17 +393,22 @@ export class RunGenerator {
     }
   }
 
-  /** The machine's container, and the agent's on it with the run's environment and its pinned scripts in place. */
+  /**
+   * The machine's container, and the agent's on it with the run's environment. An agent with
+   * scripting gets its pinned scripts in place; `scripts/` in the home of one without is left as it is.
+   */
   private async runSandboxes(gen: Generation, env: Record<string, string>): Promise<RunSandboxes | null> {
     const { scripts, machines, events } = this.services;
     try {
-      const pinned = gen.snapshot.scripts ?? (await scripts.snapshot(gen.agent.id));
-      const live = await scripts.listForAgent(gen.agent.id);
       const machine = await machines.sandboxForGeneration(gen.agent);
       const seat = agentSeat(gen.agent);
       const home = agentHome(seat.agentId);
       const agent = agentSandbox(machine, home, { ...env, ...seatEnvironment(seat) });
-      await applyRunScripts(agent, home, pinned, liveExtraForAgent(pinned, live));
+      if (gen.agent.config.scripting) {
+        const pinned = gen.snapshot.scripts ?? (await scripts.snapshot(gen.agent.id));
+        const live = await scripts.listForAgent(gen.agent.id);
+        await applyRunScripts(agent, home, pinned, liveExtraForAgent(pinned, live));
+      }
       return { machine, agent };
     } catch (error) {
       await events.recordError(gen, "sandbox.ensure", error);

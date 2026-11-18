@@ -307,11 +307,11 @@ function setupRepositories(requests: GithubTurn["requests"]): unknown {
   return requests.find((request) => request.op === "git_setup")?.repositories;
 }
 
-test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone, and is told it runs code with its own tools", { timeout: 120_000 }, async () => {
+test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone, and is told nothing of scripts", { timeout: 120_000 }, async () => {
   const turn = await githubTurn({ model: null, harness: "claude-code", repositories: ["shop"] });
   assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");
-  assert.match(turn.system, /Run commands and one-off code with your own tools/);
-  assert.doesNotMatch(turn.system, /only way to execute code/);
+  assert.doesNotMatch(turn.system, /A script is/);
+  assert.doesNotMatch(turn.system, /script_run/);
   assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: false }]);
   assert.match(turn.system, /Push the branch with `git push origin <branch>`/);
 });

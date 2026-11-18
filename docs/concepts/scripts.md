@@ -22,11 +22,12 @@ A script can also declare parameters. Then it becomes a tool of its
 own: the model sees it under its script name, with its arguments,
 like any other tool.
 
-A subscription agent keeps scripts too, for reusable code. Its
-harness also runs commands with its own tools, so turning scripting
-off does not stop it from running commands. Its Guidelines tell it to
-run commands and one-off code with those tools, and to keep a script
-for work it repeats ([System prompt](system-prompt.md#guidelines-topics)).
+Scripting is for an agent on a key. A
+[subscription agent](agents.md#model-source) has none: its harness
+runs commands and code with its own tools, so its `scripting` is
+always off, its runs offer no script tool, its Guidelines say nothing
+of scripts, and the platform leaves the `scripts` folder of its home
+as it is.
 
 ## How it works
 
@@ -120,21 +121,23 @@ deletes every script after a confirmation. A script deleted here
 is gone from the next run, with its tool if it had one.
 
 On an agent with scripting off, the view's address shows **This agent
-has no scripting**.
+has no scripting**, with a button to Settings for an agent on a key.
 
 In chat, a `script_create` call carries a chip naming the script it
 wrote, which opens it.
 
-**Settings**, Model section (Harness on a subscription agent): the **Scripting** button under **Agent
-capabilities** turns it on and off, and **Max scripts** under **Run
-limits** sets the cap. The create dialog offers both, with scripting
-on by default.
+**Settings**, Model section, for an agent on a key: the **Scripting**
+button under **Agent capabilities** turns it on and off, and **Max
+scripts** under **Run limits** sets the cap. The create dialog offers
+both, with scripting on by default. A subscription agent has no
+**Scripting** button.
 
 ## Rules and limits
 
 | Rule | Value or behaviour |
 | --- | --- |
-| Default | scripting on |
+| Default | scripting on for an agent on a key |
+| Subscription agent | no scripting; a payload that sets it on is stored with it off |
 | Scripts per agent | 10 by default; a new name past the cap is refused, a replace is not |
 | Name | lowercase letter first, then lowercase letters, digits, `_`, `-`; up to 63 characters; not `manifest`; not a native or connected tool name |
 | Description | required, at most 400 characters |
@@ -149,7 +152,8 @@ on by default.
 ### Config keys
 
 - `scripting`, default true, selects the State's Scripts view and the
-  five script tools ([Five tools](#five-tools)).
+  five script tools ([Five tools](#five-tools)). It is always false
+  on a subscription agent, whatever the payload sets.
 - `max_scripts`, a positive integer, default 10, is the script cap
   ([The script cap](#the-script-cap)). A refused create answers
   `this agent is limited to N scripts`.
