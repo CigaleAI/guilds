@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
@@ -26,6 +27,13 @@ const dbName = uniqueDbName("agent_platform_cli");
 after(async () => {
   await dropIsolatedDatabase(dbName);
 });
+
+/** The code a terminal socket the orchestrator accepts and then refuses closes with. */
+async function refusedCloseCode(url: string, headers: Record<string, string>): Promise<number> {
+  const socket = await openWs(url, headers, "tty");
+  const [code] = (await once(socket, "close")) as [number];
+  return code;
+}
 
 test(
   "the CLI tab starts the terminal daemon and proxies it under its secret path",
@@ -147,6 +155,44 @@ test(
       } finally {
         socket.close();
       }
+
+      const ttyWs = `ws://127.0.0.1:${port}/api/agents/${agentId}/cli/tty/ws`;
+      assert.equal(
+        await refusedCloseCode(ttyWs, { "X-Guilds-User": "user_cli_stranger", "X-Guilds-Org": "org_home" }),
+        1008,
+        "a refused operator's terminal socket closes as a policy violation",
+      );
+      const cliTarget = sandboxes.cliTarget;
+      sandboxes.cliTarget = async () => {
+        throw new Error("terminal daemon is restarting");
+      };
+      try {
+        assert.equal(
+          await refusedCloseCode(ttyWs, AUTH),
+          1013,
+          "a refusal on a running machine leaves ttyd to reconnect",
+        );
+      } finally {
+        sandboxes.cliTarget = cliTarget;
+      }
+
+      generation.machines.cancelIdle(machineId);
+      sandboxes.running.delete(machineId);
+      const startsBeforeStopped = sandboxes.cliStarts;
+      const stoppedToken = await app.inject({
+        method: "GET",
+        url: `/api/agents/${agentId}/cli/tty/token`,
+        headers: AUTH,
+      });
+      assert.equal(stoppedToken.statusCode, 503, stoppedToken.body);
+      assert.equal(stoppedToken.json().detail, "sandbox is not running");
+      assert.equal(
+        await refusedCloseCode(ttyWs, AUTH),
+        1000,
+        "a stopped machine closes the terminal normally, so ttyd stops reconnecting",
+      );
+      assert.ok(!sandboxes.running.has(machineId), "a refused reconnect does not wake the machine");
+      assert.equal(sandboxes.cliStarts, startsBeforeStopped, "nor start its terminal");
 
       const browserAgent = await app.inject({
         method: "POST",

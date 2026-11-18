@@ -115,6 +115,12 @@ root, with `HOME` and the agent's port block set and no secret values.
 The shell reaches the files of every agent on the machine. The
 machine stays up for 5 minutes after the last input on it.
 
+When the connection drops while the machine runs, the terminal
+reconnects on its own. When the machine has stopped, the terminal
+shows **Connection Closed** and stays closed: reconnecting does not
+wake the machine. **Restart the terminal**, next to the status, wakes
+it and opens a fresh session.
+
 **Usage** tab: the disk the agent's home uses against its cap, as
 measured after the last generation, and the disk its machine uses
 against the machine's cap ([Usage](usage.md)).

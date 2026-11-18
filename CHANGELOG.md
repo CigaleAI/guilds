@@ -92,6 +92,13 @@ of its own beside the tool, and each such event was dropped.
 agent's CLI tab, so the CLI the runtime image pins stays in place for
 the agent's turns and **Check login**.
 
+**Fixed.** An open CLI tab stops reconnecting once the agent's machine
+has stopped. The terminal shows **Connection Closed** and waits:
+**Restart the terminal** wakes the machine and opens a fresh session.
+A dropped connection while the machine runs still reconnects on its
+own. ttyd retried at once, without end, when the orchestrator refused
+its socket on a stopped machine.
+
 **Changed.** The runtime image carries Codex 0.169.0, Claude Code
 2.1.326, the Cursor CLI 2026.11.13, and the Antigravity CLI 1.5.10.
 `node scripts/update-harnesses.mjs` moves them to each vendor's latest

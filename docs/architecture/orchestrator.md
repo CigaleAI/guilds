@@ -1006,6 +1006,13 @@ segment upstream. They decode and strip `content-encoding` before
 streaming to the browser. A body that is not in the gzip or deflate
 encoding the daemon names answers 502.
 
+A proxy never wakes a machine. A WebSocket whose target is refused
+closes with 1000 when the machine is stopped, 1013 for any other
+refusal on a running machine, and 1008 when the agent is refused.
+ttyd reconnects at once on any code but 1000, so a stopped machine
+leaves the terminal waiting for the operator's restart, which goes
+through `POST /api/agents/:id/cli`.
+
 Client frames on either socket count as activity and restart the
 machine's idle timer, and the agent's Chrome timer, at most once
 every 30 seconds.

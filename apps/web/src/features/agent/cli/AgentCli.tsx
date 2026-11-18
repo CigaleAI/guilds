@@ -65,7 +65,8 @@ export function AgentCli() {
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-fg-2">
           Bash in /home/{agentId}, on the machine the agent shares with the other agents there. It
-          stays up for five minutes after the last input. No secret values reach it.
+          stays up for five minutes after the last input; once it stops, the terminal waits until you
+          restart it. No secret values reach it.
         </span>
         <span className="flex-1" />
         <StatusBadge
