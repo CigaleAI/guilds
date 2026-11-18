@@ -17,7 +17,8 @@ import {
   type GuildToolCallRow,
   type GuildToolCallStatRow,
 } from "../db/activity.js";
-import type { StudioFocus, ToolCall } from "../db/schema/index.js";
+import type { Harness, StudioFocus, ToolCall } from "../db/schema/index.js";
+import { HARNESS_INFO } from "../coding/harnesses.js";
 import { studioActor, type StudioOperator } from "./actor.js";
 import { findGuildAgent, requireGuildAgent } from "./source-guild.js";
 import {
@@ -167,12 +168,26 @@ function focusedToolName({ target, request }: FocusedMessages): string | null {
   return request?.call.function.name.trim() || recorded?.trim() || null;
 }
 
+/** The harness a focused step's rows are marked as: its request's, else its result's; null for a step of no harness. */
+function focusedHarness({ target, request }: FocusedMessages): Harness | null {
+  return request?.row.metadata.from_harness ?? target?.metadata.from_harness ?? null;
+}
+
+/**
+ * Who wrote a row, for the coach: the agent's harness, whose calls are of its own tools and of the
+ * MCP servers it loaded, none of them the guild's; empty for a row of no harness.
+ */
+function harnessNote(row: MessageRow): string {
+  const harness = row.metadata.from_harness;
+  return harness ? ` by ${HARNESS_INFO[harness].label}, the agent's harness, outside the guild's tools` : "";
+}
+
 /** The lines that quote a focused step: the call as it was requested, then the step or the call's result. */
 function focusedMessageLines({ target, request }: FocusedMessages): string[] {
   const requested = request
     ? [
         "",
-        `Requested at seq ${request.row.seq}: ${request.call.function.name} with arguments`,
+        `Requested at seq ${request.row.seq}${harnessNote(request.row)}: ${request.call.function.name} with arguments`,
         excerpt(request.call.function.arguments),
       ]
     : [];
@@ -187,7 +202,7 @@ function focusedMessageLines({ target, request }: FocusedMessages): string[] {
   return [
     ...requested,
     "",
-    `${label}${metadata.error ? ` (error: ${metadata.error})` : ""}:`,
+    `${label}${harnessNote(target)}${metadata.error ? ` (error: ${metadata.error})` : ""}:`,
     excerpt(payload.content),
   ];
 }
@@ -239,7 +254,7 @@ export function formatRunFocus({ run, agent, focused }: RunEvidence): ResolvedFo
     },
     content: evidenceBlock(
       "studio.focus.run",
-      { ...coordinates, seq, call_id: focused.callId, tool_name: toolName },
+      { ...coordinates, seq, call_id: focused.callId, tool_name: toolName, from_harness: focusedHarness(focused) },
       [...lines, ...focusedMessageLines(focused)].join("\n"),
       `Load the surrounding steps with studio_get_run(run_id="${run.id}", seq_start, seq_end) around seq ${String(seq)}.`,
     ),

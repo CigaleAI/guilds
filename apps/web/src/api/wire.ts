@@ -13,6 +13,7 @@ import type {
   QuestionWidget,
 } from "./types/builder";
 import type {
+  AntigravityToolArguments,
   BrowseArguments,
   BrowserToolArguments,
   BuilderToolArguments,
@@ -226,6 +227,21 @@ export function isHarnessToolArguments(value: unknown): value is HarnessToolArgu
     "url",
     "query",
     "description",
+  ]);
+}
+
+/** Whether a tool call's arguments are those a call of one of Antigravity's own tools gives as text, or leaves out. */
+export function isAntigravityToolArguments(value: unknown): value is AntigravityToolArguments {
+  return hasTextParameters(value, [
+    "CommandLine",
+    "TargetFile",
+    "AbsolutePath",
+    "DirectoryPath",
+    "Pattern",
+    "Query",
+    "Url",
+    "ServerName",
+    "ToolName",
   ]);
 }
 

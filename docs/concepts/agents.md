@@ -93,7 +93,7 @@ run's next generation resumes the same session. A subscription agent:
   orchestrator's MCP server, under a token of the generation's
   ([Tools in a run](../tools-and-connectors/tools-in-a-run.md#a-subscription-agents-run)),
   beside the harness's own tools. Each call counts toward
-  `max_tool_calls`, with every call of the harness's own;
+  `max_tool_calls`; a call of the harness's own tools does not;
 - takes images attached to a message as files in its home, whose
   paths its prompt names ([Runs](runs.md#attachments));
 - works in the repositories it picks, if any: its turn clones them,
@@ -149,7 +149,7 @@ not offered, whatever the bindings say.
 | Switch | Gives the agent | Default | Page |
 | --- | --- | --- | --- |
 | Browser | its own Chrome on its machine, and the browser tools | off | [Browser](browser.md) |
-| Scripting | reusable Python scripts and the script tools | on | [Scripts](scripts.md) |
+| Scripting | reusable Python scripts and the script tools | on for an agent on a key; a subscription agent has none | [Scripts](scripts.md) |
 | Memory | a Memory that it reads and rewrites after each run | on | [Memory](memory.md) |
 
 Browser needs a large enough machine, as a subscription agent's
@@ -219,7 +219,8 @@ is disabled once the guild is full. Each agent row shows:
    capabilities, and the run limits a harness keeps; no provider is
    needed. Then the thinking level and the temperature, each switched
    off only for a model that does not take it. Then **Agent
-   capabilities**, three buttons: Browser, scripting, and Memory.
+   capabilities**, three buttons: Browser, scripting, and Memory,
+   without scripting for a subscription agent.
    Scripting and Memory start on; Browser starts off. The browser
    language and **Agent-optimized browser** show while Browser is on,
    and **Browser model** while that is on
@@ -306,7 +307,8 @@ saves.
   when** under **Group chat**, which shows the focus while it is
   empty.
 - **Model**: the model, thinking, and temperature. **Agent
-  capabilities** has three buttons: Browser, scripting, and Memory.
+  capabilities** has three buttons: Browser, scripting, and Memory,
+  without scripting for a subscription agent.
   **Run limits** sits under a disclosure, with the six run limits and
   **Max scripts**. Browser is greyed out while off on a machine below
   the minimum it needs, with a line naming both sizes. The browser
@@ -374,7 +376,7 @@ the agent.
 | `repositories` | list of repository names, each once, that the agent can use | `[]` | [Repositories](coding/repositories.md#an-agents-picks) |
 | `read_only_repositories` | list of names of `repositories`, each once, that the agent only reads | `[]` | [Read-only repositories](coding/repositories.md#read-only-repositories) |
 | `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
-| `scripting` | boolean | `true` | [Scripts](scripts.md) |
+| `scripting` | boolean; always `false` on a subscription agent | `true` | [Scripts](scripts.md) |
 | `memory` | boolean | `true` | [Memory](memory.md) |
 
 Any other key, `coding` among them, is 422 `unknown keys: <keys>`.

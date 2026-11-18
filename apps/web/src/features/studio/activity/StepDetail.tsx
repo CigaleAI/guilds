@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { ActivityWake } from "../../../api/types/studio";
-import { Button, Tooltip, cn, Icon, MarkSquare, wakeOutcomeLabel } from "@guildsrun/ui";
+import { Button, Tooltip, cn, Icon, MarkSquare, Tag, wakeOutcomeLabel } from "@guildsrun/ui";
+import { harnessLabel } from "../../agent/harness";
 import { useIdentity } from "../../../app/identity";
 import { useStudio } from "../StudioContext";
 import {
@@ -310,7 +311,7 @@ type ToolCallsSectionProps = {
   onOpen: (call: string | null) => void;
 };
 
-/** A wake's tool calls in order, each with its arguments, duration and error. */
+/** A wake's tool calls in order, each with its arguments, duration and error, and the harness that made it. */
 function ToolCallsSection({ wake, highlighted, onOpen }: ToolCallsSectionProps) {
   return (
     <Section title={`Tool calls · ${wake.tool_call_count}`} highlighted={highlighted}>
@@ -325,7 +326,14 @@ function ToolCallsSection({ wake, highlighted, onOpen }: ToolCallsSectionProps) 
                 className="grid w-full cursor-pointer grid-cols-[1.5rem_auto_minmax(0,1fr)_auto] items-baseline gap-2 rounded-sm px-1 py-0.5 text-left text-xs hover:bg-surface"
               >
                 <span className="text-right font-mono text-2xs text-faint">{position + 1}</span>
-                <span className="font-mono font-medium text-fg">{call.name}</span>
+                <span className="flex items-baseline gap-1.5 font-mono font-medium text-fg">
+                  {call.name}
+                  {call.from_harness ? (
+                    <Tag tone="well" title={`Called by ${harnessLabel(call.from_harness)}`}>
+                      {harnessLabel(call.from_harness)}
+                    </Tag>
+                  ) : null}
+                </span>
                 <span className="truncate font-mono text-2xs text-muted">{call.arguments}</span>
                 <span className="font-mono text-2xs text-faint">
                   {call.duration_ms !== null ? `${call.duration_ms}ms` : ""}

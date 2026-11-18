@@ -39,7 +39,7 @@ import {
 } from "./errors.js";
 import type { RunEventBus, RunGeneration } from "./events.js";
 import type { HarnessLoop, SubscriptionGeneration } from "./harness-loop.js";
-import { completeIfActive, runStanding, runWasResumed } from "./lifecycle.js";
+import { completeIfActive, completesAfter, runStanding } from "./lifecycle.js";
 import { agentSeat, type AgentMachines } from "./machines.js";
 import {
   liveOfferedNames,
@@ -53,7 +53,7 @@ import {
 } from "./offered-tools.js";
 import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
 import type { GenerationStarter } from "./runs.js";
-import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
+import { guildsToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 import type { RunWakes } from "./wakes.js";
 import type { WorkspaceLimits } from "./workspace.js";
 
@@ -70,18 +70,6 @@ type RunSandboxes = { machine: SandboxHandle; agent: SandboxHandle };
 
 /** What a generation offers the model: the tool names, the scripts its snapshot pins, and its connection tools. */
 type ToolOffer = { names: Set<string>; scripts: RunScriptSnapshot[]; connections: Map<string, ConnectionTarget> };
-
-/**
- * Whether the run completes when its generation `generation` ends: a run a wake-up reopened for
- * that generation does, and a schedule run does. A resumed run stays open, and a group run is
- * completed by its delivery.
- */
-function completesAfter(run: RunRow, generation: number): boolean {
-  if (run.metadata.wake_reopened_generation === generation) {
-    return true;
-  }
-  return !runWasResumed(run) && run.kind === "schedule";
-}
 
 /** The instruction the run's schedule wake-up message carries; empty when it carries none. */
 function scheduleInstructionOf(rows: MessageRow[]): string {
@@ -405,17 +393,22 @@ export class RunGenerator {
     }
   }
 
-  /** The machine's container, and the agent's on it with the run's environment and its pinned scripts in place. */
+  /**
+   * The machine's container, and the agent's on it with the run's environment. An agent with
+   * scripting gets its pinned scripts in place; `scripts/` in the home of one without is left as it is.
+   */
   private async runSandboxes(gen: Generation, env: Record<string, string>): Promise<RunSandboxes | null> {
     const { scripts, machines, events } = this.services;
     try {
-      const pinned = gen.snapshot.scripts ?? (await scripts.snapshot(gen.agent.id));
-      const live = await scripts.listForAgent(gen.agent.id);
       const machine = await machines.sandboxForGeneration(gen.agent);
       const seat = agentSeat(gen.agent);
       const home = agentHome(seat.agentId);
       const agent = agentSandbox(machine, home, { ...env, ...seatEnvironment(seat) });
-      await applyRunScripts(agent, home, pinned, liveExtraForAgent(pinned, live));
+      if (gen.agent.config.scripting) {
+        const pinned = gen.snapshot.scripts ?? (await scripts.snapshot(gen.agent.id));
+        const live = await scripts.listForAgent(gen.agent.id);
+        await applyRunScripts(agent, home, pinned, liveExtraForAgent(pinned, live));
+      }
       return { machine, agent };
     } catch (error) {
       await events.recordError(gen, "sandbox.ensure", error);
@@ -582,7 +575,7 @@ export class RunGenerator {
   /** Whether the run has made its last tool call; a run that has completes with `generation.max_tool_calls`. */
   private async reachedToolLimit(gen: KeyGeneration, tools: GenerationTools): Promise<boolean> {
     const { db, events } = this.services;
-    if (executedToolCalls(await db.listMessages(gen.runId)) < tools.maxToolCalls) {
+    if (guildsToolCalls(await db.listMessages(gen.runId)) < tools.maxToolCalls) {
       return false;
     }
     await events.recordError(

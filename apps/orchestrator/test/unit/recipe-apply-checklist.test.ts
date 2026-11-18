@@ -223,7 +223,7 @@ test("apply gives a subscription role the harness chosen, else the recipe's, and
   assert.equal(configFromRecipeRole(role).harness_model, "opus");
   assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_model, "opus");
   assert.equal(configFromRecipeRole(role, { harness: "codex" }).harness_model, null, "another harness takes its default");
-  role.config = { harness: "codex", harness_model: "gpt-5.6-terra", harness_effort: "ultra" };
+  role.config = { harness: "codex", harness_model: "gpt-6.1-terra", harness_effort: "ultra" };
   assert.equal(configFromRecipeRole(role).harness_effort, "ultra");
   assert.equal(configFromRecipeRole(role, { harness: "claude-code" }).harness_effort, null, "another harness takes its default");
   role.config = { harness: "codex", harness_model: "gpt-6-luna", harness_effort: "ultra" };

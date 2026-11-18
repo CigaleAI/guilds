@@ -107,11 +107,16 @@ export type LiveDelta = { text: string; content?: string };
  */
 export type RunTurnChange = { call_id: string; generation: number; repos: RunRepositoryChange[] };
 
-/** One repository's change over a run, or over one turn of it: its start and end checkpoints and their diffstat. */
+/**
+ * One repository's change over a run, or over one turn of it: its branch and head commit at the
+ * end and at the start, its start and end checkpoints, and their diffstat.
+ */
 export type RunRepositoryChange = {
   name: string;
   branch: string | null;
   head_sha: string | null;
+  start_branch: string | null;
+  start_head_sha: string | null;
   start_sha: string | null;
   end_sha: string;
   files_changed: number;
@@ -160,6 +165,23 @@ export type HarnessToolArguments = {
   url?: string;
   query?: string;
   description?: string;
+};
+
+/**
+ * A call of one of Antigravity's own tools' arguments, as far as a summary reads them: the command,
+ * the file written or read, the directory listed, the pattern or query searched, the address
+ * fetched, and the MCP server and tool a `call_mcp_tool` call names.
+ */
+export type AntigravityToolArguments = {
+  CommandLine?: string;
+  TargetFile?: string;
+  AbsolutePath?: string;
+  DirectoryPath?: string;
+  Pattern?: string;
+  Query?: string;
+  Url?: string;
+  ServerName?: string;
+  ToolName?: string;
 };
 
 /** A Codex patch's arguments, as its item reports them: the files it changed, each with how. */
@@ -309,10 +331,18 @@ export type RunInputMetadata = {
 };
 
 /**
- * What a message a harness's CLI wrote records: the harness. A subscription agent's run keeps its
- * harness's messages, and the calls of the harness's own tools with their results, under it.
+ * How much of a harness turn's tokens its reply records: `complete`, those the CLI reported for the
+ * whole turn at its end; `partial`, those of the model calls it reported before the turn ended
+ * without that report; `none`, when it reported neither.
  */
-export type HarnessMessageMetadata = { from_harness: Harness };
+export type HarnessUsageExtent = "complete" | "partial" | "none";
+
+/**
+ * What a message a harness's CLI wrote records: the harness, and on the turn's reply how much of
+ * the turn's tokens it records. A subscription agent's run keeps its harness's messages, and the
+ * calls of the harness's own tools with their results, under it.
+ */
+export type HarnessMessageMetadata = { from_harness: Harness; usage_extent?: HarnessUsageExtent };
 
 /**
  * The metadata of a run's message. Which fields it carries depends on the message: an assistant

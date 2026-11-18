@@ -20,7 +20,7 @@ import { answerOps } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { FakeSandboxes, runSnapshot } from "../helpers/generation.js";
-import { recordedEvents, stubCliSandbox } from "../helpers/harness-cli.js";
+import { freePort, recordedEvents, serveHarnessMcp, stubCliSandbox } from "../helpers/harness-cli.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
 import { connectModelProvider, TEST_MODEL } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -75,18 +75,20 @@ test("a coding agent migrated to a subscription agent runs a turn of its CLI, an
     sandboxes.running.add(machine.id);
     return stub.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
+  const port = await freePort();
   const loop = generationLoop(
     db,
     {
       notes,
       workspaceRoot: tempDir("guilds-coding-migration-ws-"),
-      harnessMcpUrl: "http://127.0.0.1:8090",
+      harnessMcpUrl: `http://127.0.0.1:${port}`,
       sandboxes: sandboxes as unknown as GenerationSandboxes,
       mcp: mcpPool(db),
       artifacts,
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
+  const listener = await serveHarnessMcp(loop, port);
   const app = await buildApp(database, {
     db,
     notes,
@@ -192,6 +194,7 @@ test("a coding agent migrated to a subscription agent runs a turn of its CLI, an
     assert.ok(turnRows.some((row) => row.metadata.from_harness === "claude-code"));
   } finally {
     await app.close();
+    await listener.close();
     await loop.close();
     await database.close();
   }

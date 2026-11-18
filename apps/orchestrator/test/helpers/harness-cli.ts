@@ -1,7 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { FastifyInstance } from "fastify";
+import { buildHarnessMcpApp } from "../../src/app.js";
+import type { GenerationLoop } from "../../src/generation/index.js";
 import { HostCodeSandbox } from "./code-sandbox.js";
 import { tempDir } from "./env.js";
 
@@ -92,4 +96,23 @@ export function stubCliSandbox(binary: string, lines: string[], env: Record<stri
 export function stubsRunning(bin: string): boolean {
   const out = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" });
   return out.split("\n").some((line) => line.includes(`${bin}/`));
+}
+
+/** A port of this host nothing listens on now. */
+export async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const address = probe.address();
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return typeof address === "object" && address !== null ? address.port : 0;
+}
+
+/**
+ * The orchestrator's MCP server of `loop`, built with `http://127.0.0.1:<port>` as its URL,
+ * listening there, where the stand-in CLI connects at its start; the caller closes it.
+ */
+export async function serveHarnessMcp(loop: GenerationLoop, port: number): Promise<FastifyInstance> {
+  const listener = await buildHarnessMcpApp(loop.harnessMcp);
+  await listener.listen({ host: "127.0.0.1", port });
+  return listener;
 }

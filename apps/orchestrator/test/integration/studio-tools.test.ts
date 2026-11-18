@@ -18,6 +18,7 @@ import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { createScheduleRun, type RunMessage } from "../../src/db/runs.js";
+import type { Harness } from "../../src/db/schema/index.js";
 import { userRow } from "../helpers/users.js";
 import { writeBinding } from "../../src/access/bindings.js";
 import { userActor } from "../../src/lib/change-actor.js";
@@ -43,8 +44,9 @@ after(async () => {
 
 type Call = { id: string; name: string; args: Record<string, unknown>; error?: string; ms: number };
 
-/** One assistant step with its calls, then each call's result as a run records it. */
-function steps(calls: Call[]): RunMessage[] {
+/** One assistant step with its calls, then each call's result as a run records it, marked as `harness`'s when given. */
+function steps(calls: Call[], harness: Harness | null = null): RunMessage[] {
+  const marked = harness === null ? {} : { from_harness: harness };
   return [
     [{ role: "user", content: "Schedule wake-up: {}" }, { generation: 1, source: "schedule" }],
     [
@@ -57,7 +59,7 @@ function steps(calls: Call[]): RunMessage[] {
           function: { name: call.name, arguments: JSON.stringify(call.args) },
         })),
       },
-      { generation: 1 },
+      { generation: 1, ...marked },
     ],
     ...calls.map((call): RunMessage => [
       { role: "tool", tool_call_id: call.id, content: call.error ? `ERROR: ${call.error}` : "ok" },
@@ -67,6 +69,7 @@ function steps(calls: Call[]): RunMessage[] {
         tool_call_id: call.id,
         duration_ms: call.ms,
         error: call.error ?? null,
+        ...marked,
       },
     ]),
   ];
@@ -100,7 +103,7 @@ test("studio lists the guild's tools with who is offered each and how their call
         now,
       );
     }
-    const run = (id: string, agentId: string, calls: Call[]) =>
+    const run = (id: string, agentId: string, calls: Call[], harness: Harness | null = null) =>
       createScheduleRun(db,
         {
           runId: id,
@@ -108,7 +111,7 @@ test("studio lists the guild's tools with who is offered each and how their call
           configSnapshot: runSnapshot(CONFIG),
           systemContent: "system",
           taskContent: "task",
-          projected: steps(calls),
+          projected: steps(calls, harness),
           systemPromptHash: "s",
           taskPromptHash: "t",
           memoryPromptHash: "m",
@@ -125,6 +128,16 @@ test("studio lists the guild's tools with who is offered each and how their call
       { id: "c3", name: "note_get", args: { path: "b.md" }, ms: 200 },
       { id: "c4", name: "retired_tool", args: {}, ms: 50 },
     ]);
+    // A harness's calls are of its own tools or of an MCP server it loaded, whatever their names.
+    await run(
+      "r_harness",
+      "a_writer",
+      [
+        { id: "h1", name: "shell", args: { command: "ls" }, ms: 5 },
+        { id: "h2", name: "note_get", args: { path: "c.md" }, ms: 5 },
+      ],
+      "cursor",
+    );
 
     const created = await app.inject({
       method: "POST",
@@ -186,6 +199,7 @@ test("studio lists the guild's tools with who is offered each and how their call
     assert.equal(neverCalled?.calls, 0);
     assert.deepEqual(neverCalled?.offered_to, ["a_scout", "a_writer"]);
     assert.equal(rows.find((row) => row.name === "note_find"), undefined);
+    assert.equal(rows.find((row) => row.name === "shell"), undefined, "a harness's own tool is no guild tool");
     assert.equal(
       (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/tools?hours=-1`, headers: AUTH })).statusCode,
       422,

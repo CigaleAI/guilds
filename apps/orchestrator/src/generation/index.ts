@@ -44,7 +44,7 @@ import { RunEventBus, runEventsDatabase } from "./events.js";
 import { RunGenerator, runGeneratorDatabase } from "./generate.js";
 import { HarnessLoop, harnessLoopDatabase } from "./harness-loop.js";
 import { HarnessMcpServer, harnessMcpDatabase } from "./harness-mcp.js";
-import { runWasResumed } from "./lifecycle.js";
+import { runTakesMessages } from "./lifecycle.js";
 import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
 import {
   generationArtifacts,
@@ -473,7 +473,7 @@ export class GenerationLoop implements GroupRunner {
     if (run === null) {
       throw new RunRequestError(404, "run not found");
     }
-    if (run.kind !== "direct" && !runWasResumed(run)) {
+    if (!runTakesMessages(run)) {
       throw new RunRequestError(409, `${run.kind}-triggered runs do not accept later messages`);
     }
     if (run.status !== "active") {
@@ -539,7 +539,7 @@ export class GenerationLoop implements GroupRunner {
     for (const run of await this.db.listActiveRuns()) {
       await this.harness.endLostTurn(run);
       await this.toolCalls.resolveUnresolved(run.id, null);
-      if (run.kind === "direct" || runWasResumed(run)) {
+      if (runTakesMessages(run)) {
         continue;
       }
       const entry = {

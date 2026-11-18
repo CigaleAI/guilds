@@ -1,5 +1,6 @@
 import type { StepFact, ToolKind } from "@guildsrun/ui";
 import { formatCost } from "../../../app/format";
+import type { Harness } from "../../../api/types/agents";
 import type {
   MessagePayload,
   Run,
@@ -80,20 +81,37 @@ function generationOf(msg: StepMessage): number | null {
   return value > 0 ? value : null;
 }
 
+/**
+ * The harness that made a call: the one its request's row, else its result's, is marked as; null
+ * for a call of a tool the guild offers, whose rows carry no harness.
+ */
+export function callHarness(
+  request: StepMessage | null,
+  result: StepMessage | null,
+): Harness | null {
+  return request?.metadata.from_harness ?? result?.metadata.from_harness ?? null;
+}
+
+/**
+ * The coding harness that ran a flow's generation: the one its steps or calls are marked as; null
+ * for a generation a model ran, or one whose steps all called the guild's tools.
+ */
+export function flowHarness(flow: FlowSegment): Harness | null {
+  const marks = flow.steps.flatMap((step) => [
+    step.turn?.metadata.from_harness,
+    ...step.calls.map((item) => item.info.harness),
+  ]);
+  return marks.find((mark): mark is Harness => mark !== undefined && mark !== null) ?? null;
+}
+
+/** A requested call with its result, its position in its batch, and how it reads. */
 function makeCall<M extends StepMessage>(
   call: ToolCall,
   result: M | null,
-  run: FlowRun | null,
+  info: ToolCallInfo,
   position: number,
 ): FlowCall<M> {
-  return {
-    id: call.id,
-    call,
-    result,
-    position,
-    info: classifyToolCall(call, result, run),
-    error: toolResultError(result),
-  };
+  return { id: call.id, call, result, position, info, error: toolResultError(result) };
 }
 
 /** The id of the call a tool result answers; empty when it names none. */
@@ -122,7 +140,8 @@ function orphanResultStep<M extends StepMessage>(
     type: "function",
     function: { name: msg.metadata.tool_name || "tool", arguments: "" },
   };
-  return { index: null, turn: null, calls: [makeCall(orphanCall, msg, run, 1)] };
+  const info = classifyToolCall(orphanCall, callHarness(null, msg), msg, run);
+  return { index: null, turn: null, calls: [makeCall(orphanCall, msg, info, 1)] };
 }
 
 /**
@@ -182,7 +201,9 @@ export function buildFlowSegments<M extends StepMessage>(
       if (calls.length) {
         const items = calls.map((call, position) => {
           if (call.id) handled.add(call.id);
-          return makeCall(call, results.get(call.id) ?? null, run, position + 1);
+          const result = results.get(call.id) ?? null;
+          const info = classifyToolCall(call, callHarness(msg, result), result, run);
+          return makeCall(call, result, info, position + 1);
         });
         flowFor(generation, msg).steps.push({ index: stepIndex, turn: msg, calls: items });
         continue;
@@ -245,16 +266,30 @@ export function usageTitle(usage: Partial<TokenUsage>): string {
 
 /**
  * What a reply's call, or a harness's whole turn, spent, as the reply notes it: its tokens, then
- * its price, or that it ran on the subscription; null for a reply that records no usage.
+ * its price, or that it ran on the subscription, and for a harness turn whose CLI did not report
+ * the whole turn, that the tokens are its reported model calls' only, or that it reported none;
+ * null for a reply that records no usage.
  */
 export function replyUsage(msg: StepMessage): StepFact | null {
   const usage = msg.metadata.usage;
-  if (!usage) return null;
+  const extent = msg.metadata.usage_extent;
+  if (!usage) {
+    return extent === "none"
+      ? { label: "tokens not reported", title: "The CLI reported none of this turn's tokens." }
+      : null;
+  }
   const usd = msg.cost_usd ?? null;
   const price = usd === null ? "" : formatCost(usd);
   const cost = isPriced(msg) ? price : "on the subscription";
   const tokens = `${formatTokens(usage.input_tokens + usage.output_tokens)} tok`;
-  return { label: [tokens, cost].filter(Boolean).join(" · "), title: usageTitle(usage) };
+  const title = usageTitle(usage);
+  if (extent === "partial") {
+    return {
+      label: [`at least ${tokens}`, cost].filter(Boolean).join(" · "),
+      title: `${title}. The turn ended before its CLI reported its total: these are the model calls it reported.`,
+    };
+  }
+  return { label: [tokens, cost].filter(Boolean).join(" · "), title };
 }
 
 /** How long the model took to write an assistant message, in ms; 0 when it is not recorded. */

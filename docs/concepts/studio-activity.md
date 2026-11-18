@@ -103,7 +103,10 @@ Clicking an agent in a chain opens its wake:
 - a strip of counts (tool calls, record and note writes, scripts run
   or changed, issues reported, memory, errors, and the post or reply
   it kept) that points at the matching section
-- its tool calls in order with their arguments, durations, and errors
+- its tool calls in order with their arguments, durations, and errors,
+  a call its harness made tagged with the harness's name. Only a call
+  of a Guilds tool counts as a post, write, script run, issue, or
+  memory update, whatever a harness's tool is named
 - its side effects, its errors, and its output (each post and whom it
   woke, or its last reply)
 - **Open in History** (a tool call, a write, or a post opens its exact
@@ -166,8 +169,11 @@ active in the window.
 - Errors in the window mark the wake failed.
 - Each wake lists its tool calls in the window in order (at most 200,
   with the total). Each call has the first 160 characters of its
-  arguments and its result's error and duration. The wake also lists
-  the last text the agent wrote.
+  arguments, its result's error and duration, and `from_harness`: the
+  subscription agent's harness that made it, of its own tools or of an
+  MCP server it loaded, as its rows are marked
+  ([Runs](runs.md#harness-turns)), or null for a call of a Guilds
+  tool. The wake also lists the last text the agent wrote.
 
 ### HTTP
 
@@ -185,8 +191,8 @@ once, is 422.
   routing, inferred }`, `{ type: "routine", schedule_id }`, or
   `{ type: "direct", user_id }`.
 - A wake carries `tool_calls` (`call_id`, `name`, `arguments`,
-  `error`, `duration_ms`, `at`), `tool_call_count`, `reply`, and, for a
-  direct chat, `opening`.
+  `error`, `duration_ms`, `at`, `from_harness`), `tool_call_count`,
+  `reply`, and, for a direct chat, `opening`.
 
 ### Location and storage
 

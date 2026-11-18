@@ -6,7 +6,6 @@ import { iso, isoOrNull } from "../db/views.js";
 import { newId } from "../lib/ids.js";
 import { getGuild } from "../db/guilds.js";
 import {
-  countOpenIssues,
   getIssue,
   insertIssue,
   listIssuesForGuild,
@@ -22,7 +21,6 @@ export const ISSUE_STATUSES = ["open", "resolved"] as const satisfies readonly I
 export const ISSUE_SUMMARY_MAX = 200;
 export const ISSUE_DETAIL_MAX = 4000;
 export const ISSUE_TOOL_NAME_MAX = 120;
-export const ISSUE_OPEN_CAP = 100;
 
 
 /** A refused issue request, with the HTTP status it answers with: 404 for one that does not exist, else 422. */
@@ -45,7 +43,6 @@ function issuesDatabase(db: Queryable) {
     getIssue: bindQuery(db, getIssue),
     setIssueStatus: bindQuery(db, setIssueStatus),
     resolveOpenIssues: bindQuery(db, resolveOpenIssues),
-    countOpenIssues: bindQuery(db, countOpenIssues),
   };
 }
 
@@ -171,12 +168,6 @@ export class Issues {
     const guild = await this.db.getGuild(args.guildId);
     if (guild === null) {
       throw new IssueError("guild not found", 404);
-    }
-    const open = await this.db.countOpenIssues(args.guildId);
-    if (open >= ISSUE_OPEN_CAP) {
-      throw new IssueError(
-        `this guild already has ${ISSUE_OPEN_CAP} open issues; wait for the operator to resolve some`,
-      );
     }
     const now = new Date();
     return this.db.insertIssue(

@@ -1,0 +1,87 @@
+#!/bin/sh
+# The platform's git hooks. A harness turn's environment sets core.hooksPath to this directory,
+# over whatever the repository's own configuration sets, and every hook name git looks up in a
+# hooks directory is a link here. Each runs the hook the repository itself configured, as git
+# would have run it without that setting: same arguments, standard input, environment, and
+# working directory, and its exit status. prepare-commit-msg then names the run and the agent as
+# trailers when GUILD_RUN_ID is set.
+#
+# Variables carry a prefix: assigning one the environment already holds would change what the
+# repository's hook is given.
+
+_guilds_hook=${0##*/}
+_guilds_here=$(cd "${0%/*}" && pwd -P)
+
+# The repository's hooks directory: the last core.hooksPath of its configuration files (the
+# command scope holds the setting that led git here, and a `git -c` one would have kept git from
+# coming here), relative to the directory git runs hooks in, where this one starts; else the
+# hooks directory of its common git directory, which its worktrees share. While git init or clone
+# is still creating the repository, git cannot read it yet and names it in GIT_DIR. Neither lookup
+# may read the hook's standard input.
+_guilds_hooks=$(git config --type=path --show-scope --get-all core.hooksPath </dev/null |
+  awk -F '\t' '$1 != "command" { path = substr($0, length($1) + 2) } END { print path }')
+case $_guilds_hooks in
+  '')
+    _guilds_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null </dev/null) ||
+      _guilds_common=$GIT_DIR
+    _guilds_hooks=${_guilds_common:+$_guilds_common/hooks}
+    ;;
+  /*) ;;
+  *) _guilds_hooks=$PWD/$_guilds_hooks ;;
+esac
+
+# git ignores a hook that is not executable. A repository whose hooks path is this directory has
+# no hook of its own.
+_guilds_own=${_guilds_hooks:+$_guilds_hooks/$_guilds_hook}
+if [ ! -x "$_guilds_own" ] || [ "$(cd "$_guilds_hooks" 2>/dev/null && pwd -P)" = "$_guilds_here" ]; then
+  _guilds_own=
+fi
+
+# What git does when a push updates the checked-out branch of a repository with no
+# push-to-checkout hook (receive.denyCurrentBranch=updateInstead): it updates the working tree
+# and the index to the pushed commit, and refuses a working tree or an index that differs from
+# HEAD.
+update_checkout() {
+  if ! git update-index -q --ignore-submodules --refresh >&2; then
+    echo "Up-to-date check failed" >&2
+    exit 1
+  fi
+  if ! git diff-files --quiet --ignore-submodules -- >&2; then
+    echo "Working directory has unstaged changes" >&2
+    exit 1
+  fi
+  if git cat-file -e HEAD 2>/dev/null; then
+    _guilds_head=HEAD
+  else
+    _guilds_head=$(git hash-object -t tree --stdin </dev/null)
+  fi
+  if ! git diff-index --quiet --cached --ignore-submodules "$_guilds_head" -- >/dev/null; then
+    echo "Working directory has staged changes" >&2
+    exit 1
+  fi
+  if ! git read-tree -u -m "$1" >/dev/null; then
+    echo "Could not update working tree to new HEAD" >&2
+    exit 1
+  fi
+  exit 0
+}
+
+case $_guilds_hook in
+  prepare-commit-msg)
+    # After the repository's hook, so a paragraph it adds to the message does not leave the
+    # trailers out of the message's last paragraph, where git reads trailers.
+    if [ -n "$_guilds_own" ]; then
+      "$_guilds_own" "$@" || exit
+    fi
+    [ -n "$GUILD_RUN_ID" ] || exit 0
+    exec git interpret-trailers --in-place --if-exists addIfDifferent \
+      --trailer "Guild-Run: $GUILD_RUN_ID" \
+      --trailer "Guild-Agent: ${GUILD_AGENT_ID:-unknown}" \
+      "$1"
+    ;;
+  push-to-checkout)
+    [ -n "$_guilds_own" ] || update_checkout "$1"
+    ;;
+esac
+[ -n "$_guilds_own" ] || exit 0
+exec "$_guilds_own" "$@"

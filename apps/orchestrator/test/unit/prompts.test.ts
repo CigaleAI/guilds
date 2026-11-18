@@ -363,6 +363,15 @@ test("a run that offers no tool drops the tool budget and every part on a tool i
   assert.ok(!bare.includes("$GUILDS_PORTS"), "the harness part is for a subscription agent");
 });
 
+test("the issues part asks for a report only on what the run cannot get past", () => {
+  const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
+  const standing = standingForCapabilities(text, { scripts: false, notes: false, browser: false });
+  assert.ok(standing.includes("Call `<tool>report_issue</tool>` when this run cannot get past a problem and an\noperator must act on it"));
+  assert.ok(standing.includes("content the work needs was cut off\nand no other way reaches it"));
+  assert.ok(standing.includes("Do not report what you\ngot past in this run (a corrected call, a narrower read, a retry)"));
+  assert.ok(!standing.includes("a result is truncated"));
+});
+
 test("a key agent without group_post, schedules, or report_issue loses only those parts", () => {
   const text = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
   const caps = { scripts: false, notes: true, browser: false };
@@ -392,6 +401,7 @@ test("a subscription agent's harness reads where it runs, its home, and its port
   assert.ok(harness.includes("Your home (`$HOME`) stays between runs"));
   assert.ok(harness.includes("Your turn\n  starts in it."), "without repositories the turn starts in the home");
   assert.ok(harness.includes("A server you start listens on a port of `$GUILDS_PORTS`"));
+  assert.ok(harness.includes("Every process your turn starts ends with the turn"));
   assert.ok(harness.includes("Never print their values"));
   assert.ok(!harness.includes("code_task"));
   assert.ok(!harness.includes("State `repositories` lists"), "the repositories part is for an agent that has some");

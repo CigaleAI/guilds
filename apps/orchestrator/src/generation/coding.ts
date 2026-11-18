@@ -110,10 +110,22 @@ function warnUnfetched(gen: RunGeneration, unfetched: CloneFailure[]): void {
   }
 }
 
-/** A checkpoint's record of one repository as the run keeps it: its checkpoints and diffstat, without the files a call's record lists. */
+/** A checkpoint's record of one repository as the run keeps it: its heads, checkpoints and diffstat, without the files a call's record lists. */
 function repositoryChange(record: RunRepositoryChange): RunRepositoryChange {
-  const { name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions } = record;
-  return { name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions };
+  const { name, branch, head_sha, start_branch, start_head_sha, start_sha, end_sha, files_changed, insertions, deletions } = record;
+  return { name, branch, head_sha, start_branch, start_head_sha, start_sha, end_sha, files_changed, insertions, deletions };
+}
+
+/**
+ * Whether a turn changed a repository: a file differs between its checkpoints, or, once a start
+ * checkpoint was taken, its head commit or branch at the end is not the start's, as when the
+ * turn committed, or rewrote its history to the same files, or switched branches.
+ */
+function isRepositoryChanged(change: RunRepositoryChange): boolean {
+  if (change.files_changed > 0) {
+    return true;
+  }
+  return change.start_sha !== null && (change.start_head_sha !== change.head_sha || change.start_branch !== change.branch);
 }
 
 /**
@@ -251,8 +263,8 @@ export class CodingRuns {
 
   /**
    * Ends a subscription turn in its `repositories`: takes the turn's end checkpoint, and keeps on
-   * the run what the turn changed when it changed a repository. A turn without repositories has
-   * nothing to end.
+   * the run what the turn changed when it changed a repository's files, head, or branch. A turn
+   * without repositories has nothing to end.
    */
   async endTurnInRepositories(gen: SubscriptionGeneration, sandbox: SandboxHandle, repositories: string[]): Promise<void> {
     if (!repositories.length) {
@@ -261,7 +273,7 @@ export class CodingRuns {
     const { db } = this.services;
     const callId = harnessTurnCallId(gen);
     const ended = await this.checkpoint(maintenanceRun(gen.runId, gen.agent, sandbox), "end", repositories, callId);
-    const changed = ended.filter((change) => change.files_changed > 0);
+    const changed = ended.filter(isRepositoryChanged);
     if (changed.length) {
       const kept = (await db.getRun(gen.runId))?.metadata.turn_changes ?? [];
       const turn: RunTurnChange = { call_id: callId, generation: gen.generation, repos: changed };

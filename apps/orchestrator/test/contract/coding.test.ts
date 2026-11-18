@@ -190,11 +190,13 @@ test("the runtime image carries Node, the harness list, git's commit trailers an
     assert.ok(carried.endsWith("codex-cli"));
     assert.deepEqual(sandboxes.harnessesOf(MACHINE.id), carried.split("\n").slice(0, -1));
 
-    // A commit made in a run names the run and the agent.
+    // A commit made in a run names the run and the agent, in a repository that sets its own hooks
+    // path too, under the git configuration a harness turn's environment adds to the image's.
     const identity = await sh(
       `mkdir -p ${home}/repos/shop && cd ${home}/repos/shop && git init -q && ` +
         "git config --global user.name coder && git config --global user.email coder@agents.guilds.invalid && " +
-        "echo rule > refund.ts && git add refund.ts && " +
+        "git config core.hooksPath .githooks && echo rule > refund.ts && git add refund.ts && " +
+        "GIT_CONFIG_COUNT=4 GIT_CONFIG_KEY_3=core.hooksPath GIT_CONFIG_VALUE_3=/usr/local/share/guilds/git-hooks " +
         "GUILD_RUN_ID=r_contract GUILD_AGENT_ID=a_contract_coder git commit -qm 'Refund rule' && git log -1 --format=%B",
     );
     assert.match(identity, /^Refund rule\n\nGuild-Run: r_contract\nGuild-Agent: a_contract_coder$/);

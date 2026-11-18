@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { GuildIssueRow, IssueKey, IssueStatusChange, NewIssue } from "../../src/db/issues.js";
-import { Issues, IssueError, ISSUE_OPEN_CAP, issueItem } from "../../src/issues/index.js";
+import { Issues, issueItem } from "../../src/issues/index.js";
 import { invokeTool } from "../../src/toolbox/index.js";
+import { reportIssue } from "../../src/toolbox/report.js";
 import { validateCatalog, BindingError } from "../../src/access/index.js";
 import { toolFixture } from "../helpers/toolbox.js";
 
@@ -91,10 +92,6 @@ class MemoryIssuesDB {
       resolved += 1;
     }
     return resolved;
-  }
-
-  async countOpenIssues(guildId: string) {
-    return this.rows.filter((row) => row.guild_id === guildId && row.status === "open").length;
   }
 }
 
@@ -203,10 +200,10 @@ test("report_issue_rejects_unknown_kind", async () => {
   assert.match(String(metadata.error), /^\/kind: must be equal to one of the allowed values$/);
 });
 
-test("open issue cap is enforced", async () => {
+test("a guild takes a report whatever number of issues it has open", async () => {
   const db = new MemoryIssuesDB();
   const issues = new Issues(db as never);
-  for (let index = 0; index < ISSUE_OPEN_CAP; index += 1) {
+  for (let index = 0; index < 150; index += 1) {
     await issues.create({
       guildId: "guild_1",
       agentId: "a_1",
@@ -217,19 +214,7 @@ test("open issue cap is enforced", async () => {
       detail: "detail",
     });
   }
-  await assert.rejects(
-    () =>
-      issues.create({
-        guildId: "guild_1",
-        agentId: "a_1",
-        agentName: "researcher",
-        runId: "r_1",
-        kind: "other",
-        summary: "one more",
-        detail: "detail",
-      }),
-    (error: unknown) => error instanceof IssueError && error.message.includes("open issues"),
-  );
+  assert.equal((await issues.listForGuild("guild_1", "open")).length, 150);
 });
 
 test("operator can resolve and reopen", async () => {
@@ -313,6 +298,13 @@ test("issueItem snapshots the reporting agent", () => {
     avatar_shape: "blob",
     avatar_color: "#ff00aa",
   });
+});
+
+test("report_issue is described for a problem the run cannot get past, not for one it got past", () => {
+  const description = reportIssue.schema.function.description;
+  assert.match(description, /Use when this run cannot get past it and the operator must act/);
+  assert.match(description, /Do not use for what this run got past \(a corrected call, a narrower read, a retry\)/);
+  assert.doesNotMatch(description, /a result is truncated/);
 });
 
 test("group_post is a binding", () => {

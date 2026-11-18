@@ -26,7 +26,7 @@ Agent flags and the run kind narrow that set:
 | --- | --- |
 | The eight step-by-step browser tools | `config.browser` is true and the agent-optimized browser is not on |
 | `browse` and `browser_eval` | `config.browser` and `config.browser_optimized` are true and the System One platform key is on |
-| The five script tools | `config.scripting` is not false |
+| The five script tools | `config.scripting` is not false, which it always is on a subscription agent |
 | `memory_write` | `config.memory` is not false |
 | The seven schedule tools | The run is a direct or group-chat run, not a schedule run |
 | `secret_request` | The run is a direct run |
@@ -88,6 +88,11 @@ token, at another agent's path, or after the generation ended answers
 | `ping` | An empty result |
 | any other request | JSON-RPC error -32601 |
 
+A generation's harness has connected once it lists the tools or calls
+one under its token; `initialize` or `ping` alone does not. A turn
+offered a tool whose harness never connected records
+`harness.mcp_unconnected` ([Harness turns](../concepts/runs.md#harness-turns)).
+
 A `tools/call` runs as a model's call does
 ([How a tool call runs](#how-a-tool-call-runs)), connection tools
 through their login: the offer gate, the decode, redaction, the byte
@@ -98,8 +103,9 @@ is `mcp_<id>`. A generation's calls run one at a time, in the order
 they arrive. A call of a tool the run does not offer when it comes, or with no
 tool name, answers JSON-RPC error -32602 and runs nothing.
 
-`max_tool_calls` counts every tool result of the run, the harness's
-own tools' included. A call once the run has made that many is
+`max_tool_calls` counts these calls as it counts a model's; the calls
+of the harness's own tools are not counted. A call once the run has
+made that many is
 refused with the result "Tool call limit reached. Start a new run to
 continue.", runs nothing, and ends the generation: the harness is
 stopped, and the run records `generation.max_tool_calls` and

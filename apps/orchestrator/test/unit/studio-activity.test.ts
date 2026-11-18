@@ -108,6 +108,7 @@ const step = (row: Pick<RunActivityStepRow, "run_id" | "seq" | "created_at" | "r
   tool_call_id: null,
   error: null,
   duration_ms: null,
+  from_harness: null,
   ...row,
 });
 
@@ -401,6 +402,8 @@ test("a wake lists what its turns changed in each repository as code writes, sum
     name,
     branch,
     head_sha: "h",
+    start_branch: branch,
+    start_head_sha: "h0",
     start_sha: "s",
     end_sha: "e",
     files_changed: files,
@@ -459,21 +462,32 @@ test("tool results are found by the run and the call they answer, and a result w
 
 test("a tool call carries its result's error and duration, and none without a result", () => {
   const at = ts("14:00:00");
+  const request = step({ run_id: "r_1", seq: 1, created_at: at, role: "assistant" });
   const result = step({ run_id: "r_1", seq: 2, created_at: ts("14:00:01"), role: "tool", tool_call_id: "c_1", error: "boom", duration_ms: 12 });
-  assert.deepEqual(toolCallOf(call("c_1", "note_get", '{"path":"a"}'), result, at), {
+  assert.deepEqual(toolCallOf(call("c_1", "note_get", '{"path":"a"}'), request, result), {
     call_id: "c_1",
     name: "note_get",
     arguments: '{"path":"a"}',
     error: "boom",
     duration_ms: 12,
     at,
+    from_harness: null,
   });
-  const unanswered = toolCallOf(call("", "note_get", "{}"), undefined, at);
+  const unanswered = toolCallOf(call("", "note_get", "{}"), request, undefined);
   assert.equal(unanswered.call_id, null);
   assert.equal(unanswered.error, null);
   assert.equal(unanswered.duration_ms, null);
-  const cleared = toolCallOf(call("c_1", "note_get", "{}"), { ...result, error: "" }, at);
+  const cleared = toolCallOf(call("c_1", "note_get", "{}"), request, { ...result, error: "" });
   assert.equal(cleared.error, null);
+});
+
+test("a tool call carries the harness its request, else its result, is marked as, and none for a guild tool", () => {
+  const request = step({ run_id: "r_1", seq: 1, created_at: ts("14:00:00"), role: "assistant", from_harness: "cursor" });
+  const plain = step({ run_id: "r_1", seq: 1, created_at: ts("14:00:00"), role: "assistant" });
+  const result = step({ run_id: "r_1", seq: 2, created_at: ts("14:00:01"), role: "tool", tool_call_id: "c_1", from_harness: "cursor" });
+  assert.equal(toolCallOf(call("c_1", "shell", "{}"), request, undefined).from_harness, "cursor", "a call still running");
+  assert.equal(toolCallOf(call("c_1", "shell", "{}"), plain, result).from_harness, "cursor");
+  assert.equal(toolCallOf(call("c_1", "note_find", "{}"), plain, undefined).from_harness, null);
 });
 
 test("a wake lists at most the tool call limit across its steps and counts every call", () => {
@@ -603,7 +617,8 @@ test("a wake spans its run's start to its last step, a direct chat from its firs
 });
 
 test("a wake's transcript lists its steps, none when it took none, and an opening only for a direct chat", () => {
-  const steps = { calls: [toolCallOf(call("c_1", "note_get", "{}"), undefined, ts("14:00:00"))], count: 3, reply: "Done." };
+  const request = step({ run_id: "r_chat", seq: 1, created_at: ts("14:00:00"), role: "assistant" });
+  const steps = { calls: [toolCallOf(call("c_1", "note_get", "{}"), request, undefined)], count: 3, reply: "Done." };
   const chat = activityRun({ id: "r_chat", kind: "direct", created_at: ts("14:00:00"), updated_at: ts("14:00:00") });
   assert.deepEqual(wakeTranscript(chat, steps, "hello"), { tool_calls: steps.calls, tool_call_count: 3, reply: "Done.", opening: "hello" });
   assert.deepEqual(wakeTranscript(chat, undefined, undefined), { tool_calls: [], tool_call_count: 0, reply: null, opening: null });

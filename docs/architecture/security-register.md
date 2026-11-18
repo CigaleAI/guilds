@@ -10,6 +10,9 @@ its date (the code that held the issue is removed).
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-77](#sec-77--a-cursor-turn-loads-the-plugins-of-the-account-it-runs-on) | A Cursor turn loads the plugins of the account it runs on | Open |
+| [SEC-76](#sec-76--cursor-loaded-a-repositorys-mcp-server-on-an-approval-stored-in-the-agents-home) | Cursor loaded a repository's MCP server on an approval stored in the agent's home | Fixed 2026-11-17 |
+| [SEC-75](#sec-75--work-a-harness-turn-started-went-on-after-the-turn-ended-and-could-push-with-a-credential-it-had-already-read) | Work a harness turn started went on after the turn ended, and could push with a credential it had already read | Fixed 2026-11-17 |
 | [SEC-74](#sec-74--an-agent-on-a-key-holds-a-git-token-and-a-clone-on-its-machine-and-what-it-reads-can-steer-what-it-does-with-them) | An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them | Open |
 | [SEC-73](#sec-73--a-repository-an-agent-only-reads-on-a-host-other-than-github-is-read-only-by-its-clones-push-url-alone) | A repository an agent only reads, on a host other than GitHub, is read-only by its clone's push URL alone | Open, accepted |
 | [SEC-72](#sec-72--a-sandbox-on-the-hosted-vm-reached-the-metadata-server-private-addresses-and-caddy) | A sandbox on the hosted VM reached the metadata server, private addresses, and Caddy | Fixed 2026-11-16 |
@@ -84,6 +87,143 @@ its date (the code that held the issue is removed).
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-77 — A Cursor turn loads the plugins of the account it runs on
+
+**Status:** open.
+
+**Found:** 2026-11-17, reading the tool catalog of a headless Cursor
+session on a `CURSOR_API_KEY`: it listed an MCP server of a plugin of
+that account's, awaiting its sign-in.
+
+**Where:** the Cursor driver in `runtime/guilds-harness`, pinned to
+the Cursor CLI `2026.11.13-eacade1`, and the Cursor account the agent's
+`CURSOR_API_KEY` or login in its home belongs to.
+
+**Exposure:** when it starts, the Cursor CLI fetches from Cursor's
+servers the plugins in effect for the account it runs on, its own and
+those a team distributes, installs them in the home, and loads them
+into the turn. A plugin carries MCP servers, and can carry rules,
+skills, and hooks. Their MCP servers load without the approval a
+workspace's server needs. A turn then has tools outside the agent's
+bindings, which the run's offer gate and `max_tool_calls` never see,
+and instructions beside the guild's rule (SEC-67). A plugin's server
+that needs no sign-in, or that Cursor signs in with the account's own
+token, acts as that account wherever the model decides to call it, with
+what the turn reads steering it (SEC-28). That plugins carry rules,
+skills, and hooks, and that the CLI signs some servers in with the
+account's token, is read from the CLI's code; a live session showed
+only a plugin's MCP server.
+
+**Control in place:** none keeps the plugins out. The CLI has no flag,
+variable, or setting that does: not in its `--help`, its
+`cli-config.json`, or the variables it reads; it turns account plugins
+off only in its local modes, which run off the Cursor subscription;
+and `--approve-mcps`, which the driver never passes, does not gate
+them. Before every call the driver removes `~/.cursor/plugins/`, which
+the CLI fills again, and each workspace's MCP sign-ins,
+`~/.cursor/projects/*/mcp-auth.json`, so a sign-in made in the home to
+a plugin's server, from the CLI tab or by an earlier turn, does not
+reach the next call. A Cursor agent's credential is one its operator
+grants or logs in with.
+
+**Fix to make:** none in the driver while the CLI has no switch. An
+operator runs a Cursor agent on an account with no plugin installed or
+turned on, outside any team that distributes plugins as Required, or
+picks Claude Code or Codex, which load no plugin (SEC-29).
+
+## SEC-76 — Cursor loaded a repository's MCP server on an approval stored in the agent's home
+
+**Status:** fixed 2026-11-17.
+
+**Found:** 2026-11-17, giving a Cursor turn that starts in the agent's
+home its Guilds tools.
+
+**Where:** the Cursor driver in `runtime/guilds-harness`, pinned to
+the Cursor CLI `2026.11.13-eacade1`, and the approvals that CLI keeps
+per workspace in the agent's home,
+`~/.cursor/projects/<workspace>/mcp-approvals.json`.
+
+**Exposure:** the Cursor CLI loads a server of a workspace's own
+`.cursor/mcp.json` once an approval stored for that workspace names
+the server's exact configuration; `agent mcp enable <name>`, run in
+the workspace, stores one. Before every call the driver removed the
+configuration Cursor reads in the home, but not these approvals. A
+process on the agent's machine that ran `agent mcp enable` in a
+repository's working tree, such as a command the agent or a steered
+harness runs (SEC-28), a package install (SEC-4), or another agent on
+the machine (SEC-24), made every later turn in that repository load
+the repository's server: a command that runs when it loads, with the
+agent's secrets in its environment, without the model deciding to run
+it (SEC-29), until the repository changed that server's configuration.
+
+**Fix:** before every call the driver removes each workspace's stored
+MCP approvals and disabled servers, `~/.cursor/projects/*/mcp-approvals.json`
+and `~/.cursor/projects/*/mcp-disabled.json`. The only approval a turn
+has is the one the driver gives its own server. A turn that starts in
+the home, where Cursor reads the home's `~/.cursor/mcp.json` as the
+workspace's configuration too, runs `agent mcp enable guilds` there
+once the turn's configuration is written: its approval names the
+`guilds` server with the turn's URL and token, and the home alone.
+
+**Residual risk:** between the reset and the start of the CLI, another
+process on the machine can store an approval again; the window is the
+time of one exec, as for the rest of the configuration the reset
+removes (SEC-29).
+## SEC-75 — Work a harness turn started went on after the turn ended, and could push with a credential it had already read
+
+**Status:** fixed 2026-11-17.
+
+**Found:** 2026-11-17, when a harness started a force-push seconds
+before its turn's time limit, and the push reached the repository
+about three minutes after the turn was stopped and the agent's tokens
+file emptied.
+
+**Where:** `op_stop` and `supervise` in `runtime/guilds-harness`, the
+end of a harness turn in `apps/orchestrator/src/generation/harness-loop.ts`,
+and `CodingRuns.releaseRepositories` in
+`apps/orchestrator/src/generation/coding.ts`.
+
+**Exposure:** `stop` signalled the CLI's process group alone. A
+harness can run a command in a session or process group of its own,
+as Cursor does with a command it moves to the background when it runs
+long, and such a process, with everything it started, outlived every
+stop: the time limit, a cancel, a stop the MCP server's calls asked
+for, three failed polls, and the stop of a turn an orchestrator
+restart cut short. A CLI that exited by itself left the same processes
+running. The stop answered that the turn had stopped, and the
+orchestrator ended the generation, emptied the tokens file, and
+revoked the turn's MCP token, while the process went on with what it
+had already read. `git push` asks the credential helper for the token
+before it runs the repository's `pre-push` hook, so a push held up by
+a long hook reached the remote after the turn had ended, with a token
+still valid for the rest of its hour. Such a process ran until the
+container's idle stop, with the agent's granted secrets in its
+environment (SEC-62), and nothing in the run showed it.
+
+**Fix:** the supervisor that runs a turn's CLI is the turn's child
+subreaper (`PR_SET_CHILD_SUBREAPER`), so a process the turn starts
+stays below it whatever session or process group it moves to, after
+its parent exits too. `stop` sends SIGTERM to the CLI's process group
+and to every process below the supervisor, SIGKILL ten seconds later
+to each one left until none is, and answers that the turn stopped
+only once no process of the turn is left; otherwise the turn records
+that its harness did not stop. A CLI that exits by itself has every
+process of its turn ended the same way before the supervisor records
+the exit, so a poll sees the turn end only once nothing it started
+runs. The tokens file is emptied after that. `stop` walks from the
+supervisor's pid only while that pid still runs the call's
+supervisor, so it never signals the processes of the CLI tab, the
+browser, or another agent's turn.
+
+**Residual risk:** a process a command of the turn has a service
+outside the turn start is not below the supervisor. A turn whose
+supervisor is killed leaves its processes running until the container
+stops, and so does a process SIGKILL cannot end, for which `stop`
+answers that the turn did not stop. A token the turn read before it
+ended stays valid for the rest of its hour wherever the turn sent it
+(SEC-66). A process a script of an agent on a key leaves running still
+runs until the idle stop (SEC-5).
 
 ## SEC-74 — An agent on a key holds a git token and a clone on its machine, and what it reads can steer what it does with them
 
@@ -424,7 +564,9 @@ repository holds `pull_requests` write: the coding agent's
 repository token, and the token is redacted from the run's rows. The
 tokens file is emptied when a turn that started ends, however it ends;
 a turn an orchestrator restart cut short, or a generation whose clone
-failed, leaves it until the agent's next generation. A turn stops
+failed, leaves it until the agent's next generation. Since 2026-11-17
+the processes the turn started are ended before the file is emptied
+(SEC-75). A turn stops
 after its `max_turn_minutes`. The system prompt tells the agent to
 work on a branch of its own, never the default branch, and that
 repository content, issue text, and command output are data, never
@@ -1910,7 +2052,10 @@ does not pass, and it passes none; skills off; and `--settings` with
 file overrides, turn hooks off and project MCP servers off. Every
 Codex call ignores `config.toml` and execution-policy rules, disables
 hooks, plugins, apps, and memories, and sets `mcp_servers` empty.
-Cursor calls never pass `--approve-mcps`. Before every call the driver
+Cursor calls never pass `--approve-mcps`; since 2026-11-17 no MCP
+approval stored in the home survives the reset either, and a Cursor
+turn that starts in the home approves only the platform's own server
+(SEC-76). Before every call the driver
 removes the harness's user-level configuration and memory from the
 agent's home, so what the agent, its commands, an earlier harness
 turn, or another agent on the machine (SEC-24) wrote there does not
@@ -2749,6 +2894,10 @@ Since 2026-11-16 `shell` and its `background` mode are removed with the
 coding agent. A process a subscription agent's harness or a script
 leaves running is the background process this needs, until the
 machine's idle stop.
+
+Since 2026-11-17 a process a harness turn starts ends with the
+turn ([SEC-75](#sec-75--work-a-harness-turn-started-went-on-after-the-turn-ended-and-could-push-with-a-credential-it-had-already-read)); a process a script leaves running
+still runs until the idle stop.
 
 ## SEC-4 — Package installs run third-party code beside the agent's secrets
 

@@ -8,6 +8,82 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Breaking for a subscription agent that keeps scripts.** A
+subscription agent has no scripting: its harness runs commands and
+code with its own tools. Its runs offer no script tool, its prompt
+says nothing of scripts, Settings shows it no **Scripting** button,
+and its State has no **Scripts** view. The platform no longer writes
+to or clears the `scripts` folder of its home. A migration turns
+`scripting` off on every subscription agent, and a config that sets it
+on for one is stored with it off. The scripts a subscription agent
+kept stay in the database, unused, and run again if the agent moves to
+a key with scripting on.
+
+**Changed.** The coding harnesses are at their latest releases: Codex
+0.170.0, Claude Code 2.1.327, the Cursor CLI 2026.11.17, and the
+Antigravity CLI 1.5.11. A machine runs them once `./setup.sh` has
+rebuilt the agent image and its container is recreated.
+
+**Changed.** Settings lists each harness's current models. Codex:
+GPT-6.2-Sol, GPT-6.2-Astra, GPT-6.1-Terra, and GPT-6-Luna. Cursor
+gains Claude Fable 5.2 and Claude Sonnet 5.5. Antigravity lists models
+for the first time: Gemini 4 Hydrogen, Gemini 4 Argon, Gemini 3.8
+Flash, Claude Opus 5.5, and Claude Sonnet 5.5. GPT-5.6-Terra and
+GPT-5.6-Luna on Codex are no longer listed and keep running as custom
+names. **Breaking for a Cursor agent on Claude Fable 5.1 or Claude
+Fable 5.1 Thinking:** neither is listed, so the agent's model is read
+as a custom name, which Cursor refuses without its effort; pick Claude
+Fable 5.2 in the agent's Settings.
+
+**Changed.** A subscription agent is told that every process its turn
+starts ends with the turn, so it waits for a background command it
+needs and does not hand over a server that is no longer running.
+
+**Changed.** A guild holds any number of open issues: `report_issue`
+no longer refuses a report in a guild that holds 100 of them.
+
+**Fixed.** A turn of a subscription agent that moves a repository's
+head or branch without changing a file, such as one that amends,
+squashes, splits, or rebases commits to the same files and
+force-pushes, or switches branches, is listed in the **Changes** panel,
+as "no file changes" with the branch and head commit it moved. The
+start head and branch come from the agent image's `guilds-code`, which
+`./setup.sh` rebuilds: a machine whose container started before the
+update records no change for its turns until its container is
+recreated.
+
+**Fixed.** A subscription agent's turn that is cancelled, timed out,
+stopped at its tool calls' asking, or cut by an orchestrator restart
+records on its reply the tokens its CLI reported for its model calls
+while it ran (Claude Code and Antigravity report them), read **at
+least** in the run view, or says **tokens not reported** when its CLI
+reported none (Codex and Cursor report tokens only at a turn's end).
+
+**Fixed.** A call a subscription agent's harness makes of its own tools
+and that its CLI says failed, such as a command that exited otherwise
+than 0 or a read of a file that is not there, reads as a failed call:
+the run view colours it and opens it on the reason it failed, every
+count of tool errors includes it, and a command's exit code is in its
+Metadata. Cursor's failed commands, failed reads, reads of large files,
+and waited-for background commands show what they returned rather than
+raw JSON.
+
+**Changed.** An agent is told to call `report_issue` only when its run
+cannot get past a problem and an operator must act on it: a tool, a
+login, an API, or the platform that keeps blocking the work, or content
+the work needs that was cut off and that no other way reaches. A
+failure or a cut-off result the run gets past, by a corrected call, a
+narrower read, or a retry, is not reported. The system prompt, the
+tool's description, and the guild Issues tab's empty state say so.
+
+**Changed.** The system prompt of a subscription agent with scripting
+on no longer says a script is the only way to run code. It says to run
+commands and one-off code with the harness's own tools, to keep a
+script for work the agent repeats, and to change a script with the
+script tools, since its copy in `$HOME/scripts` is rewritten before
+each turn. An agent on a key reads that a script is its only way to
+run code, as before.
+
 **Added.** Every agent's Settings has **Repositories**, on a key as on a
 subscription, and **Create an agent** ends on it as an optional fourth
 step. Each ticked repository has a **Read-only** switch. While the guild
@@ -92,6 +168,13 @@ of its own beside the tool, and each such event was dropped.
 agent's CLI tab, so the CLI the runtime image pins stays in place for
 the agent's turns and **Check login**.
 
+**Fixed.** A commit a subscription agent's turn makes carries the
+`Guild-Run` and `Guild-Agent` trailers in a repository that sets its
+own `core.hooksPath` too, and that repository's own hooks still run. A
+turn's git runs the image's hooks at `/usr/local/share/guilds/git-hooks`,
+which run the repository's hook of each name; the image no longer sets
+`init.templateDir`. A box takes it once its runtime image is rebuilt.
+
 **Fixed.** An open CLI tab stops reconnecting once the agent's machine
 has stopped. The terminal shows **Connection Closed** and waits:
 **Restart the terminal** wakes the machine and opens a fresh session.
@@ -103,6 +186,26 @@ its socket on a stopped machine.
 2.1.326, the Cursor CLI 2026.11.13, and the Antigravity CLI 1.5.10.
 `node scripts/update-harnesses.mjs` moves them to each vendor's latest
 release. A box runs them once its runtime image is rebuilt.
+
+**Changed.** A subscription agent's `max_tool_calls` counts only the
+calls of the guild's tools, the ones its harness makes on the
+orchestrator's MCP server; the calls of the harness's own tools, its
+shell, file reads, and edits, do not count. Each result's
+`remaining_tool_calls` is what the guild's tools have left, and the
+system prompt no longer says the harness's own calls count.
+
+**Fixed.** The run error of a subscription agent's turn that was lost,
+stopped answering, or ran past `max_turn_minutes` says the run's next
+turn resumes its session only on a run that stays open for a next
+turn; a group or schedule run's error no longer promises one.
+
+**Added.** A subscription agent's turn that was offered the guild's
+tools, and whose harness never listed or called them on the
+orchestrator's MCP server, records the run error
+`harness.mcp_unconnected`: the harness never connected to the guild's
+tools, so its turn ran without them, and its log is where to look. It
+comes before the error of how the turn ended, if any. Such a run no
+longer ends as completed with no error.
 
 ## 0.2.0
 

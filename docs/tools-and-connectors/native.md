@@ -218,7 +218,10 @@ operator. An untagged post asks nobody
 
 ## Issues
 
-`report_issue` files a tooling problem on the guild. The guild's
+`report_issue` files, on the guild, a problem the run cannot get past:
+a tool, a login, or the sandbox that keeps blocking the work, or
+output the work needs that was cut off and that no other way reaches.
+A failure the run gets past is not reported. The guild's
 operators see it in their inbox and on the guild's **Issues** tab
 ([Inbox and issues](../concepts/inbox.md)).
 

@@ -60,7 +60,10 @@ in the Task show as their inlined bodies, the nested hop included.
   cost, such as **120 tok · $0.0020**, with input, output, and the
   cache's reads and writes on hover. A subscription agent's reply
   records its whole turn's tokens and reads **on the subscription** in
-  place of a cost.
+  place of a cost. A turn that ended before its CLI reported its total
+  reads **at least** before the tokens of the model calls the CLI
+  reported, and one whose CLI reported none reads **tokens not
+  reported** ([Usage](usage.md#cost-of-a-harness-turn)).
 - While the agent generates and nothing has streamed yet, the
   transcript shows the agent's avatar, three pulsing dots, and
   **`<name>` is thinking…**. Once text streams, three pulsing dots sit
@@ -130,6 +133,10 @@ on, starts open.
 - **Writes** and **Errors** open the blocks that hold calls that
   changed tracked state, or failed calls, and dim everything else.
   Each carries its count, as does **All**, which keeps every call.
+- In a generation a subscription agent's harness ran, the harness's
+  name and **Guild** do the same for the calls the harness made and
+  the calls of the Guilds tools ([Harness turns](#harness-turns)). A
+  generation a model ran has neither.
 - **Expand all** opens every block and unfolds every reasoning line.
   **Collapse all** folds them back and returns to **All**.
 - **Hide thinking** drops the reasoning from open steps.
@@ -146,6 +153,12 @@ Tool calls are coloured by kind: memory, read, write, execute, act,
 post, connected. A call that is still running shows a spinner in
 place of its result mark.
 
+- A call a subscription agent's harness made carries the harness's
+  logo before its name; hovering it reads **Called by** and the
+  harness, with **on an MCP server it loaded** for a call of such a
+  server's tool ([Harness turns](#harness-turns)). A call of a Guilds
+  tool carries none, so a run of an agent on a model key shows no
+  logo.
 - A call that changed tracked state carries a **wrote** tag. A
   `script_run` call carries a **ran script** tag.
 - A `note_write`, `memory_write`, or `script_create` call carries a
@@ -172,8 +185,9 @@ result lands.
 
 A run whose turns changed a repository ends with a **Changes** panel:
 each turn's repositories with their branch and diffstat, and **Show
-diff**, which fetches that turn's diff from the agent's machine
-([Reviewing changes](coding/reviewing-changes.md)).
+diff**, which fetches that turn's diff from the agent's machine; a turn
+that changed no file shows the branch and head commit it moved in
+place of a diff ([Reviewing changes](coding/reviewing-changes.md)).
 
 ### Harness turns
 
@@ -182,32 +196,66 @@ of its harness, and reads like any other: each message the harness
 wrote while it called its own tools is a step, each of those calls is
 a call card with its input and result, and its last message is the
 reply bubble ([Runs](runs.md#harness-turns)). Its rows carry
-`from_harness`. A call of the run's Guilds tools, which the harness
-makes on the orchestrator's MCP server, reads as a model's call of
-that tool does. The run's error banner names a turn that did not end
+`from_harness`, and each call the harness made carries its logo. A
+call of the run's Guilds tools, which the harness makes on the
+orchestrator's MCP server, reads as a model's call of that tool does,
+with no logo. The run's error banner names a turn that did not end
 cleanly, such as `harness.failed` or `harness.timed_out`.
 
 A call of the harness's own tool reads as what it did, coloured by its
-kind:
+kind. Each harness's tools are its own: a name reads this way only on
+a row its harness marked, so a Guilds tool never reads as a harness's
+tool that shares its name, and a harness's tool never as a Guilds
+tool.
 
-| Tool | Reads | Kind |
-| --- | --- | --- |
-| Codex's `command_execution` | **Run** and the command's first line | execute |
-| Codex's `file_change` | **Change** and the file, or the number of files | write |
-| Codex's `web_search` | **Search web** and the query | read |
-| `Bash` | **Run** and the command's first line | execute |
-| `Read` | **Read** and the file | read |
-| `Write`, `Edit`, `MultiEdit` | **Write** or **Edit** and the file | write |
-| `Grep`, `Glob` | **Search lines** or **Search files** and the pattern | read |
-| `LS` | **List** and the path | read |
-| `WebFetch`, `WebSearch` | **Fetch** and the address, or **Search web** and the query | read |
-| `Task` | **Delegate** and its description | execute |
-| `TodoWrite` | **Update todos** | write |
+| Harness | Tool | Reads | Kind |
+| --- | --- | --- | --- |
+| Claude Code | `Bash` | **Run** and the command's first line | execute |
+| Claude Code | `Read` | **Read** and the file | read |
+| Claude Code | `Write`, `Edit`, `MultiEdit` | **Write** or **Edit** and the file | write |
+| Claude Code | `NotebookEdit` | its name | write |
+| Claude Code | `Grep`, `Glob` | **Search lines** or **Search files** and the pattern | read |
+| Claude Code | `LS` | **List** and the path | read |
+| Claude Code | `WebFetch`, `WebSearch` | **Fetch** and the address, or **Search web** and the query | read |
+| Claude Code | `Task` | **Delegate** and its description | execute |
+| Claude Code | `TodoWrite` | **Update todos** | write |
+| Codex | `command_execution` | **Run** and the command's first line | execute |
+| Codex | `file_change` | **Change** and the file, or the number of files | write |
+| Codex | `web_search` | **Search web** and the query | read |
+| Cursor | `shell` | **Run** and the command's first line | execute |
+| Cursor | `await` | **Wait** | execute |
+| Cursor | `read` | **Read** and the path | read |
+| Cursor | `write`, `edit`, `delete` | **Write**, **Edit**, or **Delete** and the path | write |
+| Cursor | `grep`, `glob` | **Search lines** or **Search files** and the pattern | read |
+| Cursor | `ls` | **List** and the path | read |
+| Cursor | `todo` | **Update todos** | write |
+| Cursor | `getMcpTools` | **List MCP tools** | read |
+| Antigravity | `run_command` | **Run** and the command's first line | execute |
+| Antigravity | `send_command_input`, `command_status` | **Send command input**, **Check command** | execute, read |
+| Antigravity | `view_file` | **Read** and the file | read |
+| Antigravity | `list_dir` | **List** and the directory | read |
+| Antigravity | `find_by_name`, `grep_search` | **Search files** or **Search lines** and the pattern | read |
+| Antigravity | `write_to_file` | **Write** and the file | write |
+| Antigravity | `replace_file_content`, `multi_replace_file_content` | **Edit** and the file | write |
+| Antigravity | `search_web`, `read_url_content` | **Search web** and the query, or **Fetch** and the address | read |
+| Antigravity | `call_mcp_tool` | **Call** and the tool, with its server | connected |
+
+A harness's call of a tool of an MCP server other than the Guilds
+one, which the harness loaded itself, reads as connected. Claude Code
+and Codex name such a tool `mcp__<server>__<tool>` and Antigravity
+`mcp_<server>_<tool>`; the card names the server where the name
+carries it. Cursor's rows name such a call by the tool's own name, so
+it reads as its name.
 
 Any other tool reads as its name. A write in the agent's home is not
 tracked state, so it carries no **wrote** tag. Opening the call shows
 its input and its output, which the platform redacted and capped as
-any tool's, and its Metadata names the harness under **Called by**.
+any tool's, and its Metadata names the harness under **Called by** and
+a command's exit code. A call the harness says failed, such as a
+command that exited otherwise than 0 or a read of a file that is not
+there, reads as a failed call of any tool does: it is coloured as
+failed, counts among the flow's failed calls, and opens on its result
+under the reason it failed ([Runs](runs.md#harness-turns)).
 
 ### Errors outside a flow
 
@@ -278,9 +326,11 @@ reloads the ordered history, then consumes new events.
 - `apps/web/src/features/agent/runs/runFlowModel.ts`: how rows and
   run errors group into flows, steps, and calls
 - `apps/web/src/features/agent/runs/toolKinds.ts`: each tool's kind,
-  level, and whether it writes tracked state
+  level, and whether it writes tracked state, each harness's own tools
+  apart from the Guilds tools
 - `apps/web/src/features/agent/runs/toolFormat.ts`: a call's short
-  line, its arguments, and its outcome
+  line, its arguments, and its outcome, each harness's own tools apart
+  from the Guilds tools
 - `apps/web/src/features/agent/chat/ChangesPanel.tsx`: the
   **Changes** panel
 - `apps/web/src/features/agent/chat/SecretRequestCard.tsx`: the

@@ -214,6 +214,15 @@ function rejectUnsoundModelSource(model: string | null, harness: Harness | null)
   }
 }
 
+/**
+ * Whether the agent has scripting. A subscription agent has none, whatever its payload sets: its
+ * harness runs commands and code with its own tools.
+ */
+function requireScripting(value: unknown, harness: Harness | null): boolean {
+  const scripting = requireBooleanField(value, "scripting");
+  return harness === null && scripting;
+}
+
 /** Refuses a model-loop setting a subscription agent's config gives a value other than its default. */
 function rejectModelLoopSettings(config: AgentConfig): void {
   if (modelSourceOf(config).kind === "key") {
@@ -468,7 +477,7 @@ function agentConfigFrom(settings: JsonObject): AgentConfig {
     repositories,
     read_only_repositories: requireReadOnlyRepositories(filled.read_only_repositories, repositories),
     secret_aliases: requireSecretAliases(filled.secret_aliases),
-    scripting: requireBooleanField(filled.scripting, "scripting"),
+    scripting: requireScripting(filled.scripting, harness),
     memory: requireBooleanField(filled.memory, "memory"),
     thinking_level: validateThinkingLevel(filled.thinking_level),
   };

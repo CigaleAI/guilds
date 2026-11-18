@@ -25,7 +25,7 @@ import { completionReply, FakeSandboxes } from "../helpers/generation.js";
 import { connectModelProvider, TEST_MODEL } from "../helpers/models.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { GitServer } from "../helpers/git-server.js";
-import { recordedEvents, runLine, stubCliSandbox } from "../helpers/harness-cli.js";
+import { freePort, recordedEvents, runLine, serveHarnessMcp, stubCliSandbox } from "../helpers/harness-cli.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
@@ -71,11 +71,13 @@ test("a subscription agent's turn commits and pushes a branch of its repository 
     sandboxes.running.add(machine.id);
     return stub?.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
+  const port = await freePort();
   const loop = generationLoop(
     db,
-    { notes, workspaceRoot: tempDir("guilds-subscription-repositories-ws-"), harnessMcpUrl: "http://127.0.0.1:8090", sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
+    { notes, workspaceRoot: tempDir("guilds-subscription-repositories-ws-"), harnessMcpUrl: `http://127.0.0.1:${port}`, sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
+  const listener = await serveHarnessMcp(loop, port);
   const app = await buildApp(database, { db, notes, artifacts, scripts: agentScripts(db), schedules: agentSchedules(db), generation: loop });
   const settled = async (runId: string) => {
     for (let attempt = 0; attempt < 400 && loop.isGenerating(runId); attempt += 1) {
@@ -175,6 +177,7 @@ test("a subscription agent's turn commits and pushes a branch of its repository 
     assert.deepEqual(second.errors, []);
     assert.equal(second.turn_changes.length, 1);
   } finally {
+    await listener.close();
     await loop.close();
     await app.close();
     await server.close();
@@ -242,11 +245,13 @@ async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> 
     sandboxes.running.add(machine.id);
     return stub?.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
+  const port = await freePort();
   const loop = generationLoop(
     db,
-    { notes, workspaceRoot: tempDir("guilds-subscription-github-ws-"), harnessMcpUrl: "http://127.0.0.1:8090", sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
+    { notes, workspaceRoot: tempDir("guilds-subscription-github-ws-"), harnessMcpUrl: `http://127.0.0.1:${port}`, sandboxes: sandboxes as unknown as GenerationSandboxes, mcp: mcpPool(db), artifacts },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
+  const listener = await serveHarnessMcp(loop, port);
   const app = await buildApp(database, { db, notes, artifacts, scripts: agentScripts(db), schedules: agentSchedules(db), generation: loop });
   try {
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: HEADERS, payload: { name: "github" } });
@@ -290,6 +295,7 @@ async function githubTurn(config: Record<string, unknown>): Promise<GithubTurn> 
     globalThis.fetch = realFetch;
     generationLive.streamCompletion = previousStream;
     setInstanceKeys({});
+    await listener.close();
     await loop.close();
     await app.close();
     await database.close();
@@ -301,9 +307,11 @@ function setupRepositories(requests: GithubTurn["requests"]): unknown {
   return requests.find((request) => request.op === "git_setup")?.repositories;
 }
 
-test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone", { timeout: 120_000 }, async () => {
+test("a subscription agent's turn on a GitHub repository asks GitHub for a token that writes contents alone, and is told nothing of scripts", { timeout: 120_000 }, async () => {
   const turn = await githubTurn({ model: null, harness: "claude-code", repositories: ["shop"] });
   assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "write" } }], "no pull request, issue, workflow or administration permission");
+  assert.doesNotMatch(turn.system, /A script is/);
+  assert.doesNotMatch(turn.system, /script_run/);
   assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: false }]);
   assert.match(turn.system, /Push the branch with `git push origin <branch>`/);
 });
@@ -317,9 +325,10 @@ test("a subscription agent's turn on a GitHub repository it only reads asks GitH
   assert.doesNotMatch(turn.system, /git push origin/);
 });
 
-test("an agent on a key gets the GitHub repositories it picks on its machine, with a token that writes contents alone, and is told a script works in them", { timeout: 120_000 }, async () => {
+test("an agent on a key gets the GitHub repositories it picks on its machine, with a token that writes contents alone, and is told a script works in them and is its only way to run code", { timeout: 120_000 }, async () => {
   const turn = await githubTurn({ model: TEST_MODEL, repositories: ["shop"] });
   assert.deepEqual(turn.asked, [{ repository_ids: [101], permissions: { contents: "write" } }]);
+  assert.match(turn.system, /A script is the only way to execute code/);
   assert.deepEqual(setupRepositories(turn.requests), [{ name: "shop", url: "https://github.com/acme/shop", read_only: false }]);
   assert.equal(turn.requests.some((request) => request.op === "checkpoint"), false, "an agent on a key keeps no turn checkpoints");
   assert.match(turn.system, /"path": "\/home\/[^"]+\/repos\/shop"/, "State names where the repository is");

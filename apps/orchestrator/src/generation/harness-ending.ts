@@ -1,20 +1,22 @@
 import { HARNESS_INFO } from "../coding/harnesses.js";
-import type { Harness } from "../db/schema/index.js";
 import type { TurnEnding } from "../toolbox/harness-ops.js";
 import { failureDetail } from "../toolbox/harness-result.js";
 import { HarnessTurnError } from "./errors.js";
+import type { SubscriptionGeneration } from "./harness-loop.js";
+import { staysOpenAfter } from "./lifecycle.js";
 
-// How a subscription agent's turn on its harness ended, and the run error a turn that did not end
-// cleanly fails its generation with.
+// How a subscription agent's turn on its harness ended, the run error a turn that did not end
+// cleanly fails its generation with, and the one a turn whose harness never connected to the
+// guild's tools records.
 
 /** How a subscription agent's turn ended: as a harness's turn does, or stopped at its run's tool calls' asking. */
 export type HarnessTurnEnding = Omit<TurnEnding, "settled"> & { settled: TurnEnding["settled"] | "stopped" };
 
+/** A way a started turn can end other than a clean exit, a cancel, or its run's tool calls' stop. */
+type UncleanSettled = Exclude<HarnessTurnEnding["settled"], "exited" | "cancelled" | "not_started" | "stopped">;
+
 /** The run error each way a started turn can end other than a clean exit or a cancel. */
-const SETTLED_CODE: Record<
-  Exclude<HarnessTurnEnding["settled"], "exited" | "cancelled" | "not_started" | "stopped">,
-  HarnessTurnError["code"]
-> = {
+const SETTLED_CODE: Record<UncleanSettled, HarnessTurnError["code"]> = {
   missing: "harness.lost",
   unreadable: "harness.lost",
   unresponsive: "harness.unresponsive",
@@ -22,28 +24,38 @@ const SETTLED_CODE: Record<
 };
 
 /** What each way a started turn can end other than cleanly says, of `label`'s turn that could run `minutes`. */
-const SETTLED_MESSAGE: Record<keyof typeof SETTLED_CODE, (label: string, minutes: number) => string> = {
-  missing: (label) =>
-    `${label}'s state is gone: the machine restarted or its container was recreated. The run's next turn resumes its session.`,
+const SETTLED_MESSAGE: Record<UncleanSettled, (label: string, minutes: number) => string> = {
+  missing: (label) => `${label}'s state is gone: the machine restarted or its container was recreated.`,
   unreadable: (label) => `${label} exited, and its result could not be read.`,
-  unresponsive: (label) =>
-    `${label} stopped answering, so it was stopped. The run's next turn resumes its session.`,
-  timed_out: (label, minutes) =>
-    `${label} was stopped after ${minutes} minutes. The run's next turn resumes its session.`,
+  unresponsive: (label) => `${label} stopped answering, so it was stopped.`,
+  timed_out: (label, minutes) => `${label} was stopped after ${minutes} minutes.`,
 };
 
+/** The endings that cut a turn short with its session still worth resuming: the CLI did not finish it. */
+const CUT_SHORT: ReadonlySet<UncleanSettled> = new Set(["missing", "unresponsive", "timed_out"]);
+
 /**
- * The run error a turn that ended `ending`, and could run `minutes`, fails its generation with;
- * null for a turn whose CLI exited cleanly, that was cancelled, or that its run's tool calls
- * stopped, which ends the generation with their own error. A harness that did not stop is named
- * with its log.
+ * What a turn of `gen` that ended `settled` says of its session: that the run's next turn resumes
+ * it, for a turn cut short in a run that stays open for a next generation; empty otherwise.
+ */
+function sessionNote(gen: SubscriptionGeneration, settled: UncleanSettled): string {
+  return CUT_SHORT.has(settled) && staysOpenAfter(gen.run, gen.generation)
+    ? " The run's next turn resumes its session."
+    : "";
+}
+
+/**
+ * The run error the turn of `gen` that ended `ending` fails the generation with; null for a turn
+ * whose CLI exited cleanly, that was cancelled, or that its run's tool calls stopped, which ends
+ * the generation with their own error. A harness that did not stop is named with its log, at
+ * `logPath`.
  */
 export function harnessTurnFailure(
-  harness: Harness,
+  gen: SubscriptionGeneration,
   ending: HarnessTurnEnding,
   logPath: string,
-  minutes: number,
 ): HarnessTurnError | null {
+  const harness = gen.snapshot.harness;
   const label = HARNESS_INFO[harness].label;
   const unstopped =
     ending.stopped === false
@@ -63,6 +75,20 @@ export function harnessTurnFailure(
   }
   return new HarnessTurnError(
     SETTLED_CODE[ending.settled],
-    SETTLED_MESSAGE[ending.settled](label, minutes) + unstopped,
+    SETTLED_MESSAGE[ending.settled](label, gen.snapshot.max_turn_minutes) + sessionNote(gen, ending.settled) + unstopped,
+  );
+}
+
+/**
+ * The run error of a turn of `gen` whose harness never connected to the guild's tools it was
+ * offered, and so ran without them; its log, at `logPath`, holds what the harness did instead.
+ */
+export function unconnectedTurnFailure(gen: SubscriptionGeneration, logPath: string): HarnessTurnError {
+  const label = HARNESS_INFO[gen.snapshot.harness].label;
+  return new HarnessTurnError(
+    "harness.mcp_unconnected",
+    `${label} never connected to the guild's tools on the platform's MCP server, so its turn ran without them. ` +
+      `Its log is ${logPath}: look there for the MCP server \`guilds\` left out of its configuration, an approval it waited for, ` +
+      "or no route from its machine to the orchestrator.",
   );
 }

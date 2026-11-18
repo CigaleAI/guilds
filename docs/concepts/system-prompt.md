@@ -75,10 +75,11 @@ A [subscription agent](agents.md#model-source)'s run offers its tools
 through the orchestrator's MCP server, so its Guidelines keep the
 parts of the tools it is offered, each tool named as its harness calls
 it ([Tool names](#tool-names)). They keep a part of their own for its
-harness: where it runs, its home, its toolchains, its ports, that its
+harness: where it runs, its home, its toolchains, its ports, that
+every process its turn starts ends with the turn, that its
 secrets are variables it never prints, and, when the run offers a
 tool, that the guild's tools come from the platform's MCP server and
-that its own tools' calls count toward `max_tool_calls` too. On
+that each call of one is a tool call of the run. On
 Cursor and Antigravity, which keep their vendor's system prompt and
 read this one as rules beside it, the part also says so. A
 subscription agent that picks repositories also gets a part on them:
@@ -144,8 +145,9 @@ The Guidelines teach a few habits every agent shares:
   talk with an operator. Work products stay in their canonical
   artifact. Each post is short. The agent checks each request against
   its Task.
-- **Report a broken tool.** `report_issue` files a tooling problem
-  for the operator; it does not go to group chat.
+- **Report what blocks the run.** `report_issue` files a problem the
+  run cannot get past for the operator, never one it got past; it
+  does not go to group chat.
 
 ## In the app
 
@@ -341,8 +343,9 @@ this order:
    Check each delivery against the Task. Tag an agent, an operator,
    or `@user`. The Group Chat info message
    ([Group chat](group-chat.md)).
-4. Scripts, when offered: a script is the only way to run code
-   ([Scripts](scripts.md)).
+4. Scripts, when offered ([Scripts](scripts.md)): a script is the
+   only way to run code. A subscription agent, which has no
+   scripting, gets none of it.
 5. Routines, when the run offers the schedule tools: the Schedule
    wake-up message, and `previous_run_at` as the mark of what changed
    since the last fire ([Routines](routines.md)).
@@ -352,8 +355,10 @@ this order:
    vendor's system prompt stays in force beside these rules; with
    repositories, where they are, its branch, commits and push, and how
    its pull request is opened.
-7. `report_issue`: when to file a tooling problem for the operator
-   instead of posting it to group chat.
+7. `report_issue`: file a problem the run cannot get past, a tool, a
+   login, an API, or the platform that keeps blocking the work, or
+   content cut off that no other way reaches, for the operator instead
+   of posting it to group chat; never one the run got past.
 
 How to call a native tool stays on that tool. The generated Memory
 section owns the `memory_write` guidance. `system.md` names

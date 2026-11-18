@@ -8,15 +8,23 @@ the MCP server it is given (the content and mode of the file `--mcp-config` name
 configuration Cursor and Antigravity read in the home, or for Codex its `mcp_servers.guilds`
 overrides with the token of the variable they name, in Claude Code's shape), the variables
 named in HARNESS_STUB_SHOW, and the names of
-the variables whose value holds HARNESS_STUB_SEEK to HARNESS_STUB_RECORD, then prints the
-events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
+the variables whose value holds HARNESS_STUB_SEEK to HARNESS_STUB_RECORD. Given a `guilds` server,
+it connects to it as a CLI does at its start, `initialize` then `tools/list`, unless
+HARNESS_STUB_MCP_CONNECT is `0`; a server it cannot reach is left, as a CLI leaves one. It then
+prints the events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
 `{"stub": "edit", "path": ..., "text": ...}` writes that file instead of printing;
 `{"stub": "run", "argv": [...]}` runs that command in the working directory and prints its exit code
-and output as a message; `{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
+and output as a message; `{"stub": "detach", "argv": [...], "pid_file": ...}` starts that command
+in a session of its own whose parent exits at once, so nothing the CLI runs is its parent, and
+writes its pid to that file; `{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
 until it is killed. `{"stub": "mcp", "method": ..., "params": ...}` posts that JSON-RPC request to
 the `guilds` server it was given, with its headers, appends the status and the answer to
 HARNESS_STUB_MCP_RECORD, and for a `tools/call` prints the events its CLI prints for an MCP call;
 `{"stub": "show_mcp_config"}` prints that server as a message. It exits with HARNESS_STUB_EXIT.
+
+`mcp enable <name>` replays nothing: it appends its argv, working directory, and the MCP server it
+would approve to HARNESS_STUB_APPROVALS, and exits with HARNESS_STUB_APPROVE_EXIT, naming the
+failure on stderr when that is not 0.
 """
 import json
 import os
@@ -152,9 +160,31 @@ def mcp_request(event, number):
     except urllib.error.HTTPError as error:
         return error.code, None
 
+def connect_mcp():
+    """Connects to the `guilds` server the CLI was given, as a CLI does at its start; one it cannot reach is left."""
+    configured = mcp_config()[0]
+    if os.environ.get("HARNESS_STUB_MCP_CONNECT") == "0" or not configured or "guilds" not in configured["mcpServers"]:
+        return
+    handshake = [{"method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}}}, {"method": "tools/list"}]
+    for number, event in enumerate(handshake, start=1):
+        try:
+            mcp_request(event, f"connect_{number}")
+        except (urllib.error.URLError, OSError, ValueError):
+            return
+
+
 if len(sys.argv) > 1 and sys.argv[1] == "--version":
     print(os.environ.get("HARNESS_STUB_VERSION", "9.9.9 (stub)"))
     sys.exit(0)
+if sys.argv[1:3] == ["mcp", "enable"]:
+    approvals = os.environ.get("HARNESS_STUB_APPROVALS")
+    if approvals:
+        with open(approvals, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "mcp_config": mcp_config()[0]}) + "\n")
+    code = int(os.environ.get("HARNESS_STUB_APPROVE_EXIT", "0"))
+    if code:
+        print(f"MCP server '{sys.argv[3]}' not found in configuration", file=sys.stderr)
+    sys.exit(code)
 stdin = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
 record = os.environ.get("HARNESS_STUB_RECORD")
 if record:
@@ -174,6 +204,7 @@ if record:
             "env_holding_seek": holding,
         }
         handle.write(json.dumps(entry) + "\n")
+connect_mcp()
 delay = float(os.environ.get("HARNESS_STUB_DELAY", "0"))
 with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
     for line in events:
@@ -192,6 +223,18 @@ with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
         if event.get("stub") == "run":
             done = subprocess.run(event["argv"], capture_output=True, text=True, check=False)
             print_message(f"exit={done.returncode}\n{done.stdout}{done.stderr}")
+            continue
+        if event.get("stub") == "detach":
+            parent = os.fork()
+            if parent == 0:
+                os.setsid()
+                detached = os.fork()
+                if detached == 0:
+                    os.execvp(event["argv"][0], event["argv"])
+                with open(event["pid_file"], "w", encoding="utf-8") as handle:
+                    handle.write(str(detached))
+                os._exit(0)
+            os.waitpid(parent, 0)
             continue
         if event.get("stub") == "show_mcp_config":
             print_message(json.dumps(mcp_config()[0]))

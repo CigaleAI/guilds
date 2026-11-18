@@ -58,6 +58,13 @@ A subscription is often personal. In an organisation, everyone who
 can start the agent's runs uses it. Whether that complies with the
 vendor's terms is the operator's call
 ([SEC-30](../../architecture/security-register.md#sec-30--personal-harness-subscriptions-used-inside-a-shared-organisation-may-fall-outside-the-vendors-terms)).
+Cursor loads the plugins of the account it runs on into every turn,
+fetched from Cursor's servers when the CLI starts, with the MCP
+servers, rules, skills, and hooks they carry: tools and instructions
+outside the agent's bindings. The CLI has no switch to keep them out,
+so a Cursor agent runs on an account with no plugin installed or
+turned on, outside any team that distributes plugins as Required
+([SEC-77](../../architecture/security-register.md#sec-77--a-cursor-turn-loads-the-plugins-of-the-account-it-runs-on)).
 Whether Google's terms for an Antigravity sign-in allow it to run
 every turn of a subscription agent is an open question the operator
 answers before picking it.
@@ -233,7 +240,7 @@ A subscription agent's Settings have **Identity**, **Harness**,
 **Machine**, and **Repositories**. Its **Harness** section starts with **Model source**, to
 move it to a model on a key, then the harness buttons, with the
 harness's model and effort, then **Agent
-capabilities** and **Run limits** without the model loop's: max steps, max tool calls, max wake-ups, and **Max scripts**.
+capabilities**, without **Scripting**, and **Run limits** without the model loop's and without **Max scripts**: max steps, max tool calls, max wake-ups, and max turn minutes.
 A subscription agent that is not ready opens on the banner "The
 subscription isn't ready", listing what its harness lacks.
 
@@ -321,20 +328,24 @@ effort it gets when none is set.
 | Harness | Listed models | Efforts |
 | --- | --- | --- |
 | Claude Code | `fable`, `opus`, `sonnet`, `haiku` | `low` to `max`; the harness's default without one |
-| Codex | `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` | `low` to `max`, and `ultra` for `gpt-5.6-terra`; `medium` without one |
+| Codex | `gpt-6.2-sol`, `gpt-6.2-astra`, `gpt-6.1-terra` | `low` to `max`, and `ultra`; `low` without one |
+| | `gpt-6-luna` | `low` to `max`; `medium` without one |
 | Cursor | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | `none`, then `low` to `max`; `medium` without one |
-| | `claude-fable-5-1`, `claude-fable-5-1-thinking` | `low` to `max`; `high` without one |
-| | `claude-opus-5-5` | `low` to `max`; `medium` without one |
+| | `claude-fable-5-2` | `low` to `max`; `high` without one |
+| | `claude-opus-5-5`, `claude-sonnet-5-5` | `low` to `max`; `medium` without one |
 | | `grok-4.7` | `low` to `xhigh`; `medium` without one |
 | | `composer-2.5` | none |
-| Antigravity | none | `low` to `max` for the default model or a custom name |
+| Antigravity | `gemini-4-hydrogen` | `low` to `xhigh`; `medium` without one |
+| | `gemini-4-argon`, `gemini-3.8-flash`, `claude-opus-5-5`, `claude-sonnet-5-5` | `low` to `high`; `medium` without one |
 
-Claude Code, Codex, and Antigravity take the effort apart from the
-model name. Cursor names a model and its effort together, so a listed
-Cursor model maps each effort to the CLI name it starts under
-(`claude-opus-5-5` at `high` starts as `claude-opus-5-5-high`), and
-without an effort it starts under the name for its default effort.
-Cursor's fast variants are not listed; they run as custom names.
+Claude Code and Codex take the effort apart from the model name.
+Cursor names a model and its effort together, and so does Antigravity
+for the models it lists, so a listed model of either maps each effort
+to the CLI name it starts under (`claude-opus-5-5` at `high` starts as
+`claude-opus-5-5-high`), and without an effort it starts under the
+name for its default effort. Antigravity's default model and a custom
+name take the effort apart. Cursor's fast variants are not listed;
+they run as custom names.
 
 ### HTTP
 
@@ -351,7 +362,7 @@ subscription agent on it needs a repository), `models`, and
 `unlisted_efforts`: the
 efforts the default model or a custom name runs at. Each model holds
 `id`, `label`, `efforts`, and `default_effort` (null leaves it to the
-harness). The CLI names a Cursor model starts under stay on the server.
+harness). The CLI names a model starts under stay on the server.
 
 `GET /api/agents/:id/harness` returns what the harness still needs:
 
@@ -436,10 +447,10 @@ the CLI's version.
 | Build argument | Default | Role |
 | --- | --- | --- |
 | `HARNESSES` | `claude-code cursor antigravity` | The proprietary harnesses to install; any other name fails the build |
-| `CODEX_VERSION` | `0.169.0` | Codex, installed with npm, always |
-| `CLAUDE_CODE_VERSION` | `2.1.326` | Claude Code, installed with npm |
-| `CURSOR_VERSION` | `2026.11.13-eacade1` | The Cursor CLI release tarball, checksum-verified per architecture |
-| `ANTIGRAVITY_VERSION` | `1.5.10-5253791805734912` | The Antigravity CLI release tarball, checksum-verified per architecture |
+| `CODEX_VERSION` | `0.170.0` | Codex, installed with npm, always |
+| `CLAUDE_CODE_VERSION` | `2.1.327` | Claude Code, installed with npm |
+| `CURSOR_VERSION` | `2026.11.17-f532c45` | The Cursor CLI release tarball, checksum-verified per architecture |
+| `ANTIGRAVITY_VERSION` | `1.5.11-6132547114106880` | The Antigravity CLI release tarball, checksum-verified per architecture |
 
 `node scripts/update-harnesses.mjs` moves the four versions to each
 vendor's latest release: it rewrites them, and the tarball checksums of
@@ -511,16 +522,18 @@ with mode 0600, and `result` removes it with the call's state:
 | --- | --- | --- |
 | Claude Code | `<run folder>/<call id>.mcp.json`: `mcpServers.guilds`, the URL and the header | `--mcp-config <file>`; with `--strict-mcp-config` it is the only MCP server the call uses |
 | Codex | `<run folder>/<call id>.mcp.json`: the URL and the token | `-c mcp_servers.guilds.url="<url>" -c mcp_servers.guilds.bearer_token_env_var="GUILDS_MCP_TOKEN" -c shell_environment_policy.exclude=["GUILDS_MCP_TOKEN"]`, after `-c mcp_servers={}`, which drops every other server |
-| Cursor | `~/.cursor/mcp.json`: `mcpServers.guilds`, its `url` and the header | none: the CLI reads its user configuration, which needs no approval |
+| Cursor | `~/.cursor/mcp.json`: `mcpServers.guilds`, its `url` and the header | none: the CLI reads its user configuration, which needs no approval in a repository. In the home it is the workspace's configuration too, whose servers load only on an approval: `start` first runs `agent mcp enable guilds` there, and the approval names that server's exact configuration and the home alone |
 | Antigravity | `~/.gemini/config/mcp_config.json`: `mcpServers.guilds`, its `serverUrl` and the header | none: the CLI reads its MCP configuration |
 
 Cursor and Antigravity read an MCP configuration only in the home,
 never from a path a call names, so theirs sits there for the call; the
 removal before each call clears what any earlier call or the agent left
-there. Claude Code, Cursor, and Antigravity read the token from the
-file. Codex reads it from
-`GUILDS_MCP_TOKEN`, which the supervisor sets from the file in the
-CLI's own environment alone, never its own or `guilds-harness`'s, and
+there. A Cursor CLI that refuses the approval fails the start, naming
+its reason (`agent did not approve the guilds MCP server: …`). Claude
+Code, Cursor, and Antigravity read the token from the file. Codex
+reads it from `GUILDS_MCP_TOKEN`, which the supervisor sets from the
+file in the CLI's own environment alone, never its own or
+`guilds-harness`'s, and
 which Codex leaves out of the commands its model runs. Codex's
 configuration in the home holds no server: the overrides last one
 call. The URL must be an `http` or `https` URL with no query, the
@@ -593,15 +606,16 @@ it:
 | --- | --- |
 | Claude Code | `~/.claude/` `settings.json`, `settings.local.json`, `CLAUDE.md`, `CLAUDE.local.md`, `rules/`, `hooks/`, `plugins/`, `skills/`, `commands/`, `agents/`, `output-styles/`, and each project's `memory/` under `projects/` |
 | Codex | `~/.codex/` `AGENTS.md`, `AGENTS.override.md`, `skills/`, `prompts/`, `rules/`, `memories/` and its `memories_*.sqlite` databases, `hooks.json` |
-| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
+| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/`, and each workspace's stored MCP approvals, disabled servers, and MCP sign-ins, `projects/*/mcp-approvals.json`, `projects/*/mcp-disabled.json`, and `projects/*/mcp-auth.json`; and the rules Cursor reads in every folder above the one it runs in: `AGENTS.md`, `CLAUDE.md`, and `CLAUDE.local.md` in the home and in `~/repos/`, and `~/repos/.cursor/rules/` |
 | Antigravity | `~/.gemini/` `GEMINI.md`, `AGENTS.md`, and under `config/`: `GEMINI.md`, `AGENTS.md`, `rules/`, `hooks.json`, `mcp_config.json`, `skills/`, `skills.json`, `plugins/`, `plugins.json`, `workflows/`, `workflows.json`, `global_workflows/`, `sidecars/` |
 
 A path whose link resolves outside the home is left alone. The logins
 and account state (`~/.claude.json`, `~/.claude/.credentials.json`,
 `~/.codex/auth.json`, `~/.config/cursor/auth.json`, the Antigravity
 sign-in) are never touched, nor the session transcripts and thread
-records that `session_id` resumes. Memory is off as well as removed:
-Claude Code's auto-memory (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
+records that `session_id` resumes. A sign-in to an MCP server other
+than the platform's is not the harness's login, and goes. Memory is
+off as well as removed: Claude Code's auto-memory (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
 `autoMemoryEnabled: false`) and Codex's memories feature.
 
 After the removal, `start` writes Antigravity's
@@ -617,7 +631,7 @@ A repository's own harness configuration (`.claude/`, `.mcp.json`,
 | --- | --- |
 | Claude Code | Off: no settings source is loaded, `--strict-mcp-config` loads no MCP server the call does not pass, skills are off, and the managed settings turn hooks off |
 | Codex | Off: hooks, plugins, apps, and execution-policy rules are off, and `mcp_servers` is empty |
-| Cursor | An MCP server needs `--approve-mcps`, which the driver never passes. Project hooks in `.cursor/hooks.json` run: the CLI has no switch to turn them off ([SEC-31](../../architecture/security-register.md#sec-31--cursor-runs-a-repositorys-hooks)) |
+| Cursor | An MCP server needs `--approve-mcps`, which the driver never passes, or an approval stored for it in the home, which `start` removes ([SEC-76](../../architecture/security-register.md#sec-76--cursor-loaded-a-repositorys-mcp-server-on-an-approval-stored-in-the-agents-home)). Project hooks in `.cursor/hooks.json` run: the CLI has no switch to turn them off ([SEC-31](../../architecture/security-register.md#sec-31--cursor-runs-a-repositorys-hooks)) |
 | Antigravity | A repository's `.agents/`, `GEMINI.md`, and `AGENTS.md` load: the CLI has no switch to ignore them |
 
 What a repository can still steer is recorded in
@@ -639,15 +653,37 @@ seconds.
 | Op | Does |
 | --- | --- |
 | `check` | Whether the harness's CLI is installed, its version, its credential (`secret`, `login`, or none), and with a login its `account` |
-| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives one, the system prompt file, forks a supervisor in its own session, and returns |
+| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file and, when the request gives them, the system prompt file and the MCP configuration, approves Cursor's MCP server when it starts in the home, forks a supervisor in its own session, and returns |
 | `poll` | The raw events after a byte offset into the log as whole lines, their progress lines, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
 | `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
-| `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |
+| `stop` | SIGTERM to every process of the turn, SIGKILL ten seconds later to each one left until none is, then waits for the supervisor to record the exit. It answers that the call stopped only once no process of the turn is left |
 
 The supervisor starts the CLI in its own process group in
 `repos/<repo>`, or in the agent's home when the request names no
-repository, appends the CLI's raw events to the log, waits for it, and
-records its exit code.
+repository, appends the CLI's raw events to the log, and waits for it.
+Once the CLI exits, by itself or stopped, the supervisor ends every
+process of the turn still running, as `stop` does, and then records
+the CLI's exit code. So `poll` and `result` see the CLI exit only once
+nothing the turn started runs.
+
+A turn's processes are every process its CLI started, and every one
+those started in turn, whatever session or process group each moved
+to. The supervisor is the turn's child subreaper (Linux's
+`PR_SET_CHILD_SUBREAPER`): a process whose parent exits is handed to
+the supervisor rather than to the container's init, so it stays below
+the supervisor. `stop` and the supervisor find the turn's processes by
+walking `/proc` down from the supervisor, and add the CLI's process
+group. `stop` walks from a pid only while `/proc/<pid>/cmdline` shows
+it supervising that call, so a pid the system gave to another process
+is never taken for the supervisor. The CLI tab, the browser, and other
+agents' turns, which the orchestrator starts apart from the turn, are
+not below the supervisor and are never signalled.
+
+Two kinds of process are not below the supervisor, and keep running
+until the container stops: one that a command of the turn has another
+running service start, and every process of a turn whose supervisor
+was killed. Outside Linux, as in the orchestrator's tests on macOS, a
+turn's processes are its CLI's process group.
 
 A call's state is under `/run/guilds/<agent id>/harness/` (mode 0700),
 which goes with the container: `<call id>.json` (what was started),
@@ -665,8 +701,10 @@ runs for the agent: `HOME`, `GUILDS_AGENT_HOME`, `PORT`,
 `GUILDS_PORTS`, the agent's secrets, and its secret aliases
 ([Agent home](../agent-home.md)). It also gets `PAGER=cat`,
 `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
-`DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and
-`GUILD_AGENT_ID`, so commit trailers work
+`DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, `GUILD_AGENT_ID`,
+and `core.hooksPath` on the platform's git hooks as one more
+`GIT_CONFIG_*` entry after the image's, so commit trailers work in
+every repository
 ([Reviewing changes](reviewing-changes.md#commit-trailers)).
 
 `GH_TOKEN`, `GITHUB_TOKEN`, and `GUILDS_RUN_DIR` are never in a

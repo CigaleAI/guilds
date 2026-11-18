@@ -35,10 +35,6 @@ class IssueDB extends FakeDB {
     return { guild_id: guildId, chat_seq: 0, agent_message_count: 0, agent_message_limit: 0, errors: [], pending_agent_count: 0 };
   }
 
-  async countOpenIssues(_guildId: string) {
-    return this.issues.length;
-  }
-
   async insertIssue(issue: NewIssue, now: Date): Promise<IssueRow> {
     const row: IssueRow = {
       id: issue.issueId,

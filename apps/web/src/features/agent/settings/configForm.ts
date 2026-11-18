@@ -46,7 +46,7 @@ export const limitFields = [
   {
     key: "max_tool_calls",
     label: "Max tool calls",
-    hint: "The run ends when this many tools have been called.",
+    hint: "The run ends when this many of the guild's tools have been called; a harness's own tools do not count.",
   },
   {
     key: "max_input_tokens",
@@ -362,7 +362,7 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     repositories: form.repositories,
     read_only_repositories: form.read_only_repositories.filter((name) => form.repositories.includes(name)),
     secret_aliases: form.secret_aliases,
-    scripting: form.scripting,
+    scripting: !takesHarness(form) && form.scripting,
     memory: form.memory,
     max_tokens: Number(form.max_tokens),
     max_steps: Number(form.max_steps),

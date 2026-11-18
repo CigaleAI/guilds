@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  callSummary,
   formatDuration,
   formatReturnedData,
   formatTokens,
@@ -128,7 +129,7 @@ test("compact formatters", () => {
 });
 
 test("friendlyToolCall summarises known calls and falls back to a single short argument", () => {
-  const friendly = (name: string, args: string) => friendlyToolCall(toolCall(name, args));
+  const friendly = (name: string, args: string) => friendlyToolCall(toolCall(name, args), null);
   assert.equal(friendly("note_find", '{"query":"thesis"}'), "Find notes thesis");
   assert.equal(friendly("memory_write", "{}"), "Write memory");
   assert.equal(
@@ -189,13 +190,13 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
 });
 
 test("a known tool's call whose arguments do not fit its schema reads as its name", () => {
-  assert.equal(friendlyToolCall(callWith("Read", { file_path: 7 })), "");
-  assert.equal(friendlyToolCall(callWith("Bash", { command: ["ls"] })), "");
-  assert.equal(summarizeCalls([callWith("record_update", { id: "42" })]), "record_update");
+  assert.equal(friendlyToolCall(callWith("Read", { file_path: 7 }), "claude-code"), "");
+  assert.equal(friendlyToolCall(callWith("Bash", { command: ["ls"] }), "claude-code"), "");
+  assert.equal(callSummary(callWith("record_update", { id: "42" }), null), "record_update");
 });
 
 test("browse reads as where the delegated web task starts", () => {
-  const call = (args: Record<string, unknown>) => friendlyToolCall(callWith("browse", args));
+  const call = (args: Record<string, unknown>) => friendlyToolCall(callWith("browse", args), null);
   assert.equal(
     call({ task: "find the price", start: "https://example.com" }),
     "Browse from https://example.com",
@@ -204,37 +205,40 @@ test("browse reads as where the delegated web task starts", () => {
 });
 
 test("summarizeCalls names what a batch did, merging calls that share a verb", () => {
-  const call = callWith;
-  assert.equal(summarizeCalls([call("Read", { file_path: "a.md" })]), "Read a.md");
+  const guild = (name: string, args: Record<string, unknown>) => callSummary(callWith(name, args), null);
+  const harness = (name: string, args: Record<string, unknown>) =>
+    callSummary(callWith(name, args), "claude-code");
+  assert.equal(summarizeCalls([harness("Read", { file_path: "a.md" })]), "Read a.md");
   assert.equal(
     summarizeCalls([
-      call("Read", { file_path: "a.md" }),
-      call("Read", { file_path: "b.md" }),
-      call("Bash", { command: "ls" }),
+      harness("Read", { file_path: "a.md" }),
+      harness("Read", { file_path: "b.md" }),
+      harness("Bash", { command: "ls" }),
     ]),
     "Read a.md, b.md · Run ls",
   );
   assert.equal(
-    summarizeCalls([
-      call("note_write", {}),
-      call("note_write", {}),
-      call("Read", { file_path: "a.md" }),
-    ]),
+    summarizeCalls([guild("note_write", {}), guild("note_write", {}), harness("Read", { file_path: "a.md" })]),
     "Wrote note · Read a.md",
   );
   assert.equal(
-    summarizeCalls([call("group_post", {}), call("browser_snapshot", {})]),
+    summarizeCalls([guild("group_post", {}), guild("browser_snapshot", {})]),
     "Post to group · Read page snapshot",
   );
-  assert.equal(summarizeCalls([call("wake_after", { minutes: 10 })]), "Wake in 10 minutes");
-  assert.equal(summarizeCalls([call("wake_after", { minutes: 1 })]), "Wake in 1 minute");
-  assert.equal(summarizeCalls([call("wake_after", { minutes: "ten" })]), "wake_after");
-  assert.equal(summarizeCalls([call("wake_cancel", {})]), "Cancel wake-up");
+  assert.equal(summarizeCalls([guild("wake_after", { minutes: 10 })]), "Wake in 10 minutes");
+  assert.equal(summarizeCalls([guild("wake_after", { minutes: 1 })]), "Wake in 1 minute");
+  assert.equal(summarizeCalls([guild("wake_after", { minutes: "ten" })]), "wake_after");
+  assert.equal(summarizeCalls([guild("wake_cancel", {})]), "Cancel wake-up");
   assert.equal(
-    summarizeCalls([call("custom", { a: 1, b: 2 }), call("custom", { a: 3, b: 4 })]),
+    summarizeCalls([guild("custom", { a: 1, b: 2 }), guild("custom", { a: 3, b: 4 })]),
     "custom",
   );
   assert.equal(summarizeCalls([]), "");
+});
+
+test("callSummary reads a call with no summary as its tool's name", () => {
+  assert.equal(callSummary(callWith("custom", { a: 1, b: 2 }), null), "custom");
+  assert.equal(callSummary(toolCall("", ""), null), "tool");
 });
 
 test("toolOutcome says nothing of a tool other than browse", () => {
@@ -255,14 +259,14 @@ test("a browse call ends with its status when it did not complete, and its cost"
 });
 
 test("an old code_task call reads as its tool name, with no outcome of its own", () => {
-  assert.equal(friendlyToolCall(callWith("code_task", { brief: "Fix greet", repo: "app" })), "");
+  assert.equal(friendlyToolCall(callWith("code_task", { brief: "Fix greet", repo: "app" }), null), "");
   const done = { tool_name: "code_task", status: "completed", files_changed: 2, insertions: 14, deletions: 3 };
   assert.equal(toolOutcome(done), "");
 });
 
 test("a call of Codex's own tool reads as what it did, in the platform's verbs", () => {
   const friendly = (name: string, args: Record<string, unknown>) =>
-    friendlyToolCall(callWith(name, args));
+    friendlyToolCall(callWith(name, args), "codex");
   assert.equal(friendly("command_execution", { command: "bash -lc 'cat greet.py'" }), "Run bash -lc 'cat greet.py'");
   assert.equal(friendly("command_execution", {}), "Run command");
   assert.equal(friendly("file_change", { changes: [{ path: "greet.py", kind: "update" }] }), "Change greet.py");
@@ -278,7 +282,7 @@ test("a call of Codex's own tool reads as what it did, in the platform's verbs",
 
 test("a call of Claude Code's own tool reads as what it did, in the platform's verbs", () => {
   const friendly = (name: string, args: Record<string, unknown>) =>
-    friendlyToolCall(callWith(name, args));
+    friendlyToolCall(callWith(name, args), "claude-code");
   assert.equal(
     friendly("Bash", { command: "python3 greet.py\nmore", description: "Run the script" }),
     "Run python3 greet.py",
@@ -305,12 +309,43 @@ test("a call of Claude Code's own tool reads as what it did, in the platform's v
   );
   assert.equal(friendly("TodoWrite", { todos: [] }), "Update todos");
   assert.equal(friendly("Bash", { command: 3 }), "", "arguments of another shape read as nothing");
-  assert.equal(
-    summarizeCalls([
-      callWith("Read", { file_path: "a.md" }),
-      callWith("Read", { file_path: "b.md" }),
-      callWith("Bash", { command: "ls" }),
-    ]),
-    "Read a.md, b.md · Run ls",
-  );
+});
+
+test("a call of Cursor's own tool reads as what it did, in the platform's verbs", () => {
+  const friendly = (name: string, args: Record<string, unknown>) =>
+    friendlyToolCall(callWith(name, args), "cursor");
+  assert.equal(friendly("shell", { command: "python3 greet.py\nmore" }), "Run python3 greet.py");
+  assert.equal(friendly("shell", {}), "Run command");
+  assert.equal(friendly("read", { path: "/home/a_1/a.md" }), "Read /home/a_1/a.md");
+  assert.equal(friendly("write", { path: "greet.py", fileText: "x" }), "Write greet.py");
+  assert.equal(friendly("edit", { path: "greet.py" }), "Edit greet.py");
+  assert.equal(friendly("delete", { path: "old.py" }), "Delete old.py");
+  assert.equal(friendly("grep", { pattern: "TODO" }), 'Search lines "TODO"');
+  assert.equal(friendly("glob", { pattern: "**/*.ts" }), 'Search files "**/*.ts"');
+  assert.equal(friendly("ls", { path: "repos" }), "List repos");
+  assert.equal(friendly("todo", { todos: [] }), "Update todos");
+  assert.equal(friendly("await", {}), "Wait");
+  assert.equal(friendly("getMcpTools", {}), "List MCP tools");
+});
+
+test("a call of Antigravity's own tool reads as what it did, in the platform's verbs", () => {
+  const friendly = (name: string, args: Record<string, unknown>) =>
+    friendlyToolCall(callWith(name, args), "antigravity");
+  assert.equal(friendly("run_command", { CommandLine: "cat greet.py" }), "Run cat greet.py");
+  assert.equal(friendly("write_to_file", { TargetFile: "/home/a_1/greet.py" }), "Write /home/a_1/greet.py");
+  assert.equal(friendly("replace_file_content", { TargetFile: "greet.py" }), "Edit greet.py");
+  assert.equal(friendly("view_file", { AbsolutePath: "/home/a_1/a.md" }), "Read /home/a_1/a.md");
+  assert.equal(friendly("list_dir", { DirectoryPath: "repos" }), "List repos");
+  assert.equal(friendly("grep_search", { Query: "TODO" }), 'Search lines "TODO"');
+  assert.equal(friendly("find_by_name", { Pattern: "*.py" }), 'Search files "*.py"');
+  assert.equal(friendly("search_web", { query: "guilds" }), 'Search web "guilds"');
+  assert.equal(friendly("read_url_content", { Url: "https://example.com" }), "Fetch https://example.com");
+  assert.equal(friendly("call_mcp_tool", { ServerName: "notion", ToolName: "search" }), "Call search");
+  assert.equal(friendly("call_mcp_tool", {}), "Call MCP tool");
+});
+
+test("a harness's summaries apply only to its own rows", () => {
+  assert.equal(friendlyToolCall(callWith("Bash", { command: "ls" }), null), "command: ls", "no harness");
+  assert.equal(friendlyToolCall(callWith("shell", { command: "ls" }), "codex"), "command: ls");
+  assert.equal(friendlyToolCall(callWith("note_find", { query: "q" }), "cursor"), "query: q");
 });

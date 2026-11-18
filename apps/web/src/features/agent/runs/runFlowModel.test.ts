@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildFlowSegments,
+  callHarness,
   flowStats,
   stepCostUsd,
   flowTimeline,
@@ -353,6 +354,49 @@ test("a subscription agent's harness turn reads as a flow of its own tools' call
       ["Bash", "execute", null],
     ],
   );
+});
+
+test("a harness turn's calls carry their harness, running ones too, and its Guilds tool calls none", () => {
+  const harness = { generation: 1, from_harness: "cursor" as const };
+  const rows = [
+    row({ role: "assistant", content: "", tool_calls: [call("t.1", "shell", { command: "ls" })] }, harness),
+    toolRow("t.1", "shell", "a.py", harness),
+    row({ role: "assistant", content: "", tool_calls: [call("mcp_1", "note_find", { query: "q" })] }, { generation: 1 }),
+    toolRow("mcp_1", "note_find", "[]"),
+    row({ role: "assistant", content: "", tool_calls: [call("t.2", "read", { path: "a.py" })] }, harness),
+  ];
+  const flow = buildFlowSegments(rows, null).segments[0] as FlowSegment;
+  assert.deepEqual(
+    flow.steps.flatMap((step) => step.calls.map((item) => [item.info.name, item.info.harness, item.info.kind])),
+    [
+      ["shell", "cursor", "execute"],
+      ["note_find", null, "read"],
+      ["read", "cursor", "read"],
+    ],
+  );
+});
+
+test("a call's harness is its request's, else its result's, else none", () => {
+  const marked = row({ role: "assistant", content: "" }, { generation: 1, from_harness: "codex" });
+  const result = toolRow("c1", "command_execution", "", { from_harness: "codex" });
+  const plain = row({ role: "assistant", content: "" }, { generation: 1 });
+  assert.equal(callHarness(marked, null), "codex");
+  assert.equal(callHarness(null, result), "codex", "an orphan result");
+  assert.equal(callHarness(plain, toolRow("c2", "note_find", "")), null);
+});
+
+test("a harness turn that ended before its CLI reported its total notes the model calls' tokens as a floor, or that none were reported", () => {
+  const usage = { input_tokens: 900, output_tokens: 100, cache_read_tokens: 0 };
+  const partial = row(
+    { role: "assistant", content: "" },
+    { generation: 1, from_harness: "claude-code", usage, cost_usd: 0, cost_source: "subscription", usage_extent: "partial" },
+  );
+  assert.deepEqual(replyUsage(partial), {
+    label: "at least 1.0k tok · on the subscription",
+    title: "900 in · 100 out. The turn ended before its CLI reported its total: these are the model calls it reported.",
+  });
+  const none = row({ role: "assistant", content: "" }, { generation: 1, from_harness: "cursor", usage_extent: "none" });
+  assert.deepEqual(replyUsage(none), { label: "tokens not reported", title: "The CLI reported none of this turn's tokens." });
 });
 
 test("a harness turn on the subscription notes its tokens on its reply, and prices none of its steps", () => {

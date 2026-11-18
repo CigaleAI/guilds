@@ -17,6 +17,7 @@ import {
 import type {
   FlowCallTone,
   FlowStepCues,
+  GenerationOriginCounts,
   GenerationStat,
   GenerationStatus,
   GenerationFilter,
@@ -25,6 +26,7 @@ import type {
   ToolCallStatus,
 } from "@guildsrun/ui";
 import {
+  flowHarness,
   flowStats,
   stepCostUsd,
   turnReasoning,
@@ -37,6 +39,7 @@ import {
   type FlowStep,
 } from "../runs/runFlowModel";
 import {
+  callSummary,
   formatDuration,
   formatTokens,
   friendlyToolCall,
@@ -47,9 +50,12 @@ import {
 } from "../runs/toolFormat";
 import { TOOL_KINDS, isMutation, isScriptRun } from "../runs/toolKinds";
 import type { ToolProgress } from "../../../api/toolProgress";
+import type { Harness } from "../../../api/types/agents";
 import type { StepMetadata } from "../../../api/types/runs";
 import { isNamedToolArguments } from "../../../api/wire";
 import { formatCost } from "../../../app/format";
+import { harnessLabel } from "../harness";
+import { HarnessLogo } from "../HarnessLogo";
 import { callMetadata } from "./callDetail";
 import { ProgressLines, ToolCallDetail } from "./ToolCallDetail";
 
@@ -311,13 +317,71 @@ function generationStats(stats: FlowStats, failedCalls: number): GenerationStat[
 
 /** What a call's card says beside its name: that its harness is generating, what it did, and how it came out. */
 export function callHint(call: FlowCall): string {
-  return [friendlyToolCall(call.call), toolOutcome(call.result?.metadata)].filter(Boolean).join(" · ");
+  return [friendlyToolCall(call.call, call.info.harness), toolOutcome(call.result?.metadata)]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** The connected server a call's card names; none when the tool's own name already carries it. */
 export function cardServer(call: FlowCall): string | null {
   const { name, server } = call.info;
   return server && !name.startsWith(`${server}_`) ? server : null;
+}
+
+/** Whether a filter dims a call: it keeps writes, failures, the harness's calls, or the guild's, and the call is not one. */
+export function dimsCall(
+  filter: GenerationFilter | null,
+  call: FlowCall,
+  generating: boolean,
+): boolean {
+  switch (filter) {
+    case null:
+      return false;
+    case "mutations":
+      return !isMutation(call.info);
+    case "errors":
+      return callError(call, generating) === null;
+    case "harness":
+      return call.info.harness === null;
+    case "guild":
+      return call.info.harness !== null;
+  }
+}
+
+/**
+ * A flow's calls by who made them, for the toolbar's harness and guild filters: the harness that
+ * ran its generation and how many calls it made, and how many were of the guild's tools; null for
+ * a generation a model ran.
+ */
+export function originCounts(flow: FlowSegment): GenerationOriginCounts | null {
+  const harness = flowHarness(flow);
+  if (harness === null) return null;
+  const calls = flow.steps.flatMap((step) => step.calls);
+  const harnessCalls = calls.filter((call) => call.info.harness !== null).length;
+  return { harness: harnessLabel(harness), harnessCalls, guildCalls: calls.length - harnessCalls };
+}
+
+/** The harness that made a card's call, and what the card says of it on hover and to screen readers. */
+export type CardHarness = { harness: Harness; title: string };
+
+/**
+ * The harness a card marks as having made its call, of its own tools or on an MCP server it loaded;
+ * null for a call of a tool the guild offers.
+ */
+export function cardHarness(call: FlowCall): CardHarness | null {
+  const { harness, kind } = call.info;
+  if (harness === null) return null;
+  const by = `Called by ${harnessLabel(harness)}`;
+  return { harness, title: kind === "connected" ? `${by}, on an MCP server it loaded` : by };
+}
+
+/** The logo of the harness that made a call, before the call's name. */
+function CallHarnessMark({ harness, title }: CardHarness) {
+  return (
+    <span role="img" aria-label={title} title={title} className="inline-flex shrink-0">
+      <HarnessLogo harness={harness} size={24} />
+    </span>
+  );
 }
 
 type StepReasoningProps = { text: string; defaultOpen: boolean };
@@ -384,9 +448,8 @@ export function FlowView({
     if (last) centerInScroller(last);
   };
 
-  const dimCall = (call: FlowCall) =>
-    (filter === "mutations" && !isMutation(call.info)) ||
-    (filter === "errors" && !callError(call, generating));
+  const dimCall = (call: FlowCall) => dimsCall(filter, call, generating);
+  const origin = originCounts(flow);
 
   /** Expanding opens every block and thought; collapsing also drops the filter, so all fold. */
   const expandAll = (next: boolean) => {
@@ -414,10 +477,12 @@ export function FlowView({
     const expanded = openCall === callKey(call);
     const status = callStatus(call, generating);
     const reported = runningProgress(call);
+    const mark = cardHarness(call);
     const card = (
       <ToolCall
         key={callKey(call)}
         {...(isRevealed(call) ? { "data-revealed": "", className: "ring-2 ring-signal" } : {})}
+        {...(mark ? { icon: <CallHarnessMark {...mark} /> } : {})}
         name={call.info.name}
         kind={call.info.kind}
         effect={callEffect(call)}
@@ -514,7 +579,7 @@ export function FlowView({
       >
         <FlowStepBlock
           label={step.index === null ? "Tool result" : `Step ${step.index}`}
-          title={summarizeCalls(step.calls.map((call) => call.call))}
+          title={summarizeCalls(step.calls.map((call) => callSummary(call.call, call.info.harness)))}
           {...(note ? { note } : {})}
           {...stepCues([step], generating)}
           {...(stop ? { stop } : {})}
@@ -594,7 +659,12 @@ export function FlowView({
         }
         stats={statLabels}
         status={status}
-        counts={{ all: calls.length, mutations, errors: failedCalls }}
+        counts={{
+          all: calls.length,
+          mutations,
+          errors: failedCalls,
+          ...(origin ? { origin } : {}),
+        }}
         filter={filter}
         onFilterChange={setFilter}
         thinkingHidden={thinkingHidden}

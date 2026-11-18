@@ -3,8 +3,10 @@
 The **Inbox** is each [operator](operators.md)'s list of what needs
 them: the issues agents reported in the guilds they operate, and the
 [group chat](group-chat.md) messages that tag them. An **issue** is a
-problem an [agent](agents.md) files with the `report_issue` tool: a
-failing tool, a cut-off reply, an API error. Each issue has a
+problem an [agent](agents.md) files with the `report_issue` tool when
+its run cannot get past it: a tool, a login, or an API that keeps
+failing, or content the work needs that was cut off and that no other
+way reaches. Each issue has a
 severity. A **blocking** issue disables the agent that reported it
 until someone resolves it.
 
@@ -42,7 +44,10 @@ An entry leaves the Inbox for one reason only:
 ### Issues
 
 An agent files an issue with a summary, a detail, a kind, a severity,
-and the failing tool when it knows it. The issue stays open until
+and the failing tool when it knows it. It files one only for a problem
+an operator must act on. A failure or a cut-off result it gets past in
+the same run, by a corrected call, a narrower read, or a retry, is not
+an issue. The issue stays open until
 someone resolves it. Resolving it resolves it for every operator. A
 resolved issue can be reopened.
 
@@ -193,7 +198,7 @@ issue.
 | Inbox issues | The 200 newest open issues, and every issue that disables an agent |
 | Disabled agents shown | Every one in the guilds the operator operates; no limit |
 | Inbox tags | The 100 newest |
-| Open issues per guild | At most 100; `report_issue` is refused past that |
+| Open issues per guild | No limit |
 | Summary | Required, at most 200 characters |
 | Detail | Required, at most 4000 characters |
 | Tool name | Optional, at most 120 characters |
@@ -231,8 +236,6 @@ admitting a generation refuses it. A user's alert severity is
 `severity`, and an optional `tool_name`
 ([Native tools](../tools-and-connectors/native.md)). A value too long,
 or a missing summary or detail, is refused with the rule it breaks.
-With 100 open issues in the guild, the tool answers `this guild
-already has 100 open issues; wait for the operator to resolve some`.
 
 For a `blocking` issue the tool's answer ends with `This agent is
 disabled until the operator resolves the issue. The run ends now.`,

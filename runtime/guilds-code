@@ -320,10 +320,27 @@ def _changed_files(root: Path, start: str, end: str) -> list[dict[str, Any]]:
     return files
 
 
+START_BRANCH_TRAILER = "Branch"
+
+
+def _branch(root: Path) -> str | None:
+    return _git_out(root, ["rev-parse", "--abbrev-ref", "HEAD"]) or None
+
+
+def _start_head(root: Path, start: str) -> tuple[str | None, str | None]:
+    """The head commit and branch a start checkpoint was taken on: the commit's parent, which
+    `_snapshot` parents on HEAD, and the branch its message's trailer names."""
+    head = _git_out(root, ["rev-parse", "--verify", "--quiet", f"{start}^"]) or None
+    message = _git_out(root, ["show", "-s", "--format=%B", start]) or ""
+    match = re.search(rf"^{START_BRANCH_TRAILER}: (.+)$", message, re.MULTILINE)
+    return head, match.group(1).strip() if match else None
+
+
 def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
     """Records <prefix>/start (once) or <prefix>/end (each time) of the harness call `task` in
-    every working tree under the agent's repos/, or those `repositories` names, and at the end
-    the change since the start and the changed files, at most CHECKPOINT_FILES."""
+    every working tree under the agent's repos/, or those `repositories` names, the start with
+    the branch it was taken on, and at the end the change since the start, the head and branch
+    at each, and the changed files, at most CHECKPOINT_FILES."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
     which = spec.get("which")
     if which not in ("start", "end"):
@@ -337,17 +354,24 @@ def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
             existing = _git_out(root, ["rev-parse", "--verify", "--quiet", ref])
             if which == "start" and existing:
                 continue
-            commit = _snapshot(root, f"{label} {which}")
+            message = f"{label} {which}"
+            branch = _branch(root)
+            if which == "start" and branch:
+                message += f"\n\n{START_BRANCH_TRAILER}: {branch}"
+            commit = _snapshot(root, message)
             if _git(root, ["update-ref", ref, commit]).returncode != 0:
                 raise ToolError(f"git update-ref {ref} failed")
             if which == "start":
                 records.append({"name": name, "start_sha": commit})
                 continue
             start = _git_out(root, ["rev-parse", "--verify", "--quiet", f"{prefix}/start"])
+            start_head, start_branch = _start_head(root, start) if start else (None, None)
             record: dict[str, Any] = {
                 "name": name,
-                "branch": _git_out(root, ["rev-parse", "--abbrev-ref", "HEAD"]) or None,
+                "branch": branch,
                 "head_sha": _git_out(root, ["rev-parse", "--verify", "--quiet", "HEAD"]) or None,
+                "start_branch": start_branch,
+                "start_head_sha": start_head,
                 "start_sha": start or None,
                 "end_sha": commit,
                 "files_changed": 0,

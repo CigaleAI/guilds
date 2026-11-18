@@ -5,7 +5,7 @@ import { cn, Icon } from "@guildsrun/ui";
 import { agentMinimum, sizeMeets, type MachineSize } from "../../machines/machines";
 import { TooSmallNote } from "../../machines/MachineNotes";
 import { BrowserFields, withBrowser } from "./BrowserFields";
-import type { ConfigErrors, ConfigForm } from "./configForm";
+import { takesHarness, type ConfigErrors, type ConfigForm } from "./configForm";
 
 type CapabilityFieldProps = {
   label: string;
@@ -62,7 +62,8 @@ type CapabilitiesFieldsProps = {
 };
 
 /**
- * Browser, scripting, and Memory. Every agent has the CLI, so it has no card. Browser is greyed
+ * Browser, scripting, and Memory. Every agent has the CLI, so it has no card. A subscription agent
+ * has no scripting, so it has no card for it. Browser is greyed
  * out while off when the machine is below the minimum it would set, with a line that points to
  * Settings → Machines. With the browser on, its settings follow the cards.
  */
@@ -87,13 +88,15 @@ export function CapabilitiesFields({
           disabled={isBlocked("Browser")}
           onChange={(browser) => onChange(withBrowser(form, browser))}
         />
-        <CapabilityField
-          label="Scripting"
-          hint="The Scripts tab and the script tools."
-          icon={FileCode}
-          checked={form.scripting}
-          onChange={(scripting) => onChange({ ...form, scripting })}
-        />
+        {takesHarness(form) ? null : (
+          <CapabilityField
+            label="Scripting"
+            hint="The Scripts tab and the script tools."
+            icon={FileCode}
+            checked={form.scripting}
+            onChange={(scripting) => onChange({ ...form, scripting })}
+          />
+        )}
         <CapabilityField
           label="Memory"
           hint="One Markdown file the agent rewrites to remember across runs."

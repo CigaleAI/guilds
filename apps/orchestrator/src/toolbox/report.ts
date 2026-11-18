@@ -5,9 +5,11 @@ import { ToolUnavailableError } from "./errors.js";
 
 const DESCRIPTION =
   "Report a problem with this agent's tooling or platform to the operator. " +
-  "Use when a tool call fails, a result is truncated, an API or MCP login errors, " +
-  "or the sandbox otherwise blocks the work this run needs. Do not use for missing " +
-  "facts, Task questions, or ordinary empty search results. kind is tool_failure, " +
+  "Use when this run cannot get past it and the operator must act: a tool, an API or " +
+  "MCP login, or the sandbox keeps blocking the work this run needs, or output the work " +
+  "needs was cut off and no other way reaches it. Do not use for what this run got past " +
+  "(a corrected call, a narrower read, a retry), missing facts, Task questions, or " +
+  "ordinary empty search results. kind is tool_failure, " +
   "truncated, api, or other. Name the failing tool when you know it. summary is one " +
   "line; detail is what happened and any error text. severity blocking is for a problem " +
   "that makes every further run of this agent pointless or harmful until the operator " +
@@ -23,7 +25,7 @@ export const reportIssue = nativeTool({
     kind: Type.String({
       enum: ["tool_failure", "truncated", "api", "other"],
       description:
-        "tool_failure for a failed call, truncated when output was cut off, api for login or remote HTTP errors, other for the rest",
+        "tool_failure for a failed call, truncated when output the work needs was cut off, api for login or remote HTTP errors, other for the rest",
     }),
     severity: Type.Optional(
       Type.String({

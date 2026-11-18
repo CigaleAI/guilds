@@ -34,8 +34,13 @@ stay as they are.
 - **Turn checkpoints.** Each turn of a subscription agent that picks
   repositories takes its own `start` in each of them before its CLI
   starts and its own `end` after the turn, under the turn's call id.
-  The run records, for a turn that changed a repository, each
-  repository it changed with its branch, its head commit, and the
+  A turn changed a repository when a file differs between its two
+  checkpoints, or when the repository's head commit or branch at the
+  end is not the one at the start: a turn that commits work it found
+  uncommitted, amends, squashes, splits, or rebases commits to the
+  same files, or switches branches changed it too. The run records,
+  for a turn that changed a repository, each repository it changed
+  with its branch and head commit at the start and at the end, and the
   diffstat; a turn that changed nothing records nothing.
 
 Checkpoints are local to the agent's clone. They are never pushed and
@@ -57,8 +62,9 @@ Guild-Run: <run id>
 Guild-Agent: <agent id>
 ```
 
-A `prepare-commit-msg` hook in the image's git template adds them. A
-commit made elsewhere, such as from the **CLI** tab, gets none.
+They are added in every repository, whatever hooks path it sets, and
+the repository's own hooks still run. A commit made elsewhere, such as
+from the **CLI** tab, gets none.
 
 ## In the app
 
@@ -69,7 +75,10 @@ panel once a turn has changed a repository. Each turn that did is under
 **Turn `<n>`**, with a row per repository it changed: its name, its
 branch, and its diffstat, such as "3 files · +40 −2". **Show diff**
 fetches that turn's diff from the agent's machine, and **Hide diff**
-folds it.
+folds it. A turn that moved the repository's history without changing
+a file, such as one that rewrote commits to the same files, reads "no
+file changes" with the branch and head commit it moved, such as
+"main → topic" and "1a2b3c4 → 5d6e7f8", and has no diff to show.
 
 ### Reading a diff
 
@@ -91,7 +100,7 @@ shows "Couldn't load the diff" with the reason.
 
 | Rule | Value or behaviour |
 | --- | --- |
-| Turn checkpoints | `start` and `end` around each turn of a subscription agent that picks repositories; recorded only for a turn that changed one |
+| Turn checkpoints | `start` and `end` around each turn of a subscription agent that picks repositories; recorded only for a turn that changed one's files, head commit, or branch |
 | What is captured | Committed, uncommitted, and untracked files; not ignored ones |
 | Where | Local refs in the agent's clone, never pushed, never deleted |
 | Diff size | At most 256 KiB, then cut |
@@ -111,14 +120,24 @@ shows "Couldn't load the diff" with the reason.
 temporary one, runs `git add --all` against it, writes the tree, and
 records a commit with `git commit-tree`, parented on `HEAD` when there
 is one, as `guilds checkpoint <checkpoint@guilds.invalid>`, with the
-message `guild run <run id> task <call id> start`.
+message `guild run <run id> task <call id> start` (or `end`). The
+`start` message ends with a `Branch: <branch>` trailer when `HEAD` is
+on a branch, so the end checkpoint reports the branch and head commit
+the turn started on: the trailer's branch and the start commit's
+parent.
 
 A subscription agent's run stores `metadata.turn_changes`, one entry
 per turn that changed a repository, in order:
 `[{ call_id, generation, repos }]`, where `repos` holds each repository
 the turn changed,
-`{ name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions }`,
-between the turn's own checkpoints. The run payload carries it as `turn_changes`.
+`{ name, branch, head_sha, start_branch, start_head_sha, start_sha, end_sha, files_changed, insertions, deletions }`,
+between the turn's own checkpoints: `branch` and `head_sha` at the
+turn's end, `start_branch` and `start_head_sha` at its start (null on
+no branch or no commit), and the checkpoints and their diffstat. A
+repository is in `repos` when `files_changed` is above 0, or when the
+turn has a start checkpoint there and `start_head_sha` or
+`start_branch` differs from `head_sha` or `branch`. The run payload
+carries it as `turn_changes`.
 A turn the restart cut short takes no end checkpoint and records
 nothing.
 
@@ -141,17 +160,49 @@ GET /api/runs/:id/turns/:call_id/changes/:repository/diff
 
 ### Commit trailers
 
-The hook is `prepare-commit-msg` in `/usr/local/share/guilds/git-template`,
-the image's `init.templateDir`. It runs `git interpret-trailers` with
-`--if-exists addIfDifferent`, only when `GUILD_RUN_ID` is set, and
-`Guild-Agent` falls back to `unknown`. The harness's environment sets
-both variables. Clones and `git init` take the hook from the template. A
-repository that sets its own hooks path skips it.
+A harness's environment sets `core.hooksPath` to the image's
+`/usr/local/share/guilds/git-hooks`, as the next `GIT_CONFIG_KEY_<n>`
+and `GIT_CONFIG_VALUE_<n>` after the image's own entries
+([Harness environment](harnesses.md#harness-environment)). git reads
+those after every configuration file, so they win over a repository's
+own `core.hooksPath`; only `git -c core.hooksPath=...` on one command
+wins over them. The CLI tab's environment does not set it.
+
+Every hook name git looks up in a hooks directory (those of
+githooks(5) but `fsmonitor-watchman`, which `core.fsmonitor` names by
+its path) is a link to `guilds-hook`. It first finds the repository's
+own hooks directory as git would without the platform's: the last
+`core.hooksPath` of the system, global, local, or worktree
+configuration, with `~` expanded and a relative path taken from the
+directory git runs hooks in, else `hooks` in the repository's common
+git directory, which its worktrees share. A hooks directory that is
+the platform's own counts as none. When that directory has an
+executable hook of the name, `guilds-hook` runs it with git's
+arguments, standard input, environment, and working directory, and
+exits with its status, so a failing hook still fails the command. The
+environment keeps the platform's `core.hooksPath`, so git that the hook
+runs goes through the platform's hooks too. A
+missing or non-executable one is no hook, as for git, which for
+`push-to-checkout` means updating the checked-out branch's working tree
+as git does itself.
+
+`prepare-commit-msg` runs the repository's hook first, then, when
+`GUILD_RUN_ID` is set, `git interpret-trailers` with
+`--if-exists addIfDifferent`; `Guild-Agent` falls back to `unknown`.
+Run after the repository's hook, the trailers stay in the message's
+last paragraph, where git reads trailers. `--no-verify` skips
+`pre-commit` and `commit-msg`, not `prepare-commit-msg`.
+
+git removes `GIT_CONFIG_COUNT` from the environment of the
+`receive-pack` it starts for a push to a repository on the same
+machine, so that repository runs its own hooks, without the
+platform's.
 
 ### Code
 
 `runtime/guilds-code` (`checkpoint`, `diff`),
-`runtime/git-template/hooks/prepare-commit-msg`,
+`runtime/git-hooks/guilds-hook`, `runtime/guilds-harness` (the
+harness's environment),
 `apps/orchestrator/src/generation/coding.ts` (a subscription turn's
 checkpoints, and reading a diff from the machine),
 `apps/orchestrator/src/generation/run-review.ts` (which diff a request

@@ -212,27 +212,36 @@ export function scriptCap(config: AgentConfig | undefined): number {
   return config?.max_scripts ?? defaultAgentConfig.max_scripts;
 }
 
-type ScriptingOffProps = { guildId: string; agentId: string };
+type ScriptingOffProps = {
+  guildId: string;
+  agentId: string;
+  /** Whether the agent is a subscription agent, which has no scripting to turn on. */
+  subscription: boolean;
+};
 
-/** An agent without scripting, pointed at the Settings section that turns it on. */
-function ScriptingOff({ guildId, agentId }: ScriptingOffProps) {
+/**
+ * An agent without scripting: one on a key is pointed at the Settings section that turns it on,
+ * and a subscription agent is told its harness runs code itself.
+ */
+function ScriptingOff({ guildId, agentId, subscription }: ScriptingOffProps) {
+  const settings = (
+    <Button asChild size="sm">
+      <Link to="/guilds/$guildId/agents/$agentId/settings" params={{ guildId, agentId }} search={{ section: "model" }}>
+        Open Settings
+      </Link>
+    </Button>
+  );
   return (
     <div className="grid flex-1 place-items-center p-6">
       <EmptyState
         icon={FileCode}
         title="This agent has no scripting"
-        description="Turn it on in Settings to give the agent script tools and this tab."
-        action={
-          <Button asChild size="sm">
-            <Link
-              to="/guilds/$guildId/agents/$agentId/settings"
-              params={{ guildId, agentId }}
-              search={{ section: "model" }}
-            >
-              Open Settings
-            </Link>
-          </Button>
+        description={
+          subscription
+            ? "A subscription agent runs commands and code with its harness's own tools."
+            : "Turn it on in Settings to give the agent script tools and this tab."
         }
+        action={subscription ? undefined : settings}
       />
     </div>
   );
@@ -361,7 +370,7 @@ export function AgentScripts() {
   );
 
   if (agent.data && !capabilityOn(agent.data.config, "scripting")) {
-    return <ScriptingOff guildId={guildId} agentId={agentId} />;
+    return <ScriptingOff guildId={guildId} agentId={agentId} subscription={agent.data.config.harness != null} />;
   }
 
   return (

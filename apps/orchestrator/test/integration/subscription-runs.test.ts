@@ -16,7 +16,7 @@ import { answerOps } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { FakeSandboxes } from "../helpers/generation.js";
-import { HANG, RECORDED_SESSION, recordedEvents, stubCliSandbox, stubsRunning } from "../helpers/harness-cli.js";
+import { freePort, HANG, RECORDED_SESSION, recordedEvents, serveHarnessMcp, stubCliSandbox, stubsRunning } from "../helpers/harness-cli.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
@@ -51,18 +51,20 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     sandboxes.running.add(machine.id);
     return stub.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
+  const port = await freePort();
   const loop = generationLoop(
     db,
     {
       notes,
       workspaceRoot: tempDir("guilds-subscription-ws-"),
-      harnessMcpUrl: "http://127.0.0.1:8090",
+      harnessMcpUrl: `http://127.0.0.1:${port}`,
       sandboxes: sandboxes as unknown as GenerationSandboxes,
       mcp: mcpPool(db),
       artifacts,
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );
+  const listener = await serveHarnessMcp(loop, port);
   const published: string[] = [];
   const publish = loop.events.publish.bind(loop.events);
   loop.events.publish = async (runId, ...event) => {
@@ -155,12 +157,15 @@ test("a direct message to a Claude Code subscription agent runs a turn of its CL
     assert.equal(cancelled.statusCode, 202, cancelled.body);
     assert.equal(stubsRunning(stub.bin), false);
     const after = await messages(runId);
-    assert.equal(after.at(-1)?.payload.role, "tool");
-    assert.equal(after.at(-1)?.payload.content, "ERROR: execution interrupted");
-    assert.equal(after.at(-1)?.metadata.from_harness, "claude-code");
+    const [interrupted, reply] = after.slice(-2);
+    assert.equal(interrupted?.payload.role, "tool");
+    assert.equal(interrupted?.payload.content, "ERROR: execution interrupted");
+    assert.equal(interrupted?.metadata.from_harness, "claude-code");
+    assert.deepEqual([reply?.payload.role, reply?.metadata.usage_extent], ["assistant", "none"], "the reply says the CLI reported no tokens before the cancel");
     assert.equal(cancelled.json().errors.at(-1)?.operation, "generation.cancelled");
   } finally {
     await app.close();
+    await listener.close();
     await loop.close();
     await database.close();
   }

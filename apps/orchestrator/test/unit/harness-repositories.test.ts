@@ -13,7 +13,8 @@ import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
-import { recordedEvents, stubCliSandbox } from "../helpers/harness-cli.js";
+import type { FastifyInstance } from "fastify";
+import { freePort, recordedEvents, runLine, serveHarnessMcp, stubCliSandbox } from "../helpers/harness-cli.js";
 import { connectionRow } from "../helpers/servers.js";
 
 // A subscription agent's turn in the repositories it picks, driven through the generation loop
@@ -24,12 +25,14 @@ const SUBSCRIBER: ResolvedAgentConfig = { ...AGENT_CONFIG, model: null, harness:
 const HARNESS_READY = { installed: true, version: "9.9.9 (stub)", credential: "secret" };
 const [INIT] = recordedEvents("claude-code");
 const REPLY = recordedEvents("claude-code").slice(-2);
+const listeners: FastifyInstance[] = [];
 
 before(() => {
   harnessTurnTiming.pollMs = 50;
 });
-after(() => {
+after(async () => {
   Object.assign(harnessTurnTiming, timing);
+  await Promise.all(listeners.map((listener) => listener.close()));
 });
 
 /** A bare repository on this host whose `main` holds one commit of a README; its file URL. */
@@ -53,9 +56,10 @@ function guildRepository(name: string, url: string, overrides: Record<string, un
 
 /**
  * A generation loop whose run `r_1` is a direct run of a Claude Code subscription agent that picks
- * `repositories`, of which its guild has `rows`, with the stand-in CLI replaying `lines`.
+ * `repositories`, of which its guild has `rows`, with the stand-in CLI replaying `lines`, and whose
+ * MCP server listens on this host.
  */
-function repositoryLoop(lines: string[], repositories: string[], rows: Array<Record<string, unknown>>) {
+async function repositoryLoop(lines: string[], repositories: string[], rows: Array<Record<string, unknown>>) {
   const stub = stubCliSandbox("claude", lines);
   const answered = answerOps(stub.sandbox, { check: HARNESS_READY });
   const db = new FakeDB(configSnapshot(SUBSCRIBER, { tools: [], secrets: [], mcp: [] }, "direct"));
@@ -66,7 +70,9 @@ function repositoryLoop(lines: string[], repositories: string[], rows: Array<Rec
     sandboxes.running.add(machine.id);
     return stub.sandbox;
   }) as unknown as FakeSandboxes["ensure"];
-  const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
+  const port = await freePort();
+  const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { harnessMcpUrl: `http://127.0.0.1:${port}` });
+  listeners.push(await serveHarnessMcp(loop, port));
   const errors = () => db.run.errors as Array<{ operation: string; message: string }>;
   const metadata = () => db.run.metadata as Record<string, unknown>;
   return { ...stub, db, loop, errors, metadata, answered };
@@ -80,13 +86,13 @@ function nextMessage(db: FakeDB, content: string): void {
 
 test("a turn of an agent with one repository clones it and starts in its working tree; one with several starts in the home", async () => {
   const url = bareRepository();
-  const one = repositoryLoop([INIT!, ...REPLY], ["app"], [guildRepository("app", url)]);
+  const one = await repositoryLoop([INIT!, ...REPLY], ["app"], [guildRepository("app", url)]);
   await one.loop.generator.generate("r_1", 1);
   assert.deepEqual(one.errors(), []);
   assert.equal(one.calls()[0]?.cwd, realpathSync(path.join(one.sandbox.home, "repos", "app")));
   assert.equal(readFileSync(path.join(one.sandbox.home, "repos", "app", "README.md"), "utf8"), "# app\n");
 
-  const several = repositoryLoop([INIT!, ...REPLY], ["app", "site"], [guildRepository("app", url), guildRepository("site", url)]);
+  const several = await repositoryLoop([INIT!, ...REPLY], ["app", "site"], [guildRepository("app", url), guildRepository("site", url)]);
   await several.loop.generator.generate("r_1", 1);
   assert.deepEqual(several.errors(), []);
   assert.equal(several.calls()[0]?.cwd, realpathSync(several.sandbox.home));
@@ -94,7 +100,7 @@ test("a turn of an agent with one repository clones it and starts in its working
 
 test("a turn that changes a repository records the turn's checkpoints and diffstat; a turn that changes nothing records nothing", async () => {
   const url = bareRepository();
-  const run = repositoryLoop([], ["app"], [guildRepository("app", url)]);
+  const run = await repositoryLoop([], ["app"], [guildRepository("app", url)]);
   const note = path.join(run.sandbox.home, "repos", "app", "NOTE.md");
   run.replay([INIT!, JSON.stringify({ stub: "edit", path: note, text: "note\n" }), ...REPLY]);
   await run.loop.generator.generate("r_1", 1);
@@ -117,15 +123,44 @@ test("a turn that changes a repository records the turn's checkpoints and diffst
   assert.equal((run.metadata().turn_changes as unknown[]).length, 1, "the second turn changed nothing");
 });
 
+test("a turn that rewrites a repository's history to the same files, or switches its branch, is recorded as a change with its heads at start and end", async () => {
+  const url = bareRepository();
+  const run = await repositoryLoop([], ["app"], [guildRepository("app", url)]);
+  const repo = path.join(run.sandbox.home, "repos", "app");
+  const head = () => execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const identity = ["-c", "user.name=Agent", "-c", "user.email=agent@example.invalid"];
+  run.replay([INIT!, runLine("git", ...identity, "commit", "--amend", "--quiet", "-m", "Start, reworded"), ...REPLY]);
+  await run.loop.generator.generate("r_1", 1);
+  assert.deepEqual(run.errors(), []);
+  const rewritten = (run.metadata().turn_changes as Array<{ repos: Array<Record<string, unknown>> }>)[0]?.repos[0];
+  assert.deepEqual(
+    [rewritten?.files_changed, rewritten?.start_branch, rewritten?.branch, rewritten?.head_sha],
+    [0, "main", "main", head()],
+    "an amend to the same files changes no file",
+  );
+  assert.equal(typeof rewritten?.start_head_sha, "string");
+  assert.notEqual(rewritten?.start_head_sha, rewritten?.head_sha, "the head the turn started on is not the one it ended on");
+
+  run.replay([INIT!, runLine("git", "checkout", "--quiet", "-b", "topic"), ...REPLY]);
+  nextMessage(run.db, "work on a branch");
+  await run.loop.generator.generate("r_1", 2);
+  const switched = (run.metadata().turn_changes as Array<{ generation: number; repos: Array<Record<string, unknown>> }>).at(-1);
+  assert.equal(switched?.generation, 2);
+  assert.deepEqual(
+    [switched?.repos[0]?.files_changed, switched?.repos[0]?.start_branch, switched?.repos[0]?.branch, switched?.repos[0]?.start_head_sha === switched?.repos[0]?.head_sha],
+    [0, "main", "topic", true],
+  );
+});
+
 test("an agent that picks a repository it can no longer use fails its turn at start, and the CLI never runs", async () => {
-  const run = repositoryLoop([INIT!, ...REPLY], ["gone"], []);
+  const run = await repositoryLoop([INIT!, ...REPLY], ["gone"], []);
   await run.loop.generator.generate("r_1", 1);
   assert.equal(run.errors().at(-1)?.operation, "coding.repositories_gone");
   assert.equal(run.calls().length, 0);
 });
 
 test("an agent that picks no repository runs its turn in its home without cloning anything", async () => {
-  const run = repositoryLoop([INIT!, ...REPLY], [], []);
+  const run = await repositoryLoop([INIT!, ...REPLY], [], []);
   await run.loop.generator.generate("r_1", 1);
   assert.deepEqual(run.errors(), []);
   assert.equal(run.calls()[0]?.cwd, realpathSync(run.sandbox.home));
@@ -154,7 +189,7 @@ test("a GitHub repository's token is minted to push alone, and replaced before a
       headers: { "Content-Type": "application/json" },
     });
   }) as typeof fetch;
-  const run = repositoryLoop(
+  const run = await repositoryLoop(
     [INIT!, JSON.stringify({ stub: "hang" })],
     ["shop"],
     [guildRepository("shop", "https://github.com/acme/shop", { provider: "github", connection_id: "conn_gh", remote_id: 101 })],

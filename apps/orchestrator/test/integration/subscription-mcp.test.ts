@@ -208,6 +208,22 @@ test("a subscription agent's harness calls its Guilds tools on the MCP server, k
   assert.equal(revoked.status, 401, "the token went with the generation");
 });
 
+test("a turn whose harness never connects to the MCP server records harness.mcp_unconnected, and the direct run stays open", { timeout: 120_000 }, async () => {
+  const { agentId } = await subscriber("mcp-unconnected");
+  stub.replay([INIT!, ...REPLY]);
+  stub.sandbox.env.HARNESS_STUB_MCP_CONNECT = "0";
+  try {
+    const runId = await startRun(agentId, "Look around.");
+    const run = await settled(runId);
+    assert.deepEqual(run.errors.map((error: { operation: string }) => error.operation), ["harness.mcp_unconnected"]);
+    assert.match(String(run.errors[0]?.message), /^Claude Code never connected to the guild's tools on the platform's MCP server, so its turn ran without them\./);
+    assert.equal(run.status, "active");
+    assert.equal((await messages(runId)).at(-1)?.payload.role, "assistant", "what the turn did is kept");
+  } finally {
+    delete stub.sandbox.env.HARNESS_STUB_MCP_CONNECT;
+  }
+});
+
 test("a call past max_tool_calls is refused with the limit message, and the generation ends on generation.max_tool_calls", { timeout: 120_000 }, async () => {
   const { agentId } = await subscriber("mcp-limit", { max_tool_calls: 2 });
   stub.replay([
