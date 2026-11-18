@@ -8,6 +8,21 @@ upgrade runs are in [Maintain](docs/operations/maintain.md#update).
 
 ## Unreleased
 
+**Changed.** The coding harnesses are at their latest releases: Codex
+0.170.0, Claude Code 2.1.327, the Cursor CLI 2026.11.17, and the
+Antigravity CLI 1.5.11. A machine runs them once `./setup.sh` has
+rebuilt the agent image and its container is recreated.
+
+**Changed.** Settings lists each harness's current models. Codex:
+GPT-6.2-Sol, GPT-6.2-Astra, GPT-6.1-Terra, and GPT-6-Luna. Cursor
+gains Claude Fable 5.2 and Claude Sonnet 5.5. Antigravity lists models
+for the first time: Gemini 4 Hydrogen, Gemini 4 Argon, Gemini 3.8
+Flash, Claude Opus 5.5, and Claude Sonnet 5.5. GPT-5.6-Terra and
+GPT-5.6-Luna on Codex are no longer listed and keep running as custom
+names. **Breaking for a Cursor agent on Claude Fable 5.1 or Claude
+Fable 5.1 Thinking:** neither is listed, so the agent's model is read
+as a custom name, which Cursor refuses without its effort; pick Claude
+Fable 5.2 in the agent's Settings.
 **Changed.** A subscription agent is told that every process its turn
 starts ends with the turn, so it waits for a background command it
 needs and does not hand over a server that is no longer running.
