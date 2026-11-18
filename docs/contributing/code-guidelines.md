@@ -51,6 +51,31 @@ Every other rule on this page is checked in review
 
 ---
 
+## What gets built
+
+A change builds the simplest thing that meets the request. Every
+table, column, setting, type and mechanism it adds answers something
+the request asks for, and the pull request says which. A part built
+for a need nobody stated (a case that might arise, a limit nobody
+asked for, an option for later) is left out; when the need appears
+it is its own change, made with the facts that come with it. What a
+request leaves open is asked, not guessed; a gap filled in order to
+proceed is listed under
+[Assumptions](pull-requests.md#content).
+
+A fact about a system outside the repository is checked against
+that system before code is built on it: the service's real reply,
+the CLI's real output, the library's real behaviour at the pinned
+version. Documentation says what a system is meant to do; the call
+says what it does. Where the check cannot be run, the fact is an
+assumption and is listed as one, with what was not run.
+
+A design whose premise is questioned is examined again from the
+premise: the need it answers, whether the request states that need,
+and what is lost without the design. The answer to "why is this
+here" is the request it serves, or its removal. A reason found after
+the question is not the reason it was built, and does not keep it.
+
 ## Functions
 
 A function has one contract: the name and the signature say
@@ -408,6 +433,11 @@ discussion. How a page is written is
 
 Before you submit a change, check:
 
+- [ ] Every table, column, setting and mechanism the change adds
+      answers something the request asks for; nothing is built for
+      a need nobody stated.
+- [ ] Every fact about an outside system the change rests on was
+      checked against that system, or is listed as an assumption.
 - [ ] Each function's name and signature say everything it does.
       No flag parameters, nesting of 3 or less, at most one block of
       nested conditional logic, object parameters only for records

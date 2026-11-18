@@ -6,6 +6,19 @@ of [Code guidelines](code-guidelines.md), [Pull requests](pull-requests.md)
 or [Development](development.md); a rule changes there first, and
 those pages carry the rationale, the examples and the tooling.
 
+## What gets built
+
+The simplest thing that meets the request. Every table, column,
+setting, type and mechanism a change adds answers something the
+request asks for, and the pull request says which; a part built for
+a need nobody stated is left out. What a request leaves open is
+asked, not guessed. A fact about a system outside the repository is
+checked against that system before code is built on it; where the
+check cannot be run, the fact is listed as an assumption with what
+was not run. A design whose premise is questioned is examined again
+from the premise: it stays for the request it serves or it is
+removed, and a reason found after the question does not keep it.
+
 ## The model of the code
 
 1. **The name and the signature are the whole contract.** A reader
@@ -129,6 +142,9 @@ block the task, ask; do not work around it.
 
 ## Before you submit
 
+- [ ] Everything the change adds answers something the request asks
+      for; every fact about an outside system was checked against
+      it or is listed as an assumption.
 - [ ] Each function's name and signature say everything it does; no
       flag, nesting of 3 or less, one block of nested logic, object
       parameters only for records and dependencies objects.

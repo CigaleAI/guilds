@@ -46,7 +46,10 @@ commits are what the reviewer reads.
     for, and what is wrong without it. For a refactor, the rule
     the code breaks ([Code guidelines](code-guidelines.md)). A pull
     request whose reason cannot be stated is not opened.
-  - *What*: what changes, and what is deliberately left out.
+  - *What*: what changes, and what is deliberately left out. Each
+    table, column, setting and mechanism the change adds is named
+    with the part of the request it answers
+    ([What gets built](code-guidelines.md#what-gets-built)).
   - *Breaks*: anything that is not backward compatible: a changed
     route, event, type, export, or storage format. Nothing is kept
     backward compatible by default; a break is listed here and the
@@ -54,7 +57,9 @@ commits are what the reviewer reads.
   - *Assumptions*: each gap in the request, the rules, or the code
     that the author filled on their own: what was assumed, what the
     change does because of it, and what the operator could say to
-    change it. None, when there is none.
+    change it. A fact about an outside system that was not checked
+    against that system is one, with what was not run. None, when
+    there is none.
 - **Limits**: a lint warning on complexity or parameter count in
   changed code is named here with the function and the one contract
   it holds. A function that holds two contracts is split instead
@@ -117,7 +122,8 @@ commits are what the reviewer reads.
 The reviewer reads the diff, not the description, and checks:
 
 1. **Reason**: the description says why the pull request exists,
-   and the diff is the smallest change that answers it.
+   and the diff is the smallest change that answers it: nothing in
+   it is built for a need the request does not state.
 2. **Scope**: the diff does what the title says and nothing else,
    and each commit is one step of it, read on its own. An
    unrelated fix found on the way is its own pull request.
@@ -134,8 +140,13 @@ The reviewer reads the diff, not the description, and checks:
 7. **Compatibility**: every break the diff introduces is flagged in
    the description.
 8. **Assumptions**: each assumption the description lists is one the
-   reviewer accepts, or it becomes a comment.
+   reviewer accepts, or it becomes a comment. A fact about an outside
+   system is either checked against it or listed here.
 
-A comment asks for a change or asks a question. A pull request is
-merged when the check passes and the reviewer has no open comment.
-The author merges, with a merge commit, and deletes the branch.
+A comment asks for a change or asks a question. A comment that
+questions why a part exists is answered by the request the part
+serves, or by removing the part
+([What gets built](code-guidelines.md#what-gets-built)). A pull
+request is merged when the check passes and the reviewer has no open
+comment. The author merges, with a merge commit, and deletes the
+branch.
