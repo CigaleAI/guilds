@@ -1,7 +1,7 @@
 import type { FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import { requireVisibleAgent } from "../agents/access.js";
-import { RunRequestError } from "../generation/errors.js";
+import { RunRequestError, SandboxStoppedError } from "../generation/errors.js";
 import { generationLoopOf } from "../generation/operator.js";
 import type { AppDeps, RouteApp } from "./deps.js";
 import { currentUser } from "./identity.js";
@@ -10,6 +10,19 @@ import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 
 /** How often operator input on a proxied sandbox view restarts its idle timer. */
 const SANDBOX_TOUCH_INTERVAL_MS = 30_000;
+
+/**
+ * The close code of a sandbox view's WebSocket whose target was refused. ttyd reconnects at once,
+ * with no backoff, on any code but 1000, so the terminal's stopped machine closes normally and the
+ * terminal waits for the operator; the Browser view on a stopped machine and any other refusal on a
+ * running machine close with 1013, and a refused agent with 1008.
+ */
+export function sandboxRefusalCloseCode(error: Error): number {
+  if (error instanceof SandboxStoppedError) {
+    return 1000;
+  }
+  return error instanceof RunRequestError ? 1013 : 1008;
+}
 
 /** The daemon an agent's sandbox view is served by: its base URL and the headers it takes. */
 type SandboxTarget = (agentId: string) => Promise<[string, Record<string, string>]>;
@@ -38,7 +51,7 @@ export async function registerSandboxRoutes(app: RouteApp, deps: AppDeps): Promi
         const [base, extraHeaders] = await target(await visibleAgentId(request, agentId));
         return { base, extraHeaders, pathPart: filePathParam(request) };
       },
-      (error) => (error instanceof RunRequestError ? 1013 : 1008),
+      sandboxRefusalCloseCode,
       () => {
         const now = Date.now();
         if (now - touchedAt < SANDBOX_TOUCH_INTERVAL_MS) {

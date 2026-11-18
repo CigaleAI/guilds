@@ -9,7 +9,7 @@ import { operatorActor } from "../../src/artifacts/actors.js";
 import * as generationMod from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { PolicyError } from "../../src/policy/index.js";
-import { ConflictError, RunLimitError, RunRequestError } from "../../src/generation/errors.js";
+import { ConflictError, RunLimitError, RunRequestError, SandboxStoppedError } from "../../src/generation/errors.js";
 import { pendingToolCalls } from "../../src/generation/tool-calls.js";
 import { LLMError, type ModelEndpoint, type ModelRequest } from "../../src/llm/completion.js";
 import { sleep } from "../../src/lib/event.js";
@@ -2010,11 +2010,13 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
     await assert.rejects(() => loop.machines.cliProxyTarget("a_1"), (error: unknown) => {
-      assert.ok(error instanceof RunRequestError);
+      assert.ok(error instanceof SandboxStoppedError);
       assert.equal(error.status, 503);
       assert.match(error.detail, /sandbox is not running/);
       return true;
     });
+    assert.equal(sandboxes.running.size, 0, "a proxied view does not wake the machine");
+    assert.equal(sandboxes.cli_starts, 0);
     sandboxes.running.add("mach_1");
     const [base, headers] = await loop.machines.cliProxyTarget("a_1");
     assert.equal(base, `http://cli.test/t/${sandboxes.cli_token}`);

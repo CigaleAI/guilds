@@ -76,6 +76,16 @@ export class RunRequestError extends Error {
   }
 }
 
+/**
+ * The terminal proxy found its machine stopped: only an explicit start wakes it again. It keeps
+ * the name `RunRequestError`, which logs and Sentry group its 503s by.
+ */
+export class SandboxStoppedError extends RunRequestError {
+  constructor() {
+    super(503, "sandbox is not running");
+  }
+}
+
 /** Whether the error is an agent admitted no generation: it is busy, or a blocking issue disables it. */
 export function isAdmissionRefusal(error: unknown): error is ConflictError | AgentDisabledError {
   return error instanceof ConflictError || error instanceof AgentDisabledError;

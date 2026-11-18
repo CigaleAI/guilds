@@ -15,6 +15,9 @@ import {
   SandboxProxyError,
   startSandboxWsProxy,
 } from "../../src/http/sandbox-proxy.js";
+import { sandboxRefusalCloseCode } from "../../src/http/sandbox-routes.js";
+import { RunRequestError, SandboxStoppedError } from "../../src/generation/errors.js";
+import { HttpError } from "../../src/http/errors.js";
 
 // Mirrors websockify's static handler: Last-Modified, no Cache-Control. A few paths answer with a
 // body in, or claiming, an encoding.
@@ -338,6 +341,13 @@ test("a sandbox target that cannot be resolved closes the client with the refusa
   } finally {
     await bridge.app.close();
   }
+});
+
+test("only a stopped machine closes a sandbox view normally, which ttyd does not reconnect", () => {
+  assert.equal(sandboxRefusalCloseCode(new SandboxStoppedError()), 1000);
+  assert.equal(new SandboxStoppedError().name, "RunRequestError", "its 503s log as before");
+  assert.equal(sandboxRefusalCloseCode(new RunRequestError(503, "terminal is unavailable")), 1013);
+  assert.equal(sandboxRefusalCloseCode(new HttpError(404, "agent not found")), 1008);
 });
 
 test("a sandbox daemon that cannot be reached closes the client", async () => {

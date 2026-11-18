@@ -175,6 +175,13 @@ turn's git runs the image's hooks at `/usr/local/share/guilds/git-hooks`,
 which run the repository's hook of each name; the image no longer sets
 `init.templateDir`. A box takes it once its runtime image is rebuilt.
 
+**Fixed.** An open CLI tab stops reconnecting once the agent's machine
+has stopped. The terminal shows **Connection Closed** and waits:
+**Restart the terminal** wakes the machine and opens a fresh session.
+A dropped connection while the machine runs still reconnects on its
+own. ttyd retried at once, without end, when the orchestrator refused
+its socket on a stopped machine.
+
 **Changed.** The runtime image carries Codex 0.169.0, Claude Code
 2.1.326, the Cursor CLI 2026.11.13, and the Antigravity CLI 1.5.10.
 `node scripts/update-harnesses.mjs` moves them to each vendor's latest

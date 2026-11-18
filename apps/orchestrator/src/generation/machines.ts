@@ -17,7 +17,13 @@ import {
 } from "../sandbox/index.js";
 import { SandboxError, type SandboxHandle } from "../sandbox/sdk.js";
 import type { ActiveGenerations } from "./active-generations.js";
-import { AgentGoneError, logOperationFailure, RunRequestError, type OperationFailure } from "./errors.js";
+import {
+  AgentGoneError,
+  logOperationFailure,
+  RunRequestError,
+  SandboxStoppedError,
+  type OperationFailure,
+} from "./errors.js";
 import { IdleTimers } from "./idle.js";
 
 /**
@@ -409,7 +415,7 @@ export class AgentMachines {
     const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.sandboxes.connectRunning(agent.machine_id);
     if (sandbox === null) {
-      throw new RunRequestError(503, "sandbox is not running");
+      throw new SandboxStoppedError();
     }
     const token = await this.startCliOn(sandbox, agent);
     try {
