@@ -315,6 +315,42 @@ describe("generation", { concurrency: 1 }, () => {
     restoreBindings();
   });
 
+  test("a run's input count that resolves after a cancel records the cancel alone", async () => {
+    restoreBindings();
+    const snapshot = {
+      model: "openrouter/openai/gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 32,
+      max_steps: 30,
+      max_input_tokens: 100000,
+      tools: [],
+      secrets: [],
+    };
+    const db = new FakeDB(snapshot);
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
+    const counting = deferred();
+    live.countInputTokens = (_model, _messages, _tools, signal) =>
+      new Promise((resolve) => {
+        if (signal?.aborted) {
+          resolve(snapshot.max_input_tokens + 1);
+        }
+        signal?.addEventListener("abort", () => resolve(snapshot.max_input_tokens + 1), { once: true });
+        counting.resolve();
+      });
+    live.streamCompletion = async function* shouldNotRun() {
+      yield await Promise.reject(new Error("model should not be called"));
+    };
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
+    await counting.promise;
+    assert.ok(await loop.cancel("r_1"));
+    assert.deepEqual(
+      (db.run.errors as Array<Record<string, unknown>>).map((entry) => entry.operation),
+      ["generation.cancelled"],
+    );
+    restoreBindings();
+  });
+
   test("projects large previous-generation tool results before the model call", async () => {
     restoreBindings();
     const large = "x".repeat(3000);

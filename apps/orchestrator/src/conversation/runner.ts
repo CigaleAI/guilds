@@ -393,7 +393,7 @@ export class ConversationRunner {
     return (await this.runToolCalls(turn, messages, completion, progress, cancel)) ? "stop" : "next";
   }
 
-  /** The step's projected history and its input count; null, with the session repaired, when a cancel stopped the count. */
+  /** The step's projected history and its input count; null, with the session repaired, when a cancel came before the count settled. */
   private async stepInput<C>(
     turn: ConversationGeneration<C>,
     progress: GenerationProgress,
@@ -407,14 +407,16 @@ export class ConversationRunner {
         offeredToolSchemas(turn),
         cancel.signal,
       );
-      return { messages, tokens };
+      if (!cancel.aborted) {
+        return { messages, tokens };
+      }
     } catch (error) {
       if (!cancel.aborted) {
         throw error;
       }
-      await this.repair(turn.session.id, turn.generation, "cancelled");
-      return null;
     }
+    await this.repair(turn.session.id, turn.generation, "cancelled");
+    return null;
   }
 
   /** The history as this step sends it to the model; the seqs it stubs join the generation's. */
@@ -536,7 +538,7 @@ export class ConversationRunner {
   /**
    * Calls the tool and commits its result as the next message, or an error when the result
    * would put the next prompt over the input limit, then hands the result to `onToolResult`.
-   * Null, with the session repaired, when a cancel stopped the result's count.
+   * Null, with the session repaired, when a cancel came before the result's count settled.
    */
   private async runToolCall<C>(
     turn: ConversationGeneration<C>,
@@ -554,7 +556,7 @@ export class ConversationRunner {
       ...messages,
       { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
     ];
-    let nextTokens: number;
+    let nextTokens: number | undefined;
     try {
       nextTokens = await generationLive.countInputTokens(
         turn.session.config_snapshot.model,
@@ -566,6 +568,8 @@ export class ConversationRunner {
       if (!cancel.aborted) {
         throw error;
       }
+    }
+    if (nextTokens === undefined || cancel.aborted) {
       await this.repair(sessionId, turn.generation, "cancelled");
       return null;
     }

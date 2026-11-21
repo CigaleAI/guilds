@@ -388,8 +388,9 @@ cannot start for or be sent is refused, and the counts behind it
 still run. A refused count fails the model call it was for:
 a run records the error and ends the generation, a coach conversation
 records it on the session, and a Studio draft request fails. A cancel
-of the run or conversation removes its waiting counts from the queue.
-Server shutdown stops the worker after it cancels the runs.
+of the run or conversation removes its waiting counts from the queue,
+and a count that answers after the cancel is not acted on: the
+generation ends as cancelled. Server shutdown stops the worker after it cancels the runs.
 
 Tools:
 

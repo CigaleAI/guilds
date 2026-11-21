@@ -74,16 +74,21 @@ export type ModelHistory = {
   payloads: ModelMessage[];
 };
 
-/** Waits for a count of the run's input; a count the run's cancel stopped ends the call with `GenerationCancelled`. */
+/** Waits for a count of the run's input; a cancel of the run before the count settles ends the call with `GenerationCancelled`. */
 async function runInputCount(count: Promise<number>, cancelEvent: CancelEvent | null): Promise<number> {
+  let tokens: number;
   try {
-    return await count;
+    tokens = await count;
   } catch (error) {
     if (cancelEvent?.aborted) {
       throw new GenerationCancelled();
     }
     throw error;
   }
+  if (cancelEvent?.aborted) {
+    throw new GenerationCancelled();
+  }
+  return tokens;
 }
 
 /** The input tokens the run's history takes with the schemas it is offered. */
