@@ -22,7 +22,7 @@ export type ProjectionBudget = {
     model: string,
     messages: readonly MessagePayload[],
     tools?: readonly FunctionTool[] | null,
-  ) => number;
+  ) => Promise<number>;
 };
 
 /** A stored message of a run or a coach conversation, as the projection reads it. */
@@ -126,14 +126,14 @@ function replaceStubbedToolPayloads(projection: ToolResultProjection, stubSeqs: 
   });
 }
 
-function stubOldestLiveRowsUntilPromptFits(
+async function stubOldestLiveRowsUntilPromptFits(
   projection: ToolResultProjection,
   budget: ProjectionBudget,
   stubSeqs: Set<number>,
   liveLarge: ProjectedRow[],
-): MessagePayload[] {
+): Promise<MessagePayload[]> {
   let messages = replaceStubbedToolPayloads(projection, stubSeqs);
-  let tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
+  let tokens = await budget.countInputTokens(budget.model, messages, budget.schemas);
   const maxStub = Math.max(0, liveLarge.length - (projection.minUnstubbed ?? MIN_UNSTUBBED_TOOL_RESULTS));
   for (const row of liveLarge.slice(0, maxStub)) {
     if (tokens <= budget.maxInput) {
@@ -141,7 +141,7 @@ function stubOldestLiveRowsUntilPromptFits(
     }
     stubSeqs.add(row.seq);
     messages = replaceStubbedToolPayloads(projection, stubSeqs);
-    tokens = budget.countInputTokens(budget.model, messages, budget.schemas);
+    tokens = await budget.countInputTokens(budget.model, messages, budget.schemas);
   }
   return messages;
 }
@@ -153,7 +153,7 @@ function stubOldestLiveRowsUntilPromptFits(
  * When `budget` is set and the projected prompt is still over `maxInput`, the oldest
  * live large results are stubbed until `minUnstubbed` remain or the count fits.
  */
-export function projectToolResults(projection: ToolResultProjection): MessagePayload[] {
+export async function projectToolResults(projection: ToolResultProjection): Promise<MessagePayload[]> {
   const minStubBytes = projection.minStubBytes ?? 0;
   const floor = keepGenerationFloor(projection.currentGeneration, projection.keepGenerations);
   const tools = projection.history.filter((row) => row.payload.role === "tool");

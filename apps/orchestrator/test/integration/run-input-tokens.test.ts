@@ -19,7 +19,7 @@ import { completionCalling, completionReply, toolCall } from "../helpers/generat
 import { ExportSandboxes } from "../helpers/live.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { installCountingTokenEncodingLoader, restoreTokenEncodingLoader } from "../helpers/tokens.js";
+import { installRecordingTokenCounter } from "../helpers/tokens.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -35,7 +35,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("a run counts every model step with one encoding load, and its local count decides the input limit", { timeout: 60_000 }, async () => {
+test("a run counts every model step on one counting worker, and its local count decides the input limit", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const previousStream = generationLive.streamCompletion;
   let modelCalls = 0;
@@ -50,8 +50,8 @@ test("a run counts every model step with one encoding load, and its local count 
   let database: Database | null = null;
   let loop: GenerationLoop | null = null;
   let app: FastifyInstance | null = null;
+  const recording = installRecordingTokenCounter();
   try {
-    const encoding = installCountingTokenEncodingLoader();
     database = await connect(await createIsolatedDatabase(dbName));
     const db = database.pool;
     const notes = new NotesStore(tempDir("guilds-run-tokens-notes-"), templatesRoot());
@@ -110,16 +110,16 @@ test("a run counts every model step with one encoding load, and its local count 
     };
     const fitting = await startRun(100_000);
     assert.equal(modelCalls, 2);
-    assert.equal(encoding.loads, 1);
-    const openingTokens = encoding.counts[0];
-    const toolRoundTokens = encoding.counts.at(-1);
+    assert.equal(recording.counter.workersStarted, 1);
+    const openingTokens = recording.counter.counts[0];
+    const toolRoundTokens = recording.counter.counts.at(-1);
     assert.ok(openingTokens !== undefined && toolRoundTokens !== undefined && toolRoundTokens > openingTokens);
     assert.deepEqual((await getRun(db, fitting))?.errors, []);
 
     const limit = Math.floor((openingTokens + toolRoundTokens) / 2);
-    const countsBeforeLimited = encoding.counts.length;
+    const countsBeforeLimited = recording.counter.counts.length;
     const limited = await startRun(limit);
-    const limitedCounts = encoding.counts.slice(countsBeforeLimited);
+    const limitedCounts = recording.counter.counts.slice(countsBeforeLimited);
     const limitedOpening = limitedCounts[0];
     const limitedToolRound = limitedCounts.at(-1);
     assert.ok(limitedOpening !== undefined && limitedOpening <= limit);
@@ -128,9 +128,9 @@ test("a run counts every model step with one encoding load, and its local count 
     const limitedRun = await getRun(db, limited);
     assert.equal(limitedRun?.status, "completed");
     assert.equal(limitedRun?.errors.at(-1)?.operation, "generation.max_input_tokens");
-    assert.equal(encoding.loads, 1);
+    assert.equal(recording.counter.workersStarted, 1);
   } finally {
-    restoreTokenEncodingLoader();
+    await recording.restore();
     generationLive.streamCompletion = previousStream;
     await loop?.close();
     await app?.close();

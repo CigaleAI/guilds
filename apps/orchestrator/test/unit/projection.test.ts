@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { getEncoding } from "js-tiktoken";
 import { promptHash } from "../../src/prompts/index.js";
 import {
   AGENT_TOOL_RESULT_STUB_HINT,
@@ -12,6 +13,8 @@ import {
   type ProjectedRow,
 } from "../../src/conversation/projection.js";
 import type { MessagePayload, ToolMessage } from "../../src/db/schema/index.js";
+import type { FunctionTool } from "../../src/lib/tool-schema.js";
+import { TOKEN_ENCODING, countInputTokens } from "../../src/llm/tokens.js";
 
 function row(
   seq: number,
@@ -62,9 +65,9 @@ test("stubToolResultPayload names the tool and carries the optional content hash
   assert.equal(stub.content_hash, promptHash("body"));
 });
 
-test("keep 1 stubs previous-generation results above the size floor", () => {
+test("keep 1 stubs previous-generation results above the size floor", async () => {
   const large = "x".repeat(TOOL_RESULT_STUB_MIN_BYTES);
-  const messages = projectToolResults({
+  const messages = await projectToolResults({
     history: [
       row(0, 0, { role: "system", content: "sys" }),
       row(1, 1, { role: "tool", tool_call_id: "old", content: large }, { tool_name: "note_get" }),
@@ -82,9 +85,9 @@ test("keep 1 stubs previous-generation results above the size floor", () => {
   assert.equal(toolContent(messages, 1), large);
 });
 
-test("keep 2 leaves the previous generation live", () => {
+test("keep 2 leaves the previous generation live", async () => {
   const large = "x".repeat(TOOL_RESULT_STUB_MIN_BYTES);
-  const messages = projectToolResults({
+  const messages = await projectToolResults({
     history: [
       row(1, 1, { role: "tool", tool_call_id: "a", content: large }, { tool_name: "file_read" }),
       row(2, 2, { role: "tool", tool_call_id: "b", content: large }, { tool_name: "file_read" }),
@@ -100,8 +103,8 @@ test("keep 2 leaves the previous generation live", () => {
   assert.equal(toolContent(messages, 2), large);
 });
 
-test("results under the size floor stay as stored", () => {
-  const messages = projectToolResults({
+test("results under the size floor stay as stored", async () => {
+  const messages = await projectToolResults({
     history: [
       row(1, 1, { role: "tool", tool_call_id: "small", content: "ok" }, { tool_name: "shell" }),
     ],
@@ -113,9 +116,9 @@ test("results under the size floor stay as stored", () => {
   assert.equal(toolContent(messages, 0), "ok");
 });
 
-test("budget stubs oldest live large results and keeps the last N", () => {
+test("budget stubs oldest live large results and keeps the last N", async () => {
   const large = "x".repeat(TOOL_RESULT_STUB_MIN_BYTES);
-  const messages = projectToolResults({
+  const messages = await projectToolResults({
     history: [
       row(1, 2, { role: "tool", tool_call_id: "a", content: large }),
       row(2, 2, { role: "tool", tool_call_id: "b", content: large }),
@@ -130,7 +133,7 @@ test("budget stubs oldest live large results and keeps the last N", () => {
       model: "test",
       schemas: [],
       maxInput: 1,
-      countInputTokens(_model, next) {
+      async countInputTokens(_model, next) {
         const tools = (next as MessagePayload[]).filter((item) => item.role === "tool");
         const live = tools.filter((item) => !String(item.content).includes('"stub":true'));
         return live.length > 2 ? 9 : 1;
@@ -142,10 +145,10 @@ test("budget stubs oldest live large results and keeps the last N", () => {
   assert.equal(toolContent(messages, 2), large);
 });
 
-test("budget stops at minUnstubbed even if tokens stay over the cap", () => {
+test("budget stops at minUnstubbed even if tokens stay over the cap", async () => {
   const large = "x".repeat(TOOL_RESULT_STUB_MIN_BYTES);
   const stubbed: number[] = [];
-  const messages = projectToolResults({
+  const messages = await projectToolResults({
     history: [
       row(1, 2, { role: "tool", tool_call_id: "a", content: large }),
       row(2, 2, { role: "tool", tool_call_id: "b", content: large }),
@@ -161,7 +164,7 @@ test("budget stops at minUnstubbed even if tokens stay over the cap", () => {
       model: "test",
       schemas: [],
       maxInput: 1,
-      countInputTokens: () => 9,
+      countInputTokens: async () => 9,
     },
   });
   assert.deepEqual(stubbed, [1]);
@@ -170,9 +173,9 @@ test("budget stops at minUnstubbed even if tokens stay over the cap", () => {
   assert.equal(toolContent(messages, 2), large);
 });
 
-test("reads generation from message metadata when the column is absent", () => {
+test("reads generation from message metadata when the column is absent", async () => {
   const large = "x".repeat(TOOL_RESULT_STUB_MIN_BYTES);
-  const messages = projectToolResults({
+  const messages = await projectToolResults({
     history: [
       {
         seq: 3,
@@ -187,4 +190,43 @@ test("reads generation from message metadata when the column is absent", () => {
   });
   assert.match(toolContent(messages, 0), /"stub":true/);
   assert.match(toolContent(messages, 0), /shell/);
+});
+
+test("a budget on the worker's count stubs the rows a main-thread count stubs, at the limit, under it, and in overflow", async () => {
+  const reference = getEncoding(TOKEN_ENCODING);
+  const referenceCount = async (
+    _model: string,
+    messages: readonly MessagePayload[],
+    tools?: readonly FunctionTool[] | null,
+  ): Promise<number> =>
+    Math.max(1, reference.encode(JSON.stringify(messages) + (tools && tools.length ? JSON.stringify(tools) : "")).length);
+  const body = (index: number) => `finding ${index} stays in the canonical note. `.repeat(TOOL_RESULT_STUB_MIN_BYTES / 20);
+  const history = [
+    row(0, 0, { role: "system", content: "sys" }),
+    ...[1, 2, 3, 4].map((seq) => row(seq, 2, { role: "tool", tool_call_id: `call_${seq}`, content: body(seq) })),
+  ];
+  const project = async (maxInput: number, count: typeof referenceCount) => {
+    const stubbed: number[] = [];
+    const messages = await projectToolResults({
+      history,
+      currentGeneration: 2,
+      keepGenerations: 1,
+      hint: AGENT_TOOL_RESULT_STUB_HINT,
+      minStubBytes: TOOL_RESULT_STUB_MIN_BYTES,
+      minUnstubbed: 1,
+      stubbed,
+      budget: { model: "unknown/model", schemas: [], maxInput, countInputTokens: count },
+    });
+    return { messages, stubbed };
+  };
+  const unstubbed = await referenceCount("", history.map((item) => item.payload));
+  for (const [maxInput, expected] of [
+    [unstubbed, []],
+    [unstubbed - 1, [1]],
+    [1, [1, 2, 3]],
+  ] as const) {
+    const viaWorker = await project(maxInput, countInputTokens);
+    assert.deepEqual(viaWorker, await project(maxInput, referenceCount));
+    assert.deepEqual(viaWorker.stubbed, expected);
+  }
 });

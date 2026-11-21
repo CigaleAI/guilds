@@ -1,28 +1,36 @@
-import { getEncoding } from "js-tiktoken";
-import { TOKEN_ENCODING, installTokenEncodingLoader } from "../../src/llm/tokens.js";
+import type { MessagePayload } from "../../src/db/schema/index.js";
+import type { FunctionTool } from "../../src/lib/tool-schema.js";
+import { TokenCounter } from "../../src/llm/token-counter.js";
+import { TOKEN_COUNTER_LIMITS, TOKEN_ENCODING, installTokenCounter } from "../../src/llm/tokens.js";
 
-/** How many times the input-token encoding was loaded, and the token count of each text it encoded, in order. */
-export type TokenEncodingUse = { loads: number; counts: number[] };
+/** A counter on the real worker that records the token count of each input it counts, in order. */
+export class RecordingTokenCounter extends TokenCounter {
+  readonly counts: number[] = [];
 
-/** Installs a loader of the real encoding that records each load and the count of each text it encodes. */
-export function installCountingTokenEncodingLoader(): TokenEncodingUse {
-  const use: TokenEncodingUse = { loads: 0, counts: [] };
-  installTokenEncodingLoader(() => {
-    use.loads += 1;
-    const encoding = getEncoding(TOKEN_ENCODING);
-    return {
-      encode: (...args) => {
-        const tokens = encoding.encode(...args);
-        use.counts.push(tokens.length);
-        return tokens;
-      },
-      decode: (tokens) => encoding.decode(tokens),
-    };
-  });
-  return use;
+  constructor() {
+    super(TOKEN_ENCODING, TOKEN_COUNTER_LIMITS);
+  }
+
+  override async count(
+    messages: readonly MessagePayload[],
+    tools: readonly FunctionTool[] | null | undefined,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const tokens = await super.count(messages, tools, signal);
+    this.counts.push(tokens);
+    return tokens;
+  }
 }
 
-/** Puts back the loader the counter starts with. */
-export function restoreTokenEncodingLoader(): void {
-  installTokenEncodingLoader(() => getEncoding(TOKEN_ENCODING));
+/** Installs a recording counter for input counts; the returned function closes it and puts back the one it replaced. */
+export function installRecordingTokenCounter(): { counter: RecordingTokenCounter; restore: () => Promise<void> } {
+  const counter = new RecordingTokenCounter();
+  const replaced = installTokenCounter(counter);
+  return {
+    counter,
+    restore: async () => {
+      installTokenCounter(replaced);
+      await counter.close();
+    },
+  };
 }

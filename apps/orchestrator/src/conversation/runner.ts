@@ -363,8 +363,12 @@ export class ConversationRunner {
     }
     const { model, temperature } = turn.session.config_snapshot;
     const schemas = offeredToolSchemas(turn);
-    const messages = await this.projectHistory(turn, progress);
-    if (generationLive.countInputTokens(model, messages, schemas) > turn.maxInput) {
+    const input = await this.stepInput(turn, progress, cancel);
+    if (input === null) {
+      return "stop";
+    }
+    const { messages } = input;
+    if (input.tokens > turn.maxInput) {
       await this.blockAtInputTokenLimit(sessionId);
       return "stop";
     }
@@ -386,15 +390,45 @@ export class ConversationRunner {
     if (!completion.payload.tool_calls?.length) {
       return "stop";
     }
-    return (await this.runToolCalls(turn, messages, completion, progress)) ? "stop" : "next";
+    return (await this.runToolCalls(turn, messages, completion, progress, cancel)) ? "stop" : "next";
+  }
+
+  /** The step's projected history and its input count; null, with the session repaired, when a cancel came before the count settled. */
+  private async stepInput<C>(
+    turn: ConversationGeneration<C>,
+    progress: GenerationProgress,
+    cancel: CancelEvent,
+  ): Promise<{ messages: MessagePayload[]; tokens: number } | null> {
+    try {
+      const messages = await this.projectHistory(turn, progress, cancel.signal);
+      const tokens = await generationLive.countInputTokens(
+        turn.session.config_snapshot.model,
+        messages,
+        offeredToolSchemas(turn),
+        cancel.signal,
+      );
+      if (!cancel.aborted) {
+        return { messages, tokens };
+      }
+    } catch (error) {
+      if (!cancel.aborted) {
+        throw error;
+      }
+    }
+    await this.repair(turn.session.id, turn.generation, "cancelled");
+    return null;
   }
 
   /** The history as this step sends it to the model; the seqs it stubs join the generation's. */
-  private async projectHistory<C>(turn: ConversationGeneration<C>, progress: GenerationProgress): Promise<MessagePayload[]> {
+  private async projectHistory<C>(
+    turn: ConversationGeneration<C>,
+    progress: GenerationProgress,
+    signal: AbortSignal,
+  ): Promise<MessagePayload[]> {
     const history = await listConversationMessages(this.deps.db, this.deps.kind, turn.session.id);
     const stubbedThisStep: number[] = [];
     const minUnstubbed = turn.minUnstubbed ?? this.deps.minUnstubbedToolResults;
-    const messages = projectConversationHistory({
+    const messages = await projectConversationHistory({
       history,
       generationContext: turn.generationContext,
       currentGeneration: turn.generation,
@@ -406,7 +440,7 @@ export class ConversationRunner {
         schemas: offeredToolSchemas(turn),
         maxInput: turn.maxInput,
         countInputTokens: (nextModel, nextMessages, nextTools) =>
-          generationLive.countInputTokens(nextModel, nextMessages, nextTools),
+          generationLive.countInputTokens(nextModel, nextMessages, nextTools, signal),
       },
       ...(turn.systemContent ? { systemContent: turn.systemContent } : {}),
     });
@@ -474,13 +508,14 @@ export class ConversationRunner {
 
   /**
    * Runs the completion's tool calls in order; a call past the generation's limit is answered
-   * with an error. True when a result awaits the operator.
+   * with an error. True when a result awaits the operator or a cancel stopped a call.
    */
   private async runToolCalls<C>(
     turn: ConversationGeneration<C>,
     messages: MessagePayload[],
     completion: Completion,
     progress: GenerationProgress,
+    cancel: CancelEvent,
   ): Promise<boolean> {
     let awaitsOperator = false;
     for (const call of completion.payload.tool_calls ?? []) {
@@ -489,7 +524,10 @@ export class ConversationRunner {
         await this.commitToolError(turn.session.id, turn.generation, call, "tool call limit reached");
         continue;
       }
-      const result = await this.runToolCall(turn, messages, call, completion.metadata.finish_reason);
+      const result = await this.runToolCall(turn, messages, call, completion.metadata.finish_reason, cancel);
+      if (result === null) {
+        return true;
+      }
       if (result.await_operator === true) {
         awaitsOperator = true;
       }
@@ -500,13 +538,15 @@ export class ConversationRunner {
   /**
    * Calls the tool and commits its result as the next message, or an error when the result
    * would put the next prompt over the input limit, then hands the result to `onToolResult`.
+   * Null, with the session repaired, when a cancel came before the result's count settled.
    */
   private async runToolCall<C>(
     turn: ConversationGeneration<C>,
     messages: MessagePayload[],
     call: ToolCall,
     finishReason: CompletionMetadata["finish_reason"],
-  ): Promise<ConversationToolResult> {
+    cancel: CancelEvent,
+  ): Promise<ConversationToolResult | null> {
     const sessionId = turn.session.id;
     const name = call.function.name;
     const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
@@ -516,11 +556,23 @@ export class ConversationRunner {
       ...messages,
       { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
     ];
-    const nextTokens = generationLive.countInputTokens(
-      turn.session.config_snapshot.model,
-      candidateMessages,
-      offeredToolSchemas(turn),
-    );
+    let nextTokens: number | undefined;
+    try {
+      nextTokens = await generationLive.countInputTokens(
+        turn.session.config_snapshot.model,
+        candidateMessages,
+        offeredToolSchemas(turn),
+        cancel.signal,
+      );
+    } catch (error) {
+      if (!cancel.aborted) {
+        throw error;
+      }
+    }
+    if (nextTokens === undefined || cancel.aborted) {
+      await this.repair(sessionId, turn.generation, "cancelled");
+      return null;
+    }
     const payload: ToolMessage =
       nextTokens > turn.maxInput
         ? {
@@ -707,8 +759,8 @@ function offeredToolSchemas<C>(turn: ConversationGeneration<C>): FunctionTool[] 
   return [...turn.tools.values()].map((tool) => tool.schema);
 }
 
-export function projectConversationHistory(args: ConversationProjection): MessagePayload[] {
-  const messages = projectToolResults({
+export async function projectConversationHistory(args: ConversationProjection): Promise<MessagePayload[]> {
+  const messages = await projectToolResults({
     history: args.history,
     currentGeneration: args.currentGeneration,
     keepGenerations: 1,

@@ -99,7 +99,7 @@ test("hydrateMessages signs each image's URL, and inlines the image when the sto
   assert.match(inlineUrl, /^data:image\/png;base64,/);
 });
 
-test("countRunInputTokens adds a flat image cost and does not encode a data URL", () => {
+test("countRunInputTokens adds a flat image cost and does not encode a data URL", async () => {
   const rows = [
     {
       payload: { role: "user" as const, content: "look" },
@@ -108,10 +108,10 @@ test("countRunInputTokens adds a flat image cost and does not encode a data URL"
       },
     },
   ];
-  const textOnly = countInputTokens("deepinfra/zai-org/GLM-5.3-Flash", [
+  const textOnly = await countInputTokens("deepinfra/zai-org/GLM-5.3-Flash", [
     { role: "user", content: "look" },
   ]);
-  const counted = countRunInputTokens(
+  const counted = await countRunInputTokens(
     "deepinfra/zai-org/GLM-5.3-Flash",
     rows,
     null,

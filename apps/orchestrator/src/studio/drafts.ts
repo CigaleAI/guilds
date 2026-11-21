@@ -404,7 +404,7 @@ export class StudioDrafts implements StudioDraftService {
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
     // Every model is counted with one encoding, so a subscription agent's prompt is counted as a key agent's.
-    const tokens = countInputTokens(config.model ?? "", [{ role: "system", content: composed }], tools.schemas);
+    const tokens = await countInputTokens(config.model ?? "", [{ role: "system", content: composed }], tools.schemas);
     // A subscription agent's harness keeps its own context: max_input_tokens bounds the model loop alone.
     if (modelSourceOf(config).kind === "key" && tokens > config.max_input_tokens) {
       throw new StudioUnprocessableError("composed prompt exceeds the target agent's max_input_tokens");

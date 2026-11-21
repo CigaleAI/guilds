@@ -13,14 +13,15 @@ import { recoverPartialToolArgs } from "../../src/conversation/tool-args.js";
 import type { Queryable } from "../../src/db/pg.js";
 import type { ToolCall } from "../../src/db/schema/index.js";
 import type { ModelEvent } from "../../src/llm/completion.js";
+import { TokenCountError } from "../../src/llm/token-counter.js";
 import { PolicyError, UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
-import { completionReply } from "../helpers/generation.js";
+import { completionCalling, completionReply } from "../helpers/generation.js";
 import { overflowStream, sseApp } from "../helpers/sse.js";
 
 const live = { ...generationLive };
 
 beforeEach(() => {
-  generationLive.countInputTokens = () => 1;
+  generationLive.countInputTokens = async () => 1;
 });
 
 afterEach(() => {
@@ -233,6 +234,146 @@ test("a completion cancelled while the model answers ends the generation without
     events.map(([event]) => event),
     ["generation.started", "generation.finished"],
   );
+});
+
+test("a cancel while the step's input is counted ends the generation without an error", async () => {
+  const { db } = emptyDatabase();
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+  });
+  const turn = generation();
+  generationLive.countInputTokens = (_model, _messages, _tools, signal) =>
+    new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new TokenCountError("token count cancelled")), { once: true });
+      runner.cancel(turn.session.id);
+    });
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield await Promise.reject(new Error("model should not be called"));
+  };
+  const events = await publishedEvents(runner, turn);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "generation.finished"],
+  );
+});
+
+test("a cancel while a tool result is counted ends the generation without an error or the result", async () => {
+  const inserted: unknown[] = [];
+  const db = {
+    query: async (text: string, params: unknown[] = []) => {
+      if (!text.startsWith("INSERT INTO studio_messages")) {
+        return { rows: [] };
+      }
+      inserted.push(JSON.parse(String(params[3])));
+      return { rows: [{ seq: params[1], payload: params[3] }] };
+    },
+  } as unknown as Queryable;
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+  });
+  const turn = generation(new Map([["probe", tool(async () => ({ ok: true }))]]));
+  generationLive.countInputTokens = async (_model, messages, _tools, signal) => {
+    if (!messages.some((message) => message.role === "tool")) {
+      return 1;
+    }
+    return new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new TokenCountError("token count cancelled")), { once: true });
+      runner.cancel(turn.session.id);
+    });
+  };
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield ["done", completionCalling([toolCall("probe")])];
+  };
+  const events = await publishedEvents(runner, turn);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "message.committed", "generation.finished"],
+  );
+  assert.deepEqual(
+    inserted.map((payload) => (payload as { role: string }).role),
+    ["assistant"],
+  );
+});
+
+test("a step's input count that resolves after a cancel ends the generation without an input-limit error", async () => {
+  const { db, queries } = emptyDatabase();
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+  });
+  const turn = generation();
+  generationLive.countInputTokens = async () => {
+    runner.cancel(turn.session.id);
+    return turn.maxInput + 1;
+  };
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield await Promise.reject(new Error("model should not be called"));
+  };
+  const events = await publishedEvents(runner, turn);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "generation.finished"],
+  );
+  assert.equal(
+    queries.some(({ params }) => JSON.stringify(params).includes("input_token_limit")),
+    false,
+  );
+});
+
+test("a tool result count that resolves after a cancel commits no result and skips onToolResult", async () => {
+  const inserted: unknown[] = [];
+  const db = {
+    query: async (text: string, params: unknown[] = []) => {
+      if (!text.startsWith("INSERT INTO studio_messages")) {
+        return { rows: [] };
+      }
+      inserted.push(JSON.parse(String(params[3])));
+      return { rows: [{ seq: params[1], payload: params[3] }] };
+    },
+  } as unknown as Queryable;
+  const handed: string[] = [];
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+    onToolResult: async (_sessionId, name) => {
+      handed.push(name);
+    },
+  });
+  const turn = generation(new Map([["probe", tool(async () => ({ ok: true }))]]));
+  generationLive.countInputTokens = async (_model, messages) => {
+    if (!messages.some((message) => message.role === "tool")) {
+      return 1;
+    }
+    runner.cancel(turn.session.id);
+    return 1;
+  };
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield ["done", completionCalling([toolCall("probe")])];
+  };
+  const events = await publishedEvents(runner, turn);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "message.committed", "generation.finished"],
+  );
+  assert.deepEqual(
+    inserted.map((payload) => (payload as { role: string }).role),
+    ["assistant"],
+  );
+  assert.deepEqual(handed, []);
 });
 
 test("admit_at_the_box_cap_is_a_conflict_with_the_admission_message_and_takes_no_slot", async () => {

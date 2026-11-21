@@ -138,10 +138,10 @@ test("applyReasoningDetailDelta merges text by index and appends unindexed block
   ]);
 });
 
-test("countInputTokens returns a positive count", () => {
-  const tokens = countInputTokens("openrouter/openai/gpt-5.6-luna", [{ role: "user", content: "hello" }]);
+test("countInputTokens returns a positive count", async () => {
+  const tokens = await countInputTokens("openrouter/openai/gpt-5.6-luna", [{ role: "user", content: "hello" }]);
   assert.ok(tokens >= 1);
-  const unknown = countInputTokens("unknown/model", [{ role: "user", content: "hello" }]);
+  const unknown = await countInputTokens("unknown/model", [{ role: "user", content: "hello" }]);
   assert.ok(unknown >= 1);
 });
 

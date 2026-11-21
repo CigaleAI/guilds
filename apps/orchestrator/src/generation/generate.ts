@@ -621,7 +621,7 @@ export class RunGenerator {
     const maxInputTokens = gen.snapshot.max_input_tokens;
     const agent = await db.getAgent(gen.run.agent_id);
     const history = await completion.modelHistory(gen, agent, gen.snapshot, tools.schemas);
-    const tokens = historyTokens(gen.snapshot, history, tools.schemas);
+    const tokens = await historyTokens(gen.snapshot, history, tools.schemas, this.services.generations.cancelEvent(gen.runId));
     if (tokens > maxInputTokens) {
       throw new RunLimitError("generation.max_input_tokens", INPUT_TOKEN_LIMIT_MESSAGE);
     }

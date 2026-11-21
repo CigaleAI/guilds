@@ -54,7 +54,7 @@ import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { completionReply } from "../helpers/generation.js";
 import { limitedPolicy } from "../helpers/policy.js";
-import { installCountingTokenEncodingLoader, restoreTokenEncodingLoader } from "../helpers/tokens.js";
+import { installRecordingTokenCounter } from "../helpers/tokens.js";
 import { toolInvocation, toolFixture } from "../helpers/toolbox.js";
 import {
   createIsolatedDatabase,
@@ -2516,7 +2516,7 @@ function assistantInputTokens(rows: Array<Pick<ConversationMessageRow, "payload"
 }
 
 // The stubbed provider reports fixed usage: the recorded totals are the provider's, and the local count only checks each turn's history against the input limit.
-test("studio records provider-reported input tokens per turn, sums them across turns, and counts a large history with one encoding load", { timeout: 60_000 }, async () => {
+test("studio records provider-reported input tokens per turn, sums them across turns, and counts a large history on one counting worker", { timeout: 60_000 }, async () => {
   const previousStream = generationLive.streamCompletion;
   let modelCalls = 0;
   generationLive.streamCompletion = async function* stream() {
@@ -2525,8 +2525,8 @@ test("studio records provider-reported input tokens per turn, sums them across t
   };
   let database: Database | null = null;
   let app: FastifyInstance | null = null;
+  const recording = installRecordingTokenCounter();
   try {
-    const encoding = installCountingTokenEncodingLoader();
     database = await connect(await createIsolatedDatabase(historyDbName));
     const notes = new NotesStore(tempDir("guilds-studio-history-"), templatesRoot());
     await notes.ensureSystemPrompt();
@@ -2638,8 +2638,8 @@ test("studio records provider-reported input tokens per turn, sums them across t
     const firstStudio = firstUsage.json().organisation.studio as { input_tokens: number };
     assert.equal(firstStudio.input_tokens, PROVIDER_INPUT_TOKENS);
     assert.equal(modelCalls, 1);
-    assert.equal(encoding.loads, 1);
-    const firstCounts = encoding.counts.length;
+    assert.equal(recording.counter.workersStarted, 1);
+    const firstCounts = recording.counter.counts.length;
     assert.ok(firstCounts > 0);
 
     const postedAgain = await app.inject({
@@ -2662,10 +2662,10 @@ test("studio records provider-reported input tokens per turn, sums them across t
     const secondStudio = secondUsage.json().organisation.studio as { input_tokens: number };
     assert.equal(secondStudio.input_tokens, PROVIDER_INPUT_TOKENS * 2);
     assert.equal(modelCalls, 2);
-    assert.equal(encoding.loads, 1);
-    assert.ok(encoding.counts.length > firstCounts);
+    assert.equal(recording.counter.workersStarted, 1);
+    assert.ok(recording.counter.counts.length > firstCounts);
   } finally {
-    restoreTokenEncodingLoader();
+    await recording.restore();
     generationLive.streamCompletion = previousStream;
     await app?.close();
     await database?.close();
