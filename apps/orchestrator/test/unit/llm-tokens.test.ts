@@ -3,8 +3,10 @@ import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { getEncoding } from "js-tiktoken";
+import { inputText } from "../../src/llm/token-count-worker.js";
 import { TokenCountError, TokenCounter } from "../../src/llm/token-counter.js";
 import { TOKEN_COUNTER_LIMITS, TOKEN_ENCODING, countInputTokens } from "../../src/llm/tokens.js";
+import { NATIVE_TOOL_NAMES, schemasFor } from "../../src/toolbox/index.js";
 import { installRecordingTokenCounter } from "../helpers/tokens.js";
 import type { MessagePayload } from "../../src/db/schema/index.js";
 import type { FunctionTool } from "../../src/lib/tool-schema.js";
@@ -90,11 +92,16 @@ const PARITY_CASES: Array<{ name: string; messages: MessagePayload[]; tools?: Fu
     ],
     tools: TOOLS,
   },
+  { name: "native tool schemas", messages: MESSAGES, tools: schemasFor([...NATIVE_TOOL_NAMES]) },
   { name: "empty messages", messages: [], tools: null },
 ];
 
-function encodedLength(text: string): number {
-  return legacyEncoding.encode(text).length;
+function said(text: string): MessagePayload[] {
+  return [{ role: "user", content: text }];
+}
+
+function encodedLength(messages: readonly MessagePayload[]): number {
+  return legacyEncoding.encode(inputText(messages, null)).length;
 }
 
 test("countInputTokens matches a fresh encoding for each kind of input, tools, and model", async () => {
@@ -124,13 +131,13 @@ test("concurrent counts each settle with their own count, on one worker", async 
 
 test("a count past the queue bound is refused, and close rejects the counts it has not answered", async () => {
   const counter = new TokenCounter(TOKEN_ENCODING, { maxPending: 1, deadlineMs: TOKEN_COUNTER_LIMITS.deadlineMs });
-  const running = assert.rejects(counter.count(SLOW_TEXT), /token counter closed/);
-  const queued = assert.rejects(counter.count("queued"), /token counter closed/);
-  await assert.rejects(counter.count("refused"), (error) => error instanceof TokenCountError && /queue is full/.test(error.message));
+  const running = assert.rejects(counter.count(said(SLOW_TEXT), null), /token counter closed/);
+  const queued = assert.rejects(counter.count(said("queued"), null), /token counter closed/);
+  await assert.rejects(counter.count(said("refused"), null), (error) => error instanceof TokenCountError && /queue is full/.test(error.message));
   await counter.close();
   await running;
   await queued;
-  assert.equal(await counter.count("after close"), encodedLength("after close"));
+  assert.equal(await counter.count(said("after close"), null), encodedLength(said("after close")));
   assert.equal(counter.workersStarted, 2);
   await counter.close();
 });
@@ -138,14 +145,56 @@ test("a count past the queue bound is refused, and close rejects the counts it h
 test("a count past the deadline is rejected, its late reply settles nothing, and the next count gets a new worker", async () => {
   const counter = new TokenCounter(TOKEN_ENCODING, { maxPending: 4, deadlineMs: 5000 });
   try {
-    const slow = assert.rejects(
-      counter.count(SLOW_TEXT.repeat(2)),
+    await assert.rejects(
+      counter.count(said(SLOW_TEXT.repeat(2)), null),
       (error) => error instanceof TokenCountError && /passed 5000 ms/.test(error.message),
     );
-    const next = counter.count("the next count");
-    await slow;
-    assert.equal(await next, encodedLength("the next count"));
+    assert.equal(await counter.count(said("the next count"), null), encodedLength(said("the next count")));
     assert.equal(counter.workersStarted, 2);
+  } finally {
+    await counter.close();
+  }
+});
+
+test("a count's deadline runs from when it is asked for, so time in the queue counts against it", async () => {
+  const deadlineMs = 2000;
+  const counter = new TokenCounter(TOKEN_ENCODING, { maxPending: 4, deadlineMs });
+  try {
+    const passed = (error: unknown) => error instanceof TokenCountError && error.message === `token count passed ${deadlineMs} ms`;
+    const first = assert.rejects(counter.count(said(SLOW_TEXT.repeat(2)), null), passed);
+    const askedAt = performance.now();
+    await assert.rejects(counter.count(said(SLOW_TEXT.repeat(2)), null), passed);
+    assert.ok(performance.now() - askedAt < deadlineMs * 1.75, "the queued count was given a deadline of its own after it left the queue");
+    await first;
+    assert.equal(await counter.count(said("after"), null), encodedLength(said("after")));
+  } finally {
+    await counter.close();
+  }
+});
+
+test("an input the worker cannot be sent is rejected, and the counts behind it still run", async () => {
+  const counter = new TokenCounter(TOKEN_ENCODING, TOKEN_COUNTER_LIMITS);
+  try {
+    const unsendable = [{ role: "user", content: () => "not cloneable" }] as unknown as MessagePayload[];
+    const [refused, next] = await Promise.allSettled([counter.count(unsendable, null), counter.count(said("next"), null)]);
+    assert.ok(refused.status === "rejected" && refused.reason instanceof TokenCountError);
+    assert.match(refused.reason.message, /could not take the count/);
+    assert.deepEqual(next, { status: "fulfilled", value: encodedLength(said("next")) });
+    assert.equal(counter.workersStarted, 1);
+  } finally {
+    await counter.close();
+  }
+});
+
+test("a worker that cannot start rejects each count with a TokenCountError instead of stalling the queue", async () => {
+  const counter = new TokenCounter((() => TOKEN_ENCODING) as unknown as string, TOKEN_COUNTER_LIMITS);
+  try {
+    const settled = await Promise.allSettled([counter.count(said("one"), null), counter.count(said("two"), null)]);
+    for (const result of settled) {
+      assert.ok(result.status === "rejected" && result.reason instanceof TokenCountError);
+      assert.match(result.reason.message, /could not take the count/);
+    }
+    assert.equal(counter.workersStarted, 0);
   } finally {
     await counter.close();
   }
@@ -154,8 +203,8 @@ test("a count past the deadline is rejected, its late reply settles nothing, and
 test("a worker that fails rejects its count with a TokenCountError", async () => {
   const counter = new TokenCounter("no_such_encoding", TOKEN_COUNTER_LIMITS);
   try {
-    await assert.rejects(counter.count("hello"), (error) => error instanceof TokenCountError && /worker (failed|exited)/.test(error.message));
-    await assert.rejects(counter.count("hello again"), TokenCountError);
+    await assert.rejects(counter.count(said("hello"), null), (error) => error instanceof TokenCountError && /worker (failed|exited)/.test(error.message));
+    await assert.rejects(counter.count(said("hello again"), null), TokenCountError);
     assert.equal(counter.workersStarted, 2);
   } finally {
     await counter.close();
@@ -165,13 +214,13 @@ test("a worker that fails rejects its count with a TokenCountError", async () =>
 test("an aborted signal removes a waiting count from the queue", async () => {
   const counter = new TokenCounter(TOKEN_ENCODING, { maxPending: 1, deadlineMs: TOKEN_COUNTER_LIMITS.deadlineMs });
   try {
-    const running = assert.rejects(counter.count(SLOW_TEXT), /token counter closed/);
+    const running = assert.rejects(counter.count(said(SLOW_TEXT), null), /token counter closed/);
     const abort = new AbortController();
-    const cancelled = assert.rejects(counter.count("cancelled", abort.signal), /token count cancelled/);
+    const cancelled = assert.rejects(counter.count(said("cancelled"), null, abort.signal), /token count cancelled/);
     abort.abort();
     await cancelled;
-    const queued = assert.rejects(counter.count("takes the freed place"), /token counter closed/);
-    await assert.rejects(counter.count("refused", AbortSignal.abort()), /token count cancelled/);
+    const queued = assert.rejects(counter.count(said("takes the freed place"), null), /token counter closed/);
+    await assert.rejects(counter.count(said("refused"), null, AbortSignal.abort()), /token count cancelled/);
     await counter.close();
     await running;
     await queued;

@@ -1,5 +1,6 @@
 import type { MessagePayload } from "../db/schema/index.js";
 import type { FunctionTool } from "../lib/tool-schema.js";
+import { inputText } from "./token-count-worker.js";
 import { TokenCounter, type TokenCounterLimits } from "./token-counter.js";
 
 /** Every model is counted with one encoding. */
@@ -32,32 +33,21 @@ export function closeTokenCounter(): Promise<void> {
   return sharedCounter.close();
 }
 
-function blob(
-  messages: readonly MessagePayload[],
-  tools?: readonly FunctionTool[] | null,
-): string {
-  let text = JSON.stringify(messages);
-  if (tools && tools.length) {
-    text += JSON.stringify(tools);
-  }
-  return text;
-}
-
 export function estimateInputTokens(
   messages: readonly MessagePayload[],
   tools?: readonly FunctionTool[] | null,
 ): number {
-  return Math.max(1, Math.floor(blob(messages, tools).length / 4));
+  return Math.max(1, Math.floor(inputText(messages, tools).length / 4));
 }
 
-/** Encodes on the counter's worker thread; a signal aborted while the count waits for the worker cancels it. */
+/** Serializes and encodes on the counter's worker thread; a signal aborted while the count waits for the worker cancels it. */
 export async function countInputTokens(
   _model: string,
   messages: readonly MessagePayload[],
   tools?: readonly FunctionTool[] | null,
   signal?: AbortSignal,
 ): Promise<number> {
-  return Math.max(1, await sharedCounter.count(blob(messages, tools), signal));
+  return Math.max(1, await sharedCounter.count(messages, tools, signal));
 }
 
 export function enforceInputTokenLimit(tokens: number, maxInputTokens: number): void {

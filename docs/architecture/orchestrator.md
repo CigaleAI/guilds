@@ -376,13 +376,16 @@ the JSON text of the projected messages, plus the JSON text of the
 offered tools when any are offered, and at least 1. Studio uses the
 same counter. A run adds 1600 tokens for each image.
 
-The server event loop writes that JSON text and hands it to one worker
-thread, which encodes one text at a time, in order. The worker starts
-on the first count, holds the process open only while it encodes, and
-starts again after it fails. Up to 32 counts wait behind the one it
-encodes; a count past that bound is refused. A count the worker has
-not answered within 60 seconds of starting it is refused, and the
-worker is replaced. A refused count fails the model call it was for:
+The server event loop hands a copy of the messages and tools to one
+worker thread, which writes that JSON text and encodes it, one input
+at a time, in order. The worker starts on the first count, holds the
+process open only while it encodes, and starts again after it fails.
+Up to 32 counts wait behind the one it encodes; a count past that
+bound is refused. A count not answered within 60 seconds of being
+asked for, time in the queue included, is refused, and when the
+worker was encoding it the worker is replaced. A count the worker
+cannot start for or be sent is refused, and the counts behind it
+still run. A refused count fails the model call it was for:
 a run records the error and ends the generation, a coach conversation
 records it on the session, and a Studio draft request fails. A cancel
 of the run or conversation removes its waiting counts from the queue.

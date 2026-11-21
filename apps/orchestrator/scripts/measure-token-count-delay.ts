@@ -1,11 +1,13 @@
-// Measures how long input counting holds the server event loop: the main-thread encode against the
-// counting worker, on the same fixtures, with a 10 ms heartbeat on the main thread.
+// Measures how long input counting holds the server event loop: the main-thread serialize and encode
+// against the counting worker (with the copy of each input sent to it), on the same fixtures, with a
+// 10 ms heartbeat on the main thread.
 // Run: pnpm --filter @guildsrun/orchestrator exec tsx scripts/measure-token-count-delay.ts
 import { performance } from "node:perf_hooks";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { getEncoding, type Tiktoken } from "js-tiktoken";
 import type { MessagePayload } from "../src/db/schema/index.js";
 import type { FunctionTool } from "../src/lib/tool-schema.js";
+import { inputText } from "../src/llm/token-count-worker.js";
 import { TokenCounter, TokenCountError } from "../src/llm/token-counter.js";
 import { TOKEN_COUNTER_LIMITS, TOKEN_ENCODING } from "../src/llm/tokens.js";
 import { NATIVE_TOOL_NAMES, schemasFor } from "../src/toolbox/index.js";
@@ -13,13 +15,11 @@ import { NATIVE_TOOL_NAMES, schemasFor } from "../src/toolbox/index.js";
 const HEARTBEAT_MS = 10;
 const CONCURRENT = 4;
 
-type Fixture = { name: string; texts: string[] };
+type Input = { messages: MessagePayload[]; tools: FunctionTool[] };
+
+type Fixture = { name: string; inputs: Input[] };
 
 type Measurement = { latenciesMs: number[]; maxDelayMs: number; counts: number[] };
-
-function inputText(messages: readonly MessagePayload[], tools: readonly FunctionTool[]): string {
-  return JSON.stringify(messages) + JSON.stringify(tools);
-}
 
 /** A tool result as a long minified or encoded output reads: one run of a repeated character, then prose. */
 function longToolResult(index: number, runLength: number): MessagePayload[] {
@@ -51,11 +51,11 @@ function longPrompt(turns: number): MessagePayload[] {
 function fixtures(): Fixture[] {
   const tools = schemasFor([...NATIVE_TOOL_NAMES]);
   return [
-    { name: "long tool result", texts: [inputText(longToolResult(0, 4000), tools)] },
-    { name: "long prompt", texts: [inputText(longPrompt(400), tools)] },
+    { name: "long tool result", inputs: [{ messages: longToolResult(0, 4000), tools }] },
+    { name: "long prompt", inputs: [{ messages: longPrompt(400), tools }] },
     {
       name: `${CONCURRENT} concurrent long tool results`,
-      texts: Array.from({ length: CONCURRENT }, (_, index) => inputText(longToolResult(index + 1, 2500), tools)),
+      inputs: Array.from({ length: CONCURRENT }, (_, index) => ({ messages: longToolResult(index + 1, 2500), tools })),
     },
   ];
 }
@@ -80,14 +80,14 @@ async function withHeartbeat(work: () => Promise<{ latenciesMs: number[]; counts
   }
 }
 
-/** Every text encoded on the main thread, as the server counted before the worker. */
-async function mainThreadCounts(encoding: () => Tiktoken, texts: string[]): Promise<Measurement> {
+/** Every input serialized and encoded on the main thread, as the server counted before the worker. */
+async function mainThreadCounts(encoding: () => Tiktoken, inputs: Input[]): Promise<Measurement> {
   return withHeartbeat(async () => {
     const start = performance.now();
     const latenciesMs: number[] = [];
     const counts: number[] = [];
-    for (const text of texts) {
-      counts.push(Math.max(1, encoding().encode(text).length));
+    for (const { messages, tools } of inputs) {
+      counts.push(Math.max(1, encoding().encode(inputText(messages, tools)).length));
       latenciesMs.push(performance.now() - start);
       await nextTurn();
     }
@@ -95,14 +95,14 @@ async function mainThreadCounts(encoding: () => Tiktoken, texts: string[]): Prom
   });
 }
 
-/** Every text counted at once on the counter's worker. */
-async function workerCounts(counter: TokenCounter, texts: string[]): Promise<Measurement> {
+/** Every input counted at once on the counter's worker. */
+async function workerCounts(counter: TokenCounter, inputs: Input[]): Promise<Measurement> {
   return withHeartbeat(async () => {
     const start = performance.now();
     const latenciesMs: number[] = [];
     const counts = await Promise.all(
-      texts.map(async (text) => {
-        const tokens = Math.max(1, await counter.count(text));
+      inputs.map(async ({ messages, tools }) => {
+        const tokens = Math.max(1, await counter.count(messages, tools));
         latenciesMs.push(performance.now() - start);
         return tokens;
       }),
@@ -121,8 +121,8 @@ async function pendingBound(): Promise<string> {
   const counter = new TokenCounter(TOKEN_ENCODING, TOKEN_COUNTER_LIMITS);
   const asked = TOKEN_COUNTER_LIMITS.maxPending + 8;
   const settled = await Promise.allSettled([
-    counter.count("x".repeat(4000)),
-    ...Array.from({ length: asked }, (_, index) => counter.count(`short ${index}`)),
+    counter.count([{ role: "user", content: "x".repeat(4000) }], null),
+    ...Array.from({ length: asked }, (_, index) => counter.count([{ role: "user", content: `short ${index}` }], null)),
   ]);
   await counter.close();
   const refused = settled.filter(
@@ -134,15 +134,15 @@ async function pendingBound(): Promise<string> {
 async function main(): Promise<void> {
   process.stdout.write(`node ${process.version}, heartbeat every ${HEARTBEAT_MS} ms\n`);
   for (const fixture of fixtures()) {
-    const sizes = fixture.texts.map((text) => text.length).join(", ");
-    process.stdout.write(`\n${fixture.name}: ${fixture.texts.length} text(s) of ${sizes} chars\n`);
+    const sizes = fixture.inputs.map(({ messages, tools }) => inputText(messages, tools).length).join(", ");
+    process.stdout.write(`\n${fixture.name}: ${fixture.inputs.length} input(s) of ${sizes} JSON chars\n`);
     let loaded: Tiktoken | undefined;
     const sharedEncoding = () => (loaded ??= getEncoding(TOKEN_ENCODING));
-    const legacyCold = await mainThreadCounts(sharedEncoding, fixture.texts);
-    const legacyWarm = await mainThreadCounts(sharedEncoding, fixture.texts);
+    const legacyCold = await mainThreadCounts(sharedEncoding, fixture.inputs);
+    const legacyWarm = await mainThreadCounts(sharedEncoding, fixture.inputs);
     const counter = new TokenCounter(TOKEN_ENCODING, TOKEN_COUNTER_LIMITS);
-    const workerCold = await workerCounts(counter, fixture.texts);
-    const workerWarm = await workerCounts(counter, fixture.texts);
+    const workerCold = await workerCounts(counter, fixture.inputs);
+    const workerWarm = await workerCounts(counter, fixture.inputs);
     await counter.close();
     const equal = [legacyWarm, workerCold, workerWarm].every(
       (measurement) => JSON.stringify(measurement.counts) === JSON.stringify(legacyCold.counts),

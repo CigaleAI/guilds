@@ -15,7 +15,7 @@ import type { ToolCall } from "../../src/db/schema/index.js";
 import type { ModelEvent } from "../../src/llm/completion.js";
 import { TokenCountError } from "../../src/llm/token-counter.js";
 import { PolicyError, UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
-import { completionReply } from "../helpers/generation.js";
+import { completionCalling, completionReply } from "../helpers/generation.js";
 import { overflowStream, sseApp } from "../helpers/sse.js";
 
 const live = { ...generationLive };
@@ -258,6 +258,48 @@ test("a cancel while the step's input is counted ends the generation without an 
   assert.deepEqual(
     events.map(([event]) => event),
     ["generation.started", "generation.finished"],
+  );
+});
+
+test("a cancel while a tool result is counted ends the generation without an error or the result", async () => {
+  const inserted: unknown[] = [];
+  const db = {
+    query: async (text: string, params: unknown[] = []) => {
+      if (!text.startsWith("INSERT INTO studio_messages")) {
+        return { rows: [] };
+      }
+      inserted.push(JSON.parse(String(params[3])));
+      return { rows: [{ seq: params[1], payload: params[3] }] };
+    },
+  } as unknown as Queryable;
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+  });
+  const turn = generation(new Map([["probe", tool(async () => ({ ok: true }))]]));
+  generationLive.countInputTokens = async (_model, messages, _tools, signal) => {
+    if (!messages.some((message) => message.role === "tool")) {
+      return 1;
+    }
+    return new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new TokenCountError("token count cancelled")), { once: true });
+      runner.cancel(turn.session.id);
+    });
+  };
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield ["done", completionCalling([toolCall("probe")])];
+  };
+  const events = await publishedEvents(runner, turn);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "message.committed", "generation.finished"],
+  );
+  assert.deepEqual(
+    inserted.map((payload) => (payload as { role: string }).role),
+    ["assistant"],
   );
 });
 

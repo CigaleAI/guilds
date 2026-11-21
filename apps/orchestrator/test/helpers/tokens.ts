@@ -1,7 +1,9 @@
+import type { MessagePayload } from "../../src/db/schema/index.js";
+import type { FunctionTool } from "../../src/lib/tool-schema.js";
 import { TokenCounter } from "../../src/llm/token-counter.js";
 import { TOKEN_COUNTER_LIMITS, TOKEN_ENCODING, installTokenCounter } from "../../src/llm/tokens.js";
 
-/** A counter on the real worker that records the token count of each text it counts, in order. */
+/** A counter on the real worker that records the token count of each input it counts, in order. */
 export class RecordingTokenCounter extends TokenCounter {
   readonly counts: number[] = [];
 
@@ -9,8 +11,12 @@ export class RecordingTokenCounter extends TokenCounter {
     super(TOKEN_ENCODING, TOKEN_COUNTER_LIMITS);
   }
 
-  override async count(text: string, signal?: AbortSignal): Promise<number> {
-    const tokens = await super.count(text, signal);
+  override async count(
+    messages: readonly MessagePayload[],
+    tools: readonly FunctionTool[] | null | undefined,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const tokens = await super.count(messages, tools, signal);
     this.counts.push(tokens);
     return tokens;
   }

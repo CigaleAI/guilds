@@ -390,7 +390,7 @@ export class ConversationRunner {
     if (!completion.payload.tool_calls?.length) {
       return "stop";
     }
-    return (await this.runToolCalls(turn, messages, completion, progress)) ? "stop" : "next";
+    return (await this.runToolCalls(turn, messages, completion, progress, cancel)) ? "stop" : "next";
   }
 
   /** The step's projected history and its input count; null, with the session repaired, when a cancel stopped the count. */
@@ -506,13 +506,14 @@ export class ConversationRunner {
 
   /**
    * Runs the completion's tool calls in order; a call past the generation's limit is answered
-   * with an error. True when a result awaits the operator.
+   * with an error. True when a result awaits the operator or a cancel stopped a call.
    */
   private async runToolCalls<C>(
     turn: ConversationGeneration<C>,
     messages: MessagePayload[],
     completion: Completion,
     progress: GenerationProgress,
+    cancel: CancelEvent,
   ): Promise<boolean> {
     let awaitsOperator = false;
     for (const call of completion.payload.tool_calls ?? []) {
@@ -521,7 +522,10 @@ export class ConversationRunner {
         await this.commitToolError(turn.session.id, turn.generation, call, "tool call limit reached");
         continue;
       }
-      const result = await this.runToolCall(turn, messages, call, completion.metadata.finish_reason);
+      const result = await this.runToolCall(turn, messages, call, completion.metadata.finish_reason, cancel);
+      if (result === null) {
+        return true;
+      }
       if (result.await_operator === true) {
         awaitsOperator = true;
       }
@@ -532,13 +536,15 @@ export class ConversationRunner {
   /**
    * Calls the tool and commits its result as the next message, or an error when the result
    * would put the next prompt over the input limit, then hands the result to `onToolResult`.
+   * Null, with the session repaired, when a cancel stopped the result's count.
    */
   private async runToolCall<C>(
     turn: ConversationGeneration<C>,
     messages: MessagePayload[],
     call: ToolCall,
     finishReason: CompletionMetadata["finish_reason"],
-  ): Promise<ConversationToolResult> {
+    cancel: CancelEvent,
+  ): Promise<ConversationToolResult | null> {
     const sessionId = turn.session.id;
     const name = call.function.name;
     const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
@@ -548,11 +554,21 @@ export class ConversationRunner {
       ...messages,
       { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
     ];
-    const nextTokens = await generationLive.countInputTokens(
-      turn.session.config_snapshot.model,
-      candidateMessages,
-      offeredToolSchemas(turn),
-    );
+    let nextTokens: number;
+    try {
+      nextTokens = await generationLive.countInputTokens(
+        turn.session.config_snapshot.model,
+        candidateMessages,
+        offeredToolSchemas(turn),
+        cancel.signal,
+      );
+    } catch (error) {
+      if (!cancel.aborted) {
+        throw error;
+      }
+      await this.repair(sessionId, turn.generation, "cancelled");
+      return null;
+    }
     const payload: ToolMessage =
       nextTokens > turn.maxInput
         ? {
