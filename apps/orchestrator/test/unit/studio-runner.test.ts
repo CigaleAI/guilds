@@ -21,9 +21,9 @@ function call(id: string): ToolCall {
   return { id, type: "function", function: { name: "studio_get_agent_context", arguments: "{}" } };
 }
 
-test("projection keeps current-generation tool results including standing tasks", () => {
+test("projection keeps current-generation tool results including standing tasks", async () => {
   const stubbed: number[] = [];
-  const messages = projectConversationHistory({
+  const messages = await projectConversationHistory({
     history: [
       row(0, 0, { role: "system", content: "studio" }),
       row(1, 1, { role: "user", content: "Review this guild" }),
@@ -51,9 +51,9 @@ test("projection keeps current-generation tool results including standing tasks"
   assert.deepEqual(stubbed, []);
 });
 
-test("projection stubs older generations and tells the coach to refetch the task", () => {
+test("projection stubs older generations and tells the coach to refetch the task", async () => {
   const stubbed: number[] = [];
-  const messages = projectConversationHistory({
+  const messages = await projectConversationHistory({
     history: [
       row(0, 0, { role: "system", content: "studio" }),
       row(1, 1, { role: "tool", tool_call_id: "old", content: large('{"task":{"content":"Write the digest."}}') }, { tool_name: "studio_get_agent_context" }),
@@ -75,9 +75,9 @@ test("projection stubs older generations and tells the coach to refetch the task
   assert.deepEqual(stubbed, [1]);
 });
 
-test("projection keeps an older tool result smaller than the stub floor", () => {
+test("projection keeps an older tool result smaller than the stub floor", async () => {
   const stubbed: number[] = [];
-  const messages = projectConversationHistory({
+  const messages = await projectConversationHistory({
     history: [
       row(0, 0, { role: "system", content: "studio" }),
       row(1, 1, { role: "tool", tool_call_id: "old", content: '{"ok":true,"body_version":3}' }),
@@ -93,9 +93,9 @@ test("projection keeps an older tool result smaller than the stub floor", () => 
   assert.deepEqual(stubbed, []);
 });
 
-test("projection stubs with the hint the coach passes", () => {
+test("projection stubs with the hint the coach passes", async () => {
   const stubbed: number[] = [];
-  const messages = projectConversationHistory({
+  const messages = await projectConversationHistory({
     history: [
       row(0, 0, { role: "system", content: "builder" }),
       row(1, 1, { role: "tool", tool_call_id: "old", content: large("{}") }),
@@ -111,9 +111,9 @@ test("projection stubs with the hint the coach passes", () => {
   assert.doesNotMatch(String(tools[0]?.content), /studio_get_agent_context/);
 });
 
-test("projection stubs oldest current-generation tools only after the token budget is exceeded", () => {
+test("projection stubs oldest current-generation tools only after the token budget is exceeded", async () => {
   const stubbed: number[] = [];
-  const messages = projectConversationHistory({
+  const messages = await projectConversationHistory({
     history: [
       row(0, 0, { role: "system", content: "studio" }),
       row(1, 1, { role: "tool", tool_call_id: "a", content: large("one") }),
@@ -129,7 +129,7 @@ test("projection stubs oldest current-generation tools only after the token budg
       model: "test",
       schemas: [],
       maxInput: 1,
-      countInputTokens(_model, next) {
+      async countInputTokens(_model, next) {
         const tools = next.filter((item) => item.role === "tool");
         const live = tools.filter((item) => !String(item.content).includes('"stub":true'));
         return live.length > 2 ? 9 : 1;
@@ -143,9 +143,9 @@ test("projection stubs oldest current-generation tools only after the token budg
   assert.deepEqual(stubbed, [1]);
 });
 
-test("projection replaces a stale stored system prompt with the live system content", () => {
+test("projection replaces a stale stored system prompt with the live system content", async () => {
   const stubbed: number[] = [];
-  const messages = projectConversationHistory({
+  const messages = await projectConversationHistory({
     history: [row(0, 0, { role: "system", content: "studio_create_task_draft requires an active target" })],
     generationContext: "roster",
     currentGeneration: 1,

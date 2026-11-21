@@ -363,8 +363,12 @@ export class ConversationRunner {
     }
     const { model, temperature } = turn.session.config_snapshot;
     const schemas = offeredToolSchemas(turn);
-    const messages = await this.projectHistory(turn, progress);
-    if (generationLive.countInputTokens(model, messages, schemas) > turn.maxInput) {
+    const input = await this.stepInput(turn, progress, cancel);
+    if (input === null) {
+      return "stop";
+    }
+    const { messages } = input;
+    if (input.tokens > turn.maxInput) {
       await this.blockAtInputTokenLimit(sessionId);
       return "stop";
     }
@@ -389,12 +393,40 @@ export class ConversationRunner {
     return (await this.runToolCalls(turn, messages, completion, progress)) ? "stop" : "next";
   }
 
+  /** The step's projected history and its input count; null, with the session repaired, when a cancel stopped the count. */
+  private async stepInput<C>(
+    turn: ConversationGeneration<C>,
+    progress: GenerationProgress,
+    cancel: CancelEvent,
+  ): Promise<{ messages: MessagePayload[]; tokens: number } | null> {
+    try {
+      const messages = await this.projectHistory(turn, progress, cancel.signal);
+      const tokens = await generationLive.countInputTokens(
+        turn.session.config_snapshot.model,
+        messages,
+        offeredToolSchemas(turn),
+        cancel.signal,
+      );
+      return { messages, tokens };
+    } catch (error) {
+      if (!cancel.aborted) {
+        throw error;
+      }
+      await this.repair(turn.session.id, turn.generation, "cancelled");
+      return null;
+    }
+  }
+
   /** The history as this step sends it to the model; the seqs it stubs join the generation's. */
-  private async projectHistory<C>(turn: ConversationGeneration<C>, progress: GenerationProgress): Promise<MessagePayload[]> {
+  private async projectHistory<C>(
+    turn: ConversationGeneration<C>,
+    progress: GenerationProgress,
+    signal: AbortSignal,
+  ): Promise<MessagePayload[]> {
     const history = await listConversationMessages(this.deps.db, this.deps.kind, turn.session.id);
     const stubbedThisStep: number[] = [];
     const minUnstubbed = turn.minUnstubbed ?? this.deps.minUnstubbedToolResults;
-    const messages = projectConversationHistory({
+    const messages = await projectConversationHistory({
       history,
       generationContext: turn.generationContext,
       currentGeneration: turn.generation,
@@ -406,7 +438,7 @@ export class ConversationRunner {
         schemas: offeredToolSchemas(turn),
         maxInput: turn.maxInput,
         countInputTokens: (nextModel, nextMessages, nextTools) =>
-          generationLive.countInputTokens(nextModel, nextMessages, nextTools),
+          generationLive.countInputTokens(nextModel, nextMessages, nextTools, signal),
       },
       ...(turn.systemContent ? { systemContent: turn.systemContent } : {}),
     });
@@ -516,7 +548,7 @@ export class ConversationRunner {
       ...messages,
       { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
     ];
-    const nextTokens = generationLive.countInputTokens(
+    const nextTokens = await generationLive.countInputTokens(
       turn.session.config_snapshot.model,
       candidateMessages,
       offeredToolSchemas(turn),
@@ -707,8 +739,8 @@ function offeredToolSchemas<C>(turn: ConversationGeneration<C>): FunctionTool[] 
   return [...turn.tools.values()].map((tool) => tool.schema);
 }
 
-export function projectConversationHistory(args: ConversationProjection): MessagePayload[] {
-  const messages = projectToolResults({
+export async function projectConversationHistory(args: ConversationProjection): Promise<MessagePayload[]> {
+  const messages = await projectToolResults({
     history: args.history,
     currentGeneration: args.currentGeneration,
     keepGenerations: 1,

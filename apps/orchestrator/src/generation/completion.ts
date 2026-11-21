@@ -74,9 +74,29 @@ export type ModelHistory = {
   payloads: ModelMessage[];
 };
 
+/** Waits for a count of the run's input; a count the run's cancel stopped ends the call with `GenerationCancelled`. */
+async function runInputCount(count: Promise<number>, cancelEvent: CancelEvent | null): Promise<number> {
+  try {
+    return await count;
+  } catch (error) {
+    if (cancelEvent?.aborted) {
+      throw new GenerationCancelled();
+    }
+    throw error;
+  }
+}
+
 /** The input tokens the run's history takes with the schemas it is offered. */
-export function historyTokens(snapshot: KeyRunConfigSnapshot, history: ModelHistory, schemas: FunctionTool[]): number {
-  return countRunInputTokens(snapshot.model, history.rows, schemas.length ? schemas : null, countInputTokensImpl);
+export function historyTokens(
+  snapshot: KeyRunConfigSnapshot,
+  history: ModelHistory,
+  schemas: FunctionTool[],
+  cancelEvent: CancelEvent | null,
+): Promise<number> {
+  const count = countRunInputTokens(snapshot.model, history.rows, schemas.length ? schemas : null, (model, messages, tools) =>
+    countInputTokensImpl(model, messages, tools, cancelEvent?.signal),
+  );
+  return runInputCount(count, cancelEvent);
 }
 
 /** A model call with the settings of the run's snapshot. */
@@ -159,7 +179,8 @@ export class ModelCompletion {
     schemas: FunctionTool[],
   ): Promise<ModelHistory> {
     const listed = await this.services.db.listMessages(turn.runId);
-    const projectedPayloads = projectToolResults({
+    const cancelEvent = this.services.generations.cancelEvent(turn.runId);
+    const projectedPayloads = await projectToolResults({
       history: listed,
       currentGeneration: turn.generation,
       keepGenerations: snapshot.keep_tool_result_generations,
@@ -170,8 +191,9 @@ export class ModelCompletion {
         model: snapshot.model,
         schemas,
         maxInput: snapshot.max_input_tokens,
-        countInputTokens: (model, messages, tools) =>
-          countInputTokensImpl(model, messages, tools) + attachmentImageCount(listed) * IMAGE_INPUT_TOKENS,
+        countInputTokens: async (model, messages, tools) =>
+          (await runInputCount(countInputTokensImpl(model, messages, tools, cancelEvent?.signal), cancelEvent)) +
+          attachmentImageCount(listed) * IMAGE_INPUT_TOKENS,
       },
     });
     const rows = listed.map((row, index) => {

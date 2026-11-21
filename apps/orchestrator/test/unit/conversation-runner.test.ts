@@ -13,6 +13,7 @@ import { recoverPartialToolArgs } from "../../src/conversation/tool-args.js";
 import type { Queryable } from "../../src/db/pg.js";
 import type { ToolCall } from "../../src/db/schema/index.js";
 import type { ModelEvent } from "../../src/llm/completion.js";
+import { TokenCountError } from "../../src/llm/token-counter.js";
 import { PolicyError, UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
 import { completionReply } from "../helpers/generation.js";
 import { overflowStream, sseApp } from "../helpers/sse.js";
@@ -20,7 +21,7 @@ import { overflowStream, sseApp } from "../helpers/sse.js";
 const live = { ...generationLive };
 
 beforeEach(() => {
-  generationLive.countInputTokens = () => 1;
+  generationLive.countInputTokens = async () => 1;
 });
 
 afterEach(() => {
@@ -227,6 +228,31 @@ test("a completion cancelled while the model answers ends the generation without
     runner.cancel(turn.session.id);
     await new Promise(() => {});
     yield ["delta", "never streamed: the cancel wins the race"];
+  };
+  const events = await publishedEvents(runner, turn);
+  assert.deepEqual(
+    events.map(([event]) => event),
+    ["generation.started", "generation.finished"],
+  );
+});
+
+test("a cancel while the step's input is counted ends the generation without an error", async () => {
+  const { db } = emptyDatabase();
+  const runner = new ConversationRunner({
+    db,
+    kind: "studio",
+    admission: new AdmissionCoordinator(),
+    stubHint: "hint",
+    credentials: { modelCredentials: async () => ({ apiKey: "key" }) },
+  });
+  const turn = generation();
+  generationLive.countInputTokens = (_model, _messages, _tools, signal) =>
+    new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(new TokenCountError("token count cancelled")), { once: true });
+      runner.cancel(turn.session.id);
+    });
+  generationLive.streamCompletion = async function* (): AsyncGenerator<ModelEvent> {
+    yield await Promise.reject(new Error("model should not be called"));
   };
   const events = await publishedEvents(runner, turn);
   assert.deepEqual(

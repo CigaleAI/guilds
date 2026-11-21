@@ -32,7 +32,8 @@ lives is the [Code map](code-map.md).
   machine), TypeScript SDK from that same commit
   (`sdks/sandbox/javascript`)
 - Token counting: `js-tiktoken` with one encoding, `o200k_base`, for
-  every model, loaded once per process (`src/llm/tokens.ts`)
+  every model, loaded once by the counting worker thread
+  (`src/llm/tokens.ts`, `src/llm/token-counter.ts`)
 - Cost: provider-reported `cost_usd` first, then the catalog's rate for
   the model on a billed provider, else `cost_source: unavailable`. The
   catalog rate prices uncached input, cache reads, and output;
@@ -372,9 +373,20 @@ Each model call projects tool results from those rows
 
 Before each model call, input tokens are the `o200k_base` length of
 the JSON text of the projected messages, plus the JSON text of the
-offered tools when any are offered, and at least 1. The process loads
-that encoding once. Studio uses the same counter. A run adds 1600
-tokens for each image. Counting runs on the server event loop.
+offered tools when any are offered, and at least 1. Studio uses the
+same counter. A run adds 1600 tokens for each image.
+
+The server event loop writes that JSON text and hands it to one worker
+thread, which encodes one text at a time, in order. The worker starts
+on the first count, holds the process open only while it encodes, and
+starts again after it fails. Up to 32 counts wait behind the one it
+encodes; a count past that bound is refused. A count the worker has
+not answered within 60 seconds of starting it is refused, and the
+worker is replaced. A refused count fails the model call it was for:
+a run records the error and ends the generation, a coach conversation
+records it on the session, and a Studio draft request fails. A cancel
+of the run or conversation removes its waiting counts from the queue.
+Server shutdown stops the worker after it cancels the runs.
 
 Tools:
 
@@ -713,7 +725,8 @@ function countInputTokens(
   model: string,
   messages: readonly MessagePayload[],
   tools?: readonly FunctionTool[] | null,
-): number;
+  signal?: AbortSignal,
+): Promise<number>;
 ```
 
 Generation calls both through `generationLive`

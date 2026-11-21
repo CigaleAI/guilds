@@ -27,12 +27,16 @@ export type GroupChat = {
 export class CancelEvent {
   aborted = false;
   private waiters: Array<() => void> = [];
+  private readonly controller = new AbortController();
+  /** Aborted when the event is set. */
+  readonly signal: AbortSignal = this.controller.signal;
 
   set(): void {
     if (this.aborted) {
       return;
     }
     this.aborted = true;
+    this.controller.abort();
     const waiters = this.waiters;
     this.waiters = [];
     for (const resolve of waiters) {

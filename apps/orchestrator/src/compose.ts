@@ -22,6 +22,7 @@ import { AdmissionCoordinator } from "./admission/coordinator.js";
 import { generationLoop } from "./generation/index.js";
 import { coreModelCredentials } from "./llm/credentials.js";
 import { modelsService } from "./llm/models.js";
+import { closeTokenCounter } from "./llm/tokens.js";
 import { layOutAgentHomes } from "./machines/layout.js";
 import { mcpPool, TOOLS_TTL_MS } from "./mcp/pool.js";
 import { loginRetirement } from "./mcp/service.js";
@@ -267,6 +268,7 @@ export async function createServer(
       await app.close();
       await harnessMcp.close();
       await generation.close();
+      await closeTokenCounter();
       await sandboxes.close();
       stopRuntimeMetrics();
       await database.close();

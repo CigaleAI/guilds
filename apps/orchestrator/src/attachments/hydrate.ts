@@ -27,7 +27,7 @@ export function attachmentImageCount(rows: Array<Pick<AttachedMessage, "metadata
   return count;
 }
 
-export function countRunInputTokens(
+export async function countRunInputTokens(
   model: string,
   rows: AttachedMessage[],
   tools: readonly FunctionTool[] | null,
@@ -35,10 +35,10 @@ export function countRunInputTokens(
     model: string,
     messages: readonly MessagePayload[],
     tools?: readonly FunctionTool[] | null,
-  ) => number,
-): number {
+  ) => Promise<number>,
+): Promise<number> {
   const payloads = rows.map((row) => row.payload);
-  return countInputTokens(model, payloads, tools) + attachmentImageCount(rows) * IMAGE_INPUT_TOKENS;
+  return (await countInputTokens(model, payloads, tools)) + attachmentImageCount(rows) * IMAGE_INPUT_TOKENS;
 }
 
 function dataUrl(mime: string, bytes: Buffer): string {

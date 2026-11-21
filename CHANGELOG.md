@@ -68,6 +68,13 @@ Metadata. Cursor's failed commands, failed reads, reads of large files,
 and waited-for background commands show what they returned rather than
 raw JSON.
 
+**Fixed.** Counting the input tokens of a model call no longer stalls
+the server. A long prompt or tool result, such as one with a long run
+of one repeated character, took seconds to count and held every other
+request and run until it finished. The count runs on a worker thread;
+a count it has not finished within 60 seconds, or one past 32 waiting
+counts, fails the model call it was for with an error.
+
 **Changed.** An agent is told to call `report_issue` only when its run
 cannot get past a problem and an operator must act on it: a tool, a
 login, an API, or the platform that keeps blocking the work, or content

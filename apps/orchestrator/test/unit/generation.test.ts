@@ -12,6 +12,7 @@ import { PolicyError } from "../../src/policy/index.js";
 import { ConflictError, RunLimitError, RunRequestError, SandboxStoppedError } from "../../src/generation/errors.js";
 import { pendingToolCalls } from "../../src/generation/tool-calls.js";
 import { LLMError, type ModelEndpoint, type ModelRequest } from "../../src/llm/completion.js";
+import { TokenCountError } from "../../src/llm/token-counter.js";
 import { sleep } from "../../src/lib/event.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { nextRunAt } from "../../src/schedules/cron.js";
@@ -268,7 +269,7 @@ describe("generation", { concurrency: 1 }, () => {
     };
     const db = new FakeDB(snapshot);
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    live.countInputTokens = () => 9;
+    live.countInputTokens = async () => 9;
     live.streamCompletion = async function* shouldNotRun() {
       yield await Promise.reject(new Error("model should not be called"));
     };
@@ -278,6 +279,39 @@ describe("generation", { concurrency: 1 }, () => {
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors[errors.length - 1]?.operation, "generation.max_input_tokens");
     assert.match(String(errors[errors.length - 1]?.message), /Start a new run/);
+    restoreBindings();
+  });
+
+  test("a cancel while the run's input is counted records the cancel alone", async () => {
+    restoreBindings();
+    const snapshot = {
+      model: "openrouter/openai/gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 32,
+      max_steps: 30,
+      max_input_tokens: 100000,
+      tools: [],
+      secrets: [],
+    };
+    const db = new FakeDB(snapshot);
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
+    const counting = deferred();
+    live.countInputTokens = (_model, _messages, _tools, signal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new TokenCountError("token count cancelled")), { once: true });
+        counting.resolve();
+      });
+    live.streamCompletion = async function* shouldNotRun() {
+      yield await Promise.reject(new Error("model should not be called"));
+    };
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
+    await counting.promise;
+    assert.ok(await loop.cancel("r_1"));
+    assert.deepEqual(
+      (db.run.errors as Array<Record<string, unknown>>).map((entry) => entry.operation),
+      ["generation.cancelled"],
+    );
     restoreBindings();
   });
 
